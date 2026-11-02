@@ -131,3 +131,22 @@ export function nearestIndex(xs: readonly number[], x: number): number {
 export function chartLegend(theme: ChartTheme, kind: 'line' | 'rect' = 'rect', extra?: Record<string, unknown>) {
   return legend(theme, kind, { itemStyle: { borderWidth: 0 }, ...extra });
 }
+
+const CLOCK_STEPS = [1, 2, 5, 10, 15, 20, 30, 60, 120, 300, 600, 900, 1200, 1800, 3600, 7200, 10800, 18000, 36000];
+
+/**
+ * Value-axis settings for clock values (seconds shown as m:ss / h:mm:ss): ticks on round clock steps
+ * (0:30, 1:00, 5:00 …) instead of decimal steps like 3:20.
+ */
+export function clockAxis(values: readonly number[], targetTicks = 5): { min: number; max: number; interval: number } | Record<string, never> {
+  const finite = values.filter((v) => Number.isFinite(v));
+  if (!finite.length) return {};
+  const lo = Math.min(...finite);
+  const hi = Math.max(...finite);
+  const span = Math.max(hi - lo, 1);
+  const interval = CLOCK_STEPS.find((s) => span / s <= targetTicks) ?? CLOCK_STEPS.at(-1)!;
+  const min = Math.floor(lo / interval) * interval;
+  let max = Math.ceil(hi / interval) * interval;
+  if (max === min) max = min + interval;
+  return { min, max, interval };
+}

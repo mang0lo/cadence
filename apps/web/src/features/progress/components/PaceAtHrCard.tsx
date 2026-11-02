@@ -19,7 +19,7 @@ import { Delta, EmptyState, ErrorState, Input, SegmentedControl } from '@/compon
 import { useFormat, type Formatter } from '@/lib/format';
 import { useT, type TFunction } from '@/lib/i18n';
 import { usePaceAtHr, useSaveHrBand, type RangeParams } from '../api';
-import { bucketLabel, chartLegend } from '../chart';
+import { bucketLabel, chartLegend, clockAxis } from '../chart';
 import { speedFormat, type TrendFormat } from '../format';
 import { ChartSkeleton } from './common';
 
@@ -51,6 +51,7 @@ function mainOption(
     yAxis: valueAxis(theme, {
       scale: true,
       inverse: tf.inverse,
+      ...(tf.inverse ? clockAxis([...values, ...trend].filter((v): v is number => v !== null), 4) : {}),
       axisLabel: { color: theme.muted, fontSize: 11, formatter: (n: number) => tf.axisLabel(n) },
     }),
     tooltip: axisTooltip(theme, (params: unknown) => {

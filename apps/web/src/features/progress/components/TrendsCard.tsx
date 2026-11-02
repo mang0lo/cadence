@@ -19,7 +19,7 @@ import { useFormat, type Formatter } from '@/lib/format';
 import { useI18n, useT, type Lang, type TFunction } from '@/lib/i18n';
 import { sportLabel } from '@/lib/sports';
 import { useTrends, type RangeParams } from '../api';
-import { chartLegend, hitLayer, localMs, monthYearLabel, msDay, timeAxisLabel } from '../chart';
+import { chartLegend, clockAxis, hitLayer, localMs, monthYearLabel, msDay, timeAxisLabel } from '../chart';
 import { formatChange, trendFormat, type TrendFormat } from '../format';
 import { ActivityLink, ChangeBadge, ChartSkeleton } from './common';
 
@@ -92,6 +92,8 @@ function buildOption(
     yAxis: valueAxis(theme, {
       scale: true,
       inverse: tf.inverse,
+      // pace: round clock steps (0:30, 1:00 …)
+      ...(tf.inverse ? clockAxis([...pts.map((p) => p.value[1]!), ...trend.map((p) => p[1]!)]) : {}),
       axisLabel: { color: theme.muted, fontSize: 11, formatter: (n: number) => tf.axisLabel(n) },
     }),
     tooltip: itemTooltip(theme, tooltip),
