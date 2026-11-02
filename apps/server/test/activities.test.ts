@@ -19,7 +19,7 @@ import {
   toSeries,
   withFtp,
 } from '../src/features/activities/analysis';
-import { sameRoute, weekStartOf, weekdayOf } from '../src/features/activities/queries';
+import { defaultNameMatches, sameRoute, weekStartOf, weekdayOf } from '../src/features/activities/queries';
 import { parseDay } from '../src/lib/time';
 
 /** 1 Hz streams: speed (m/s) and optional HR/power/elevation generators per second. */
@@ -323,6 +323,18 @@ describe('query helpers', () => {
     expect(weekStartOf('2026-11-04', 0)).toBe('2026-11-01');
     expect(weekStartOf('2026-11-01', 1)).toBe('2026-10-26');
     expect(weekStartOf('2026-11-01', 0)).toBe('2026-11-01');
+  });
+
+  it('matches localized default names of unnamed workouts', () => {
+    const morning = defaultNameMatches('morning');
+    expect([...morning.keys()]).toEqual(['morning']);
+    expect(morning.get('morning')!.length).toBeGreaterThan(50); // every sport
+    const morningRun = defaultNameMatches('Morning Run');
+    expect(morningRun.get('morning')).toEqual(['run']);
+    const lauf = defaultNameMatches('Lauf am Abend');
+    expect([...lauf.entries()]).toEqual([['evening', ['run', 'nordic_ski']]]); // Langlauf
+    expect(defaultNameMatches('lauf').size).toBe(5);
+    expect(defaultNameMatches('x').size).toBe(0);
   });
 
   it('matches routes by start, finish and distance', () => {

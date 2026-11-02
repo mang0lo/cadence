@@ -104,6 +104,15 @@ describe('activities API', () => {
     expect(new Set(firsts).size).toBe(firsts.length);
     const searched = await getJson<ActivityListPage>('/api/activities/list?q=Lauf&limit=1');
     expect(searched.total).toBe(runs.total);
+    // default names: "Morning Run" only finds runs that started between 4 and 11 local time
+    const morning = await getJson<ActivityListPage>('/api/activities/list?q=morning%20run&limit=200');
+    expect(morning.total).toBeGreaterThan(0);
+    expect(morning.total).toBeLessThan(runs.total);
+    for (const w of morning.items) {
+      const h = new Date((w.startTs + w.tzMin * 60) * 1000).getUTCHours();
+      expect(w.sport).toBe('run');
+      expect(h >= 4 && h < 11).toBe(true);
+    }
     const gps = await getJson<ActivityListPage>('/api/activities/list?hasRoute=true&limit=200');
     expect(gps.items.every((w) => w.hasRoute)).toBe(true);
     expect((await app.inject({ url: '/api/activities/list?sort=bogus' })).statusCode).toBe(400);

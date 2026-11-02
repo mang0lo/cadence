@@ -1,6 +1,8 @@
 import {
   SPORTS,
+  defaultWorkoutName,
   sportInfo,
+  type TimeOfDay,
   type ActivitiesSummary,
   type ActivityListItem,
   type ActivityListPage,
@@ -34,14 +36,41 @@ export interface ListFilter {
 
 const escapeLike = (s: string) => s.replace(/[\\%_]/g, (c) => `\\${c}`);
 
-/** Sports whose English/German label (or key) matches a search term, so "Lauf" or "run" finds unnamed runs. */
-export function sportsMatching(q: string): string[] {
+/** Local hour ranges [from, to) of the default-name time of day (see timeOfDay in @cadence/shared). */
+const TOD_HOURS: Record<TimeOfDay, [number, number][]> = {
+  morning: [[4, 11]],
+  lunch: [[11, 14]],
+  afternoon: [[14, 17]],
+  evening: [[17, 21]],
+  night: [
+    [21, 24],
+    [0, 4],
+  ],
+};
+const TODS = Object.keys(TOD_HOURS) as TimeOfDay[];
+/** A representative local hour per time of day, to build the default names. */
+const TOD_SAMPLE_HOUR: Record<TimeOfDay, number> = { morning: 8, lunch: 12, afternoon: 15, evening: 18, night: 22 };
+
+/**
+ * Unnamed workouts are shown with a localized default name ("Morning Run" / "Lauf am Morgen"). For a search term,
+ * returns per time of day the sports whose default name (English or German) contains it.
+ */
+export function defaultNameMatches(q: string): Map<TimeOfDay, string[]> {
   const s = q.trim().toLowerCase();
-  if (s.length < 2) return [];
-  return Object.values(SPORTS)
-    .filter((i) => i.key.includes(s) || i.label.en.toLowerCase().includes(s) || i.label.de.toLowerCase().includes(s))
-    .map((i) => i.key);
+  const out = new Map<TimeOfDay, string[]>();
+  if (s.length < 2) return out;
+  for (const tod of TODS) {
+    const ts = TOD_SAMPLE_HOUR[tod] * 3600;
+    const sports = Object.keys(SPORTS).filter((sport) =>
+      (['en', 'de'] as const).some((lang) => defaultWorkoutName(sport, ts, 0, lang).toLowerCase().includes(s)) ||
+      sport.includes(s),
+    );
+    if (sports.length) out.set(tod, sports);
+  }
+  return out;
 }
+
+const LOCAL_HOUR = '(((start_ts + tz_min * 60) % 86400 + 86400) % 86400) / 3600';
 
 /** WHERE clause over `workouts` (unaliased) for a list filter; duplicates are always excluded. */
 export function listWhere(athleteId: number, f: ListFilter): { sql: string; params: unknown[] } {
@@ -71,13 +100,18 @@ export function listWhere(athleteId: number, f: ListFilter): { sql: string; para
   const q = f.q?.trim();
   if (q) {
     const like = `%${escapeLike(q)}%`;
-    const matching = sportsMatching(q);
-    where.push(
-      `(name LIKE ? ESCAPE '\\' OR notes LIKE ? ESCAPE '\\' OR source_name LIKE ? ESCAPE '\\'${
-        matching.length ? ` OR (name = '' AND sport IN (${matching.map(() => '?').join(',')}))` : ''
-      })`,
-    );
-    params.push(like, like, like, ...matching);
+    const ors = [`name LIKE ? ESCAPE '\\'`, `notes LIKE ? ESCAPE '\\'`, `source_name LIKE ? ESCAPE '\\'`];
+    params.push(like, like, like);
+    const allSports = Object.keys(SPORTS).length;
+    for (const [tod, sports] of defaultNameMatches(q)) {
+      const hours = TOD_HOURS[tod].map(([a, b]) => `(${LOCAL_HOUR} >= ${a} AND ${LOCAL_HOUR} < ${b})`).join(' OR ');
+      if (sports.length === allSports) ors.push(`(name = '' AND (${hours}))`);
+      else {
+        ors.push(`(name = '' AND (${hours}) AND sport IN (${sports.map(() => '?').join(',')}))`);
+        params.push(...sports);
+      }
+    }
+    where.push(`(${ors.join(' OR ')})`);
   }
   return { sql: where.join(' AND '), params };
 }
