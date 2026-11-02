@@ -178,6 +178,11 @@ export const messages: Dictionary = {
       start: 'Start',
       finish: 'Finish',
       legend: 'Route colors',
+      parts: {
+        label: 'Parts of the activity',
+        part: 'Part {n}',
+        hint: 'Paused and continued elsewhere – the way in between does not count.',
+      },
     },
     playback: {
       play: 'Play',
@@ -535,6 +540,11 @@ export const messages: Dictionary = {
       start: 'Start',
       finish: 'Ziel',
       legend: 'Farben der Strecke',
+      parts: {
+        label: 'Teile der Aktivität',
+        part: 'Teil {n}',
+        hint: 'Pausiert und an einem anderen Ort fortgesetzt – der Weg dazwischen zählt nicht.',
+      },
     },
     playback: {
       play: 'Abspielen',

@@ -6,11 +6,12 @@ import {
   type MapsSegmentEffort,
 } from '@cadence/shared';
 import { getStreams } from '../../core/workouts';
+import { trackParts } from '../../derive/streams';
 import { all, get, prepare, run, tx, type Db } from '../../db/db';
 import { badRequest, notFound } from '../../lib/http';
 import {
   bounds,
-  decodePolyline,
+  decodePolylineParts,
   distanceToPath,
   encodePolylineArrays,
   simplifyIndices,
@@ -92,6 +93,12 @@ export function createSegment(db: Db, athleteId: number, input: NewSegment): num
   const startM = Math.max(0, Math.min(total, input.startM));
   const endM = Math.max(0, Math.min(total, input.endM));
   if (endM - startM < MIN_SEGMENT_M) throw badRequest(`A segment has to be at least ${MIN_SEGMENT_M} m long`);
+  // the distance does not grow across a break (travelled while paused): a segment cannot bridge it
+  for (const k of s.breaks ?? []) {
+    const at = s.dist[k];
+    if (at !== undefined && at > startM && at < endM)
+      throw badRequest('A segment has to lie within one part of the activity (it was paused and continued elsewhere)');
+  }
 
   const dense = sliceStream({ lat: s.lat, lon: s.lon, dist: s.dist, ele: s.ele }, startM, endM);
   const stats = profileSlice(s.dist, s.ele ?? null, startM, endM);
@@ -245,28 +252,36 @@ export function matchWorkouts(
         );
         del.run(w.id, ...segIds);
         if (!near.length) continue;
-        let line: LatLon[] | null = null;
+        let lines: LatLon[][] | null = null;
         const candidates = near.filter((p) => {
-          // both gates must be on (the simplified version of) the workout's route
-          line ??= w.polyline ? decodePolyline(w.polyline) : [];
-          return (
-            line.length > 1 &&
-            distanceToPath(p.start[0], p.start[1], line) <= PAD_M &&
-            distanceToPath(p.end[0], p.end[1], line) <= PAD_M
+          // both gates must be on (the simplified version of) one part of the workout's route
+          lines ??= w.polyline ? decodePolylineParts(w.polyline) : [];
+          return lines.some(
+            (line) =>
+              line.length > 1 &&
+              distanceToPath(p.start[0], p.start[1], line) <= PAD_M &&
+              distanceToPath(p.end[0], p.end[1], line) <= PAD_M,
           );
         });
         if (!candidates.length) continue;
         const s = getStreams(db, athleteId, w.id);
         if (!s?.lat || !s.lon || s.t.length < 2) continue;
+        // match every part of the track on its own: a pass never bridges a break (travelled while paused)
+        const parts = trackParts(s.t.length, s.breaks);
+        const slice = <T>(a: T[] | undefined, from: number, to: number) => a?.slice(from, to);
         for (const p of candidates) {
-          const matches = matchSegment(p.path, {
-            t: s.t,
-            lat: s.lat,
-            lon: s.lon,
-            dist: s.dist,
-            hr: s.hr,
-            moving: s.moving,
-          });
+          const matches = parts.flatMap(([from, to]) =>
+            to - from < 2
+              ? []
+              : matchSegment(p.path, {
+                  t: s.t.slice(from, to),
+                  lat: s.lat!.slice(from, to),
+                  lon: s.lon!.slice(from, to),
+                  dist: slice(s.dist, from, to),
+                  hr: slice(s.hr, from, to),
+                  moving: slice(s.moving, from, to),
+                }),
+          );
           matches.forEach((m, idx) => {
             ins.run(
               p.row.id,

@@ -407,6 +407,11 @@ export interface MapsSegmentSource {
   totalM: number;
   /** Index-aligned arrays (≤ 1200 points, increasing distance). `t` = seconds since the workout start. */
   points: { lat: number[]; lon: number[]; dist: number[]; ele: (number | null)[]; t: number[] };
+  /**
+   * Distances (m) where a new part of the track starts (paused and continued elsewhere, see WorkoutStreams.breaks).
+   * A segment cannot span one.
+   */
+  breaksM: number[];
   /** Segments that already cover (part of) this route, for a hint. */
   existing: { id: number; name: string }[];
 }

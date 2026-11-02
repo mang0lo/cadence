@@ -1,6 +1,6 @@
 import type { ExpressionSpecification, GeoJSONSource, Map as MapLibreMap } from 'maplibre-gl';
 import type { Feature, FeatureCollection, LineString, Point } from 'geojson';
-import { decodePolyline } from '@/lib/polyline';
+import { decodePolylineParts } from '@/lib/polyline';
 import { homeRegion, type BBox } from './home';
 import type { MapsHeatmapActivity } from '@cadence/shared';
 
@@ -12,10 +12,20 @@ export interface HeatLine {
   id: number;
   i: number;
   sport: string;
-  /** [lon, lat] */
+  /** [lon, lat] of all parts, concatenated */
   coords: [number, number][];
-  /** Cumulative planar length per vertex (degrees-ish, only used for fractions). */
+  /**
+   * Vertex index where each part of the track starts ([0] for an ordinary route; more when the workout was paused and
+   * continued elsewhere). Parts are drawn as separate lines.
+   */
+  starts: number[];
+  /** Cumulative planar length per vertex (degrees-ish, only used for fractions; nothing across a part boundary). */
   cum: number[];
+}
+
+/** The parts of a heat line as separate coordinate lists. */
+export function lineParts(l: HeatLine): [number, number][][] {
+  return l.starts.map((s, p) => l.coords.slice(s, l.starts[p + 1] ?? l.coords.length)).filter((c) => c.length > 1);
 }
 
 export interface HeatPalette {
@@ -88,35 +98,45 @@ export const heatPalette = (theme: HeatTheme, darkBase: boolean): HeatPalette =>
 export function toHeatLines(items: MapsHeatmapActivity[]): HeatLine[] {
   const out: HeatLine[] = [];
   items.forEach((a, i) => {
-    const pts = decodePolyline(a.polyline);
-    if (pts.length < 2) return;
-    const coords: [number, number][] = pts.map(([la, lo]) => [lo, la]);
+    const parts = decodePolylineParts(a.polyline).filter((p) => p.length > 1);
+    if (!parts.length) return;
+    const coords: [number, number][] = [];
+    const starts: number[] = [];
+    for (const p of parts) {
+      starts.push(coords.length);
+      for (const [la, lo] of p) coords.push([lo, la]);
+    }
+    const first = new Set(starts);
     const cum: number[] = [0];
-    const k = Math.cos((pts[0]![0] * Math.PI) / 180);
+    const k = Math.cos((coords[0]![1] * Math.PI) / 180);
     for (let j = 1; j < coords.length; j++) {
       const dx = (coords[j]![0] - coords[j - 1]![0]) * k;
       const dy = coords[j]![1] - coords[j - 1]![1];
-      cum.push(cum[j - 1]! + Math.hypot(dx, dy));
+      cum.push(cum[j - 1]! + (first.has(j) ? 0 : Math.hypot(dx, dy)));
     }
-    out.push({ id: a.id, i, sport: a.sport, coords, cum });
+    out.push({ id: a.id, i, sport: a.sport, coords, starts, cum });
   });
   return out;
 }
 
-/** First `fraction` (0..1) of a line, with an interpolated last vertex. */
-export function partialCoords(line: HeatLine, fraction: number): [number, number][] {
+/** First `fraction` (0..1) of a line, with an interpolated last vertex: one coordinate list per part drawn so far. */
+export function partialCoords(line: HeatLine, fraction: number): [number, number][][] {
   const total = line.cum[line.cum.length - 1] ?? 0;
-  if (fraction >= 1 || total <= 0) return line.coords;
+  if (fraction >= 1 || total <= 0) return lineParts(line);
   const target = total * Math.max(0, fraction);
   let j = 1;
   while (j < line.cum.length - 1 && line.cum[j]! < target) j++;
-  const out = line.coords.slice(0, j);
+  // parts that were completed before vertex j, then the current part up to the interpolated point
+  let p = 0;
+  while (p + 1 < line.starts.length && line.starts[p + 1]! <= j - 1) p++;
+  const done = lineParts({ ...line, coords: line.coords.slice(0, line.starts[p]), starts: line.starts.slice(0, p) });
+  const out = line.coords.slice(line.starts[p], j);
   const seg = line.cum[j]! - line.cum[j - 1]!;
   const f = seg > 0 ? (target - line.cum[j - 1]!) / seg : 0;
   const a = line.coords[j - 1]!;
   const b = line.coords[j]!;
-  out.push([a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f]);
-  return out;
+  if (!line.starts.includes(j)) out.push([a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f]);
+  return [...done, out];
 }
 
 function lineBox(l: HeatLine): BBox {
@@ -139,11 +159,15 @@ export const mainBounds = (lines: HeatLine[]): BBox | null => homeRegion(lines, 
 export function linesCollection(lines: HeatLine[]): FeatureCollection<LineString> {
   return {
     type: 'FeatureCollection',
-    features: lines.map((l): Feature<LineString> => ({
-      type: 'Feature',
-      properties: { id: l.id, i: l.i, sport: l.sport },
-      geometry: { type: 'LineString', coordinates: l.coords },
-    })),
+    features: lines.flatMap((l) =>
+      lineParts(l).map(
+        (coords): Feature<LineString> => ({
+          type: 'Feature',
+          properties: { id: l.id, i: l.i, sport: l.sport },
+          geometry: { type: 'LineString', coordinates: coords },
+        }),
+      ),
+    ),
   };
 }
 
@@ -368,13 +392,12 @@ export const setLinesData = (map: MapLibreMap, fc: FeatureCollection<LineString>
   setData(map, SRC.lines, fc);
 export const setPointsData = (map: MapLibreMap, fc: FeatureCollection<Point>) => setData(map, SRC.points, fc);
 
-export function setHeadLine(map: MapLibreMap, coords: [number, number][] | null): void {
+export function setHeadLine(map: MapLibreMap, lines: [number, number][][] | null): void {
   setData(map, SRC.head, {
     type: 'FeatureCollection',
-    features:
-      coords && coords.length > 1
-        ? [{ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: coords } }]
-        : [],
+    features: (lines ?? [])
+      .filter((c) => c.length > 1)
+      .map((coordinates) => ({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates } })),
   });
 }
 

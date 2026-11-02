@@ -1,3 +1,4 @@
+import { POLYLINE_PART_SEPARATOR, polylineParts } from '@cadence/shared';
 /**
  * Geo helpers shared by the importer, derivation and feature modules (maps, activities, …).
  * Coordinates are WGS84 degrees; distances are meters. Point tuples are always `[lat, lon]`
@@ -201,8 +202,29 @@ export function encodePolylineArrays(
   return encodePolyline(pts, precision);
 }
 
-/** Decode a Google encoded polyline into `[lat, lon]` points. */
+/**
+ * Decode a (possibly multi-part, see POLYLINE_PART_SEPARATOR) encoded polyline into one list of `[lat, lon]`
+ * points. Use decodePolylineParts to draw or measure the parts separately.
+ */
 export function decodePolyline(str: string, precision = 5): LatLon[] {
+  if (str.includes(POLYLINE_PART_SEPARATOR)) return decodePolylineParts(str, precision).flat();
+  return decodeOnePolyline(str, precision);
+}
+
+/** The parts of a multi-part polyline (a single part for ordinary routes). */
+export function decodePolylineParts(str: string, precision = 5): LatLon[][] {
+  return polylineParts(str).map((p) => decodeOnePolyline(p, precision));
+}
+
+/** Encode route parts as one multi-part polyline (parts with fewer than 2 points are dropped). */
+export function encodePolylineParts(parts: ArrayLike<LatLon>[], precision = 5): string {
+  return parts
+    .filter((p) => p.length >= 2)
+    .map((p) => encodePolyline(p, precision))
+    .join(POLYLINE_PART_SEPARATOR);
+}
+
+function decodeOnePolyline(str: string, precision: number): LatLon[] {
   const factor = 10 ** precision;
   const out: LatLon[] = [];
   let index = 0;

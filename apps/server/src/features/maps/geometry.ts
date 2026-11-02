@@ -13,11 +13,12 @@ export function storeTiles(
   workoutId: number,
   lat: ArrayLike<number> | undefined,
   lon: ArrayLike<number> | undefined,
+  breaks?: ArrayLike<number>,
 ): number {
   run(db, 'DELETE FROM maps_workout_tiles WHERE workout_id = ?', [workoutId]);
   if (!lat || !lon || lat.length < 2) return 0;
-  // One pass at the finest zoom (gap-filled); the coarser tiles are its parents.
-  const fine = tileCover(lat, lon, 17);
+  // One pass at the finest zoom (gap-filled, but never across a break in the track); coarser tiles are its parents.
+  const fine = tileCover(lat, lon, 17, { breaks });
   const coarse = coarsen(fine, 3);
   const ins = prepare(
     db,
@@ -65,8 +66,10 @@ export const geometryStep: DeriveStep = {
       tx(db, () => {
         for (const id of slice) {
           const s = getStreams(db, athleteId, id);
-          storeTiles(db, athleteId, id, s?.lat, s?.lon);
-          storeSignature(db, athleteId, id, s?.lat, s?.lon, s?.dist);
+          storeTiles(db, athleteId, id, s?.lat, s?.lon, s?.breaks);
+          // a track in several parts (travelled while paused) is no repeatable course
+          if (s?.breaks?.length) storeSignature(db, athleteId, id, undefined, undefined, undefined);
+          else storeSignature(db, athleteId, id, s?.lat, s?.lon, s?.dist);
         }
       });
       ctx.report(

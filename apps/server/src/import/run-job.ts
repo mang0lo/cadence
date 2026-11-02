@@ -8,7 +8,7 @@ import { emptyStats } from './writer';
 export interface JobOptions {
   /** Delete the source file after a successful import (uploads). */
   deleteAfter?: boolean;
-  origin?: 'upload' | 'local' | 'watch' | 'api' | 'cli' | 'reset' | 'settings' | 'workout';
+  origin?: 'upload' | 'local' | 'watch' | 'api' | 'cli' | 'reset' | 'settings' | 'workout' | 'upgrade';
   /** Rederive scope (default: everything). */
   workoutIds?: number[] | 'all';
   sinceDay?: string | null;

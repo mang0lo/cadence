@@ -7,7 +7,7 @@ import {
 } from '@cadence/shared';
 import { all, get, json, prepare, run, tx, type Db } from '../db/db';
 import type { DeriveStep } from '../features/types';
-import { bounds, encodePolylineArrays, simplifyIndices } from '../lib/geo';
+import { bounds, encodePolylineParts, simplifyIndices, type LatLon } from '../lib/geo';
 import { gzipFloat32, gzipJson } from '../lib/gzip';
 import { DISTANCE_TYPE_BY_SPORT, parseQuantityString, summarizeStats } from '../import/hk';
 import { decodeTrack, mergeTracks, type Track } from '../import/track';
@@ -25,6 +25,7 @@ import {
   maxPlausibleSpeed,
   pausedIntervals,
   toDto,
+  trackParts,
   type Intervals,
   type Samples,
 } from './streams';
@@ -265,7 +266,7 @@ export function deriveWorkout(db: Db, cache: DeriveCache, id: number): void {
       if (built.speed) maxSpeed = robustMaxSpeed(built.speed, built.moving, maxPlausibleSpeed(w.sport));
     }
     if (built.ele) {
-      const gl = elevationGainLoss(built.ele);
+      const gl = elevationGainLoss(built.ele, 2, 5, built.breaks);
       gain = gl.gain;
       loss = gl.loss;
     }
@@ -284,8 +285,13 @@ export function deriveWorkout(db: Db, cache: DeriveCache, id: number): void {
     if (powerAvg === null) powerAvg = ps.avg;
     if (powerMax === null) powerMax = ps.max;
     if (built.lat && built.lon) {
-      const keep = simplifyIndices(built.lat, built.lon, 5);
-      polyline = encodePolylineArrays(built.lat, built.lon, keep);
+      // one encoded polyline per part of the track (a jump across a pause is not drawn)
+      const parts: LatLon[][] = trackParts(n, built.breaks).map(([a, b]) => {
+        const la = built.lat!.subarray(a, b);
+        const lo = built.lon!.subarray(a, b);
+        return simplifyIndices(la, lo, 5).map((i): LatLon => [la[i]!, lo[i]!]);
+      });
+      polyline = encodePolylineParts(parts) || null;
       bbox = bounds(built.lat, built.lon);
       startLL = [built.lat[0]!, built.lon[0]!];
       endLL = [built.lat[n - 1]!, built.lon[n - 1]!];

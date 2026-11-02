@@ -171,6 +171,7 @@ export function registerSegmentRoutes(app: FastifyInstance): void {
       tzMin: w.tz_min,
       totalM: total,
       points,
+      breaksM: (s.breaks ?? []).map((k) => Math.round((s.dist![k] ?? 0) * 10) / 10),
       existing,
     };
   });

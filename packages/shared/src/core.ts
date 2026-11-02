@@ -235,7 +235,22 @@ export interface WorkoutStreams {
   power?: (number | null)[];
   /** 1 while moving, 0 while stopped/paused (basis of moving time). */
   moving?: number[];
+  /**
+   * Indices where a new part of the GPS track starts: the position jumped across a pause (e.g. a train ride
+   * while the workout was paused). Parts are drawn separately; distance and elevation are not counted across.
+   */
+  breaks?: number[];
 }
+
+/**
+ * Separates the parts of an encoded route polyline (`WorkoutSummary.polyline`) whose track has breaks
+ * (see `WorkoutStreams.breaks`). The polyline alphabet never contains a space.
+ */
+export const POLYLINE_PART_SEPARATOR = ' ';
+
+/** The encoded parts of a (possibly multi-part) route polyline. */
+export const polylineParts = (encoded: string): string[] =>
+  encoded.split(POLYLINE_PART_SEPARATOR).filter((p) => p.length > 0);
 
 export interface WorkoutListQuery {
   sport?: string; // comma separated list allowed

@@ -164,6 +164,7 @@ export const messages: Dictionary = {
         chooseOther: 'Choose another activity',
         pickRange: 'Start and end',
         pickRangeHint: 'Drag the two handles (or use the arrow keys). A segment is at least {min} long.',
+        spansBreak: 'This activity was paused and continued elsewhere: a segment has to lie within one part.',
         startHandle: 'Segment start',
         endHandle: 'Segment end',
         yourTime: 'Your time here',
@@ -369,6 +370,7 @@ export const messages: Dictionary = {
         pickRange: 'Start und Ziel',
         pickRangeHint:
           'Ziehe die beiden Griffe (oder nutze die Pfeiltasten). Ein Segment ist mindestens {min} lang.',
+        spansBreak: 'Diese Aktivität wurde pausiert und woanders fortgesetzt: Ein Segment muss in einem Teil liegen.',
         startHandle: 'Segmentstart',
         endHandle: 'Segmentziel',
         yourTime: 'Deine Zeit hier',

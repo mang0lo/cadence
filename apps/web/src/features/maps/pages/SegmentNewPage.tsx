@@ -165,11 +165,18 @@ function EditorBody({ source }: { source: MapsSegmentSource }) {
   const chart = useChartTheme();
   const overlay = overlayColors(settings.mapStyle, appTheme);
   const { points, totalM } = source;
+  const breaksM = source.breaksM ?? [];
 
-  // default selection: the middle third of the route
+  // default selection: the middle third of the route (of its longest part when it was paused and continued elsewhere)
   const [range, setRange] = useState<[number, number]>(() => {
-    const a = Math.round(totalM / 3);
-    const b = Math.max(a + MIN_SEGMENT_M, Math.round((totalM * 2) / 3));
+    const cuts = [0, ...breaksM, totalM];
+    let p0 = 0;
+    let p1 = totalM;
+    for (let i = 0; i + 1 < cuts.length; i++)
+      if (cuts[i + 1]! - cuts[i]! > p1 - p0 || i === 0) [p0, p1] = [cuts[i]!, cuts[i + 1]!];
+    const len = p1 - p0;
+    const a = Math.round(p0 + len / 3);
+    const b = Math.max(a + MIN_SEGMENT_M, Math.round(p0 + (len * 2) / 3));
     return [a, Math.min(totalM, b)];
   });
   const [hover, setHover] = useState<number | null>(null);
@@ -185,6 +192,20 @@ function EditorBody({ source }: { source: MapsSegmentSource }) {
   const speed = time && time > 0 ? (to - from) / time : null;
 
   const full = useMemo<[number, number][]>(() => points.lon.map((lo, i) => [lo, points.lat[i]!]), [points]);
+  // one line per part of the track: the jump between parts (travelled while paused) is not drawn
+  const fullParts = useMemo(() => {
+    const out: [number, number][][] = [[]];
+    let b = 0;
+    full.forEach((c, i) => {
+      while (b < breaksM.length && points.dist[i]! > breaksM[b]!) {
+        if (out[out.length - 1]!.length) out.push([]);
+        b++;
+      }
+      out[out.length - 1]!.push(c);
+    });
+    return out.filter((l) => l.length > 1);
+  }, [full, points, breaksM]);
+  const spansBreak = breaksM.some((m) => m > range[0] && m < range[1]);
   const selected = useMemo(() => slicePoints(points, from, to), [points, from, to]);
   const bounds = useMemo(() => {
     let b: BBox | null = null;
@@ -194,10 +215,10 @@ function EditorBody({ source }: { source: MapsSegmentSource }) {
 
   const lines = useMemo<MapLine[]>(
     () => [
-      { id: 'route', lines: [full], color: overlay.muted, width: 4, casing: overlay.casing, opacity: 1 },
+      { id: 'route', lines: fullParts, color: overlay.muted, width: 4, casing: overlay.casing, opacity: 1 },
       { id: 'selected', lines: [selected], color: chart.accent, width: 6, casing: overlay.casing },
     ],
-    [full, selected, overlay.muted, overlay.casing, chart.accent],
+    [fullParts, selected, overlay.muted, overlay.casing, chart.accent],
   );
   const markers = useMemo<MapMarker[]>(
     () => [
@@ -208,7 +229,7 @@ function EditorBody({ source }: { source: MapsSegmentSource }) {
     [selected, hover, points, chart],
   );
 
-  const canSave = name.trim().length > 0 && to - from >= MIN_SEGMENT_M && !saving;
+  const canSave = name.trim().length > 0 && to - from >= MIN_SEGMENT_M && !saving && !spansBreak;
   const save = async () => {
     setSaving(true);
     setError(null);
@@ -253,6 +274,11 @@ function EditorBody({ source }: { source: MapsSegmentSource }) {
             onHover={setHover}
             minGapM={MIN_SEGMENT_M}
           />
+          {spansBreak && (
+            <p className="mt-3 text-xs text-critical-fg" role="alert">
+              {t('maps.segments.new.spansBreak')}
+            </p>
+          )}
         </Card>
       </div>
 

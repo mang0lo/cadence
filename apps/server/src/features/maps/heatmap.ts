@@ -3,7 +3,7 @@ import { z } from 'zod';
 import type { MapsHeatmapActivity, MapsHeatmapResponse, PrivacyZone } from '@cadence/shared';
 import { getSettings } from '../../core/settings';
 import { all } from '../../db/db';
-import { decodePolyline, encodePolyline, haversine, type LatLon } from '../../lib/geo';
+import { decodePolylineParts, encodePolylineParts, haversine, type LatLon } from '../../lib/geo';
 
 const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
@@ -109,16 +109,24 @@ export function registerHeatmapRoutes(app: FastifyInstance): void {
     let totalDistanceM = 0;
     for (const r of rows) {
       let polyline = r.polyline;
-      const decoded = decodePolyline(polyline);
-      let pts = decoded;
+      // a track in several parts (travelled while paused): each part starts and ends somewhere, trim each one
+      const decoded = decodePolylineParts(polyline);
+      let parts = decoded;
       if (zones.length) {
-        pts = trimPrivacyZones(decoded, zones);
-        // trimPrivacyZones returns the very same array when nothing had to be cut
-        if (pts !== decoded) privacyApplied = true;
-        if (pts.length < 2) continue;
-        if (pts !== decoded) polyline = encodePolyline(pts);
+        let cut = false;
+        parts = decoded
+          .map((p) => {
+            const t = trimPrivacyZones(p, zones);
+            // trimPrivacyZones returns the very same array when nothing had to be cut
+            if (t !== p) cut = true;
+            return t;
+          })
+          .filter((p) => p.length >= 2);
+        if (cut) privacyApplied = true;
+        if (!parts.length) continue;
+        if (cut) polyline = encodePolylineParts(parts);
       }
-      for (const [la, lo] of pts) {
+      for (const [la, lo] of parts.flat()) {
         if (la < minLat) minLat = la;
         if (la > maxLat) maxLat = la;
         if (lo < minLon) minLon = lo;

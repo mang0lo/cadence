@@ -1,6 +1,7 @@
 export * from './core';
 export * from './sports';
 export * from './units';
+export * from './track';
 export * from './features/activities';
 export * from './features/progress';
 export * from './features/consistency';

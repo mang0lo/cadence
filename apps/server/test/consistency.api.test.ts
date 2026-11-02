@@ -17,6 +17,7 @@ import type {
 import { buildApp, migrateAll } from '../src/app';
 import { loadConfig } from '../src/config';
 import { get, openDb, run, type Db } from '../src/db/db';
+import { DERIVE_VERSION } from '../src/derive/context';
 import { refreshDailyActivity } from '../src/derive/daily';
 import type { DeriveContext } from '../src/features/types';
 import { achievementsStep } from '../src/features/consistency/trophies';
@@ -35,9 +36,10 @@ function addWorkout(day: string, hour: number, sport: string, o: { distanceM?: n
   const duration = o.durationS ?? 3600;
   run(
     db,
-    `INSERT INTO workouts (athlete_id, ext_key, activity_type, sport, start_ts, end_ts, tz_min, duration_s, distance_m, elevation_gain_m, hidden)
-     VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [`k${ext++}`, `HKWorkoutActivityType${sport}`, sport, start, start + duration, tzMin, duration, o.distanceM ?? null, o.elevationM ?? null, o.hidden ? 1 : 0],
+    // derived_version: these rows stand for already analysed workouts (no app-update rederive on start)
+    `INSERT INTO workouts (athlete_id, ext_key, activity_type, sport, start_ts, end_ts, tz_min, duration_s, distance_m, elevation_gain_m, hidden, derived_version)
+     VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [`k${ext++}`, `HKWorkoutActivityType${sport}`, sport, start, start + duration, tzMin, duration, o.distanceM ?? null, o.elevationM ?? null, o.hidden ? 1 : 0, DERIVE_VERSION],
   );
 }
 
