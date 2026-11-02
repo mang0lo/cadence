@@ -110,6 +110,45 @@ Current features: `activities`, `progress`, `consistency`, `maps`, `health` (+ `
 - Time filters: `from` / `to` as unix seconds, or `fromDay` / `toDay` as `YYYY-MM-DD`.
 - Values in canonical units (see above). Never localise on the server.
 
+## Web app conventions (apps/web)
+
+**Stack**: React 19, React Router 7 (data router, `lazy` routes), TanStack Query 5, Tailwind 4, ECharts 6, MapLibre 6,
+lucide-react icons. Path alias `@/` = `apps/web/src`.
+
+- **Design tokens** (`src/styles.css`): use semantic classes only — `bg-bg`, `bg-surface`, `bg-surface-2`, `border-border`,
+  `text-fg`, `text-fg-2`, `text-fg-3`, `text-accent-fg`, `bg-accent-soft`, `text-good-fg`, `text-critical-fg`, … — never raw
+  hex. Dark mode is automatic (`<html data-theme>`); `dark:` variants exist but are rarely needed.
+- **Primitives** (`src/components/ui.tsx`): `Page`, `PageHeader`, `FilterBar`, `Card`, `CardHeader`, `Stat`, `StatRow`,
+  `Delta`, `Badge`, `Tabs`, `SegmentedControl`, `Select`, `Input`, `Switch`, `Slider`, `Field`, `Button`, `IconButton`,
+  `Table/TH/TD`, `Dialog`, `EmptyState`, `ErrorState`, `Skeleton`, `Spinner`, `ProgressBar`, `KeyValues`, `Hint`.
+- **Data**: `useApi<T>(['<feature>', …key], '/path', params)` (src/lib/api.ts). Query keys start with the feature name.
+  Mutations: `api.post/patch/delete`. Previous data stays visible while refetching (no skeleton flash).
+- **Formatting** — always via `const fmt = useFormat()` (src/lib/format.ts): `fmt.distance(m)`, `fmt.distanceParts(m)`,
+  `fmt.pace(mps, sport)`, `fmt.speed`, `fmt.duration(s)`, `fmt.durationShort(s)`, `fmt.elevation(m)`, `fmt.hr`,
+  `fmt.energy`, `fmt.weight`, `fmt.temperature`, `fmt.date(ts, tzMin, style)`, `fmt.day('YYYY-MM-DD', style)`,
+  `fmt.relative(ts)`, `fmt.num/int/pct/compact/signed`. It respects metric/imperial and the locale (de: "5,21 km").
+- **Dates**: `src/lib/time.ts` (`dayKey(ts, tzMin)`, `todayKey()`, `addDays`, `startOfWeek(day, weekStart)`, `eachDay`, …).
+  Respect `settings.weekStart` from `useSettings()`.
+- **i18n**: every visible string goes through `const t = useT()`; feature strings live in `features/<name>/messages.ts`
+  (`en` + `de`, nested). Plurals: `{ one: '…', other: '…' }` + `t(key, { count })`. Shared strings: `t('common.…')`
+  (src/lib/messages.ts). Workout titles: `workoutTitle(w, lang)` from @cadence/shared.
+- **Sports**: `SportIcon`, `SportBadge`, `sportLabel`, `sportColorVar(sport)` (DOM) / `sportColor(theme, sport)` (charts),
+  `sortSports()` (src/lib/sports.tsx). Sport colors are fixed per sport — never assign colors by rank.
+- **Charts** (`src/components/charts`): `<EChart option=… height=…/>` + builders in `options.ts` (`timeAxis`, `valueAxis`,
+  `categoryAxis`, `axisTooltip`, `itemTooltip`, `tooltipHtml`, `lineSeries`, `areaSeries`, `barSeries`,
+  `stackedBarSeries`, `scatterSeries`, `legend`, `dataZoom`, `grid`) and `const theme = useChartTheme()` for colors
+  (`theme.series[0..7]`, `theme.seq`, `theme.seqBlue`, `theme.zones`, `theme.diverging`, `theme.status`). Wrap charts in
+  `<ChartCard title … table={…}>` and provide the table view. Also `CalendarHeatmap`, `Sparkline`.
+  Rules (validated palette, see dataviz guidance): one y-axis per chart (never dual axis — use two charts); categorical
+  colors assigned by entity in fixed order, max 8, fold the rest into "other"; sequential = one hue; HR zones use
+  `theme.zones`; legends for ≥ 2 series; tooltips on everything; text never in series colors; thin marks.
+- **Maps** (`src/components/map`): `<BaseMap bounds=… onStyleLoad={(map) => …}/>` follows the user's map style and
+  theme, has a style switcher + 3D terrain toggle. Add sources/layers in `onStyleLoad` (called again after every style
+  switch). Helpers: `setGeoJSON`, `addRouteLayers`, `gradientExpression`, `addCircleLayer`, `lineFeature`,
+  `pointFeature`, `featureCollection`, `fitTo`, `overlayColors(pref, theme)`. For lists use `<RouteThumbnail polyline/>`
+  (SVG) — never many WebGL maps on one page. `decodePolyline` in `src/lib/polyline.ts`.
+- **Native shell**: `src/lib/native.ts` (`isNativeShell`, `postNative`).
+
 ## Development
 
 ```bash

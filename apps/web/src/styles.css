@@ -1,1 +1,242 @@
 @import 'tailwindcss';
+@import 'maplibre-gl/dist/maplibre-gl.css';
+
+/* Dark mode is driven by <html data-theme="dark"> (set before first paint in index.html). */
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+
+/*
+ * Design tokens. Components and charts reference roles, never raw hex.
+ * Chart palettes were validated with the dataviz palette checker (CVD separation, contrast,
+ * lightness) against --surface in both modes — keep the slot ORDER, it is part of the validation.
+ */
+:root {
+  color-scheme: light;
+  --bg: #f6f6f3;
+  --surface: #ffffff;
+  --surface-2: #f2f2ee;
+  --surface-3: #e7e6e0;
+  --border: rgba(11, 11, 11, 0.09);
+  --border-strong: rgba(11, 11, 11, 0.17);
+  --fg: #0b0b0b;
+  --fg-2: #52514e;
+  --fg-3: #6d6b66;
+  --axis-text: #898781;
+  --grid: #e6e5df;
+  --axis: #c3c2b7;
+  --shadow: 0 1px 2px rgba(16, 16, 14, 0.04), 0 2px 6px rgba(16, 16, 14, 0.05);
+  --shadow-lg: 0 10px 30px rgba(16, 16, 14, 0.12), 0 2px 6px rgba(16, 16, 14, 0.06);
+
+  /* Brand: vivid orange for fills/indicators, strong orange for text and buttons (5.2:1 on white). */
+  --accent: #e8590c;
+  --accent-strong: #c2410c;
+  --accent-fg: #c2410c;
+  --accent-soft: rgba(232, 89, 12, 0.1);
+  --on-accent: #ffffff;
+
+  /* Status — reserved for meaning (good/warning/serious/critical), always with icon + label. */
+  --good: #0ca30c;
+  --good-fg: #006300;
+  --warning: #fab219;
+  --serious: #ec835a;
+  --critical: #d03b3b;
+  --critical-fg: #b42828;
+
+  /* Categorical series (fixed order). Sports map onto these by entity, see lib/sports.tsx. */
+  --series-1: #eb6834; /* orange  – run */
+  --series-2: #2a78d6; /* blue    – ride */
+  --series-3: #1baf7a; /* aqua    – swim / water */
+  --series-4: #eda100; /* yellow  – walk */
+  --series-5: #e87ba4; /* magenta – yoga / mind */
+  --series-6: #008300; /* green   – hike */
+  --series-7: #6250d6; /* violet  – gym */
+  --series-8: #e34948; /* red     – winter */
+  --series-other: #898781;
+
+  /* Sequential (magnitude) — orange, light→dark. Ordinal-safe: lightest step clears 2:1. */
+  --seq-1: #fb923c;
+  --seq-2: #f2711c;
+  --seq-3: #d9480f;
+  --seq-4: #a8380c;
+  --seq-5: #7c2d12;
+  /* Second sequential context — blue. */
+  --seqb-1: #86b6ef;
+  --seqb-2: #5598e7;
+  --seqb-3: #2a78d6;
+  --seqb-4: #1c5cab;
+  --seqb-5: #104281;
+  /* Heart-rate zones Z1..Z5 (ordinal, red). */
+  --zone-1: #ee8a8a;
+  --zone-2: #e25f5f;
+  --zone-3: #cc3d3d;
+  --zone-4: #a32c2c;
+  --zone-5: #761d1d;
+  /* Diverging (e.g. form / year-over-year): blue ↔ gray ↔ red. */
+  --div-neg: #2a78d6;
+  --div-mid: #e7e6e0;
+  --div-pos: #e34948;
+  /* Empty cell in heatmaps / calendars. */
+  --cell-empty: #ebeae5;
+
+  --radius: 14px;
+  --radius-sm: 9px;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #0e0e0d;
+  --surface: #1a1a19;
+  --surface-2: #232321;
+  --surface-3: #2e2e2b;
+  --border: rgba(255, 255, 255, 0.09);
+  --border-strong: rgba(255, 255, 255, 0.17);
+  --fg: #f0efec;
+  --fg-2: #c3c2b7;
+  --fg-3: #9a998f;
+  --axis-text: #898781;
+  --grid: #2c2c2a;
+  --axis: #3d3d3a;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 2px 8px rgba(0, 0, 0, 0.25);
+  --shadow-lg: 0 12px 36px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3);
+
+  --accent: #f76707;
+  --accent-strong: #c2410c;
+  --accent-fg: #ff8a3d;
+  --accent-soft: rgba(247, 103, 7, 0.16);
+  --on-accent: #ffffff;
+
+  --good: #0ca30c;
+  --good-fg: #2fbf2f;
+  --warning: #fab219;
+  --serious: #ec835a;
+  --critical: #d03b3b;
+  --critical-fg: #ef6b6b;
+
+  --series-1: #d95926;
+  --series-2: #3987e5;
+  --series-3: #199e70;
+  --series-4: #c98500;
+  --series-5: #d55181;
+  --series-6: #008300;
+  --series-7: #9085e9;
+  --series-8: #e66767;
+  --series-other: #898781;
+
+  --seq-1: #9a4212;
+  --seq-2: #c4531a;
+  --seq-3: #ea6a1f;
+  --seq-4: #fb9a50;
+  --seq-5: #ffc996;
+  --seqb-1: #184f95;
+  --seqb-2: #256abf;
+  --seqb-3: #3987e5;
+  --seqb-4: #6da7ec;
+  --seqb-5: #9ec5f4;
+  --zone-1: #8f2c2c;
+  --zone-2: #b83a3a;
+  --zone-3: #da5050;
+  --zone-4: #ee8080;
+  --zone-5: #f8b8b8;
+  --div-neg: #3987e5;
+  --div-mid: #383835;
+  --div-pos: #e66767;
+  --cell-empty: #262624;
+}
+
+@theme inline {
+  --font-sans: 'Inter Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-fg: var(--fg);
+  --color-fg-2: var(--fg-2);
+  --color-fg-3: var(--fg-3);
+  --color-accent: var(--accent);
+  --color-accent-strong: var(--accent-strong);
+  --color-accent-fg: var(--accent-fg);
+  --color-accent-soft: var(--accent-soft);
+  --color-on-accent: var(--on-accent);
+  --color-good: var(--good);
+  --color-good-fg: var(--good-fg);
+  --color-warning: var(--warning);
+  --color-serious: var(--serious);
+  --color-critical: var(--critical);
+  --color-critical-fg: var(--critical-fg);
+  --radius-card: var(--radius);
+  --radius-control: var(--radius-sm);
+  --shadow-card: var(--shadow);
+  --shadow-pop: var(--shadow-lg);
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-sans);
+    font-feature-settings: 'cv11', 'ss03';
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  ::selection {
+    background: var(--accent-soft);
+  }
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  button {
+    cursor: pointer;
+  }
+  button:disabled {
+    cursor: not-allowed;
+  }
+}
+
+@utility tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+@utility scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: var(--surface-3) transparent;
+}
+
+/* MapLibre chrome matched to the theme */
+.maplibregl-ctrl-group {
+  background: var(--surface) !important;
+  border: 1px solid var(--border) !important;
+  box-shadow: var(--shadow) !important;
+  border-radius: 10px !important;
+}
+.maplibregl-ctrl-group button + button {
+  border-top: 1px solid var(--border) !important;
+}
+[data-theme='dark'] .maplibregl-ctrl-group button .maplibregl-ctrl-icon {
+  filter: invert(0.9);
+}
+.maplibregl-ctrl-attrib {
+  font-size: 10px;
+  background: color-mix(in srgb, var(--surface) 80%, transparent) !important;
+  color: var(--fg-3);
+}
+.maplibregl-ctrl-attrib a {
+  color: var(--fg-2) !important;
+}
+.maplibregl-popup-content {
+  background: var(--surface) !important;
+  color: var(--fg);
+  border-radius: 10px !important;
+  box-shadow: var(--shadow-lg) !important;
+  padding: 8px 10px !important;
+}
+.maplibregl-popup-tip {
+  border-top-color: var(--surface) !important;
+  border-bottom-color: var(--surface) !important;
+}
