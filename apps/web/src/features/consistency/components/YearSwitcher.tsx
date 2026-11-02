@@ -17,14 +17,17 @@ export function YearSwitcher({
   const t = useT();
   const first = years[0] ?? year;
   const last = years[years.length - 1] ?? year;
+  // step to the nearest year that has data
+  const prev = [...years].reverse().find((y) => y < year);
+  const next = years.find((y) => y > year);
   return (
     <div className="inline-flex items-center gap-1 rounded-control border border-border bg-surface px-1 py-0.5 shadow-card">
       <IconButton
         icon={ChevronLeft}
         label={t('consistency.common.prevYear')}
-        disabled={year <= first}
+        disabled={prev === undefined || year <= first}
         className="disabled:opacity-30"
-        onClick={() => onChange(year - 1)}
+        onClick={() => prev !== undefined && onChange(prev)}
       />
       <select
         aria-label={t('common.year')}
@@ -45,9 +48,9 @@ export function YearSwitcher({
       <IconButton
         icon={ChevronRight}
         label={t('consistency.common.nextYear')}
-        disabled={year >= last}
+        disabled={next === undefined || year >= last}
         className="disabled:opacity-30"
-        onClick={() => onChange(year + 1)}
+        onClick={() => next !== undefined && onChange(next)}
       />
     </div>
   );

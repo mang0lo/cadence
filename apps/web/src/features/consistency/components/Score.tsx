@@ -82,7 +82,7 @@ export function ScoreCard({ score, prefs }: { score: ConsistencyScore; prefs: Co
           <SegmentedControl
             size="sm"
             value={prefs.scoreBasis}
-            onChange={(v) => void setPrefs({ scoreBasis: v })}
+            onChange={(v) => void setPrefs({ scoreBasis: v }).catch(() => undefined)}
             items={[
               { value: 'days', label: t('consistency.score.basisDays') },
               { value: 'goals', label: t('consistency.score.basisGoals') },
@@ -93,7 +93,7 @@ export function ScoreCard({ score, prefs }: { score: ConsistencyScore; prefs: Co
           <Field label={t('consistency.score.minDays')}>
             <Select
               value={String(prefs.minActiveDays)}
-              onChange={(v) => void setPrefs({ minActiveDays: Number(v) })}
+              onChange={(v) => void setPrefs({ minActiveDays: Number(v) }).catch(() => undefined)}
               className="h-8 text-xs"
               options={[1, 2, 3, 4, 5, 6, 7].map((n) => ({ value: String(n), label: t('consistency.score.perWeek', { count: n }) }))}
             />

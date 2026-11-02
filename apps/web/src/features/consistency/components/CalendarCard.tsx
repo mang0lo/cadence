@@ -65,7 +65,12 @@ export function CalendarCard({
     rows: days
       .filter((d) => d.count > 0 || (m === 'move' && d.move !== null))
       .map((d) => ({
-        day: fmt.day(d.day, 'weekdayShort'),
+        // the heatmap cells are mouse-only: the table view doubles as the keyboard way into the day panel
+        day: (
+          <button type="button" className="text-left font-medium text-fg hover:text-accent-fg hover:underline" onClick={() => onSelectDay(d.day)}>
+            {fmt.day(d.day, 'weekdayShort')}
+          </button>
+        ),
         activities: fmt.int(d.count),
         minutes: d.count ? fmt.durationShort(d.durationS) : '–',
         distance: d.distanceM > 0 ? fmt.distance(d.distanceM) : '–',

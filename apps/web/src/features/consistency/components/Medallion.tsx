@@ -81,7 +81,7 @@ export function Medallion({
   size?: number;
   label?: string;
 }) {
-  const id = useId().replace(/:/g, '');
+  const id = useId().replace(/[^a-zA-Z0-9_-]/g, '');
   const m = METAL[tier];
   const c = 32;
   return (

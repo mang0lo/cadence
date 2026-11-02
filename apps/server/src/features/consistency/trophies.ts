@@ -130,15 +130,16 @@ export function recomputeAchievements(db: Db, athleteId: number, now = nowSec())
         ],
       );
     });
-    setSetting(db, athleteId, META_KEY, { version: ACHIEVEMENTS_VERSION, computedAt: now });
+    setSetting(db, athleteId, META_KEY, { version: ACHIEVEMENTS_VERSION, computedAt: now, weekStart: h.input.weekStart });
   });
   return { total: catalog.length, earned, newlyEarned };
 }
 
-/** Recompute when the cache is missing or stale (older rules, never derived). */
+/** Recompute when the cache is missing or stale (older rules, never derived, other week start). */
 export function ensureAchievements(db: Db, athleteId: number): void {
-  const meta = getSetting<{ version?: number } | null>(db, athleteId, META_KEY, null);
-  if (!meta || meta.version !== ACHIEVEMENTS_VERSION) recomputeAchievements(db, athleteId);
+  const meta = getSetting<{ version?: number; weekStart?: number } | null>(db, athleteId, META_KEY, null);
+  if (!meta || meta.version !== ACHIEVEMENTS_VERSION || meta.weekStart !== weekStartOfAthlete(db, athleteId))
+    recomputeAchievements(db, athleteId);
 }
 
 interface AchievementRow {
