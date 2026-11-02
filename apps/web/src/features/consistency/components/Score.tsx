@@ -10,6 +10,7 @@ import { useFormat } from '@/lib/format';
 import { useT } from '@/lib/i18n';
 import { dayToDate } from '@/lib/time';
 import { useConsistencyMutations } from '../api';
+import { FieldGroup } from './FieldGroup';
 
 function level(score: number): 'excellent' | 'good' | 'fair' | 'low' {
   if (score >= 0.85) return 'excellent';
@@ -77,7 +78,7 @@ export function ScoreCard({ score, prefs }: { score: ConsistencyScore; prefs: Co
       )}
 
       <div className="mt-auto flex flex-wrap items-end gap-3 pt-4">
-        <Field label={t('consistency.score.basis')}>
+        <FieldGroup label={t('consistency.score.basis')}>
           <SegmentedControl
             size="sm"
             value={prefs.scoreBasis}
@@ -87,7 +88,7 @@ export function ScoreCard({ score, prefs }: { score: ConsistencyScore; prefs: Co
               { value: 'goals', label: t('consistency.score.basisGoals') },
             ]}
           />
-        </Field>
+        </FieldGroup>
         {prefs.scoreBasis === 'days' && (
           <Field label={t('consistency.score.minDays')}>
             <Select

@@ -44,7 +44,7 @@ export function formatGoalValue(fmt: Formatter, t: TFunction, metric: GoalMetric
     case 'distance':
       return fmt.distance(v, v > 0 && v < 10_000 ? 1 : 0);
     case 'time':
-      return fmt.durationShort(v);
+      return v < 60 ? (fmt.lang === 'de' ? '0 Min.' : '0m') : fmt.durationShort(v);
     case 'elevation':
       return fmt.elevation(v);
     case 'activities':
