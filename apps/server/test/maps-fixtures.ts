@@ -6,6 +6,8 @@ import type { WorkoutStreams } from '@cadence/shared';
 import { buildApp, migrateAll } from '../src/app';
 import { loadConfig } from '../src/config';
 import { openDb, run, type Db } from '../src/db/db';
+import mapsFeature from '../src/features/maps';
+import type { DeriveContext } from '../src/features/types';
 import { bounds, cumulativeDistance, encodePolylineArrays, haversine, simplifyIndices, type LatLon } from '../src/lib/geo';
 import { gzipJson } from '../src/lib/gzip';
 
@@ -219,3 +221,19 @@ export async function makeApp(): Promise<TestApp> {
 }
 
 export const VIENNA: LatLon = [48.2082, 16.3738];
+
+/** Run the maps derive steps (optionally only some of them) the way the import worker would. */
+export async function runMapsSteps(db: Db, workoutIds: number[] | 'all', only?: string[]): Promise<void> {
+  const ctx: DeriveContext = {
+    db,
+    athleteId: 1,
+    workoutIds,
+    sinceDay: null,
+    report: () => {},
+    checkCancelled: () => {},
+    log: () => {},
+  };
+  for (const step of mapsFeature.deriveSteps ?? []) {
+    if (!only || only.includes(step.id)) await step.run(ctx);
+  }
+}

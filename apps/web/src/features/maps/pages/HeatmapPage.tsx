@@ -24,7 +24,8 @@ import { SportIcon, sortSports, sportColorVar, useSportLabel } from '@/lib/sport
 import { useStoredState } from '@/lib/storage';
 import { addDays, todayKey } from '@/lib/time';
 import { HeatmapMap, type HeatmapLapse } from '../components/HeatmapMap';
-import { mainBounds, partialCoords, sameBounds, toHeatLines, type HeatBase, type HeatTheme } from '../lib/heatmapLayers';
+import { mainBounds, partialCoords, toHeatLines, type HeatBase, type HeatTheme } from '../lib/heatmapLayers';
+import { sameBounds } from '../lib/home';
 
 const THEMES: HeatTheme[] = ['hot', 'blue', 'purple'];
 const THEME_DOT: Record<HeatTheme, string> = { hot: '#ff8a1f', blue: '#2aa3ff', purple: '#b04dff' };
@@ -164,7 +165,7 @@ export default function HeatmapPage() {
   }, [data, t]);
 
   const noRoutes = !!data && data.facets.sports.length === 0;
-  const mapHeight = 'h-[max(460px,calc(100vh-18rem))]';
+  const mapHeight = 'h-[clamp(460px,calc(100vh-18rem),900px)]';
 
   return (
     <Page wide>

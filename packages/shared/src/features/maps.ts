@@ -41,3 +41,105 @@ export interface MapsHeatmapResponse {
   /** True when start/end parts near the athlete's privacy zones were removed. */
   privacyApplied: boolean;
 }
+
+// ---------------------------------------------------------------------------
+// Slippy-map tile math (shared by the derive step, the API and the Explorer page)
+// ---------------------------------------------------------------------------
+
+/** A tile is identified by one number `y * TILE_STRIDE + x` (exact in a double for every zoom ≤ 20). */
+export const TILE_STRIDE = 1 << 20;
+export const tileKey = (x: number, y: number): number => y * TILE_STRIDE + x;
+export const keyX = (k: number): number => k % TILE_STRIDE;
+export const keyY = (k: number): number => Math.floor(k / TILE_STRIDE);
+
+const MAX_MERCATOR_LAT = 85.0511287798;
+
+/** Fractional slippy tile coordinates of a WGS84 position at zoom `z` (integer part = tile). */
+export function lonLatToTile(lat: number, lon: number, z: number): [x: number, y: number] {
+  const n = 2 ** z;
+  const la = Math.max(-MAX_MERCATOR_LAT, Math.min(MAX_MERCATOR_LAT, lat));
+  const rad = (la * Math.PI) / 180;
+  const x = ((lon + 180) / 360) * n;
+  const y = ((1 - Math.log(Math.tan(rad) + 1 / Math.cos(rad)) / Math.PI) / 2) * n;
+  return [x, y];
+}
+
+/** Longitude / latitude of the north-west corner of (fractional) tile coordinates. */
+export function tileToLonLat(x: number, y: number, z: number): [lon: number, lat: number] {
+  const n = 2 ** z;
+  const lon = (x / n) * 360 - 180;
+  const lat = (Math.atan(Math.sinh(Math.PI * (1 - (2 * y) / n))) * 180) / Math.PI;
+  return [lon, lat];
+}
+
+/** [minLon, minLat, maxLon, maxLat] of the tiles x..x+w-1 × y..y+h-1. */
+export function tileBounds(x: number, y: number, z: number, w = 1, h = 1): [number, number, number, number] {
+  const [minLon, maxLat] = tileToLonLat(x, y, z);
+  const [maxLon, minLat] = tileToLonLat(x + w, y + h, z);
+  return [minLon, minLat, maxLon, maxLat];
+}
+
+// ---------------------------------------------------------------------------
+// Explorer (visited map tiles)
+// ---------------------------------------------------------------------------
+
+/** One visited tile (zoom 14). */
+export interface MapsExplorerTile {
+  /** Slippy-map tile coordinates. */
+  x: number;
+  y: number;
+  /** Start of the first workout that passed through the tile, and its local UTC offset. */
+  firstTs: number;
+  tzMin: number;
+  /** Number of workouts that passed through. */
+  visits: number;
+  /** The first workout that passed through. */
+  workoutId: number;
+  /** All four neighbours (N, E, S, W) are visited too. */
+  interior: boolean;
+  /** Belongs to the max cluster. */
+  cluster: boolean;
+}
+
+export interface MapsExplorerMonth {
+  /** 'YYYY-MM' (local month of the first visit) */
+  month: string;
+  newTiles: number;
+  /** Visited tiles up to and including this month. */
+  total: number;
+}
+
+/** GET /api/maps/explorer?zoom=14|17&sport=run,ride */
+export interface MapsExplorerResponse {
+  zoom: 14 | 17;
+  totals: {
+    tiles: number;
+    /** Edge length of the max square (size × size tiles). */
+    maxSquare: number;
+    /** Tiles in the max cluster (largest connected group of interior tiles). */
+    maxCluster: number;
+    /** All interior tiles (visited tiles whose four neighbours are visited). */
+    interior: number;
+    workouts: number;
+  };
+  maxSquare: { size: number; x: number; y: number } | null;
+  months: MapsExplorerMonth[];
+  /** Detail per tile – zoom 14 only. */
+  tiles: MapsExplorerTile[];
+  /** Zoom 17 only: coordinates of the visited tiles (columnar; the page draws the ones in view). */
+  compact: { x: number[]; y: number[] } | null;
+  /** [minLon, minLat, maxLon, maxLat] of the visited tiles. */
+  bounds: [number, number, number, number] | null;
+  /** Sports with at least one route (for the filter). */
+  sports: { sport: string; count: number }[];
+}
+
+/** GET /api/maps/explorer/summary – numbers for the dashboard widget (zoom 14, all sports). */
+export interface MapsExplorerSummary {
+  tiles: number;
+  maxSquare: number;
+  maxCluster: number;
+  newThisMonth: number;
+  newLastMonth: number;
+  workouts: number;
+}

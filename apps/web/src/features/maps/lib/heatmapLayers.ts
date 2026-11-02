@@ -1,6 +1,7 @@
 import type { ExpressionSpecification, GeoJSONSource, Map as MapLibreMap } from 'maplibre-gl';
 import type { Feature, FeatureCollection, LineString, Point } from 'geojson';
 import { decodePolyline } from '@/lib/polyline';
+import { homeRegion, type BBox } from './home';
 import type { MapsHeatmapActivity } from '@cadence/shared';
 
 export type HeatTheme = 'hot' | 'blue' | 'purple';
@@ -117,46 +118,22 @@ export function partialCoords(line: HeatLine, fraction: number): [number, number
   return out;
 }
 
-type BBox = [number, number, number, number];
-
-function boundsOfLines(lines: HeatLine[]): BBox | null {
+function lineBox(l: HeatLine): BBox {
   let minLon = Infinity;
   let minLat = Infinity;
   let maxLon = -Infinity;
   let maxLat = -Infinity;
-  for (const l of lines)
-    for (const [lo, la] of l.coords) {
-      if (lo < minLon) minLon = lo;
-      if (lo > maxLon) maxLon = lo;
-      if (la < minLat) minLat = la;
-      if (la > maxLat) maxLat = la;
-    }
-  return minLon === Infinity ? null : [minLon, minLat, maxLon, maxLat];
-}
-
-/**
- * Bounds of the "home region": the densest 0.5° cell of route starts plus everything starting within ~1° of it.
- * A single run in another country therefore does not zoom the map out to the whole world.
- */
-export function mainBounds(lines: HeatLine[]): BBox | null {
-  if (!lines.length) return null;
-  const cell = 0.5;
-  const counts = new Map<string, { n: number; lon: number; lat: number }>();
-  for (const l of lines) {
-    const [lon, lat] = l.coords[0]!;
-    const key = `${Math.floor(lon / cell)},${Math.floor(lat / cell)}`;
-    const c = counts.get(key);
-    if (c) c.n++;
-    else counts.set(key, { n: 1, lon, lat });
+  for (const [lo, la] of l.coords) {
+    if (lo < minLon) minLon = lo;
+    if (lo > maxLon) maxLon = lo;
+    if (la < minLat) minLat = la;
+    if (la > maxLat) maxLat = la;
   }
-  let best = { n: 0, lon: 0, lat: 0 };
-  for (const c of counts.values()) if (c.n > best.n) best = c;
-  const near = lines.filter((l) => Math.abs(l.coords[0]![0] - best.lon) <= 1 && Math.abs(l.coords[0]![1] - best.lat) <= 1);
-  return boundsOfLines(near.length ? near : lines);
+  return [minLon, minLat, maxLon, maxLat];
 }
 
-export const sameBounds = (a: BBox | null, b: BBox | null): boolean =>
-  !!a && !!b && a.every((v, i) => Math.abs(v - b[i]!) < 1e-4);
+/** Bounds of the home region of the routes (see homeRegion): a trip abroad does not zoom out to the whole world. */
+export const mainBounds = (lines: HeatLine[]): BBox | null => homeRegion(lines, (l) => l.coords[0]!, lineBox);
 
 export function linesCollection(lines: HeatLine[]): FeatureCollection<LineString> {
   return {
