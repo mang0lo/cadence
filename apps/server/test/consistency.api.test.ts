@@ -16,7 +16,7 @@ import type {
 } from '@cadence/shared';
 import { buildApp, migrateAll } from '../src/app';
 import { loadConfig } from '../src/config';
-import { openDb, run, type Db } from '../src/db/db';
+import { get, openDb, run, type Db } from '../src/db/db';
 import { refreshDailyActivity } from '../src/derive/daily';
 import type { DeriveContext } from '../src/features/types';
 import { achievementsStep } from '../src/features/consistency/trophies';
@@ -236,6 +236,8 @@ describe('consistency API', () => {
     expect((await app.inject({ method: 'DELETE', url: `/api/consistency/goals/${created.id}` })).statusCode).toBe(404);
     const before = (await getJson<GoalsResponse>(`/api/consistency/goals?today=${TODAY}`)).goals;
     resetAthleteData(db, 1);
+    // consistency_goals is declared in Feature.keepOnReset, so the rows survive the reset itself
+    expect(get<{ n: number }>(db, 'SELECT COUNT(*) AS n FROM consistency_goals')!.n).toBe(before.length);
     const after = (await getJson<GoalsResponse>(`/api/consistency/goals?today=${TODAY}`)).goals;
     expect(after.map((g) => [g.period, g.metric, g.sport, g.target])).toEqual(before.map((g) => [g.period, g.metric, g.sport, g.target]));
     expect(after[0]!.current.value).toBe(0);

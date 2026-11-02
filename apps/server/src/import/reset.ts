@@ -1,11 +1,22 @@
 import { all, get, run, tx, type Db } from '../db/db';
+import { features } from '../features';
 
-/** Tables that survive a reset: schema bookkeeping, the athlete row, preferences, the job log. */
-const KEEP = new Set(['_migrations', 'athletes', 'settings', 'import_jobs']);
+/**
+ * Tables that survive a reset: schema bookkeeping, the athlete row, preferences, the job log, and the tables
+ * features declare as user-written (`Feature.keepOnReset`, e.g. goals and segments).
+ */
+const KEEP = new Set([
+  '_migrations',
+  'athletes',
+  'settings',
+  'import_jobs',
+  ...features.flatMap((f) => f.keepOnReset ?? []),
+]);
 
 /**
  * Delete every imported and derived row of an athlete – core tables and feature tables alike (any table with an
- * `athlete_id` column; workout child tables go via ON DELETE CASCADE). Preferences (settings) are kept.
+ * `athlete_id` column; workout child tables go via ON DELETE CASCADE). Preferences (settings) and the tables in
+ * KEEP are kept.
  * Returns the number of deleted rows per table.
  */
 export function resetAthleteData(db: Db, athleteId: number): Record<string, number> {

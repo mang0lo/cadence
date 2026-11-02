@@ -1,7 +1,7 @@
 /**
- * Goals: CRUD on consistency_goals plus progress for the API. The goal list is mirrored into the settings
- * table (`consistency.goalsBackup`), because a data reset (POST /api/import/reset) empties every table with
- * an athlete_id column but keeps settings — the goals are restored from the mirror on the next read.
+ * Goals: CRUD on consistency_goals plus progress for the API. consistency_goals survives a data reset
+ * (Feature.keepOnReset); the goal list is additionally mirrored into the settings table (`consistency.goalsBackup`)
+ * and restored from there on the next read if the table is ever found empty (e.g. after an older reset).
  */
 import type { Goal, GoalInput, GoalMetric, GoalPeriod, GoalsResponse, GoalWithProgress } from '@cadence/shared';
 import { all, get, run, tx, type Db } from '../../db/db';

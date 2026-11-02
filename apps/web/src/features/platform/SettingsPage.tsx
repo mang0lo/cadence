@@ -177,7 +177,7 @@ export default function SettingsPage() {
         </Section>
 
         <Section title={t('platform.settings.display')} icon={Palette}>
-          <Field label={t('platform.settings.units')}>
+          <Field group label={t('platform.settings.units')}>
             <SegmentedControl
               value={settings.units}
               onChange={(v) => set({ units: v })}
@@ -234,7 +234,7 @@ export default function SettingsPage() {
               <NumberSetting value={settings.ftp} placeholder="–" min={50} max={600} onSave={(v) => set({ ftp: v })} />
             </Field>
           </div>
-          <Field label={t('platform.settings.zoneMethod')}>
+          <Field group label={t('platform.settings.zoneMethod')}>
             <SegmentedControl
               value={settings.hrZoneMethod}
               onChange={(v) =>

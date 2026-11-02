@@ -36,4 +36,9 @@ export interface Feature {
   migrations?: Migration[];
   routes?: FastifyPluginAsync;
   deriveSteps?: DeriveStep[];
+  /**
+   * Tables holding data the user wrote (goals, segments, names …) that must survive "delete all data"
+   * (POST /api/import/reset). Every other table with an `athlete_id` column is emptied by a reset.
+   */
+  keepOnReset?: string[];
 }

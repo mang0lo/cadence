@@ -15,6 +15,8 @@ const feature: Feature = {
   migrations,
   deriveSteps: [achievementsStep],
   routes,
+  // goals are user-written: keep them when the user deletes all imported data
+  keepOnReset: ['consistency_goals'],
 };
 
 export default feature;

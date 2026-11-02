@@ -144,10 +144,14 @@ export const Button = forwardRef<
     icon?: LucideIcon;
     loading?: boolean;
   }
->(function Button({ variant = 'secondary', size = 'md', icon: Icon, loading, className, children, disabled, ...rest }, ref) {
+>(function Button(
+  { variant = 'secondary', size = 'md', icon: Icon, loading, className, children, disabled, type = 'button', ...rest },
+  ref,
+) {
   return (
     <button
       ref={ref}
+      type={type}
       disabled={disabled || loading}
       className={cn(
         'inline-flex select-none items-center justify-center gap-1.5 whitespace-nowrap rounded-control font-medium transition-colors disabled:opacity-50',
@@ -175,6 +179,7 @@ export function IconButton({
 }: ButtonHTMLAttributes<HTMLButtonElement> & { icon: LucideIcon; label: string; active?: boolean }) {
   return (
     <button
+      type="button"
       aria-label={label}
       title={label}
       className={cn(
@@ -338,6 +343,7 @@ export function Tabs<T extends string>({
       {items.map((it) => (
         <button
           key={it.value}
+          type="button"
           role="tab"
           aria-selected={it.value === value}
           onClick={() => onChange(it.value)}
@@ -382,6 +388,7 @@ export function SegmentedControl<T extends string>({
       {items.map((it) => (
         <button
           key={it.value}
+          type="button"
           role="radio"
           aria-checked={it.value === value}
           onClick={() => onChange(it.value)}
@@ -413,17 +420,36 @@ const hasWidth = (className?: string) => !!className && /(^|\s)([a-z0-9]+:)*w-/.
 const controlClass = (extra: string, className?: string) =>
   cn(controlBase, extra, !hasWidth(className) && 'w-full', className);
 
+/**
+ * Labelled form row. Wraps a single native control (Input, Select, Textarea) in a <label>. For composite controls
+ * (SegmentedControl, button rows, several inputs) pass `group`: a <label> would forward clicks to its first button
+ * and give that button the whole label as its name, so a labelled role="group" is rendered instead.
+ */
 export function Field({
   label,
   help,
   children,
   className,
+  group,
 }: {
   label: ReactNode;
   help?: ReactNode;
   children: ReactNode;
   className?: string;
+  group?: boolean;
 }) {
+  const id = useId();
+  if (group) {
+    return (
+      <div role="group" aria-labelledby={id} className={cn('flex flex-col gap-1.5', className)}>
+        <span id={id} className="text-xs font-medium text-fg-2">
+          {label}
+        </span>
+        {children}
+        {help && <span className="text-xs text-fg-3">{help}</span>}
+      </div>
+    );
+  }
   return (
     <label className={cn('flex flex-col gap-1.5', className)}>
       <span className="text-xs font-medium text-fg-2">{label}</span>
@@ -490,6 +516,7 @@ export function Switch({
     <span className="inline-flex items-center gap-2">
       <button
         id={id}
+        type="button"
         role="switch"
         aria-checked={checked}
         disabled={disabled}
