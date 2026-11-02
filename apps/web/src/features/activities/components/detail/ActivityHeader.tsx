@@ -212,7 +212,7 @@ export function ActivityHeader({ w, nav }: { w: WorkoutDetail; nav: ActivityNav 
             </div>
           )}
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 max-xl:basis-full max-xl:pl-14">
           <Button size="sm" icon={Shapes} onClick={() => setSportOpen(true)}>
             {t('activities.detail.changeSport')}
           </Button>

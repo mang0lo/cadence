@@ -22,10 +22,9 @@ import { prepareStreams } from '../lib/streams';
 const DEFAULT_ZONE_BOUNDS = [114, 133, 152, 171];
 
 function isTyping(target: EventTarget | null): boolean {
-  const el = target as HTMLElement | null;
-  if (!el) return false;
-  const tag = el.tagName;
-  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable;
+  if (!(target instanceof HTMLElement)) return false;
+  const tag = target.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable;
 }
 
 /** Map, replay, charts and every analysis section; everything below the header. */
@@ -56,7 +55,7 @@ function ActivityBody({
     const onKey = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey || isTyping(e.target)) return;
       if (e.key === ' ' || e.code === 'Space') {
-        if ((e.target as HTMLElement | null)?.closest('button, a, summary, [role="radio"]')) return;
+        if (e.target instanceof Element && e.target.closest('button, a, summary, [role="radio"], [role="slider"]')) return;
         e.preventDefault();
         playback.toggle();
       } else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
