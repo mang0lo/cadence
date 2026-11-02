@@ -121,6 +121,8 @@ lucide-react icons. Path alias `@/` = `apps/web/src`.
 - **Primitives** (`src/components/ui.tsx`): `Page`, `PageHeader`, `FilterBar`, `Card`, `CardHeader`, `Stat`, `StatRow`,
   `Delta`, `Badge`, `Tabs`, `SegmentedControl`, `Select`, `Input`, `Switch`, `Slider`, `Field`, `Button`, `IconButton`,
   `Table/TH/TD`, `Dialog`, `EmptyState`, `ErrorState`, `Skeleton`, `Spinner`, `ProgressBar`, `KeyValues`, `Hint`.
+  Form controls (`Input`, `Select`, `Textarea`) are full width unless you pass a `w-*` class. `cn` is plain `clsx`
+  (no tailwind-merge), so never pass a utility that conflicts with one a primitive already sets.
 - **Data**: `useApi<T>(['<feature>', …key], '/path', params)` (src/lib/api.ts). Query keys start with the feature name.
   Mutations: `api.post/patch/delete`. Previous data stays visible while refetching (no skeleton flash).
 - **Formatting** — always via `const fmt = useFormat()` (src/lib/format.ts): `fmt.distance(m)`, `fmt.distanceParts(m)`,

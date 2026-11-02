@@ -208,6 +208,8 @@ export function legend(t: ChartTheme, kind: 'line' | 'rect' = 'rect', extra?: An
     itemWidth: kind === 'line' ? 14 : 10,
     itemHeight: kind === 'line' ? 4 : 10,
     itemGap: 14,
+    // line series draw their symbols with a surface-colored border; it would hide the thin legend keys
+    itemStyle: { borderWidth: 0 },
     textStyle: { color: t.fg2, fontSize: 12 },
     ...extra,
   };

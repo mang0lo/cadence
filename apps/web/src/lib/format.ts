@@ -88,7 +88,11 @@ export function createFormatter(units: Units, locale: string, lang: Lang) {
     compact: (v: number) => nf(locale, { notation: 'compact', maximumFractionDigits: 1 }).format(v),
     pct: (fraction: number, digits = 0) =>
       nf(locale, { style: 'percent', maximumFractionDigits: digits, minimumFractionDigits: digits }).format(fraction),
-    signed: (v: number, digits = 0) => (v > 0 ? '+' : v < 0 ? '−' : '±') + num(Math.abs(v), digits),
+    signed: (v: number, digits = 0) => {
+      // decide the sign on the rounded value, so 0.04 → "±0.0" and not "+0.0"
+      const r = Math.round(v * 10 ** digits) / 10 ** digits;
+      return (r > 0 ? '+' : r < 0 ? '−' : '±') + num(Math.abs(r), digits);
+    },
 
     // ---- distance ---------------------------------------------------------
     distanceUnit,

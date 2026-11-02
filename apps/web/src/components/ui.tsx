@@ -403,8 +403,15 @@ export function SegmentedControl<T extends string>({
 // Form controls
 // ---------------------------------------------------------------------------
 
-const controlClass =
-  'h-9 w-full rounded-control border border-border-strong bg-surface px-3 text-sm text-fg placeholder:text-fg-3 focus:border-accent focus:outline-none';
+const controlBase =
+  'rounded-control border border-border-strong bg-surface px-3 text-sm text-fg placeholder:text-fg-3 focus:border-accent focus:outline-none';
+
+/** True when the caller sets its own width (e.g. 'w-40', 'sm:w-auto'); `cn` does not merge conflicting utilities. */
+const hasWidth = (className?: string) => !!className && /(^|\s)([a-z0-9]+:)*w-/.test(className);
+
+/** Form controls are full width unless the caller passes a `w-*` class. */
+const controlClass = (extra: string, className?: string) =>
+  cn(controlBase, extra, !hasWidth(className) && 'w-full', className);
 
 export function Field({
   label,
@@ -430,14 +437,14 @@ export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputE
   { className, ...rest },
   ref,
 ) {
-  return <input ref={ref} className={cn(controlClass, className)} {...rest} />;
+  return <input ref={ref} className={controlClass('h-9', className)} {...rest} />;
 });
 
 export const Textarea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<HTMLTextAreaElement>>(function Textarea(
   { className, ...rest },
   ref,
 ) {
-  return <textarea ref={ref} className={cn(controlClass, 'h-auto min-h-20 py-2', className)} {...rest} />;
+  return <textarea ref={ref} className={controlClass('min-h-20 py-2', className)} {...rest} />;
 });
 
 export function Select<T extends string>({
@@ -455,7 +462,7 @@ export function Select<T extends string>({
     <select
       value={value}
       onChange={(e) => onChange(e.target.value as T)}
-      className={cn(controlClass, 'w-auto cursor-pointer pr-8', className)}
+      className={controlClass('h-9 cursor-pointer pr-8', className)}
       {...rest}
     >
       {options.map((o) => (
