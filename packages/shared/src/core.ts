@@ -1,0 +1,349 @@
+/**
+ * Core API contract shared by server and web.
+ *
+ * Conventions (see docs/ARCHITECTURE.md):
+ *  - Timestamps are unix seconds (UTC). `tzMin` is the local UTC offset in minutes at that moment,
+ *    so local wall-clock time = new Date((ts + tzMin * 60) * 1000) read with UTC getters.
+ *  - Calendar days are 'YYYY-MM-DD' strings in the athlete's local time.
+ *  - All quantities are SI / canonical units: meters, seconds, m/s, kcal, °C, kg, bpm, watts.
+ *    The UI converts to the user's preferred units for display only.
+ */
+
+export type Units = 'metric' | 'imperial';
+export type Language = 'auto' | 'de' | 'en';
+export type ThemePref = 'system' | 'light' | 'dark';
+export type MapStylePref = 'streets' | 'outdoor' | 'satellite' | 'dark';
+export type HrZoneMethod = 'maxhr' | 'hrr' | 'custom';
+
+export interface PrivacyZone {
+  lat: number;
+  lon: number;
+  radiusM: number;
+  label?: string;
+}
+
+/** Persisted per-athlete preferences. `null` means "derive automatically from data". */
+export interface AthleteSettings {
+  units: Units;
+  language: Language;
+  theme: ThemePref;
+  mapStyle: MapStylePref;
+  /** 1 = Monday (default), 0 = Sunday. */
+  weekStart: 0 | 1;
+  maxHr: number | null;
+  restingHr: number | null;
+  hrZoneMethod: HrZoneMethod;
+  /** Custom zone upper bounds in bpm for Z1..Z4 (Z5 is open ended). Used when hrZoneMethod = 'custom'. */
+  hrZones: number[] | null;
+  /** Cycling functional threshold power in watts. */
+  ftp: number | null;
+  /** Overrides for profile values that normally come from Apple Health's <Me> element. */
+  sex: 'male' | 'female' | 'other' | null;
+  birthDate: string | null;
+  privacyZones: PrivacyZone[];
+}
+
+export const DEFAULT_SETTINGS: AthleteSettings = {
+  units: 'metric',
+  language: 'auto',
+  theme: 'system',
+  mapStyle: 'streets',
+  weekStart: 1,
+  maxHr: null,
+  restingHr: null,
+  hrZoneMethod: 'maxhr',
+  hrZones: null,
+  ftp: null,
+  sex: null,
+  birthDate: null,
+  privacyZones: [],
+};
+
+/** Zone upper bounds as a fraction of max HR (maxhr) or heart-rate reserve (hrr), for Z1..Z4. */
+export const HR_ZONE_FRACTIONS = [0.6, 0.7, 0.8, 0.9] as const;
+
+export interface EffectiveHr {
+  maxHr: number;
+  restingHr: number;
+  method: HrZoneMethod;
+  /** Upper bounds in bpm for Z1..Z4; Z5 is everything above the last bound. */
+  zoneBounds: number[];
+  /** Where maxHr/restingHr came from. */
+  maxHrSource: 'settings' | 'observed' | 'age' | 'default';
+  restingHrSource: 'settings' | 'observed' | 'default';
+}
+
+export interface Athlete {
+  id: number;
+  name: string;
+  birthDate: string | null;
+  sex: 'male' | 'female' | 'other' | null;
+  bloodType: string | null;
+  skinType: string | null;
+  age: number | null;
+  hr: EffectiveHr;
+  firstActivityTs: number | null;
+  lastActivityTs: number | null;
+}
+
+export interface ServerStatus {
+  ok: true;
+  name: 'cadence';
+  version: string;
+  mode: 'dev' | 'desktop' | 'server';
+  authRequired: boolean;
+  /** True when POST /api/import/local is allowed (desktop mode). */
+  localImport: boolean;
+  counts: { workouts: number; records: number; recordTypes: number };
+  lastImportAt: number | null;
+}
+
+// ---------------------------------------------------------------------------
+// Workouts
+// ---------------------------------------------------------------------------
+
+export interface WorkoutSummary {
+  id: number;
+  name: string;
+  sport: string;
+  /** Raw HKWorkoutActivityType value, e.g. "HKWorkoutActivityTypeRunning". */
+  activityType: string;
+  startTs: number;
+  endTs: number;
+  tzMin: number;
+  /** Active duration as recorded by Apple (pauses excluded). */
+  durationS: number;
+  /** endTs - startTs. */
+  elapsedS: number;
+  /** Time actually moving (derived from GPS speed), null without route. */
+  movingS: number | null;
+  distanceM: number | null;
+  energyKcal: number | null;
+  elevationGainM: number | null;
+  avgHr: number | null;
+  maxHr: number | null;
+  /** Average speed in m/s (distance / moving time when available, else / duration). */
+  avgSpeed: number | null;
+  /** Relative effort (Banister-TRIMP based training load). */
+  effort: number | null;
+  effortEstimated: boolean;
+  indoor: boolean;
+  hasRoute: boolean;
+  /** Google encoded polyline (precision 5) of the simplified route. */
+  polyline: string | null;
+  sourceName: string | null;
+  notes: string | null;
+}
+
+export interface WorkoutEvent {
+  type: string; // 'pause' | 'resume' | 'lap' | 'marker' | 'segment' | 'motion_paused' | 'motion_resumed' | …
+  ts: number;
+  durationS: number | null;
+  meta: Record<string, string> | null;
+}
+
+export interface WorkoutStatistic {
+  type: string; // HKQuantityTypeIdentifier…
+  sum: number | null;
+  average: number | null;
+  minimum: number | null;
+  maximum: number | null;
+  unit: string | null; // canonical unit
+}
+
+export interface SubActivity {
+  idx: number;
+  activityType: string;
+  sport: string;
+  startTs: number;
+  endTs: number;
+  durationS: number | null;
+  stats: WorkoutStatistic[];
+}
+
+export interface Split {
+  idx: number;
+  /** Length of this split (1000 m / 1609.344 m except for the last partial split). */
+  distanceM: number;
+  elapsedS: number;
+  movingS: number;
+  elevDiffM: number | null;
+  avgHr: number | null;
+  avgSpeed: number;
+}
+
+export interface BestEffort {
+  effort: string; // key from BEST_EFFORTS
+  distanceM: number;
+  elapsedS: number;
+  startOffsetS: number;
+  /** 1 = all-time best for this effort as of today, 2 = second best, 3 = third best; null otherwise. */
+  rank: number | null;
+}
+
+export interface WorkoutDetail extends WorkoutSummary {
+  timezone: string | null;
+  minHr: number | null;
+  maxSpeed: number | null;
+  avgCadence: number | null;
+  avgPower: number | null;
+  maxPower: number | null;
+  elevationLossM: number | null;
+  stepCount: number | null;
+  swimStrokes: number | null;
+  lapLengthM: number | null;
+  temperatureC: number | null;
+  humidityPct: number | null;
+  sourceVersion: string | null;
+  device: string | null;
+  /** [minLon, minLat, maxLon, maxLat] */
+  bounds: [number, number, number, number] | null;
+  startLatLng: [number, number] | null;
+  endLatLng: [number, number] | null;
+  /** Seconds spent in Z1..Z5. */
+  hrZones: number[] | null;
+  stats: WorkoutStatistic[];
+  meta: Record<string, string>;
+  events: WorkoutEvent[];
+  activities: SubActivity[];
+  splitsMetric: Split[];
+  splitsImperial: Split[];
+  bestEfforts: BestEffort[];
+  duplicateOf: number | null;
+}
+
+/**
+ * Columnar, index-aligned time series for one workout. `t` is seconds since workout start.
+ * Arrays other than `t` are optional; missing samples are `null`.
+ */
+export interface WorkoutStreams {
+  t: number[];
+  lat?: number[];
+  lon?: number[];
+  ele?: (number | null)[];
+  /** Cumulative distance in meters. */
+  dist?: number[];
+  /** Smoothed speed in m/s. */
+  speed?: (number | null)[];
+  hr?: (number | null)[];
+  cadence?: (number | null)[];
+  power?: (number | null)[];
+}
+
+export interface WorkoutListQuery {
+  sport?: string; // comma separated list allowed
+  from?: number; // unix seconds
+  to?: number;
+  q?: string; // name/notes search
+  hasRoute?: boolean;
+  sort?: 'start' | 'distance' | 'duration' | 'effort' | 'elevation';
+  order?: 'asc' | 'desc';
+  limit?: number;
+  offset?: number;
+  includeHidden?: boolean;
+}
+
+export interface Page<T> {
+  items: T[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface WorkoutPatch {
+  name?: string;
+  notes?: string | null;
+  sport?: string;
+  hidden?: boolean;
+}
+
+export interface SportCount {
+  sport: string;
+  count: number;
+  distanceM: number;
+  durationS: number;
+}
+
+// ---------------------------------------------------------------------------
+// Health records / daily metrics
+// ---------------------------------------------------------------------------
+
+export interface RecordTypeInfo {
+  id: number;
+  identifier: string; // e.g. HKQuantityTypeIdentifierHeartRate
+  kind: 'quantity' | 'category' | 'other';
+  unit: string | null;
+  /** 'sum' for cumulative types (steps, energy…), 'avg' for discrete types (heart rate, weight…). */
+  aggregation: 'sum' | 'avg' | 'duration';
+  count: number;
+  firstTs: number | null;
+  lastTs: number | null;
+}
+
+/**
+ * One row of daily_metrics. For 'sum' metrics `value` is the (source-deduplicated) daily total;
+ * for 'avg' metrics `value` is the mean with min/max; for category metrics `value` is minutes.
+ */
+export interface DailyMetric {
+  day: string;
+  value: number;
+  min: number | null;
+  max: number | null;
+  n: number;
+}
+
+export interface HealthSample {
+  startTs: number;
+  endTs: number;
+  tzMin: number;
+  value: number | null;
+  text: string | null;
+  source: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// Import
+// ---------------------------------------------------------------------------
+
+export type ImportStatus = 'queued' | 'running' | 'done' | 'failed' | 'cancelled';
+export type ImportPhase = 'upload' | 'scan' | 'parse' | 'routes' | 'ecg' | 'derive' | 'finalize';
+
+export interface ImportStats {
+  bytesTotal: number;
+  bytesProcessed: number;
+  recordsSeen: number;
+  recordsInserted: number;
+  workoutsSeen: number;
+  workoutsInserted: number;
+  routesParsed: number;
+  activitySummaries: number;
+  correlations: number;
+  ecgReadings: number;
+  otherItems: number;
+  recordTypes: number;
+  exportDate: string | null;
+  locale: string | null;
+  /** Non-fatal problems (malformed elements, unreadable route files, …). */
+  warnings: string[];
+}
+
+export interface ImportJob {
+  id: string;
+  kind: 'import' | 'rederive';
+  status: ImportStatus;
+  phase: ImportPhase | null;
+  /** 0..1 overall progress. */
+  progress: number;
+  message: string | null;
+  sourceName: string | null;
+  sizeBytes: number | null;
+  stats: ImportStats;
+  error: string | null;
+  createdAt: number;
+  startedAt: number | null;
+  finishedAt: number | null;
+}
+
+export interface ApiError {
+  error: { code: string; message: string };
+}

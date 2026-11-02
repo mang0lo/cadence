@@ -1,0 +1,27 @@
+node_modules/
+dist/
+build/
+coverage/
+.DS_Store
+*.log
+.env
+.env.*
+
+# Your health data never belongs in git
+data/
+*.db
+*.db-wal
+*.db-shm
+*.zip
+export.xml
+export_cda.xml
+apple_health_export/
+
+# macOS shell
+apps/macos/.build/
+apps/macos/.swiftpm/
+*.app
+*.dmg
+
+# Agent worktrees
+.claude/worktrees/

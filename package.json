@@ -1,0 +1,35 @@
+{
+  "name": "cadence",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A self-hosted, Strava-style training log fed by your complete Apple Health export.",
+  "type": "module",
+  "license": "MIT",
+  "workspaces": [
+    "packages/*",
+    "apps/server",
+    "apps/web"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "concurrently -k -n server,web -c blue,magenta \"npm:dev:server\" \"npm:dev:web\"",
+    "dev:server": "npm run dev -w @cadence/server",
+    "dev:web": "npm run dev -w @cadence/web",
+    "build": "npm run build -w @cadence/web && npm run build -w @cadence/server",
+    "start": "node apps/server/dist/index.js",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "sample": "npm run sample -w @cadence/server --",
+    "import": "npm run import -w @cadence/server --",
+    "format": "prettier --write .",
+    "mac": "bash scripts/build-macos.sh"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "concurrently": "^10.0.6",
+    "prettier": "^3.9.10",
+    "typescript": "^7.0.2"
+  }
+}
