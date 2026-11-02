@@ -174,6 +174,11 @@ export const messages: Dictionary = {
         existing: 'This activity already contains these segments',
       },
     },
+    widget: {
+      title: 'Explorer',
+      subtitle: 'Map tiles you have been through',
+      open: 'Open explorer',
+    },
   },
   de: {
     nav: {
@@ -346,6 +351,11 @@ export const messages: Dictionary = {
         matching: 'Deine Aktivitäten werden nach diesem Segment durchsucht …',
         existing: 'Diese Aktivität enthält bereits diese Segmente',
       },
+    },
+    widget: {
+      title: 'Explorer',
+      subtitle: 'Kartenkacheln, durch die du gekommen bist',
+      open: 'Explorer öffnen',
     },
   },
 };
