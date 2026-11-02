@@ -38,18 +38,31 @@ export const coreMigrations: Migration[] = [
         name TEXT NOT NULL UNIQUE
       );
 
+      -- raw = HKDevice description with the per-object pointer stripped ('<<HKDevice>, name:Apple Watch, …>')
       CREATE TABLE devices (
         id INTEGER PRIMARY KEY,
         raw TEXT NOT NULL UNIQUE,
         name TEXT, manufacturer TEXT, model TEXT, hardware TEXT, software TEXT
       );
 
+      -- Dictionary of record types (shared by all athletes; per-athlete stats live in record_type_stats).
       CREATE TABLE record_types (
         id INTEGER PRIMARY KEY,
         identifier TEXT NOT NULL UNIQUE,
         kind TEXT NOT NULL,              -- 'quantity' | 'category' | 'other'
-        unit TEXT                        -- canonical unit of records.value
+        unit TEXT,                       -- canonical unit of records.value
+        aggregation TEXT NOT NULL DEFAULT 'avg' -- 'sum' (cumulative) | 'avg' (discrete) | 'duration' (category)
       );
+
+      -- Per athlete and record type: number of records and time range (fast data explorer). Maintained by derive.
+      CREATE TABLE record_type_stats (
+        athlete_id INTEGER NOT NULL,
+        type_id INTEGER NOT NULL,
+        count INTEGER NOT NULL,
+        first_ts INTEGER,
+        last_ts INTEGER,
+        PRIMARY KEY (athlete_id, type_id)
+      ) WITHOUT ROWID;
 
       -- Every <Record> of the export. Clustered by (type, start) which is how it is queried.
       -- hash = 32-bit hash of (end_ts, source, value, text) → re-importing a newer export dedupes.
@@ -137,6 +150,7 @@ export const coreMigrations: Migration[] = [
         effort REAL,                     -- relative effort / training load
         effort_estimated INTEGER NOT NULL DEFAULT 0,
         hr_zones TEXT,                   -- JSON [s_z1..s_z5]
+        hr_hist BLOB,                    -- gzip(Float32Array[256]): seconds spent at each bpm (zones/TRIMP for any settings)
         derived_version INTEGER NOT NULL DEFAULT 0,
         created_at INTEGER NOT NULL DEFAULT (unixepoch()),
         updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
@@ -175,8 +189,11 @@ export const coreMigrations: Migration[] = [
         point_count INTEGER,
         start_ts INTEGER,
         end_ts INTEGER,
+        linked_by TEXT,                  -- 'reference' (FileReference) | 'overlap' (matched by time) | 'inline'
+        data BLOB,                       -- gzip raw track (src/import/track.ts), lets derive re-run without the zip
         PRIMARY KEY (workout_id, file)
       ) WITHOUT ROWID;
+      CREATE INDEX ix_workout_routes_file ON workout_routes(file);
 
       -- gzip(JSON WorkoutStreams): merged GPS + heart rate + cadence + power time series
       CREATE TABLE workout_streams (
@@ -274,7 +291,7 @@ export const coreMigrations: Migration[] = [
         id TEXT PRIMARY KEY,
         athlete_id INTEGER NOT NULL,
         kind TEXT NOT NULL,              -- 'import' | 'rederive'
-        status TEXT NOT NULL,
+        status TEXT NOT NULL,            -- queued | running | done | failed | cancelled
         phase TEXT,
         progress REAL NOT NULL DEFAULT 0,
         message TEXT,
@@ -282,11 +299,13 @@ export const coreMigrations: Migration[] = [
         source_path TEXT,
         size_bytes INTEGER,
         stats TEXT,
+        options TEXT,                    -- JSON: {deleteAfter, origin, workoutIds, sinceDay}
         error TEXT,
         created_at INTEGER NOT NULL DEFAULT (unixepoch()),
         started_at INTEGER,
         finished_at INTEGER
       );
+      CREATE INDEX ix_import_jobs_created ON import_jobs(athlete_id, created_at);
     `,
   },
 ];

@@ -11,7 +11,11 @@ import { migrate } from './db/migrate';
 import { coreMigrations } from './db/schema';
 import { registerAuth } from './core/auth';
 import coreRoutes from './core/routes';
+import metricsRoutes from './core/metrics-routes';
+import workoutRoutes from './core/workouts-routes';
+import { JobManager, type JobRunnerMode } from './import/jobs';
 import importRoutes from './import/routes';
+import { startImportWatcher } from './import/watch';
 import { features } from './features';
 
 /** Core schema first, then every feature's migrations in registration order. */
@@ -19,7 +23,12 @@ export function migrateAll(db: Db): string[] {
   return migrate(db, [...coreMigrations, ...features.flatMap((f) => f.migrations ?? [])]);
 }
 
-export async function buildApp(config: Config, db: Db): Promise<FastifyInstance> {
+export interface BuildAppOptions {
+  /** 'worker' (default) runs imports in a worker thread; 'inline' on the main thread (tests). */
+  jobRunner?: JobRunnerMode;
+}
+
+export async function buildApp(config: Config, db: Db, opts: BuildAppOptions = {}): Promise<FastifyInstance> {
   // Request logs are emitted at 'info'; desktop/server default to 'warn', so they only show in dev.
   const app = Fastify({
     logger: { level: config.logLevel },
@@ -29,6 +38,18 @@ export async function buildApp(config: Config, db: Db): Promise<FastifyInstance>
   app.decorate('config', config);
   app.decorate('db', db);
   app.decorateRequest('athleteId', 1);
+
+  const jobs = new JobManager(db, config, opts.jobRunner ?? 'worker');
+  app.decorate('jobs', jobs);
+  let stopWatcher: (() => void) | null = null;
+  app.addHook('onReady', async () => {
+    jobs.start();
+    if (config.importWatchDir) stopWatcher = startImportWatcher(db, jobs, config.importWatchDir);
+  });
+  app.addHook('onClose', async () => {
+    stopWatcher?.();
+    await jobs.close();
+  });
 
   app.setErrorHandler((err: unknown, req, reply) => {
     if (err instanceof ZodError) {
@@ -47,6 +68,8 @@ export async function buildApp(config: Config, db: Db): Promise<FastifyInstance>
   registerAuth(app, config.password);
 
   await app.register(coreRoutes, { prefix: '/api' });
+  await app.register(workoutRoutes, { prefix: '/api' });
+  await app.register(metricsRoutes, { prefix: '/api' });
   await app.register(importRoutes, { prefix: '/api/import' });
   for (const feature of features) {
     if (feature.routes) await app.register(feature.routes, { prefix: `/api/${feature.name}` });
