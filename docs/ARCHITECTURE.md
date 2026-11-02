@@ -98,7 +98,9 @@ Each product area is a vertical slice with three parts that a single owner can c
 | Contract | `packages/shared/src/features/<name>.ts` | `packages/shared/src/index.ts` |
 
 Routes of a feature are mounted under `/api/<name>`. Migration ids are prefixed `<name>_`.
-Derive step ids are prefixed `<name>.`.
+Derive step ids are prefixed `<name>.`. "Delete all data" (`POST /api/import/reset`) empties every table with an
+`athlete_id` column except `settings` and the tables a feature lists in `keepOnReset` (user-written data such as goals
+and segments); `onReset` lets a feature clear references from kept rows to deleted workouts.
 
 Current features: `activities`, `progress`, `consistency`, `maps`, `health` (+ `platform` in the web app for import/settings).
 
@@ -121,6 +123,8 @@ lucide-react icons. Path alias `@/` = `apps/web/src`.
 - **Primitives** (`src/components/ui.tsx`): `Page`, `PageHeader`, `FilterBar`, `Card`, `CardHeader`, `Stat`, `StatRow`,
   `Delta`, `Badge`, `Tabs`, `SegmentedControl`, `Select`, `Input`, `Switch`, `Slider`, `Field`, `Button`, `IconButton`,
   `Table/TH/TD`, `Dialog`, `EmptyState`, `ErrorState`, `Skeleton`, `Spinner`, `ProgressBar`, `KeyValues`, `Hint`.
+  Form controls (`Input`, `Select`, `Textarea`) are full width unless you pass a `w-*` class. `cn` is plain `clsx`
+  (no tailwind-merge), so never pass a utility that conflicts with one a primitive already sets.
 - **Data**: `useApi<T>(['<feature>', …key], '/path', params)` (src/lib/api.ts). Query keys start with the feature name.
   Mutations: `api.post/patch/delete`. Previous data stays visible while refetching (no skeleton flash).
 - **Formatting** — always via `const fmt = useFormat()` (src/lib/format.ts): `fmt.distance(m)`, `fmt.distanceParts(m)`,
@@ -150,6 +154,10 @@ lucide-react icons. Path alias `@/` = `apps/web/src`.
 - **Layout**: the content area is the viewport minus a 240 px sidebar (784 px at a 1024 px window). Use
   `minmax(0,1fr)` instead of `1fr` in custom grid templates and `min-w-0` on flex children so long content never
   forces horizontal scrolling; put fixed-width side columns behind `xl:`. Check pages at 1024 px and ~1440 px.
+  Custom breakpoints must be in rem (`min-[85rem]:`): px arbitrary breakpoints sort before `lg:` and lose.
+- **Pitfalls**: `maplibre-gl.css` is not in a cascade layer, so its rules beat Tailwind utilities on MapLibre elements
+  (use inline styles there). ECharts 6 shrinks grids whose labels touch the edge unless `containLabel` is set — use
+  `outerBoundsMode: 'none'` on grids that need a fixed plot area (e.g. stacked, synced charts).
 - **Native shell**: `src/lib/native.ts` (`isNativeShell`, `postNative`).
 
 ## Development

@@ -71,6 +71,11 @@ describe('calendar helpers', () => {
     expect(dayString(daysFromCivil(2024, 2, 29))).toBe('2024-02-29');
     expect(parseDay('2024-02-29')).toBe(daysFromCivil(2024, 2, 29));
     expect(parseDay('2024-2-29')).toBeNull();
+    // impossible calendar days are rejected instead of rolling over into the next month
+    expect(parseDay('2026-02-30')).toBeNull();
+    expect(parseDay('2025-02-29')).toBeNull();
+    expect(parseDay('2026-04-31')).toBeNull();
+    expect(parseDay('2026-12-31')).toBe(daysFromCivil(2026, 12, 31));
   });
 
   it('computes local days with the offset', () => {

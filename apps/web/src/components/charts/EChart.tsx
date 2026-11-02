@@ -73,7 +73,9 @@ export function EChart({
       c.on(name, fn as never);
       return [name, fn] as const;
     });
-    return () => bound.forEach(([name, fn]) => c.off(name, fn as never));
+    return () => {
+      if (!c.isDisposed()) bound.forEach(([name, fn]) => c.off(name, fn as never));
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onEvents ? Object.keys(onEvents).join(',') : '']);
 

@@ -146,7 +146,9 @@ export function BaseMap({
 
   return (
     <div className={cn('relative overflow-hidden rounded-card bg-surface-2', className)}>
-      <div ref={el} className="absolute inset-0" />
+      {/* inline style: maplibre-gl.css (unlayered) sets .maplibregl-map{position:relative}, which beats Tailwind's
+          layered `absolute` and collapsed the container to 0 px */}
+      <div ref={el} style={{ position: 'absolute', inset: 0 }} />
       {switcher && interactive && (
         <div className="absolute right-2 top-2 z-10 flex flex-col items-end gap-1.5">
           <div className="flex gap-1.5">

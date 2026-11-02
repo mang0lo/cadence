@@ -1,16 +1,22 @@
 import type { Feature } from '../types';
+import { migrations } from './migrations';
+import routes from './routes';
+import { achievementsStep } from './trophies';
 
 /**
- * "consistency" feature module (server side).
- * - migrations: ids must start with 'consistency_'
+ * "consistency" feature module (server side): calendar, streaks, consistency score, goals, trophies and
+ * year in review.
+ * - migrations: consistency_goals (user goals), consistency_achievements (derived trophies)
  * - routes: mounted under /api/consistency
- * - deriveSteps: run in the import worker after core derivation
+ * - deriveSteps: consistency.achievements (trophy evaluation after every import / rebuild)
  */
 const feature: Feature = {
   name: 'consistency',
-  migrations: [],
-  deriveSteps: [],
-  routes: async () => {},
+  migrations,
+  deriveSteps: [achievementsStep],
+  routes,
+  // goals are user-written: keep them when the user deletes all imported data
+  keepOnReset: ['consistency_goals'],
 };
 
 export default feature;

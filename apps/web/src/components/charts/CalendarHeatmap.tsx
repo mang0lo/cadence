@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type ReactNode } from 'react';
+import { useMemo, useRef, useState, type FocusEvent, type KeyboardEvent, type ReactNode } from 'react';
 import { useFormat } from '@/lib/format';
 import { useT } from '@/lib/i18n';
 import { addDays, diffDays, startOfWeek, weekday } from '@/lib/time';
@@ -16,6 +16,8 @@ function autoThresholds(values: number[]): number[] {
 /**
  * GitHub-style calendar heatmap (weeks as columns). Sequential one-hue ramp, empty days in the
  * neutral cell color. Hover shows a tooltip; pair it with a table view for accessibility.
+ * With `onSelectDay` the days are keyboard reachable: one tab stop, arrow keys move by day (↑/↓) and
+ * week (←/→), Home/End jump to the first/last day, Enter or Space selects.
  */
 export function CalendarHeatmap({
   values,
@@ -48,7 +50,10 @@ export function CalendarHeatmap({
   const fmt = useFormat();
   const t = useT();
   const wrap = useRef<HTMLDivElement>(null);
+  const cells = useRef(new Map<string, SVGRectElement>());
   const [hover, setHover] = useState<{ day: string; x: number; y: number } | null>(null);
+  const [focusDay, setFocusDay] = useState<string | null>(null);
+  const interactive = !!onSelectDay;
 
   const th = useMemo(() => thresholds ?? autoThresholds(Object.values(values)), [thresholds, values]);
   const prefix = ramp === 'blue' ? '--seqb-' : '--seq-';
@@ -83,12 +88,42 @@ export function CalendarHeatmap({
   }
   const wdNames = fmt.weekdayNames(weekStart, 'short');
 
+  const clampDay = (d: string) => (d < from ? from : d > to ? to : d);
+  // the single tab stop: the focused day, else the selected one, else the last day
+  const tabDay = clampDay(focusDay ?? selectedDay ?? to);
+  const showTip = (day: string, el: SVGRectElement) => {
+    const box = wrap.current!.getBoundingClientRect();
+    const r = el.getBoundingClientRect();
+    setHover({ day, x: r.left - box.left + r.width / 2, y: r.top - box.top });
+  };
+  const onKey = (e: KeyboardEvent<SVGRectElement>, day: string) => {
+    const moves: Record<string, () => string> = {
+      ArrowUp: () => addDays(day, -1),
+      ArrowDown: () => addDays(day, 1),
+      ArrowLeft: () => addDays(day, -7),
+      ArrowRight: () => addDays(day, 7),
+      Home: () => from,
+      End: () => to,
+    };
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      onSelectDay?.(day);
+      return;
+    }
+    const move = moves[e.key];
+    if (!move) return;
+    e.preventDefault();
+    const next = clampDay(move());
+    setFocusDay(next);
+    cells.current.get(next)?.focus();
+  };
+
   return (
     <div ref={wrap} className="relative">
       <svg
         viewBox={`0 0 ${width} ${height}`}
         style={{ width: '100%', maxWidth: width, height: 'auto' }}
-        role="img"
+        role={interactive ? 'group' : 'img'}
         aria-label={t('common.calendar')}
         onMouseLeave={() => setHover(null)}
       >
@@ -102,26 +137,44 @@ export function CalendarHeatmap({
             {wdNames[r]}
           </text>
         ))}
-        {days.map((d) => (
-          <rect
-            key={d.day}
-            x={left + d.col * step}
-            y={top + d.row * step}
-            width={cell}
-            height={cell}
-            rx={2.5}
-            fill={colorFor(values[d.day])}
-            stroke={selectedDay === d.day ? 'var(--fg)' : 'none'}
-            strokeWidth={selectedDay === d.day ? 1.5 : 0}
-            style={{ cursor: onSelectDay ? 'pointer' : 'default' }}
-            onMouseEnter={(e) => {
-              const box = wrap.current!.getBoundingClientRect();
-              const r = (e.target as SVGRectElement).getBoundingClientRect();
-              setHover({ day: d.day, x: r.left - box.left + r.width / 2, y: r.top - box.top });
-            }}
-            onClick={() => onSelectDay?.(d.day)}
-          />
-        ))}
+        {days.map((d) => {
+          const marked = selectedDay === d.day || (interactive && focusDay === d.day);
+          return (
+            <rect
+              key={d.day}
+              ref={(el) => {
+                if (el) cells.current.set(d.day, el);
+                else cells.current.delete(d.day);
+              }}
+              x={left + d.col * step}
+              y={top + d.row * step}
+              width={cell}
+              height={cell}
+              rx={2.5}
+              fill={colorFor(values[d.day])}
+              stroke={marked ? 'var(--fg)' : 'none'}
+              strokeWidth={marked ? 1.5 : 0}
+              style={{ cursor: interactive ? 'pointer' : 'default', outline: 'none' }}
+              {...(interactive && {
+                tabIndex: d.day === tabDay ? 0 : -1,
+                role: 'button',
+                'aria-label': `${fmt.day(d.day, 'weekdayShort')}: ${values[d.day] ? fmt.num(values[d.day]!, 1) : '–'}`,
+                'aria-pressed': selectedDay === d.day,
+                onKeyDown: (e: KeyboardEvent<SVGRectElement>) => onKey(e, d.day),
+                onFocus: (e: FocusEvent<SVGRectElement>) => {
+                  setFocusDay(d.day);
+                  showTip(d.day, e.currentTarget);
+                },
+                onBlur: () => {
+                  setFocusDay(null);
+                  setHover(null);
+                },
+              })}
+              onMouseEnter={(e) => showTip(d.day, e.currentTarget)}
+              onClick={() => onSelectDay?.(d.day)}
+            />
+          );
+        })}
       </svg>
       {hover && (
         <div

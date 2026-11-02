@@ -12,6 +12,10 @@ COPY . .
 RUN npm run build
 
 FROM node:26-slim
+LABEL org.opencontainers.image.title="Cadence" \
+      org.opencontainers.image.description="Self-hosted, Strava-style training log fed by your Apple Health export" \
+      org.opencontainers.image.source="https://github.com/Devine-Coder/cadence" \
+      org.opencontainers.image.licenses="MIT"
 ENV NODE_ENV=production \
     CADENCE_MODE=server \
     CADENCE_DATA_DIR=/data \
