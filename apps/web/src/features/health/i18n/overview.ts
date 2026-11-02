@@ -38,3 +38,22 @@ export const overview: Dictionary = {
     emptyDescription: 'Keine der Kennzahlen ist bisher in deinem Export enthalten. Alle übrigen Daten findest du unter „Alle Daten“.',
   },
 };
+
+export const widget: Dictionary = {
+  en: {
+    title: 'Health snapshot',
+    all: 'All health data',
+    sleep: 'Last night',
+    hrv: 'HRV',
+    efficiency: 'efficiency {value}',
+    goalProgress: '{pct} of your sleep goal',
+  },
+  de: {
+    title: 'Gesundheit im Überblick',
+    all: 'Alle Gesundheitsdaten',
+    sleep: 'Letzte Nacht',
+    hrv: 'HRV',
+    efficiency: 'Effizienz {value}',
+    goalProgress: '{pct} deines Schlafziels',
+  },
+};

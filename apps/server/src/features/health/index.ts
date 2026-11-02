@@ -1,5 +1,6 @@
 import type { Feature } from '../types';
 import { healthMigrations } from './migrations';
+import { ecgStep } from './ecg-routes';
 import healthRoutes from './routes';
 import { sleepStep } from './sleep';
 
@@ -12,7 +13,7 @@ import { sleepStep } from './sleep';
 const feature: Feature = {
   name: 'health',
   migrations: healthMigrations,
-  deriveSteps: [sleepStep],
+  deriveSteps: [sleepStep, ecgStep],
   routes: healthRoutes,
 };
 

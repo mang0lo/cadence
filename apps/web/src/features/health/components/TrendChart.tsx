@@ -1,7 +1,7 @@
 import { useMemo, type ReactNode } from 'react';
 import type { SeriesOption } from 'echarts';
 import type { LucideIcon } from 'lucide-react';
-import { mean, rollingMeanByDay, shiftDay, type GoodDirection } from '@cadence/shared';
+import { mean, rollingMeanByDay, shiftDay, type GoodDirection, type MetricAgg } from '@cadence/shared';
 import { ChartCard } from '@/components/charts/ChartCard';
 import { EChart } from '@/components/charts/EChart';
 import { axisTooltip, grid, legend, lineSeries, timeAxis, tooltipHtml, valueAxis } from '@/components/charts/options';
@@ -39,6 +39,8 @@ export interface TrendChartProps {
   rolling?: number;
   /** Draw the min–max band of each day (points need min/max). */
   band?: boolean;
+  /** What a point stands for (labels of tooltips / table); default: one day. */
+  agg?: MetricAgg;
   height?: number;
   loading?: boolean;
   /** Shown instead of the chart when there are no points. */
@@ -68,6 +70,7 @@ export function TrendChart({
   color,
   rolling = 0,
   band = false,
+  agg = 'day',
   height = 250,
   loading,
   emptyText,
@@ -80,6 +83,12 @@ export function TrendChart({
   const theme = useChartTheme();
   const dayLabel = useDayLabel();
   const unitLabel = m.unitLabel(metric, unit);
+  const keyLabel = (key: string, long: boolean) =>
+    agg === 'month'
+      ? fmt.day(key, 'month')
+      : agg === 'week'
+        ? t('health.common.weekOf', { date: fmt.day(key, 'dayShort') })
+        : fmt.day(key, long ? 'weekday' : 'weekdayShort');
   const start = useMemo(() => {
     if (!fromDay) return 0;
     const i = allPoints.findIndex((p) => p.day >= fromDay);
@@ -177,7 +186,7 @@ export function TrendChart({
         if (hasBand && pt.min != null && pt.max != null) {
           rows.push({ color, label: names.range, value: `${m.plain(metric, pt.min, unit)} – ${m.value(metric, pt.max, unit)}` });
         }
-        return tooltipHtml(fmt.day(pt.day, 'weekday'), rows, theme);
+        return tooltipHtml(keyLabel(pt.day, true), rows, theme);
       }),
       xAxis: timeAxis(theme, { axisLabel: { color: theme.muted, fontSize: 11, hideOverlap: true, formatter: dayAxisLabel(fmt) } }),
       yAxis: valueAxis(theme, {
@@ -218,7 +227,7 @@ export function TrendChart({
       rows: [...points].reverse().map((p) => {
         const i = points.indexOf(p);
         return {
-          day: fmt.day(p.day, 'weekdayShort'),
+          day: keyLabel(p.day, false),
           value: m.plain(metric, p.value, unit),
           min: p.min == null ? '–' : m.plain(metric, p.min, unit),
           max: p.max == null ? '–' : m.plain(metric, p.max, unit),

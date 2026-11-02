@@ -490,7 +490,11 @@ function baseSpec(
 ): DisplaySpec {
   const def = metricDef(identifier);
   let kind: DisplayKind = def?.kind ?? 'auto';
-  if (kind === 'auto') kind = inferKind(splitMetric(identifier).identifier, canonicalUnit, maxAbs);
+  if (kind === 'auto') {
+    const id = splitMetric(identifier).identifier;
+    // category records carry durations (minutes per day in daily_metrics)
+    kind = id.startsWith(C) ? 'minutes' : inferKind(id, canonicalUnit, maxAbs);
+  }
   const digits = def?.digits;
   const imperial = units === 'imperial';
   switch (kind) {

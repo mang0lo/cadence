@@ -4,6 +4,7 @@ import type { DailyMetric, HealthMeta, HealthOverview, HealthSettings, HealthSna
 import { badRequest } from '../../lib/http';
 import { buildMeta, buildOverview, buildSnapshot, dailyMulti } from './overview';
 import { registerBodyRoutes } from './body-routes';
+import { registerEcgRoutes } from './ecg-routes';
 import { registerHeartRoutes } from './heart-routes';
 import { registerMetricRoutes } from './metric-routes';
 import { registerSleepRoutes } from './sleep-routes';
@@ -45,4 +46,5 @@ export default async function healthRoutes(app: FastifyInstance) {
   registerHeartRoutes(app);
   registerBodyRoutes(app);
   registerMetricRoutes(app);
+  registerEcgRoutes(app);
 }
