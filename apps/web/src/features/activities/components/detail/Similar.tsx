@@ -92,7 +92,16 @@ function trendChart(
             scatterSeries(theme, o.names.current, [[cur.x, cur.y, cur.id, cur.title]], theme.accent, {
               symbolSize: 14,
               z: 5,
-              label: { show: true, position: 'left', distance: 8, formatter: o.names.current, color: theme.fg, fontSize: 11, fontWeight: 600 },
+              label: {
+                show: true,
+                // label towards the middle of the chart so it is never clipped at the edges
+                position: x1 > x0 && (cur.x - x0) / (x1 - x0) < 0.5 ? 'right' : 'left',
+                distance: 8,
+                formatter: o.names.current,
+                color: theme.fg,
+                fontSize: 11,
+                fontWeight: 600,
+              },
             }),
           ]
         : []),

@@ -7,7 +7,7 @@ import { BaseMap } from '@/components/map/BaseMap';
 import { addRouteLayers, featureCollection, gradientExpression, lineFeature, setGeoJSON } from '@/components/map/layers';
 import { overlayColors } from '@/components/map/styles';
 import { SegmentedControl, cn } from '@/components/ui';
-import { useFormat } from '@/lib/format';
+import { clock, useFormat } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
 import { useResolvedTheme, type ResolvedTheme } from '@/lib/theme';
 import { useStoredState } from '@/lib/storage';
@@ -23,7 +23,7 @@ import {
   type RouteGeometry,
 } from '../../lib/route';
 import type { Store } from '../../lib/store';
-import { headingAt, indexAtDist, indexAtTime, lerpAngle, lngLatAt, type Prepared } from '../../lib/streams';
+import { headingAt, indexAtDist, indexAtTime, lerpAngle, lngLatAt, valueAt, type Prepared } from '../../lib/streams';
 
 export type CameraMode = 'overview' | 'follow' | 'flyover';
 
@@ -210,6 +210,19 @@ export function ActivityMap({ P, geo, sport, playback, hover, selection, zoneBou
     return out;
   }, [P, fmt.units]);
 
+  /** Hover tooltip on the map: distance · time · pace/speed · heart rate at the hovered point. */
+  const tipRef = useRef<HTMLDivElement>(null);
+  const hoverText = (fi: number) => {
+    const parts: string[] = [];
+    if (P.dist) parts.push(fmt.distance(valueAt(P.dist, fi)));
+    parts.push(clock(valueAt(P.t, fi)));
+    if (P.speed && P.moving[Math.min(P.n - 1, Math.ceil(fi))]) parts.push(fmt.pace(valueAt(P.speed, fi), sport));
+    const hr = valueAt(P.hr, fi);
+    if (hr === hr) parts.push(fmt.hr(hr));
+    return parts.join(' · ');
+  };
+  const hoverTextRef = useRef(hoverText);
+  hoverTextRef.current = hoverText;
   const mapRef = useRef<Map | null>(null);
   const styleReady = useRef(false);
   const markers = useRef<{ athlete: Marker; hover: Marker; start: Marker; finish: Marker } | null>(null);
@@ -296,10 +309,26 @@ export function ActivityMap({ P, geo, sport, playback, hover, selection, zoneBou
     const h = hover.get();
     const hp = h === null ? null : lngLatAt(P, h);
     const el = m.hover.getElement();
+    const tip = tipRef.current;
     if (hp) {
       m.hover.setLngLat(hp);
       el.style.visibility = 'visible';
-    } else el.style.visibility = 'hidden';
+      if (tip) {
+        const pt = map.project(hp);
+        tip.textContent = hoverTextRef.current(h!);
+        // keep the tooltip inside the map: centered above the point, clamped to the edges, below when no room
+        const box = map.getContainer();
+        const tw = tip.offsetWidth;
+        const th = tip.offsetHeight;
+        const x = Math.max(4, Math.min(box.clientWidth - tw - 4, pt.x - tw / 2));
+        const y = pt.y - th - 12 >= 4 ? pt.y - th - 12 : pt.y + 12;
+        tip.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
+        tip.style.visibility = 'visible';
+      }
+    } else {
+      el.style.visibility = 'hidden';
+      if (tip) tip.style.visibility = 'hidden';
+    }
   }, [P, geo, playback, hover]);
 
   const request = useCallback(() => {
@@ -571,6 +600,11 @@ export function ActivityMap({ P, geo, sport, playback, hover, selection, zoneBou
         onStyleLoad={onStyleLoad}
       >
         {coloring && <LegendBox legend={coloring.legend} />}
+        <div
+          ref={tipRef}
+          aria-hidden
+          className="pointer-events-none invisible absolute left-0 top-0 z-10 whitespace-nowrap rounded-lg border border-border bg-surface px-2 py-1 text-xs font-medium tabular text-fg shadow-pop"
+        />
       </BaseMap>
     </div>
   );
