@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type DragEvent } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router';
 import { CheckCircle2, FileArchive, HardDrive, Lock, RefreshCw, Smartphone, Trash2, Upload, XCircle } from 'lucide-react';
 import type { ImportJob } from '@cadence/shared';
 import {
@@ -162,6 +163,15 @@ export default function ImportPage() {
     },
     [started],
   );
+
+  // The macOS shell's File → Import menu navigates here with ?nativePath=… when another page was open.
+  const [params, setParams] = useSearchParams();
+  const nativePath = params.get('nativePath');
+  useEffect(() => {
+    if (!nativePath) return;
+    setParams({}, { replace: true });
+    void startLocal(nativePath);
+  }, [nativePath, setParams, startLocal]);
 
   // The macOS shell answers a native open panel with the picked path (no upload copy needed).
   useEffect(() => {

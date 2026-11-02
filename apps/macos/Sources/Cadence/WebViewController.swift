@@ -1,0 +1,324 @@
+import AppKit
+import UniformTypeIdentifiers
+import WebKit
+
+/// Avoids the retain cycle WKUserContentController → handler → web view.
+private final class WeakScriptHandler: NSObject, WKScriptMessageHandler {
+    weak var target: WKScriptMessageHandler?
+    init(_ target: WKScriptMessageHandler) { self.target = target }
+    func userContentController(_ c: WKUserContentController, didReceive message: WKScriptMessage) {
+        target?.userContentController(c, didReceive: message)
+    }
+}
+
+/// Native overlay shown while the server starts or when it failed.
+final class StatusOverlay: NSView {
+    private let spinner = NSProgressIndicator()
+    private let title = NSTextField(labelWithString: "")
+    private let detail = NSTextField(wrappingLabelWithString: "")
+    private let buttons = NSStackView()
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+
+        let logo = NSImageView(image: NSApp.applicationIconImage ?? NSImage())
+        logo.translatesAutoresizingMaskIntoConstraints = false
+        logo.widthAnchor.constraint(equalToConstant: 72).isActive = true
+        logo.heightAnchor.constraint(equalToConstant: 72).isActive = true
+
+        spinner.style = .spinning
+        spinner.controlSize = .small
+        title.font = .systemFont(ofSize: 15, weight: .semibold)
+        title.alignment = .center
+        detail.font = .systemFont(ofSize: 12)
+        detail.textColor = .secondaryLabelColor
+        detail.alignment = .center
+        detail.preferredMaxLayoutWidth = 420
+        buttons.orientation = .horizontal
+        buttons.spacing = 8
+
+        let stack = NSStackView(views: [logo, title, spinner, detail, buttons])
+        stack.orientation = .vertical
+        stack.spacing = 12
+        stack.alignment = .centerX
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.centerXAnchor.constraint(equalTo: centerXAnchor),
+            stack.centerYAnchor.constraint(equalTo: centerYAnchor),
+            stack.widthAnchor.constraint(lessThanOrEqualToConstant: 460),
+        ])
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    func show(title: String, detail: String = "", spinning: Bool, actions: [(String, () -> Void)] = []) {
+        self.title.stringValue = title
+        self.detail.stringValue = detail
+        self.detail.isHidden = detail.isEmpty
+        spinner.isHidden = !spinning
+        spinning ? spinner.startAnimation(nil) : spinner.stopAnimation(nil)
+        buttons.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        for (label, action) in actions {
+            let b = ClosureButton(title: label, action: action)
+            buttons.addArrangedSubview(b)
+        }
+        buttons.isHidden = actions.isEmpty
+        isHidden = false
+    }
+
+    func hide() {
+        spinner.stopAnimation(nil)
+        isHidden = true
+    }
+}
+
+private final class ClosureButton: NSButton {
+    private var handler: (() -> Void)?
+    convenience init(title: String, action: @escaping () -> Void) {
+        self.init(frame: .zero)
+        self.title = title
+        bezelStyle = .rounded
+        handler = action
+        target = self
+        self.action = #selector(fire)
+    }
+    @objc private func fire() { handler?() }
+}
+
+final class WebViewController: NSViewController, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler, WKDownloadDelegate {
+    private(set) var webView: WKWebView!
+    private let overlay = StatusOverlay()
+    private(set) var baseURL: URL?
+    /// Called by the web UI through the bridge or by menu items; implemented by the app delegate.
+    var onRestartRequested: (() -> Void)?
+
+    override func loadView() {
+        let config = WKWebViewConfiguration()
+        config.userContentController.add(WeakScriptHandler(self), name: "cadence")
+        config.preferences.setValue(true, forKey: "developerExtrasEnabled")
+        config.websiteDataStore = .default()
+
+        webView = WKWebView(frame: .zero, configuration: config)
+        webView.navigationDelegate = self
+        webView.uiDelegate = self
+        webView.allowsBackForwardNavigationGestures = true
+        webView.allowsMagnification = true
+        if #available(macOS 13.3, *) { webView.isInspectable = true }
+        webView.setValue(false, forKey: "drawsBackground")
+        webView.translatesAutoresizingMaskIntoConstraints = false
+        overlay.translatesAutoresizingMaskIntoConstraints = false
+
+        let root = NSView()
+        root.addSubview(webView)
+        root.addSubview(overlay)
+        NSLayoutConstraint.activate([
+            webView.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            webView.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            webView.topAnchor.constraint(equalTo: root.topAnchor),
+            webView.bottomAnchor.constraint(equalTo: root.bottomAnchor),
+            overlay.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            overlay.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            overlay.topAnchor.constraint(equalTo: root.topAnchor),
+            overlay.bottomAnchor.constraint(equalTo: root.bottomAnchor),
+        ])
+        view = root
+    }
+
+    // MARK: - States
+
+    func showStarting() {
+        overlay.show(title: "Starting Cadence…", spinning: true)
+    }
+
+    func showError(_ error: Error) {
+        overlay.show(
+            title: "Cadence could not start",
+            detail: error.localizedDescription,
+            spinning: false,
+            actions: [
+                ("Try Again", { [weak self] in self?.onRestartRequested?() }),
+                ("Show Log", { NSWorkspace.shared.open(ServerProcess.logFile) }),
+            ]
+        )
+    }
+
+    func load(_ url: URL) {
+        baseURL = url
+        pageLoaded = false
+        overlay.hide()
+        webView.load(URLRequest(url: url))
+    }
+
+    func navigate(to path: String) {
+        guard let base = baseURL, let url = URL(string: path, relativeTo: base) else { return }
+        webView.load(URLRequest(url: url))
+    }
+
+    func evaluate(_ js: String) {
+        webView.evaluateJavaScript(js, completionHandler: nil)
+    }
+
+    // MARK: - Native import panel
+
+    func pickImportFile() {
+        guard let window = view.window else { return }
+        let panel = NSOpenPanel()
+        panel.message = "Choose your Apple Health export (export.zip, export.xml or the unzipped folder)"
+        panel.prompt = "Import"
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.allowedContentTypes = [.zip, .xml, .folder]
+        panel.beginSheetModal(for: window) { [weak self] response in
+            guard response == .OK, let url = panel.url else { return }
+            self?.startLocalImport(path: url.path)
+        }
+    }
+
+    private var pendingImport: String?
+    private var pageLoaded = false
+
+    /// Hands a local path to the web UI (no upload copy needed for multi-GB exports).
+    /// Called from the open panel and when an export is dropped on the Dock icon / opened with Cadence.
+    func startLocalImport(path: String) {
+        guard pageLoaded else {
+            pendingImport = path
+            return
+        }
+        guard let data = try? JSONSerialization.data(withJSONObject: [path]),
+              let arr = String(data: data, encoding: .utf8) else { return }
+        evaluate("""
+        (function (p) {
+          if (location.pathname === '/import') {
+            window.dispatchEvent(new CustomEvent('cadence:native-import', { detail: { path: p } }));
+          } else {
+            location.assign('/import?nativePath=' + encodeURIComponent(p));
+          }
+        })(\(arr)[0]);
+        """)
+    }
+
+    // MARK: - WKScriptMessageHandler
+
+    func userContentController(_ c: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard let body = message.body as? [String: Any], let type = body["type"] as? String else { return }
+        switch type {
+        case "pickImportFile": pickImportFile()
+        case "openDataFolder": NSWorkspace.shared.open(ServerProcess.dataDirectory)
+        default: break
+        }
+    }
+
+    // MARK: - WKUIDelegate
+
+    func webView(_ webView: WKWebView, runOpenPanelWith parameters: WKOpenPanelParameters,
+                 initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping ([URL]?) -> Void) {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = parameters.allowsMultipleSelection
+        panel.canChooseDirectories = parameters.allowsDirectories
+        panel.canChooseFiles = true
+        if let window = view.window {
+            panel.beginSheetModal(for: window) { r in completionHandler(r == .OK ? panel.urls : nil) }
+        } else {
+            completionHandler(panel.runModal() == .OK ? panel.urls : nil)
+        }
+    }
+
+    /// target=_blank / window.open → default browser.
+    func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
+                 for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
+        if let url = navigationAction.request.url { NSWorkspace.shared.open(url) }
+        return nil
+    }
+
+    func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String,
+                 initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping () -> Void) {
+        let alert = NSAlert()
+        alert.messageText = message
+        alert.runModal()
+        completionHandler()
+    }
+
+    func webView(_ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String,
+                 initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (Bool) -> Void) {
+        let alert = NSAlert()
+        alert.messageText = message
+        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: "Cancel")
+        completionHandler(alert.runModal() == .alertFirstButtonReturn)
+    }
+
+    // MARK: - WKNavigationDelegate
+
+    func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
+                 decisionHandler: @escaping @MainActor (WKNavigationActionPolicy) -> Void) {
+        if navigationAction.shouldPerformDownload {
+            decisionHandler(.download)
+            return
+        }
+        // Links to other sites open in the default browser.
+        if let url = navigationAction.request.url, let base = baseURL,
+           navigationAction.navigationType == .linkActivated,
+           url.scheme?.hasPrefix("http") == true,
+           url.host != base.host || url.port != base.port {
+            NSWorkspace.shared.open(url)
+            decisionHandler(.cancel)
+            return
+        }
+        decisionHandler(.allow)
+    }
+
+    func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse,
+                 decisionHandler: @escaping @MainActor (WKNavigationResponsePolicy) -> Void) {
+        if let http = navigationResponse.response as? HTTPURLResponse,
+           let disposition = http.value(forHTTPHeaderField: "Content-Disposition"),
+           disposition.lowercased().hasPrefix("attachment") {
+            decisionHandler(.download)
+            return
+        }
+        decisionHandler(navigationResponse.canShowMIMEType ? .allow : .download)
+    }
+
+    func webView(_ webView: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) {
+        download.delegate = self
+    }
+
+    func webView(_ webView: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) {
+        download.delegate = self
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        pageLoaded = true
+        if let path = pendingImport {
+            pendingImport = nil
+            startLocalImport(path: path)
+        }
+    }
+
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        webView.reload()
+    }
+
+    // MARK: - WKDownloadDelegate (GPX / data exports → ~/Downloads)
+
+    func download(_ download: WKDownload, decideDestinationUsing response: URLResponse,
+                  suggestedFilename: String, completionHandler: @escaping @MainActor (URL?) -> Void) {
+        let downloads = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
+        var target = downloads.appendingPathComponent(suggestedFilename)
+        let base = target.deletingPathExtension().lastPathComponent
+        let ext = target.pathExtension
+        var n = 2
+        while FileManager.default.fileExists(atPath: target.path) {
+            target = downloads.appendingPathComponent(ext.isEmpty ? "\(base) \(n)" : "\(base) \(n).\(ext)")
+            n += 1
+        }
+        completionHandler(target)
+    }
+
+    func downloadDidFinish(_ download: WKDownload) {
+        NSSound(named: "Glass")?.play()
+    }
+}

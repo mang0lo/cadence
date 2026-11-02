@@ -1,0 +1,24 @@
+# Self-hosting Cadence (e.g. on a home server / NAS):
+#   cd deploy && CADENCE_PASSWORD=choose-one docker compose up -d
+# Then open http://<server>:8787 — or point the Mac app at it (Cadence → Connect to Server…).
+# Drop new export.zip files into ./import and they are imported automatically.
+services:
+  cadence:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: ghcr.io/devine-coder/cadence:latest
+    container_name: cadence
+    ports:
+      - "8787:8787"
+    environment:
+      CADENCE_PASSWORD: ${CADENCE_PASSWORD:?set CADENCE_PASSWORD}
+      CADENCE_IMPORT_DIR: /import
+      TZ: ${TZ:-Europe/Vienna}
+    volumes:
+      - cadence-data:/data
+      - ./import:/import
+    restart: unless-stopped
+
+volumes:
+  cadence-data:
