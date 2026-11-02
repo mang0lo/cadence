@@ -63,7 +63,7 @@ function HeartEvents({ fromDay, toDay }: { fromDay?: string; toDay?: string }) {
         <>
           <div className="mb-4 grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-4">
             {shown.map((k) => (
-              <Stat key={k} label={t(`health.heart.events.${k}`)} value={fmt.int(counts[k])} hint={t('health.heart.events.count', { count: counts[k] })} />
+              <Stat key={k} label={t(`health.heart.events.${k}`)} value={fmt.int(counts[k])} />
             ))}
           </div>
           <Table className="max-h-80">
