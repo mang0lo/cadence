@@ -1,6 +1,12 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import type { MapsRouteDetail, MapsRouteEffort, MapsRouteKind, MapsRouteSummary, MapsRoutesResponse } from '@cadence/shared';
+import type {
+  MapsRouteDetail,
+  MapsRouteEffort,
+  MapsRouteKind,
+  MapsRouteSummary,
+  MapsRoutesResponse,
+} from '@cadence/shared';
 import { all, get, run, type Db } from '../../db/db';
 import { notFound } from '../../lib/http';
 
@@ -60,7 +66,11 @@ const speedOf = (e: { distance_m: number | null; time_s: number }, fallbackM: nu
   (e.distance_m ?? fallbackM) / Math.max(1, e.time_s);
 
 /** Summaries for routes with at least `min` visible efforts, built from one pass over their efforts. */
-export function routeSummaries(db: Db, athleteId: number, opts: { sport?: string[]; min: number; ids?: number[] }): MapsRouteSummary[] {
+export function routeSummaries(
+  db: Db,
+  athleteId: number,
+  opts: { sport?: string[]; min: number; ids?: number[] },
+): MapsRouteSummary[] {
   const where = ['athlete_id = ?'];
   const params: unknown[] = [athleteId];
   if (opts.sport?.length) {
@@ -135,7 +145,9 @@ export function registerRouteRoutes(app: FastifyInstance): void {
     );
     return {
       items,
-      sports: [...counts.entries()].map(([sport, count]) => ({ sport, count })).sort((a, b) => b.count - a.count),
+      sports: [...counts.entries()]
+        .map(([sport, count]) => ({ sport, count }))
+        .sort((a, b) => b.count - a.count),
     };
   });
 
@@ -174,7 +186,10 @@ export function registerRouteRoutes(app: FastifyInstance): void {
   app.patch('/routes/:id', async (req): Promise<MapsRouteSummary> => {
     const { id } = idParam.parse(req.params);
     const body = patchBody.parse(req.body ?? {});
-    const r = get<{ id: number }>(app.db, 'SELECT id FROM maps_routes WHERE id = ? AND athlete_id = ?', [id, req.athleteId]);
+    const r = get<{ id: number }>(app.db, 'SELECT id FROM maps_routes WHERE id = ? AND athlete_id = ?', [
+      id,
+      req.athleteId,
+    ]);
     if (!r) throw notFound('Route');
     run(app.db, 'UPDATE maps_routes SET custom_name = ? WHERE id = ?', [body.name ? body.name : null, id]);
     return routeSummaries(app.db, req.athleteId, { min: 1, ids: [id] })[0]!;

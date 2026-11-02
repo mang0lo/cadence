@@ -8,15 +8,7 @@
 import { TILE_STRIDE, keyX, keyY, lonLatToTile, tileKey } from '@cadence/shared';
 import { haversine } from '../../lib/geo';
 
-export {
-  TILE_STRIDE,
-  keyX,
-  keyY,
-  lonLatToTile,
-  tileBounds,
-  tileKey,
-  tileToLonLat,
-} from '@cadence/shared';
+export { TILE_STRIDE, keyX, keyY, lonLatToTile, tileBounds, tileKey, tileToLonLat } from '@cadence/shared';
 
 export interface CoverOptions {
   /** Gaps between two consecutive fixes longer than this are not bridged (e.g. a flight, a paused recording). */
@@ -71,8 +63,8 @@ function walk(out: Set<number>, u0: number, v0: number, u1: number, v1: number):
   const sx = dx > 0 ? 1 : -1;
   const sy = dy > 0 ? 1 : -1;
   // parametric distance to the next vertical / horizontal grid line, and between successive ones
-  let tx = dx === 0 ? Infinity : ((dx > 0 ? x + 1 - u0 : u0 - x)) / Math.abs(dx);
-  let ty = dy === 0 ? Infinity : ((dy > 0 ? y + 1 - v0 : v0 - y)) / Math.abs(dy);
+  let tx = dx === 0 ? Infinity : (dx > 0 ? x + 1 - u0 : u0 - x) / Math.abs(dx);
+  let ty = dy === 0 ? Infinity : (dy > 0 ? y + 1 - v0 : v0 - y) / Math.abs(dy);
   const ddx = dx === 0 ? Infinity : 1 / Math.abs(dx);
   const ddy = dy === 0 ? Infinity : 1 / Math.abs(dy);
   // exactly |Δx| + |Δy| steps are needed; the counters make rounding at grid lines harmless
@@ -135,7 +127,8 @@ export function maxSquare(tiles: Set<number> | number[]): MaxSquare | null {
 export function interiorTiles(tiles: Set<number>): Set<number> {
   const out = new Set<number>();
   for (const k of tiles) {
-    if (tiles.has(k - 1) && tiles.has(k + 1) && tiles.has(k - TILE_STRIDE) && tiles.has(k + TILE_STRIDE)) out.add(k);
+    if (tiles.has(k - 1) && tiles.has(k + 1) && tiles.has(k - TILE_STRIDE) && tiles.has(k + TILE_STRIDE))
+      out.add(k);
   }
   return out;
 }

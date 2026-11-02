@@ -4,7 +4,19 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Plus, Star, Waypoints } from 'lucide-react';
 import type { MapsSegmentSummary, MapsSegmentsResponse } from '@cadence/shared';
 import { RouteThumbnail } from '@/components/map/RouteThumbnail';
-import { Button, Card, EmptyState, ErrorState, Page, PageHeader, Skeleton, Table, TD, TH, cn } from '@/components/ui';
+import {
+  Button,
+  Card,
+  EmptyState,
+  ErrorState,
+  Page,
+  PageHeader,
+  Skeleton,
+  Table,
+  TD,
+  TH,
+  cn,
+} from '@/components/ui';
 import { api, useApi } from '@/lib/api';
 import { useFormat } from '@/lib/format';
 import { useT } from '@/lib/i18n';
@@ -119,7 +131,9 @@ export default function SegmentsPage() {
                         className="h-11 w-[68px] shrink-0"
                       />
                       <span className="min-w-0">
-                        <span className="block max-w-56 truncate font-medium text-fg group-hover:text-accent-fg">{s.name}</span>
+                        <span className="block max-w-56 truncate font-medium text-fg group-hover:text-accent-fg">
+                          {s.name}
+                        </span>
                         <span className="mt-0.5 inline-flex items-center gap-1 text-xs text-fg-3">
                           <span style={{ color: sportColorVar(s.sport) }}>
                             <SportIcon sport={s.sport} size={12} strokeWidth={2.5} />
@@ -142,7 +156,9 @@ export default function SegmentsPage() {
                       <>
                         <span className="font-semibold text-fg">{fmt.duration(s.prTimeS)}</span>
                         {s.prTs !== null && s.prTzMin !== null && (
-                          <span className="block text-xs text-fg-3">{fmt.date(s.prTs, s.prTzMin, 'dayShort')}</span>
+                          <span className="block text-xs text-fg-3">
+                            {fmt.date(s.prTs, s.prTzMin, 'dayShort')}
+                          </span>
                         )}
                       </>
                     )}

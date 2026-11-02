@@ -10,7 +10,10 @@ export function routeTitle(
 ): string {
   if (r.customName) return r.customName;
   const area =
-    r.area ?? (r.startLat != null && r.startLon != null ? `${fmt.num(r.startLat, 2)}°, ${fmt.num(r.startLon, 2)}°` : null);
+    r.area ??
+    (r.startLat != null && r.startLon != null
+      ? `${fmt.num(r.startLat, 2)}°, ${fmt.num(r.startLon, 2)}°`
+      : null);
   const distance = fmt.distance(r.distanceM, 1);
   return area
     ? t(`maps.routes.auto.${r.kind}`, { area, distance })
@@ -25,4 +28,5 @@ export function trendChange(trend: number[]): number | null {
   return first > 0 ? last / first - 1 : null;
 }
 
-export const kindLabel = (kind: MapsRouteSummary['kind'], t: TFunction): string => t(`maps.routes.kind.${kind}`);
+export const kindLabel = (kind: MapsRouteSummary['kind'], t: TFunction): string =>
+  t(`maps.routes.kind.${kind}`);

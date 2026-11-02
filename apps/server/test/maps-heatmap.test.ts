@@ -26,7 +26,9 @@ describe('trimPrivacyZones', () => {
     expect(out.length).toBeLessThan(loop.length);
     expect(out.length).toBeGreaterThan(loop.length - 12); // only a few points near each end are dropped
     expect(haversine(out[0]![0], out[0]![1], home.lat, home.lon)).toBeGreaterThan(300);
-    expect(haversine(out[out.length - 1]![0], out[out.length - 1]![1], home.lat, home.lon)).toBeGreaterThan(300);
+    expect(haversine(out[out.length - 1]![0], out[out.length - 1]![1], home.lat, home.lon)).toBeGreaterThan(
+      300,
+    );
     const tiny: LatLon[] = [
       [48.2, 16.4],
       [48.2001, 16.4001],

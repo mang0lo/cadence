@@ -81,7 +81,8 @@ const hexA = (hex: string, a: number): string => {
   return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
 };
 
-export const heatPalette = (theme: HeatTheme, darkBase: boolean): HeatPalette => (darkBase ? DARK : LIGHT)[theme];
+export const heatPalette = (theme: HeatTheme, darkBase: boolean): HeatPalette =>
+  (darkBase ? DARK : LIGHT)[theme];
 
 /** Decode the API polylines into map lines (lon/lat order) with cumulative lengths. */
 export function toHeatLines(items: MapsHeatmapActivity[]): HeatLine[] {
@@ -138,13 +139,11 @@ export const mainBounds = (lines: HeatLine[]): BBox | null => homeRegion(lines, 
 export function linesCollection(lines: HeatLine[]): FeatureCollection<LineString> {
   return {
     type: 'FeatureCollection',
-    features: lines.map(
-      (l): Feature<LineString> => ({
-        type: 'Feature',
-        properties: { id: l.id, i: l.i, sport: l.sport },
-        geometry: { type: 'LineString', coordinates: l.coords },
-      }),
-    ),
+    features: lines.map((l): Feature<LineString> => ({
+      type: 'Feature',
+      properties: { id: l.id, i: l.i, sport: l.sport },
+      geometry: { type: 'LineString', coordinates: l.coords },
+    })),
   };
 }
 
@@ -226,11 +225,7 @@ export function ensureHeatLayers(map: MapLibreMap, palette: HeatPalette): void {
   if (!map.getSource(SRC.head)) map.addSource(SRC.head, { type: 'geojson', data: emptyLines });
   if (!map.getSource(SRC.points)) map.addSource(SRC.points, { type: 'geojson', data: emptyPoints });
   const s = palette.strength;
-  const line = (
-    id: string,
-    source: string,
-    paint: Record<string, unknown>,
-  ): void => {
+  const line = (id: string, source: string, paint: Record<string, unknown>): void => {
     if (map.getLayer(id)) return;
     map.addLayer(
       {
@@ -253,7 +248,17 @@ export function ensureHeatLayers(map: MapLibreMap, palette: HeatPalette): void {
         paint: {
           'heatmap-weight': 1,
           'heatmap-intensity': 0.01,
-          'heatmap-radius': ['interpolate', ['linear'], ['zoom'], 8, 3, 12, 9, 16, 22] as unknown as ExpressionSpecification,
+          'heatmap-radius': [
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            8,
+            3,
+            12,
+            9,
+            16,
+            22,
+          ] as unknown as ExpressionSpecification,
           'heatmap-opacity': 0.9,
           'heatmap-color': densityRamp(palette),
         },
@@ -310,7 +315,12 @@ function densityRamp(p: HeatPalette): ExpressionSpecification {
     [0.6, hexA(p.core, 0.9)],
     [1, hexA(p.hot, 1)],
   ];
-  return ['interpolate', ['linear'], ['heatmap-density'], ...stops.flat()] as unknown as ExpressionSpecification;
+  return [
+    'interpolate',
+    ['linear'],
+    ['heatmap-density'],
+    ...stops.flat(),
+  ] as unknown as ExpressionSpecification;
 }
 
 /**
@@ -354,7 +364,8 @@ function setData(map: MapLibreMap, id: string, data: FeatureCollection): void {
   (map.getSource(id) as GeoJSONSource | undefined)?.setData(data);
 }
 
-export const setLinesData = (map: MapLibreMap, fc: FeatureCollection<LineString>) => setData(map, SRC.lines, fc);
+export const setLinesData = (map: MapLibreMap, fc: FeatureCollection<LineString>) =>
+  setData(map, SRC.lines, fc);
 export const setPointsData = (map: MapLibreMap, fc: FeatureCollection<Point>) => setData(map, SRC.points, fc);
 
 export function setHeadLine(map: MapLibreMap, coords: [number, number][] | null): void {
@@ -374,5 +385,6 @@ export function setLapseFilter(map: MapLibreMap, k: number | null): void {
 }
 
 export function setDensityVisible(map: MapLibreMap, visible: boolean): void {
-  if (map.getLayer(LAYER.density)) map.setLayoutProperty(LAYER.density, 'visibility', visible ? 'visible' : 'none');
+  if (map.getLayer(LAYER.density))
+    map.setLayoutProperty(LAYER.density, 'visibility', visible ? 'visible' : 'none');
 }

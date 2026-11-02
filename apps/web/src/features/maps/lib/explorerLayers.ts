@@ -19,7 +19,12 @@ export const RAMPS = {
   },
 } as const;
 
-export function explorerColors(colorBy: ExplorerColorBy, darkBase: boolean, accent: string, nextColor: string): ExplorerColors {
+export function explorerColors(
+  colorBy: ExplorerColorBy,
+  darkBase: boolean,
+  accent: string,
+  nextColor: string,
+): ExplorerColors {
   const ramp = (colorBy === 'visits' ? RAMPS.orange : RAMPS.blue)[darkBase ? 'dark' : 'light'];
   return {
     ramp: [...ramp],
@@ -112,22 +117,24 @@ export function firstVisitBuckets(tiles: MapsExplorerTile[]): FirstBuckets {
   return { index, ranges };
 }
 
-export function tilesCollection(tiles: MapsExplorerTile[], buckets: FirstBuckets, z = 14): FeatureCollection<Polygon> {
+export function tilesCollection(
+  tiles: MapsExplorerTile[],
+  buckets: FirstBuckets,
+  z = 14,
+): FeatureCollection<Polygon> {
   return {
     type: 'FeatureCollection',
-    features: tiles.map(
-      (t, i): Feature<Polygon> => ({
-        type: 'Feature',
-        properties: {
-          i,
-          visits: t.visits,
-          fb: buckets.index[i] ?? 0,
-          cluster: t.cluster,
-          interior: t.interior,
-        },
-        geometry: tilePolygon(t.x, t.y, z),
-      }),
-    ),
+    features: tiles.map((t, i): Feature<Polygon> => ({
+      type: 'Feature',
+      properties: {
+        i,
+        visits: t.visits,
+        fb: buckets.index[i] ?? 0,
+        cluster: t.cluster,
+        interior: t.interior,
+      },
+      geometry: tilePolygon(t.x, t.y, z),
+    })),
   };
 }
 
@@ -158,13 +165,26 @@ function fillExpression(colorBy: ExplorerColorBy, ramp: string[], steps: number[
       ramp[4],
     ] as unknown as ExpressionSpecification;
   }
-  return ['step', ['get', 'fb'], ramp[0], 1, ramp[1], 2, ramp[2], 3, ramp[3], 4, ramp[4]] as unknown as ExpressionSpecification;
+  return [
+    'step',
+    ['get', 'fb'],
+    ramp[0],
+    1,
+    ramp[1],
+    2,
+    ramp[2],
+    3,
+    ramp[3],
+    4,
+    ramp[4],
+  ] as unknown as ExpressionSpecification;
 }
 
 /** Create sources and layers (idempotent – call again after every basemap style switch). */
 export function ensureExplorerLayers(map: MapLibreMap, c: ExplorerColors, steps: number[]): void {
   const before = map.getStyle().layers.find((l) => l.type === 'symbol')?.id;
-  for (const id of Object.values(SRC)) if (!map.getSource(id)) map.addSource(id, { type: 'geojson', data: empty });
+  for (const id of Object.values(SRC))
+    if (!map.getSource(id)) map.addSource(id, { type: 'geojson', data: empty });
   const add = (spec: Parameters<MapLibreMap['addLayer']>[0]) => {
     if (!map.getLayer(spec.id)) map.addLayer(spec, before);
   };
@@ -214,7 +234,12 @@ export function ensureExplorerLayers(map: MapLibreMap, c: ExplorerColors, steps:
   });
 }
 
-export function applyExplorerColors(map: MapLibreMap, c: ExplorerColors, colorBy: ExplorerColorBy, steps: number[]): void {
+export function applyExplorerColors(
+  map: MapLibreMap,
+  c: ExplorerColors,
+  colorBy: ExplorerColorBy,
+  steps: number[],
+): void {
   if (!map.getLayer(ID.fill)) return;
   map.setPaintProperty(ID.fill, 'fill-color', fillExpression(colorBy, c.ramp, steps));
   map.setPaintProperty(ID.line, 'line-color', c.outline);
@@ -231,10 +256,16 @@ const setData = (map: MapLibreMap, id: string, data: FeatureCollection) =>
 export const setTileData = (map: MapLibreMap, fc: FeatureCollection<Polygon> | null) =>
   setData(map, SRC.tiles, fc ?? empty);
 
-export function setSquare(map: MapLibreMap, sq: { x: number; y: number; size: number } | null, z: number): void {
+export function setSquare(
+  map: MapLibreMap,
+  sq: { x: number; y: number; size: number } | null,
+  z: number,
+): void {
   setData(map, SRC.square, {
     type: 'FeatureCollection',
-    features: sq ? [{ type: 'Feature', properties: {}, geometry: tilePolygon(sq.x, sq.y, z, sq.size, sq.size) }] : [],
+    features: sq
+      ? [{ type: 'Feature', properties: {}, geometry: tilePolygon(sq.x, sq.y, z, sq.size, sq.size) }]
+      : [],
   });
 }
 
@@ -278,7 +309,8 @@ export function detailKeys(x: number[], y: number[]): Set<number> {
 
 /** Toggle which family of layers is visible (zoom 14 tiles vs zoom 17 detail tiles). */
 export function setExplorerMode(map: MapLibreMap, zoom: 14 | 17): void {
-  const vis = (id: string, on: boolean) => map.getLayer(id) && map.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none');
+  const vis = (id: string, on: boolean) =>
+    map.getLayer(id) && map.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none');
   vis(ID.fill, zoom === 14);
   vis(ID.line, zoom === 14);
   vis(ID.cluster, zoom === 14);

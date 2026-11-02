@@ -8,7 +8,14 @@ import { loadConfig } from '../src/config';
 import { openDb, run, type Db } from '../src/db/db';
 import mapsFeature from '../src/features/maps';
 import type { DeriveContext } from '../src/features/types';
-import { bounds, cumulativeDistance, encodePolylineArrays, haversine, simplifyIndices, type LatLon } from '../src/lib/geo';
+import {
+  bounds,
+  cumulativeDistance,
+  encodePolylineArrays,
+  haversine,
+  simplifyIndices,
+  type LatLon,
+} from '../src/lib/geo';
 import { gzipJson } from '../src/lib/gzip';
 
 /** Deterministic pseudo random numbers (mulberry32). */
@@ -211,7 +218,11 @@ export interface TestApp {
 /** Fresh temp database with all migrations applied and the HTTP app on top (no import needed). */
 export async function makeApp(): Promise<TestApp> {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cadence-maps-'));
-  const config = loadConfig({ CADENCE_DATA_DIR: path.join(dir, 'data'), CADENCE_MODE: 'dev', LOG_LEVEL: 'silent' });
+  const config = loadConfig({
+    CADENCE_DATA_DIR: path.join(dir, 'data'),
+    CADENCE_MODE: 'dev',
+    LOG_LEVEL: 'silent',
+  });
   const db = openDb(config.dbPath);
   migrateAll(db);
   const app = await buildApp(config, db, { jobRunner: 'inline' });

@@ -116,7 +116,11 @@ export default function RoutesPage() {
 
       {data && items.length === 0 && (
         <Card>
-          <EmptyState icon={RouteIcon} title={t('maps.routes.empty')} description={t('maps.routes.emptyHint')} />
+          <EmptyState
+            icon={RouteIcon}
+            title={t('maps.routes.empty')}
+            description={t('maps.routes.emptyHint')}
+          />
         </Card>
       )}
 
@@ -142,7 +146,15 @@ export default function RoutesPage() {
   );
 }
 
-function Chip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+function Chip({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
   return (
     <button
       type="button"
@@ -180,7 +192,9 @@ function RouteCard({ route: r }: { route: MapsRouteSummary }) {
       />
       <div className="flex min-w-0 flex-1 flex-col gap-3 p-4">
         <div className="min-w-0">
-          <h3 className="truncate text-sm font-semibold text-fg group-hover:text-accent-fg">{routeTitle(r, t, fmt)}</h3>
+          <h3 className="truncate text-sm font-semibold text-fg group-hover:text-accent-fg">
+            {routeTitle(r, t, fmt)}
+          </h3>
           <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-fg-3">
             <span className="inline-flex items-center gap-1" style={{ color: sportColorVar(r.sport) }}>
               <SportIcon sport={r.sport} size={13} strokeWidth={2.5} />
@@ -205,15 +219,27 @@ function RouteCard({ route: r }: { route: MapsRouteSummary }) {
             <div className="flex items-center justify-between gap-2 text-xs text-fg-3">
               <span>{t('maps.routes.trend')}</span>
               {change !== null && Math.abs(change) >= 0.005 && (
-                <Delta value={change} text={fmt.signed(change * 100, Math.abs(change) < 0.1 ? 1 : 0) + ' %'} />
+                <Delta
+                  value={change}
+                  text={fmt.signed(change * 100, Math.abs(change) < 0.1 ? 1 : 0) + ' %'}
+                />
               )}
             </div>
-            <TrendSparkline data={r.trend} height={30} ariaLabel={t('maps.routes.trend')} className="mr-1.5" />
+            <TrendSparkline
+              data={r.trend}
+              height={30}
+              ariaLabel={t('maps.routes.trend')}
+              className="mr-1.5"
+            />
           </div>
         </div>
         <dl className="grid grid-cols-2 gap-x-4 gap-y-1 border-t border-border pt-3 text-xs">
           <Stat3 label={t('maps.routes.best')} value={fmt.duration(r.bestTimeS)} />
-          <Stat3 label={t('maps.routes.latest')} value={fmt.duration(r.latestTimeS)} hint={fmt.date(r.lastTs, r.lastTzMin, 'dayShort')} />
+          <Stat3
+            label={t('maps.routes.latest')}
+            value={fmt.duration(r.latestTimeS)}
+            hint={fmt.date(r.lastTs, r.lastTzMin, 'dayShort')}
+          />
         </dl>
       </div>
     </Link>
@@ -231,4 +257,3 @@ function Stat3({ label, value, hint }: { label: string; value: string; hint?: st
     </div>
   );
 }
-

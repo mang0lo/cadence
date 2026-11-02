@@ -16,7 +16,15 @@ import {
   tileKey,
   tileToLonLat,
 } from '../src/features/maps/tiles';
-import { VIENNA, insertWorkout, line, makeApp, runMapsSteps, trackAlong, type TestApp } from './maps-fixtures';
+import {
+  VIENNA,
+  insertWorkout,
+  line,
+  makeApp,
+  runMapsSteps,
+  trackAlong,
+  type TestApp,
+} from './maps-fixtures';
 
 /** All tiles of a w × h block with its top-left tile at (x0, y0). */
 const block = (x0: number, y0: number, w: number, h: number): number[] => {
@@ -196,7 +204,11 @@ describe('explorer derive step + API', () => {
     ctx = await makeApp();
     // 1: run east 5 km (first visit), 2: ride along the same road further (second visit + new tiles),
     // 3: hidden run far south, 4: run in another country, 5: strength (no route)
-    ids.run = insertWorkout(ctx.db, { sport: 'run', startTs: t0, track: trackAlong(line(VIENNA, 5000), { speed: 3 }) });
+    ids.run = insertWorkout(ctx.db, {
+      sport: 'run',
+      startTs: t0,
+      track: trackAlong(line(VIENNA, 5000), { speed: 3 }),
+    });
     ids.ride = insertWorkout(ctx.db, {
       sport: 'ride',
       startTs: t0 + 40 * day,
@@ -230,7 +242,9 @@ describe('explorer derive step + API', () => {
 
   it('stores the tiles of every routed workout and nothing else', async () => {
     const rows = ctx.db
-      .prepare('SELECT workout_id, z, COUNT(*) AS n FROM maps_workout_tiles GROUP BY workout_id, z ORDER BY workout_id, z')
+      .prepare(
+        'SELECT workout_id, z, COUNT(*) AS n FROM maps_workout_tiles GROUP BY workout_id, z ORDER BY workout_id, z',
+      )
       .all() as { workout_id: number; z: number; n: number }[];
     const byWorkout = new Set(rows.map((r) => r.workout_id));
     expect(byWorkout).toEqual(new Set([ids.run, ids.ride, ids.hidden, ids.abroad]));
@@ -289,7 +303,9 @@ describe('explorer derive step + API', () => {
   it('follows hide / unhide without a rebuild and reports the dashboard summary', async () => {
     const before = await get<MapsExplorerSummary>('/api/maps/explorer/summary');
     expect(before.tiles).toBeGreaterThan(5);
-    ctx.db.prepare('UPDATE workouts SET hidden = 0, updated_at = updated_at + 1 WHERE id = ?').run(ids.hidden);
+    ctx.db
+      .prepare('UPDATE workouts SET hidden = 0, updated_at = updated_at + 1 WHERE id = ?')
+      .run(ids.hidden);
     const after = await get<MapsExplorerSummary>('/api/maps/explorer/summary');
     expect(after.tiles).toBeGreaterThan(before.tiles);
     expect(after.workouts).toBe(4);
@@ -312,7 +328,9 @@ describe('explorer derive step + API', () => {
     ctx.db.prepare('UPDATE workouts SET has_route = 0 WHERE id = ?').run(ids.abroad);
     ctx.db.prepare('DELETE FROM workout_streams WHERE workout_id = ?').run(ids.abroad);
     await runMapsSteps(ctx.db, [ids.abroad]);
-    const n = ctx.db.prepare('SELECT COUNT(*) AS n FROM maps_workout_tiles WHERE workout_id = ?').get(ids.abroad) as {
+    const n = ctx.db
+      .prepare('SELECT COUNT(*) AS n FROM maps_workout_tiles WHERE workout_id = ?')
+      .get(ids.abroad) as {
       n: number;
     };
     expect(n.n).toBe(0);

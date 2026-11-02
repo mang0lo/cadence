@@ -41,7 +41,8 @@ function periodRange(period: string): { fromDay?: string; toDay?: string } {
   const today = todayKey();
   if (period === 'last90') return { fromDay: addDays(today, -89), toDay: today };
   if (period === 'last12m') return { fromDay: addDays(today, -364), toDay: today };
-  if (/^y\d{4}$/.test(period)) return { fromDay: `${period.slice(1)}-01-01`, toDay: `${period.slice(1)}-12-31` };
+  if (/^y\d{4}$/.test(period))
+    return { fromDay: `${period.slice(1)}-01-01`, toDay: `${period.slice(1)}-12-31` };
   return {};
 }
 
@@ -149,11 +150,9 @@ export default function HeatmapPage() {
   const current = activities[Math.min(done, Math.max(0, activities.length - 1))];
 
   // ----- filters -----------------------------------------------------------------------------------------
-  const facetSports = useMemo(
-    () => (data ? sortSports(data.facets.sports.map((s) => s.sport)) : []),
-    [data],
-  );
-  const toggleSport = (s: string) => setSports((cur) => (cur.includes(s) ? cur.filter((x) => x !== s) : [...cur, s]));
+  const facetSports = useMemo(() => (data ? sortSports(data.facets.sports.map((s) => s.sport)) : []), [data]);
+  const toggleSport = (s: string) =>
+    setSports((cur) => (cur.includes(s) ? cur.filter((x) => x !== s) : [...cur, s]));
   const periodOptions = useMemo(() => {
     const years = [...(data?.facets.years ?? [])].map((y) => y.year).sort((a, b) => b - a);
     return [
@@ -213,7 +212,12 @@ export default function HeatmapPage() {
               ))}
             </div>
             <div className="w-44 [&>select]:w-full">
-              <Select value={period} onChange={setPeriod} options={periodOptions} aria-label={t('maps.heatmap.period')} />
+              <Select
+                value={period}
+                onChange={setPeriod}
+                options={periodOptions}
+                aria-label={t('maps.heatmap.period')}
+              />
             </div>
             <SegmentedControl
               label={t('maps.heatmap.colors')}
@@ -223,7 +227,11 @@ export default function HeatmapPage() {
                 value: k,
                 label: (
                   <span className="inline-flex items-center gap-1.5">
-                    <span className="size-2.5 rounded-full" style={{ background: THEME_DOT[k] }} aria-hidden />
+                    <span
+                      className="size-2.5 rounded-full"
+                      style={{ background: THEME_DOT[k] }}
+                      aria-hidden
+                    />
                     {t(`maps.heatmap.themes.${k}`)}
                   </span>
                 ),
@@ -246,7 +254,11 @@ export default function HeatmapPage() {
 
       {noRoutes && (
         <Card>
-          <EmptyState icon={Flame} title={t('maps.heatmap.empty')} description={t('maps.heatmap.emptyHint')} />
+          <EmptyState
+            icon={Flame}
+            title={t('maps.heatmap.empty')}
+            description={t('maps.heatmap.emptyHint')}
+          />
         </Card>
       )}
 
@@ -273,7 +285,11 @@ export default function HeatmapPage() {
                   {t('maps.heatmap.privacy')}
                 </div>
               )}
-              {q.isFetching && <div className="rounded-lg bg-surface/90 px-2 py-1 text-xs text-fg-3">{t('common.loading')}</div>}
+              {q.isFetching && (
+                <div className="rounded-lg bg-surface/90 px-2 py-1 text-xs text-fg-3">
+                  {t('common.loading')}
+                </div>
+              )}
             </div>
             <div className="absolute right-3 top-3 z-10 flex gap-1.5">
               {hasFarRoutes && (
@@ -339,9 +355,7 @@ export default function HeatmapPage() {
               </>
             )}
           </HeatmapMap>
-          {count === 0 && (
-            <p className="mt-3 text-sm text-fg-3">{t('maps.heatmap.noMatch')}</p>
-          )}
+          {count === 0 && <p className="mt-3 text-sm text-fg-3">{t('maps.heatmap.noMatch')}</p>}
         </>
       )}
     </Page>

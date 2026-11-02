@@ -14,12 +14,19 @@ export function registerLinksRoutes(app: FastifyInstance): void {
   app.get('/workouts/:id', async (req): Promise<MapsWorkoutLinks> => {
     const { id } = idParam.parse(req.params);
     const aid = req.athleteId;
-    const w = get<{ id: number }>(app.db, 'SELECT id FROM workouts WHERE id = ? AND athlete_id = ?', [id, aid]);
+    const w = get<{ id: number }>(app.db, 'SELECT id FROM workouts WHERE id = ? AND athlete_id = ?', [
+      id,
+      aid,
+    ]);
     if (!w) throw notFound('Workout');
 
     // route
     let route: MapsWorkoutLinks['route'] = null;
-    const g = get<{ route_id: number | null }>(app.db, 'SELECT route_id FROM maps_workout_geo WHERE workout_id = ?', [id]);
+    const g = get<{ route_id: number | null }>(
+      app.db,
+      'SELECT route_id FROM maps_workout_geo WHERE workout_id = ?',
+      [id],
+    );
     if (g?.route_id) {
       const [r] = routeSummaries(app.db, aid, { min: 1, ids: [g.route_id] });
       if (r) {
@@ -31,7 +38,9 @@ export function registerLinksRoutes(app: FastifyInstance): void {
           [g.route_id],
         );
         const me = members.find((m) => m.id === id);
-        const rank = me ? 1 + members.filter((m) => m.t < me.t || (m.t === me.t && m.start_ts < me.start_ts)).length : null;
+        const rank = me
+          ? 1 + members.filter((m) => m.t < me.t || (m.t === me.t && m.start_ts < me.start_ts)).length
+          : null;
         route = {
           id: r.id,
           customName: r.customName,

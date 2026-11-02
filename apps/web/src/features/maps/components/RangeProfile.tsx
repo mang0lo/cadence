@@ -41,7 +41,8 @@ export function RangeProfile({
       const e = ele[i];
       if (e != null) pts.push([dist[i]!, e]);
     }
-    if (pts.length < 2 || total <= 0) return { area: null as string | null, line: null as string | null, lo: null, hi: null };
+    if (pts.length < 2 || total <= 0)
+      return { area: null as string | null, line: null as string | null, lo: null, hi: null };
     const lo = Math.min(...pts.map((p) => p[1]));
     const hi = Math.max(...pts.map((p) => p[1]));
     const span = Math.max(hi - lo, 8); // flat routes stay flat instead of being stretched to full height
@@ -111,7 +112,8 @@ export function RangeProfile({
         onPointerDown={(e) => {
           // pressing anywhere grabs the nearer handle (or the one on that side) and moves it there; drag to adjust
           const m = meters(e.clientX);
-          const which: Handle = m <= from ? 'start' : m >= to ? 'end' : Math.abs(m - from) <= Math.abs(m - to) ? 'start' : 'end';
+          const which: Handle =
+            m <= from ? 'start' : m >= to ? 'end' : Math.abs(m - from) <= Math.abs(m - to) ? 'start' : 'end';
           e.currentTarget.setPointerCapture(e.pointerId);
           setActive(which);
           set(which, m);
@@ -122,21 +124,43 @@ export function RangeProfile({
         }}
         onPointerCancel={() => setActive(null)}
       >
-        <svg viewBox="0 0 1000 100" preserveAspectRatio="none" className="absolute inset-0 size-full" aria-hidden>
+        <svg
+          viewBox="0 0 1000 100"
+          preserveAspectRatio="none"
+          className="absolute inset-0 size-full"
+          aria-hidden
+        >
           {area && <path d={area} fill="var(--accent)" opacity={0.14} />}
           {line && (
-            <path d={line} fill="none" stroke="var(--accent)" strokeWidth={1.75} vectorEffect="non-scaling-stroke" strokeLinejoin="round" />
+            <path
+              d={line}
+              fill="none"
+              stroke="var(--accent)"
+              strokeWidth={1.75}
+              vectorEffect="non-scaling-stroke"
+              strokeLinejoin="round"
+            />
           )}
         </svg>
         {/* what is not selected is dimmed */}
-        <div className="pointer-events-none absolute inset-y-0 left-0 bg-surface/70" style={{ width: pct(from) }} />
-        <div className="pointer-events-none absolute inset-y-0 right-0 bg-surface/70" style={{ width: `calc(100% - ${pct(to)})` }} />
+        <div
+          className="pointer-events-none absolute inset-y-0 left-0 bg-surface/70"
+          style={{ width: pct(from) }}
+        />
+        <div
+          className="pointer-events-none absolute inset-y-0 right-0 bg-surface/70"
+          style={{ width: `calc(100% - ${pct(to)})` }}
+        />
         {handle('start', from)}
         {handle('end', to)}
         {lo !== null && hi !== null && (
           <>
-            <span className="pointer-events-none absolute left-1.5 top-1 text-[10px] font-medium text-fg-3 tabular">{fmt.elevation(hi)}</span>
-            <span className="pointer-events-none absolute bottom-1 left-1.5 text-[10px] font-medium text-fg-3 tabular">{fmt.elevation(lo)}</span>
+            <span className="pointer-events-none absolute left-1.5 top-1 text-[10px] font-medium text-fg-3 tabular">
+              {fmt.elevation(hi)}
+            </span>
+            <span className="pointer-events-none absolute bottom-1 left-1.5 text-[10px] font-medium text-fg-3 tabular">
+              {fmt.elevation(lo)}
+            </span>
           </>
         )}
       </div>

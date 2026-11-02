@@ -69,7 +69,10 @@ export const geometryStep: DeriveStep = {
           storeSignature(db, athleteId, id, s?.lat, s?.lon, s?.dist);
         }
       });
-      ctx.report(Math.min(1, (i + slice.length) / Math.max(1, ids.length)), `${Math.min(ids.length, i + BATCH)} / ${ids.length}`);
+      ctx.report(
+        Math.min(1, (i + slice.length) / Math.max(1, ids.length)),
+        `${Math.min(ids.length, i + BATCH)} / ${ids.length}`,
+      );
     }
   },
 };

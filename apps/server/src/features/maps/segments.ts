@@ -1,8 +1,21 @@
-import { MIN_SEGMENT_M, profileSlice, segmentSports, valueAtDistance, type MapsSegmentEffort } from '@cadence/shared';
+import {
+  MIN_SEGMENT_M,
+  profileSlice,
+  segmentSports,
+  valueAtDistance,
+  type MapsSegmentEffort,
+} from '@cadence/shared';
 import { getStreams } from '../../core/workouts';
 import { all, get, prepare, run, tx, type Db } from '../../db/db';
 import { badRequest, notFound } from '../../lib/http';
-import { bounds, decodePolyline, distanceToPath, encodePolylineArrays, simplifyIndices, type LatLon } from '../../lib/geo';
+import {
+  bounds,
+  decodePolyline,
+  distanceToPath,
+  encodePolylineArrays,
+  simplifyIndices,
+  type LatLon,
+} from '../../lib/geo';
 import { gunzipJson, gzipJson } from '../../lib/gzip';
 import type { DeriveStep } from '../types';
 import { GATE_RADIUS_M, matchSegment, sliceStream, thinPath, type SegmentPath } from './segment-match';
@@ -67,10 +80,11 @@ export interface NewSegment {
 
 /** Cut the segment out of a workout's route, store it and match it against every compatible GPS workout. */
 export function createSegment(db: Db, athleteId: number, input: NewSegment): number {
-  const w = get<{ id: number; sport: string }>(db, 'SELECT id, sport FROM workouts WHERE id = ? AND athlete_id = ?', [
-    input.workoutId,
-    athleteId,
-  ]);
+  const w = get<{ id: number; sport: string }>(
+    db,
+    'SELECT id, sport FROM workouts WHERE id = ? AND athlete_id = ?',
+    [input.workoutId, athleteId],
+  );
   if (!w) throw notFound('Workout');
   const s = getStreams(db, athleteId, w.id);
   if (!s?.lat || !s.lon || !s.dist || s.lat.length < 2) throw badRequest('This activity has no GPS route');
@@ -206,7 +220,10 @@ export function matchWorkouts(
        AND workout_id NOT IN (SELECT id FROM workouts WHERE has_route = 1)`,
     [...segIds, ...(workoutIds === 'all' ? [] : workoutIds)],
   );
-  const del = prepare(db, `DELETE FROM maps_segment_efforts WHERE workout_id = ? AND segment_id IN (${inSegs})`);
+  const del = prepare(
+    db,
+    `DELETE FROM maps_segment_efforts WHERE workout_id = ? AND segment_id IN (${inSegs})`,
+  );
   const ins = prepare(
     db,
     `INSERT OR REPLACE INTO maps_segment_efforts (segment_id, workout_id, idx, athlete_id, start_ts, elapsed_s, moving_s, avg_hr, avg_speed, track_m)
@@ -232,13 +249,24 @@ export function matchWorkouts(
         const candidates = near.filter((p) => {
           // both gates must be on (the simplified version of) the workout's route
           line ??= w.polyline ? decodePolyline(w.polyline) : [];
-          return line.length > 1 && distanceToPath(p.start[0], p.start[1], line) <= PAD_M && distanceToPath(p.end[0], p.end[1], line) <= PAD_M;
+          return (
+            line.length > 1 &&
+            distanceToPath(p.start[0], p.start[1], line) <= PAD_M &&
+            distanceToPath(p.end[0], p.end[1], line) <= PAD_M
+          );
         });
         if (!candidates.length) continue;
         const s = getStreams(db, athleteId, w.id);
         if (!s?.lat || !s.lon || s.t.length < 2) continue;
         for (const p of candidates) {
-          const matches = matchSegment(p.path, { t: s.t, lat: s.lat, lon: s.lon, dist: s.dist, hr: s.hr, moving: s.moving });
+          const matches = matchSegment(p.path, {
+            t: s.t,
+            lat: s.lat,
+            lon: s.lon,
+            dist: s.dist,
+            hr: s.hr,
+            moving: s.moving,
+          });
           matches.forEach((m, idx) => {
             ins.run(
               p.row.id,
@@ -301,7 +329,12 @@ export interface EffortRow {
 }
 
 /** Efforts of visible workouts (hidden and duplicate workouts do not count), optionally of some segments only. */
-export function effortRows(db: Db, athleteId: number, segmentIds?: number[], workoutId?: number): EffortRow[] {
+export function effortRows(
+  db: Db,
+  athleteId: number,
+  segmentIds?: number[],
+  workoutId?: number,
+): EffortRow[] {
   const where = ['e.athlete_id = ?', 'w.hidden = 0', 'w.duplicate_of IS NULL'];
   const params: unknown[] = [athleteId];
   if (segmentIds) {

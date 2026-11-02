@@ -48,7 +48,14 @@ export interface SegmentMatch {
 const RAD = Math.PI / 180;
 
 /** Squared distance of p to segment a–b and the position (0..1) of the closest point on it. */
-function toSegment(px: number, py: number, ax: number, ay: number, bx: number, by: number): { d2: number; u: number } {
+function toSegment(
+  px: number,
+  py: number,
+  ax: number,
+  ay: number,
+  bx: number,
+  by: number,
+): { d2: number; u: number } {
   const dx = bx - ax;
   const dy = by - ay;
   const len2 = dx * dx + dy * dy;
@@ -105,7 +112,12 @@ function gateCrossings(
     }
     prev = next;
   }
-  if (kind === 'end' && n > 1 && side(n - 1) < 0 && Math.hypot(tx[n - 1]! - gx, ty[n - 1]! - gy) <= radius / 2) {
+  if (
+    kind === 'end' &&
+    n > 1 &&
+    side(n - 1) < 0 &&
+    Math.hypot(tx[n - 1]! - gx, ty[n - 1]! - gy) <= radius / 2
+  ) {
     out.push({ i: n - 2, u: 1, pos: td[n - 1]!, d: Math.hypot(tx[n - 1]! - gx, ty[n - 1]! - gy) });
   }
   return out;
@@ -201,7 +213,10 @@ export function matchSegment(seg: SegmentPath, track: MatchTrack, opts: MatchOpt
   }
   const td = new Float64Array(n);
   const haveDist = !!track.dist && track.dist.length >= n;
-  for (let i = 1; i < n; i++) td[i] = haveDist ? Math.max(td[i - 1]!, track.dist![i]!) : td[i - 1]! + Math.hypot(tx[i]! - tx[i - 1]!, ty[i]! - ty[i - 1]!);
+  for (let i = 1; i < n; i++)
+    td[i] = haveDist
+      ? Math.max(td[i - 1]!, track.dist![i]!)
+      : td[i - 1]! + Math.hypot(tx[i]! - tx[i - 1]!, ty[i]! - ty[i - 1]!);
 
   // gate directions: the segment's heading over its first / last ~20 m
   let js = 1;

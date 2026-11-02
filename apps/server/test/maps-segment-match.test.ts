@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { profileSlice, segmentSports, valueAtDistance } from '@cadence/shared';
 import { destination, haversine, type LatLon } from '../src/lib/geo';
-import { matchSegment, sliceStream, thinPath, type MatchTrack, type SegmentPath } from '../src/features/maps/segment-match';
+import {
+  matchSegment,
+  sliceStream,
+  thinPath,
+  type MatchTrack,
+  type SegmentPath,
+} from '../src/features/maps/segment-match';
 import { VIENNA, circle, trackAlong, type TestTrack } from './maps-fixtures';
 
 /** An L-shaped road: 3 km east, then 2 km north. */
@@ -21,7 +27,9 @@ const asTrack = (tr: TestTrack, extra: Partial<MatchTrack> = {}): MatchTrack => 
 
 /** The segment from `fromM` to `toM` along the road, built exactly like the creation endpoint does. */
 function segmentOf(track: TestTrack, fromM: number, toM: number): SegmentPath {
-  return thinPath(sliceStream({ lat: track.lat, lon: track.lon, dist: track.dist, ele: track.ele }, fromM, toM));
+  return thinPath(
+    sliceStream({ lat: track.lat, lon: track.lon, dist: track.dist, ele: track.ele }, fromM, toM),
+  );
 }
 
 describe('profile helpers', () => {
@@ -61,7 +69,14 @@ describe('profile helpers', () => {
     expect(sub.distanceM).toBe(400);
     expect(sub.gainM).toBeGreaterThan(17);
     expect(profileSlice(dist, undefined, 0, 500)).toMatchObject({ gainM: 0, gradePct: null });
-    expect(profileSlice(dist, dist.map(() => null), 0, 500).startEleM).toBeNull();
+    expect(
+      profileSlice(
+        dist,
+        dist.map(() => null),
+        0,
+        500,
+      ).startEleM,
+    ).toBeNull();
   });
 
   it('groups compatible sports', () => {
@@ -79,7 +94,9 @@ describe('sliceStream / thinPath', () => {
     const p = sliceStream({ lat: tr.lat, lon: tr.lon, dist: tr.dist, ele: tr.ele }, 1000, 2500);
     expect(p.dist[0]).toBe(0);
     expect(p.dist[p.dist.length - 1]).toBe(1500);
-    expect(haversine(p.lat[0]!, p.lon[0]!, ...(destination(VIENNA[0], VIENNA[1], 90, 1000) as LatLon))).toBeLessThan(3);
+    expect(
+      haversine(p.lat[0]!, p.lon[0]!, ...(destination(VIENNA[0], VIENNA[1], 90, 1000) as LatLon)),
+    ).toBeLessThan(3);
     expect(p.ele![0]).toBeCloseTo(200 + 1000 * 0.01, 0);
     const thin = thinPath(p, 1.5);
     expect(thin.lat.length).toBeLessThan(p.lat.length / 10); // straight road → a handful of points
@@ -129,7 +146,10 @@ describe('matchSegment', () => {
     expect(matchSegment(seg, asTrack(back))).toEqual([]);
 
     const shifted = ROAD.map((p) => destination(p[0], p[1], 0, 70) as LatLon);
-    const parallel = trackAlong([shifted[0]!, destination(shifted[1]![0], shifted[1]![1], 0, 0), shifted[2]!], { speed: 3 });
+    const parallel = trackAlong(
+      [shifted[0]!, destination(shifted[1]![0], shifted[1]![1], 0, 0), shifted[2]!],
+      { speed: 3 },
+    );
     expect(matchSegment(seg, asTrack(parallel))).toEqual([]);
 
     // cut the corner: straight from 1 km on the first leg to 1 km before the end of the second leg
@@ -142,7 +162,10 @@ describe('matchSegment', () => {
     expect(matchSegment(seg, asTrack(early))).toEqual([]);
 
     // far away from the segment entirely
-    const elsewhere = trackAlong([destination(VIENNA[0], VIENNA[1], 180, 10_000), destination(VIENNA[0], VIENNA[1], 180, 14_000)], { speed: 3 });
+    const elsewhere = trackAlong(
+      [destination(VIENNA[0], VIENNA[1], 180, 10_000), destination(VIENNA[0], VIENNA[1], 180, 14_000)],
+      { speed: 3 },
+    );
     expect(matchSegment(seg, asTrack(elsewhere))).toEqual([]);
   });
 
@@ -158,11 +181,20 @@ describe('matchSegment', () => {
 
   it('counts every lap on a loop segment once, without overlaps', () => {
     const lap = circle(VIENNA, 400, 72);
-    const lapsTrack = trackAlong([...lap, ...lap.slice(1), ...lap.slice(1)], { speed: 3, noiseM: 3, seed: 5 });
-    const loopSeg = segmentOf(trackAlong(lap, { speed: 3 }), 0, trackAlong(lap, { speed: 3 }).dist.at(-1)! - 5);
+    const lapsTrack = trackAlong([...lap, ...lap.slice(1), ...lap.slice(1)], {
+      speed: 3,
+      noiseM: 3,
+      seed: 5,
+    });
+    const loopSeg = segmentOf(
+      trackAlong(lap, { speed: 3 }),
+      0,
+      trackAlong(lap, { speed: 3 }).dist.at(-1)! - 5,
+    );
     const matches = matchSegment(loopSeg, asTrack(lapsTrack));
     expect(matches.length).toBe(3);
-    for (let i = 1; i < matches.length; i++) expect(matches[i]!.startT).toBeGreaterThanOrEqual(matches[i - 1]!.endT - 1);
+    for (let i = 1; i < matches.length; i++)
+      expect(matches[i]!.startT).toBeGreaterThanOrEqual(matches[i - 1]!.endT - 1);
     const expected = (2 * Math.PI * 400) / 3;
     for (const m of matches) expect(Math.abs(m.elapsedS - expected)).toBeLessThan(25);
   });
@@ -171,9 +203,17 @@ describe('matchSegment', () => {
     // stand still for 60 s in the middle of the segment (one fix per second at the same spot)
     const at = base.dist.findIndex((d) => d >= 2500);
     const extra = 60;
-    const rep = <T,>(arr: T[], v: T): T[] => [...arr.slice(0, at), ...Array<T>(extra).fill(v), ...arr.slice(at)];
+    const rep = <T>(arr: T[], v: T): T[] => [
+      ...arr.slice(0, at),
+      ...Array<T>(extra).fill(v),
+      ...arr.slice(at),
+    ];
     const track: MatchTrack = {
-      t: [...base.t.slice(0, at), ...Array.from({ length: extra }, (_, k) => base.t[at]! + k), ...base.t.slice(at).map((x) => x + extra)],
+      t: [
+        ...base.t.slice(0, at),
+        ...Array.from({ length: extra }, (_, k) => base.t[at]! + k),
+        ...base.t.slice(at).map((x) => x + extra),
+      ],
       lat: rep(base.lat, base.lat[at]!),
       lon: rep(base.lon, base.lon[at]!),
       dist: rep(base.dist, base.dist[at]!),

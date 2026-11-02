@@ -86,7 +86,9 @@ export function HeatmapMap({
 
   const bindEvents = (map: MapLibreMap) => {
     const hit = (point: { x: number; y: number }) =>
-      map.getLayer(LAYER.hit) ? map.queryRenderedFeatures([point.x, point.y] as never, { layers: [LAYER.hit] }) : [];
+      map.getLayer(LAYER.hit)
+        ? map.queryRenderedFeatures([point.x, point.y] as never, { layers: [LAYER.hit] })
+        : [];
     map.on('click', (e) => {
       if (lapseActiveRef.current) return;
       const ids = [...new Set(hit(e.point).map((f) => Number(f.properties?.id)))].filter(Number.isFinite);
@@ -222,7 +224,11 @@ function PopupList({ ids, byId }: { ids: number[]; byId: Map<number, MapsHeatmap
         {shown.map((a) => (
           <li key={a.id}>
             <Link to={`/activities/${a.id}`} className="group flex items-start gap-2">
-              <span className="mt-1.5 size-2 shrink-0 rounded-full" style={{ background: sportColorVar(a.sport) }} aria-hidden />
+              <span
+                className="mt-1.5 size-2 shrink-0 rounded-full"
+                style={{ background: sportColorVar(a.sport) }}
+                aria-hidden
+              />
               <span className="min-w-0">
                 <span className="block truncate font-medium text-fg group-hover:text-accent-fg">
                   {workoutTitle(a, lang)}
@@ -238,7 +244,9 @@ function PopupList({ ids, byId }: { ids: number[]; byId: Map<number, MapsHeatmap
         ))}
       </ul>
       {items.length > shown.length && (
-        <div className="mt-2 text-xs text-fg-3">{t('maps.heatmap.more', { count: items.length - shown.length })}</div>
+        <div className="mt-2 text-xs text-fg-3">
+          {t('maps.heatmap.more', { count: items.length - shown.length })}
+        </div>
       )}
     </div>
   );

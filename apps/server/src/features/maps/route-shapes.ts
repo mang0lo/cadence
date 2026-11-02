@@ -43,7 +43,9 @@ export function makeSignature(
   const cum = new Float64Array(m);
   for (let i = 1; i < m; i++) {
     cum[i] =
-      dist && dist.length >= m ? dist[i]! : cum[i - 1]! + haversine(lat[i - 1]!, lon[i - 1]!, lat[i]!, lon[i]!);
+      dist && dist.length >= m
+        ? dist[i]!
+        : cum[i - 1]! + haversine(lat[i - 1]!, lon[i - 1]!, lat[i]!, lon[i]!);
   }
   // a stored distance stream can contain equal neighbours; keep it monotone
   for (let i = 1; i < m; i++) if (cum[i]! < cum[i - 1]!) cum[i] = cum[i - 1]!;

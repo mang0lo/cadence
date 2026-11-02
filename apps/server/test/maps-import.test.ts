@@ -38,7 +38,8 @@ describe('maps on imported data', () => {
     expect(res.statusCode, `${url}: ${res.body.slice(0, 300)}`).toBe(200);
     return res.json<T>();
   };
-  const count = (table: string) => (db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get() as { n: number }).n;
+  const count = (table: string) =>
+    (db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get() as { n: number }).n;
 
   beforeAll(async () => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cadence-maps-import-'));
@@ -67,7 +68,9 @@ describe('maps on imported data', () => {
   });
 
   it('derives tiles, signatures and routes for the imported GPS workouts', async () => {
-    const routed = (db.prepare('SELECT COUNT(*) AS n FROM workouts WHERE has_route = 1').get() as { n: number }).n;
+    const routed = (
+      db.prepare('SELECT COUNT(*) AS n FROM workouts WHERE has_route = 1').get() as { n: number }
+    ).n;
     expect(routed).toBeGreaterThan(15);
     expect(count('maps_workout_geo')).toBeGreaterThan(routed * 0.9);
     expect(count('maps_workout_tiles')).toBeGreaterThan(routed * 5);
@@ -76,7 +79,14 @@ describe('maps on imported data', () => {
     expect(explorer.totals.workouts).toBeGreaterThan(15);
     expect(explorer.months.length).toBeGreaterThan(3);
     const heat = await get<MapsHeatmapResponse>('/api/maps/heatmap');
-    expect(heat.items.length).toBe(routed - (db.prepare('SELECT COUNT(*) AS n FROM workouts WHERE has_route = 1 AND duplicate_of IS NOT NULL').get() as { n: number }).n);
+    expect(heat.items.length).toBe(
+      routed -
+        (
+          db
+            .prepare('SELECT COUNT(*) AS n FROM workouts WHERE has_route = 1 AND duplicate_of IS NOT NULL')
+            .get() as { n: number }
+        ).n,
+    );
     const routes = await get<MapsRoutesResponse>('/api/maps/routes?min=1');
     expect(routes.items.length).toBeGreaterThan(3);
     // every route has an efforts-based summary that makes sense
@@ -109,20 +119,36 @@ describe('maps on imported data', () => {
   });
 
   it('survives a full rebuild without warnings and with the same efforts', async () => {
-    const before = (await get<MapsSegmentDetail>(`/api/maps/segments/${segmentId}`)).efforts.map((e) => [e.workoutId, e.idx, e.elapsedS]);
-    const routesBefore = (await get<MapsRoutesResponse>('/api/maps/routes?min=1')).items.map((r) => r.count).sort();
+    const before = (await get<MapsSegmentDetail>(`/api/maps/segments/${segmentId}`)).efforts.map((e) => [
+      e.workoutId,
+      e.idx,
+      e.elapsedS,
+    ]);
+    const routesBefore = (await get<MapsRoutesResponse>('/api/maps/routes?min=1')).items
+      .map((r) => r.count)
+      .sort();
     const res = await app.inject({ method: 'POST', url: '/api/import/rederive', payload: {} });
     expect(res.statusCode).toBe(202);
     const job = await waitForJob(res.json<ImportJob>().id);
     expect(job.status).toBe('done');
     expect(job.stats.warnings.filter((w) => /maps\./.test(w))).toEqual([]);
-    const after = (await get<MapsSegmentDetail>(`/api/maps/segments/${segmentId}`)).efforts.map((e) => [e.workoutId, e.idx, e.elapsedS]);
+    const after = (await get<MapsSegmentDetail>(`/api/maps/segments/${segmentId}`)).efforts.map((e) => [
+      e.workoutId,
+      e.idx,
+      e.elapsedS,
+    ]);
     expect(after).toEqual(before);
-    expect((await get<MapsRoutesResponse>('/api/maps/routes?min=1')).items.map((r) => r.count).sort()).toEqual(routesBefore);
+    expect(
+      (await get<MapsRoutesResponse>('/api/maps/routes?min=1')).items.map((r) => r.count).sort(),
+    ).toEqual(routesBefore);
   });
 
   it('is wiped by a reset together with everything else', async () => {
-    const res = await app.inject({ method: 'POST', url: '/api/import/reset', payload: { confirm: 'DELETE' } });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/import/reset',
+      payload: { confirm: 'DELETE' },
+    });
     expect(res.statusCode, res.body).toBeLessThan(300);
     for (const table of [
       'maps_workout_tiles',

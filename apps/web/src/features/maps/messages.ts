@@ -221,7 +221,8 @@ export const messages: Dictionary = {
       privacy: 'Start und Ziel in deinen Privatsphäre-Zonen sind ausgeblendet.',
     },
     explorer: {
-      subtitle: 'Jede Kartenkachel, durch die du gekommen bist. Schließe Lücken und vergrößere dein größtes Quadrat.',
+      subtitle:
+        'Jede Kartenkachel, durch die du gekommen bist. Schließe Lücken und vergrößere dein größtes Quadrat.',
       zoomLabel: 'Kachelgröße',
       zoom14: 'Quadrate (Zoom 14)',
       zoom17: 'Detail (Zoom 17)',
@@ -260,7 +261,8 @@ export const messages: Dictionary = {
       emptyHint: 'Importiere Aktivitäten mit GPS-Strecke, um Kartenkacheln zu sammeln.',
     },
     routes: {
-      subtitle: 'Strecken, die du mehrmals gemacht hast. Sieh, wie du dich auf derselben Strecke verbesserst.',
+      subtitle:
+        'Strecken, die du mehrmals gemacht hast. Sieh, wie du dich auf derselben Strecke verbesserst.',
       auto: {
         loop: '{area} · Runde · {distance}',
         out_and_back: '{area} · Hin und zurück · {distance}',
@@ -272,7 +274,12 @@ export const messages: Dictionary = {
       kind: { loop: 'Runde', out_and_back: 'Hin und zurück', point_to_point: 'Von A nach B' },
       minTimes: 'Mindestens so oft gemacht',
       sortBy: 'Sortieren nach',
-      sort: { count: 'Am häufigsten', recent: 'Zuletzt', distance: 'Längste', improved: 'Größte Verbesserung' },
+      sort: {
+        count: 'Am häufigsten',
+        recent: 'Zuletzt',
+        distance: 'Längste',
+        improved: 'Größte Verbesserung',
+      },
       timesDone: 'Absolviert',
       trend: 'Tempo-Trend',
       best: 'Bestzeit',
@@ -305,7 +312,8 @@ export const messages: Dictionary = {
       showAllEfforts: 'Alle {count} anzeigen',
     },
     segments: {
-      subtitle: 'Zeichne ein Stück einer deiner Aktivitäten und sieh jedes Mal, wenn du es gelaufen oder gefahren bist.',
+      subtitle:
+        'Zeichne ein Stück einer deiner Aktivitäten und sieh jedes Mal, wenn du es gelaufen oder gefahren bist.',
       newSegment: 'Neues Segment',
       empty: 'Noch keine Segmente',
       emptyHint:
@@ -333,7 +341,8 @@ export const messages: Dictionary = {
       prBadge: 'Beste',
       wasPr: 'Bestzeit damals',
       deleteTitle: 'Segment löschen?',
-      deleteText: 'Das Segment „{name}“ und seine Durchgänge werden entfernt. Deine Aktivitäten bleiben unverändert.',
+      deleteText:
+        'Das Segment „{name}“ und seine Durchgänge werden entfernt. Deine Aktivitäten bleiben unverändert.',
       new: {
         subtitle: 'Wähle Start und Ziel auf der Strecke einer Aktivität.',
         backToActivity: 'Zurück zur Aktivität',
@@ -341,7 +350,8 @@ export const messages: Dictionary = {
         pickHint: 'Wähle die Aktivität, aus deren Strecke du ein Segment schneiden möchtest.',
         chooseOther: 'Andere Aktivität wählen',
         pickRange: 'Start und Ziel',
-        pickRangeHint: 'Ziehe die beiden Griffe (oder nutze die Pfeiltasten). Ein Segment ist mindestens {min} lang.',
+        pickRangeHint:
+          'Ziehe die beiden Griffe (oder nutze die Pfeiltasten). Ein Segment ist mindestens {min} lang.',
         startHandle: 'Segmentstart',
         endHandle: 'Segmentziel',
         yourTime: 'Deine Zeit hier',

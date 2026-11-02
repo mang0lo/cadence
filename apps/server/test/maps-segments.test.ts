@@ -37,7 +37,12 @@ describe('segments: creation, matching, ranking and the workout links', () => {
     return ids[key]!;
   };
 
-  const api = async <T>(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', url: string, payload?: unknown, expected = 200) => {
+  const api = async <T>(
+    method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
+    url: string,
+    payload?: unknown,
+    expected = 200,
+  ) => {
     const res = await ctx.app.inject({ method, url, payload: payload as never });
     expect(res.statusCode, `${method} ${url}: ${res.body.slice(0, 300)}`).toBe(expected);
     return (res.body ? res.json() : undefined) as T;
@@ -51,10 +56,28 @@ describe('segments: creation, matching, ranking and the workout links', () => {
     run('slow', 1, 2.5);
     run('fast', 2, 3.6);
     run('hidden', 3, 3.2, ROAD, { hidden: true });
-    run('parallel', 4, 3, ROAD.map((p) => destination(p[0], p[1], 0, 90) as LatLon));
-    run('abroad', 5, 3, ROAD.map((p) => [p[0] - 8, p[1] + 20] as LatLon));
-    ids.walk = insertWorkout(ctx.db, { sport: 'walk', startTs: t0 + 12 * day, track: trackAlong(ROAD, { speed: 1.4, ele: ELE }) });
-    ids.ride = insertWorkout(ctx.db, { sport: 'ride', startTs: t0 + 14 * day, track: trackAlong(ROAD, { speed: 8, ele: ELE }) });
+    run(
+      'parallel',
+      4,
+      3,
+      ROAD.map((p) => destination(p[0], p[1], 0, 90) as LatLon),
+    );
+    run(
+      'abroad',
+      5,
+      3,
+      ROAD.map((p) => [p[0] - 8, p[1] + 20] as LatLon),
+    );
+    ids.walk = insertWorkout(ctx.db, {
+      sport: 'walk',
+      startTs: t0 + 12 * day,
+      track: trackAlong(ROAD, { speed: 1.4, ele: ELE }),
+    });
+    ids.ride = insertWorkout(ctx.db, {
+      sport: 'ride',
+      startTs: t0 + 14 * day,
+      track: trackAlong(ROAD, { speed: 8, ele: ELE }),
+    });
     ids.strength = insertWorkout(ctx.db, { sport: 'strength', startTs: t0 + 16 * day });
     await runMapsSteps(ctx.db, 'all');
   }, 60_000);
@@ -105,7 +128,9 @@ describe('segments: creation, matching, ranking and the workout links', () => {
   });
 
   it('keeps the hidden workout out of the statistics but stores its effort', async () => {
-    const stored = ctx.db.prepare('SELECT COUNT(*) AS n FROM maps_segment_efforts WHERE workout_id = ?').get(ids.hidden) as { n: number };
+    const stored = ctx.db
+      .prepare('SELECT COUNT(*) AS n FROM maps_segment_efforts WHERE workout_id = ?')
+      .get(ids.hidden) as { n: number };
     expect(stored.n).toBe(1);
     const list = await api<MapsSegmentsResponse>('GET', '/api/maps/segments');
     expect(list.items.length).toBe(1);
@@ -156,7 +181,14 @@ describe('segments: creation, matching, ranking and the workout links', () => {
   it('lists what the maps feature knows about a workout (segments + route)', async () => {
     const links = await api<MapsWorkoutLinks>('GET', `/api/maps/workouts/${ids.fast}`);
     expect(links.segments.length).toBe(1);
-    expect(links.segments[0]!).toMatchObject({ segmentId, name: 'Corner climb', rank: 1, pr: true, efforts: 4, idx: 0 });
+    expect(links.segments[0]!).toMatchObject({
+      segmentId,
+      name: 'Corner climb',
+      rank: 1,
+      pr: true,
+      efforts: 4,
+      idx: 0,
+    });
     expect(links.segments[0]!.elapsedS).toBeCloseTo(3000 / 3.6, -1);
     expect(links.route).not.toBeNull();
     expect(links.route!.count).toBeGreaterThanOrEqual(1);
@@ -167,26 +199,48 @@ describe('segments: creation, matching, ranking and the workout links', () => {
   });
 
   it('stars, renames and sorts starred segments first', async () => {
-    const second = await api<MapsSegmentDetail>('POST', '/api/maps/segments', { workoutId: ids.source, startM: 100, endM: 700, name: 'Opener' }, 201);
+    const second = await api<MapsSegmentDetail>(
+      'POST',
+      '/api/maps/segments',
+      { workoutId: ids.source, startM: 100, endM: 700, name: 'Opener' },
+      201,
+    );
     expect(second.efforts.length).toBeGreaterThanOrEqual(3);
     let list = await api<MapsSegmentsResponse>('GET', '/api/maps/segments');
     expect(list.items.map((s) => s.name)).toEqual(['Corner climb', 'Opener']); // newest effort first, then newest segment
-    const starred = await api<MapsSegmentDetail>('PATCH', `/api/maps/segments/${second.segment.id}`, { starred: true });
+    const starred = await api<MapsSegmentDetail>('PATCH', `/api/maps/segments/${second.segment.id}`, {
+      starred: true,
+    });
     expect(starred.segment.starred).toBe(true);
     list = await api<MapsSegmentsResponse>('GET', '/api/maps/segments');
     expect(list.items[0]!.name).toBe('Opener');
-    const renamed = await api<MapsSegmentDetail>('PATCH', `/api/maps/segments/${second.segment.id}`, { name: ' Warm-up ' });
+    const renamed = await api<MapsSegmentDetail>('PATCH', `/api/maps/segments/${second.segment.id}`, {
+      name: ' Warm-up ',
+    });
     expect(renamed.segment.name).toBe('Warm-up');
-    expect((await ctx.app.inject({ method: 'PATCH', url: `/api/maps/segments/${second.segment.id}`, payload: { name: '' } })).statusCode).toBe(400);
+    expect(
+      (
+        await ctx.app.inject({
+          method: 'PATCH',
+          url: `/api/maps/segments/${second.segment.id}`,
+          payload: { name: '' },
+        })
+      ).statusCode,
+    ).toBe(400);
     await api('DELETE', `/api/maps/segments/${second.segment.id}`, undefined, 204);
     expect((await ctx.app.inject({ url: `/api/maps/segments/${second.segment.id}` })).statusCode).toBe(404);
-    const left = ctx.db.prepare('SELECT COUNT(*) AS n FROM maps_segment_efforts WHERE segment_id = ?').get(second.segment.id) as { n: number };
+    const left = ctx.db
+      .prepare('SELECT COUNT(*) AS n FROM maps_segment_efforts WHERE segment_id = ?')
+      .get(second.segment.id) as { n: number };
     expect(left.n).toBe(0); // efforts go with the segment
-    expect((await ctx.app.inject({ method: 'DELETE', url: `/api/maps/segments/${second.segment.id}` })).statusCode).toBe(404);
+    expect(
+      (await ctx.app.inject({ method: 'DELETE', url: `/api/maps/segments/${second.segment.id}` })).statusCode,
+    ).toBe(404);
   });
 
   it('validates the creation request', async () => {
-    const post = (payload: unknown) => ctx.app.inject({ method: 'POST', url: '/api/maps/segments', payload: payload as never });
+    const post = (payload: unknown) =>
+      ctx.app.inject({ method: 'POST', url: '/api/maps/segments', payload: payload as never });
     expect((await post({ workoutId: ids.source, startM: 500, endM: 400, name: 'x' })).statusCode).toBe(400);
     expect((await post({ workoutId: ids.source, startM: 500, endM: 560, name: 'x' })).statusCode).toBe(400); // < 100 m
     expect((await post({ workoutId: ids.source, startM: 0, endM: 1000, name: '   ' })).statusCode).toBe(400);

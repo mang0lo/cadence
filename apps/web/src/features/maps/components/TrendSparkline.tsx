@@ -36,7 +36,14 @@ export function TrendSparkline({
         style={{ width: '100%', height, overflow: 'visible', display: 'block' }}
       >
         {ariaLabel && <title id={id}>{ariaLabel}</title>}
-        <path d={d} fill="none" stroke="var(--axis-text)" strokeWidth={1.5} vectorEffect="non-scaling-stroke" strokeLinejoin="round" />
+        <path
+          d={d}
+          fill="none"
+          stroke="var(--axis-text)"
+          strokeWidth={1.5}
+          vectorEffect="non-scaling-stroke"
+          strokeLinejoin="round"
+        />
       </svg>
       <span
         aria-hidden

@@ -49,7 +49,9 @@ export default function SegmentNewPage() {
       <div className="mb-3">
         <Link to={Number.isInteger(workout) && workout > 0 ? `/activities/${workout}` : '/maps/segments'}>
           <Button variant="ghost" size="sm" icon={ArrowLeft}>
-            {Number.isInteger(workout) && workout > 0 ? t('maps.segments.new.backToActivity') : t('maps.titles.SegmentsPage')}
+            {Number.isInteger(workout) && workout > 0
+              ? t('maps.segments.new.backToActivity')
+              : t('maps.titles.SegmentsPage')}
           </Button>
         </Link>
       </div>
@@ -86,7 +88,13 @@ function Picker() {
           ))}
         </div>
       )}
-      {q.data && q.data.items.length === 0 && <EmptyState icon={Waypoints} title={t('maps.heatmap.empty')} description={t('maps.heatmap.emptyHint')} />}
+      {q.data && q.data.items.length === 0 && (
+        <EmptyState
+          icon={Waypoints}
+          title={t('maps.heatmap.empty')}
+          description={t('maps.heatmap.emptyHint')}
+        />
+      )}
       {q.data && (
         <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {q.data.items.map((w) => (
@@ -96,7 +104,13 @@ function Picker() {
                 onClick={() => setParams({ workout: String(w.id) })}
                 className="block w-full overflow-hidden rounded-card border border-border bg-surface text-left transition-colors hover:border-border-strong"
               >
-                <RouteThumbnail polyline={w.polyline} color={sportColorVar(w.sport)} width={260} height={110} className="h-28 w-full rounded-none" />
+                <RouteThumbnail
+                  polyline={w.polyline}
+                  color={sportColorVar(w.sport)}
+                  width={260}
+                  height={110}
+                  className="h-28 w-full rounded-none"
+                />
                 <div className="p-3">
                   <div className="truncate text-sm font-semibold text-fg">{workoutTitle(w, lang)}</div>
                   <div className="text-xs text-fg-3">
@@ -114,7 +128,10 @@ function Picker() {
 
 function Editor({ workoutId }: { workoutId: number }) {
   const t = useT();
-  const q = useApi<MapsSegmentSource>(['maps', 'segment-source', workoutId], `/maps/segments/source/${workoutId}`);
+  const q = useApi<MapsSegmentSource>(
+    ['maps', 'segment-source', workoutId],
+    `/maps/segments/source/${workoutId}`,
+  );
   if (q.isError)
     return (
       <Card>
@@ -214,7 +231,13 @@ function EditorBody({ source }: { source: MapsSegmentSource }) {
     <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
       <div className="grid min-w-0 gap-4">
         <Card padded={false} className="flex min-h-[22rem] flex-col overflow-hidden">
-          <LineMap className="min-h-[22rem] flex-1 rounded-none" lines={lines} markers={markers} bounds={bounds} padding={56} />
+          <LineMap
+            className="min-h-[22rem] flex-1 rounded-none"
+            lines={lines}
+            markers={markers}
+            bounds={bounds}
+            padding={56}
+          />
         </Card>
         <Card>
           <CardHeader
@@ -235,7 +258,12 @@ function EditorBody({ source }: { source: MapsSegmentSource }) {
 
       <Card className="flex min-w-0 flex-col gap-4 self-start">
         <div className="min-w-0">
-          <div className="truncate text-sm font-semibold text-fg">{workoutTitle({ name: source.name, sport: source.sport, startTs: source.startTs, tzMin: source.tzMin }, lang)}</div>
+          <div className="truncate text-sm font-semibold text-fg">
+            {workoutTitle(
+              { name: source.name, sport: source.sport, startTs: source.startTs, tzMin: source.tzMin },
+              lang,
+            )}
+          </div>
           <div className="mt-1 flex flex-wrap items-center gap-x-2 text-xs text-fg-3">
             <SportBadge sport={source.sport} />
             <span aria-hidden>·</span>
@@ -254,7 +282,12 @@ function EditorBody({ source }: { source: MapsSegmentSource }) {
           ]}
         />
 
-        <Field label={t('maps.segments.name')} help={t('maps.segments.new.matchHint', { sports: segmentSports(source.sport).map(sportLabel).join(', ') })}>
+        <Field
+          label={t('maps.segments.name')}
+          help={t('maps.segments.new.matchHint', {
+            sports: segmentSports(source.sport).map(sportLabel).join(', '),
+          })}
+        >
           <Input
             value={name}
             maxLength={120}
@@ -267,7 +300,13 @@ function EditorBody({ source }: { source: MapsSegmentSource }) {
         </Field>
         {error != null && <ErrorState error={error} />}
         <div className="flex flex-wrap items-center gap-2">
-          <Button variant="primary" icon={Check} loading={saving} disabled={!canSave} onClick={() => void save()}>
+          <Button
+            variant="primary"
+            icon={Check}
+            loading={saving}
+            disabled={!canSave}
+            onClick={() => void save()}
+          >
             {t('maps.segments.new.save')}
           </Button>
           <Link to={`/activities/${source.workoutId}`}>

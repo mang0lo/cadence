@@ -3,7 +3,15 @@ import { Grid3x3, Info, Maximize2, Target } from 'lucide-react';
 import { tileBounds, tileKey, tileToLonLat, type MapsExplorerResponse } from '@cadence/shared';
 import { ChartCard } from '@/components/charts/ChartCard';
 import { EChart } from '@/components/charts/EChart';
-import { areaSeries, axisTooltip, barSeries, categoryAxis, grid, tooltipHtml, valueAxis } from '@/components/charts/options';
+import {
+  areaSeries,
+  axisTooltip,
+  barSeries,
+  categoryAxis,
+  grid,
+  tooltipHtml,
+  valueAxis,
+} from '@/components/charts/options';
 import { useChartTheme } from '@/components/charts/theme';
 import {
   Button,
@@ -71,8 +79,16 @@ export default function ExplorerPage() {
   const [mapZoom, setMapZoom] = useState(10);
 
   const sportParam = sport === 'all' ? undefined : sport;
-  const q14 = useApi<MapsExplorerResponse>(['maps', 'explorer', 14], '/maps/explorer', { zoom: 14, sport: sportParam });
-  const q17 = useApi<MapsExplorerResponse>(['maps', 'explorer', 17], '/maps/explorer', { zoom: 17, sport: sportParam }, { enabled: zoom === '17' });
+  const q14 = useApi<MapsExplorerResponse>(['maps', 'explorer', 14], '/maps/explorer', {
+    zoom: 14,
+    sport: sportParam,
+  });
+  const q17 = useApi<MapsExplorerResponse>(
+    ['maps', 'explorer', 17],
+    '/maps/explorer',
+    { zoom: 17, sport: sportParam },
+    { enabled: zoom === '17' },
+  );
   const data14 = q14.data;
   const shown = zoom === '17' ? (q17.data ?? null) : (data14 ?? null);
   const z = Number(zoom) as 14 | 17;
@@ -80,19 +96,22 @@ export default function ExplorerPage() {
   const tiles = data14?.tiles;
   const buckets = useMemo(() => firstVisitBuckets(tiles ?? []), [tiles]);
   const visited = useMemo(() => new Set((tiles ?? []).map((x) => tileKey(x.x, x.y))), [tiles]);
-  const detail = useMemo(() => (q17.data?.compact ? detailKeys(q17.data.compact.x, q17.data.compact.y) : null), [q17.data]);
-  const square = shown?.maxSquare ?? null;
-  const next = useMemo(
-    () => (z === 14 && square ? nextSquare(visited, square) : null),
-    [z, square, visited],
+  const detail = useMemo(
+    () => (q17.data?.compact ? detailKeys(q17.data.compact.x, q17.data.compact.y) : null),
+    [q17.data],
   );
+  const square = shown?.maxSquare ?? null;
+  const next = useMemo(() => (z === 14 && square ? nextSquare(visited, square) : null), [z, square, visited]);
 
   // entering the detail view: fly to the max square (zoom-17 tiles only show from map zoom 12)
   const sq17 = q17.data?.maxSquare ?? null;
   useEffect(() => {
     if (zoom === '17' && sq17) {
       const pad = Math.max(2, sq17.size);
-      setFocus({ bounds: tileBounds(sq17.x - pad, sq17.y - pad, 17, sq17.size + 2 * pad, sq17.size + 2 * pad), nonce: Date.now() });
+      setFocus({
+        bounds: tileBounds(sq17.x - pad, sq17.y - pad, 17, sq17.size + 2 * pad, sq17.size + 2 * pad),
+        nonce: Date.now(),
+      });
     }
     if (zoom === '14') setFocus(null);
   }, [zoom, sq17?.x, sq17?.y, sq17?.size]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -159,7 +178,11 @@ export default function ExplorerPage() {
 
       {empty && (
         <Card>
-          <EmptyState icon={Grid3x3} title={t('maps.explorer.empty')} description={t('maps.explorer.emptyHint')} />
+          <EmptyState
+            icon={Grid3x3}
+            title={t('maps.explorer.empty')}
+            description={t('maps.explorer.emptyHint')}
+          />
         </Card>
       )}
 
@@ -172,12 +195,17 @@ export default function ExplorerPage() {
                   label={t('maps.explorer.stats.tiles')}
                   value={fmt.int(shown.totals.tiles)}
                   hint={t('maps.explorer.tileSize', {
-                    size: z === 14 ? fmt.distance(tileEdgeM(14, centerLat), 1) : fmt.shortDistance(tileEdgeM(17, centerLat)),
+                    size:
+                      z === 14
+                        ? fmt.distance(tileEdgeM(14, centerLat), 1)
+                        : fmt.shortDistance(tileEdgeM(17, centerLat)),
                   })}
                 />
                 <Stat
                   label={t('maps.explorer.stats.maxSquare')}
-                  value={shown.totals.maxSquare ? `${shown.totals.maxSquare} × ${shown.totals.maxSquare}` : '–'}
+                  value={
+                    shown.totals.maxSquare ? `${shown.totals.maxSquare} × ${shown.totals.maxSquare}` : '–'
+                  }
                   hint={t('maps.explorer.stats.maxSquareHint', { count: shown.totals.maxSquare ** 2 })}
                 />
                 <Stat
@@ -245,7 +273,10 @@ export default function ExplorerPage() {
                   size="sm"
                   variant="secondary"
                   onClick={() =>
-                    setFocus({ bounds: tileBounds(next.x - 1, next.y - 1, 14, next.size + 2, next.size + 2), nonce: Date.now() })
+                    setFocus({
+                      bounds: tileBounds(next.x - 1, next.y - 1, 14, next.size + 2, next.size + 2),
+                      nonce: Date.now(),
+                    })
                   }
                 >
                   {t('maps.explorer.next.show')}
@@ -274,7 +305,11 @@ export default function ExplorerPage() {
               <div className="pointer-events-none absolute left-3 top-3 z-10 flex flex-col items-start gap-1.5">
                 {z === 14 ? (
                   <Legend
-                    title={colorBy === 'visits' ? t('maps.explorer.legend.visits') : t('maps.explorer.legend.first')}
+                    title={
+                      colorBy === 'visits'
+                        ? t('maps.explorer.legend.visits')
+                        : t('maps.explorer.legend.first')
+                    }
                     ramp={(colorBy === 'visits' ? RAMPS.orange : RAMPS.blue)[base0 ? 'dark' : 'light']}
                     labels={
                       colorBy === 'visits'
@@ -295,7 +330,9 @@ export default function ExplorerPage() {
                   )
                 )}
                 {z === 17 && q17.isFetching && !q17.data && (
-                  <div className="rounded-lg bg-surface/90 px-2 py-1 text-xs text-fg-3">{t('common.loading')}</div>
+                  <div className="rounded-lg bg-surface/90 px-2 py-1 text-xs text-fg-3">
+                    {t('common.loading')}
+                  </div>
                 )}
               </div>
               <div className="absolute right-3 top-3 z-10">
@@ -327,14 +364,28 @@ const prevMonthKey = (m: string): string => {
   return mo === 1 ? `${y - 1}-12` : `${y}-${String(mo - 1).padStart(2, '0')}`;
 };
 
-function Legend({ title, ramp, labels, firstMode }: { title: string; ramp: readonly string[]; labels: string[]; firstMode: boolean }) {
+function Legend({
+  title,
+  ramp,
+  labels,
+  firstMode,
+}: {
+  title: string;
+  ramp: readonly string[];
+  labels: string[];
+  firstMode: boolean;
+}) {
   return (
     <div className="rounded-lg border border-border bg-surface/90 px-2.5 py-2 text-xs text-fg-2 shadow-card backdrop-blur">
       <div className="mb-1 font-medium text-fg">{title}</div>
       <ul className="space-y-0.5">
         {labels.map((l, i) => (
           <li key={i} className="flex items-center gap-2">
-            <span className="size-3 rounded-[3px] border border-border" style={{ background: ramp[i], opacity: 0.85 }} aria-hidden />
+            <span
+              className="size-3 rounded-[3px] border border-border"
+              style={{ background: ramp[i], opacity: 0.85 }}
+              aria-hidden
+            />
             <span className="tabular">{l}</span>
           </li>
         ))}
@@ -367,10 +418,19 @@ function MonthChart({
         const p = (params as { dataIndex: number }[])[0];
         const m = p ? months[p.dataIndex] : undefined;
         if (!m) return '';
-        return tooltipHtml(fmt.day(`${m.month}-01`, 'month'), [{ color: theme.accent, label: name, value: fmt.int(value(m)) }], theme);
+        return tooltipHtml(
+          fmt.day(`${m.month}-01`, 'month'),
+          [{ color: theme.accent, label: name, value: fmt.int(value(m)) }],
+          theme,
+        );
       }),
       xAxis: categoryAxis(theme, labels, {
-        axisLabel: { color: theme.muted, hideOverlap: true, fontSize: 11, formatter: (v: string) => fmt.day(`${v}-01`, 'monthYearShort') },
+        axisLabel: {
+          color: theme.muted,
+          hideOverlap: true,
+          fontSize: 11,
+          formatter: (v: string) => fmt.day(`${v}-01`, 'monthYearShort'),
+        },
         axisPointer: { type: 'line' },
       }),
       yAxis: valueAxis(theme, { minInterval: 1 }),
@@ -390,9 +450,15 @@ function MonthChart({
         columns: [
           { key: 'month', label: t('common.month') },
           { key: 'v', label: name, numeric: true },
-          ...(kind === 'new' ? [{ key: 'total', label: t('maps.explorer.charts.visited'), numeric: true }] : []),
+          ...(kind === 'new'
+            ? [{ key: 'total', label: t('maps.explorer.charts.visited'), numeric: true }]
+            : []),
         ],
-        rows: months.map((m) => ({ month: fmt.day(`${m.month}-01`, 'month'), v: fmt.int(value(m)), total: fmt.int(m.total) })),
+        rows: months.map((m) => ({
+          month: fmt.day(`${m.month}-01`, 'month'),
+          v: fmt.int(value(m)),
+          total: fmt.int(m.total),
+        })),
       }}
     >
       {loading ? (

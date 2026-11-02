@@ -10,7 +10,15 @@ import {
 import { getStreams } from '../../core/workouts';
 import { all, get, run, type Db } from '../../db/db';
 import { badRequest, notFound } from '../../lib/http';
-import { createSegment, effortRows, loadPath, rankEfforts, segmentRows, type EffortRow, type SegmentRow } from './segments';
+import {
+  createSegment,
+  effortRows,
+  loadPath,
+  rankEfforts,
+  segmentRows,
+  type EffortRow,
+  type SegmentRow,
+} from './segments';
 
 const idParam = z.object({ id: z.coerce.number().int().positive() });
 const workoutParam = z.object({ workoutId: z.coerce.number().int().positive() });
@@ -27,7 +35,11 @@ const patchBody = z.object({ name: name.optional(), starred: z.boolean().optiona
 export function segmentSummaries(db: Db, athleteId: number, ids?: number[]): MapsSegmentSummary[] {
   const rows = segmentRows(db, athleteId, ids);
   if (!rows.length) return [];
-  const efforts = effortRows(db, athleteId, rows.map((r) => r.id));
+  const efforts = effortRows(
+    db,
+    athleteId,
+    rows.map((r) => r.id),
+  );
   const bySegment = new Map<number, EffortRow[]>();
   for (const e of efforts) {
     const l = bySegment.get(e.segment_id);
@@ -104,9 +116,12 @@ export function registerSegmentRoutes(app: FastifyInstance): void {
   app.patch('/segments/:id', async (req): Promise<MapsSegmentDetail> => {
     const { id } = idParam.parse(req.params);
     const body = patchBody.parse(req.body ?? {});
-    if (!get(app.db, 'SELECT 1 FROM maps_segments WHERE id = ? AND athlete_id = ?', [id, req.athleteId])) throw notFound('Segment');
-    if (body.name !== undefined) run(app.db, 'UPDATE maps_segments SET name = ? WHERE id = ?', [body.name, id]);
-    if (body.starred !== undefined) run(app.db, 'UPDATE maps_segments SET starred = ? WHERE id = ?', [body.starred ? 1 : 0, id]);
+    if (!get(app.db, 'SELECT 1 FROM maps_segments WHERE id = ? AND athlete_id = ?', [id, req.athleteId]))
+      throw notFound('Segment');
+    if (body.name !== undefined)
+      run(app.db, 'UPDATE maps_segments SET name = ? WHERE id = ?', [body.name, id]);
+    if (body.starred !== undefined)
+      run(app.db, 'UPDATE maps_segments SET starred = ? WHERE id = ?', [body.starred ? 1 : 0, id]);
     return detail(app.db, req.athleteId, id);
   });
 
@@ -148,6 +163,15 @@ export function registerSegmentRoutes(app: FastifyInstance): void {
        WHERE e.workout_id = ? AND s.athlete_id = ? ORDER BY s.name`,
       [workoutId, req.athleteId],
     );
-    return { workoutId, name: w.name, sport: w.sport, startTs: w.start_ts, tzMin: w.tz_min, totalM: total, points, existing };
+    return {
+      workoutId,
+      name: w.name,
+      sport: w.sport,
+      startTs: w.start_ts,
+      tzMin: w.tz_min,
+      totalM: total,
+      points,
+      existing,
+    };
   });
 }

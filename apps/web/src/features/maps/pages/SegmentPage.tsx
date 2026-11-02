@@ -2,7 +2,13 @@ import { useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Check, Pencil, Star, Trash2, Trophy, Waypoints, X } from 'lucide-react';
-import { M_PER_FT, sportInfo, workoutTitle, type MapsSegmentDetail, type MapsSegmentEffort } from '@cadence/shared';
+import {
+  M_PER_FT,
+  sportInfo,
+  workoutTitle,
+  type MapsSegmentDetail,
+  type MapsSegmentEffort,
+} from '@cadence/shared';
 import { ChartCard } from '@/components/charts/ChartCard';
 import { EChart } from '@/components/charts/EChart';
 import { areaSeries, axisTooltip, grid, tooltipHtml, valueAxis } from '@/components/charts/options';
@@ -130,8 +136,18 @@ function Body({ detail }: { detail: MapsSegmentDetail }) {
                 onChange={(e) => setDraft(e.target.value)}
                 className="h-10 w-72 max-w-full text-lg font-semibold"
               />
-              <IconButton type="submit" icon={Check} label={t('common.save')} disabled={busy || !draft.trim()} />
-              <IconButton type="button" icon={X} label={t('common.cancel')} onClick={() => setEditing(false)} />
+              <IconButton
+                type="submit"
+                icon={Check}
+                label={t('common.save')}
+                disabled={busy || !draft.trim()}
+              />
+              <IconButton
+                type="button"
+                icon={X}
+                label={t('common.cancel')}
+                onClick={() => setEditing(false)}
+              />
             </form>
           ) : (
             s.name
@@ -176,14 +192,30 @@ function Body({ detail }: { detail: MapsSegmentDetail }) {
 
       <Card>
         <StatRow>
-          <Stat label={t('common.distance')} value={fmt.distanceParts(s.distanceM, 2).value} unit={fmt.distanceUnit} />
+          <Stat
+            label={t('common.distance')}
+            value={fmt.distanceParts(s.distanceM, 2).value}
+            unit={fmt.distanceUnit}
+          />
           <Stat
             label={t('maps.segments.avgGrade')}
             value={s.avgGradePct === null ? '–' : fmt.signed(s.avgGradePct, 1)}
             unit={s.avgGradePct === null ? undefined : '%'}
-            hint={s.elevationGainM !== null ? `${t('common.elevationGain')}: ${fmt.elevation(s.elevationGainM)}` : undefined}
+            hint={
+              s.elevationGainM !== null
+                ? `${t('common.elevationGain')}: ${fmt.elevation(s.elevationGainM)}`
+                : undefined
+            }
           />
-          <Stat label={t('maps.segments.efforts')} value={fmt.int(s.efforts)} hint={latest ? `${t('maps.routes.latest')}: ${fmt.date(latest.startTs, latest.tzMin, 'dayShort')}` : undefined} />
+          <Stat
+            label={t('maps.segments.efforts')}
+            value={fmt.int(s.efforts)}
+            hint={
+              latest
+                ? `${t('maps.routes.latest')}: ${fmt.date(latest.startTs, latest.tzMin, 'dayShort')}`
+                : undefined
+            }
+          />
           <Stat
             label={t('maps.segments.pr')}
             value={s.prTimeS === null ? '–' : fmt.duration(s.prTimeS)}
@@ -199,7 +231,11 @@ function Body({ detail }: { detail: MapsSegmentDetail }) {
 
       {efforts.length === 0 ? (
         <Card>
-          <EmptyState icon={Trophy} title={t('maps.segments.noEfforts')} description={t('maps.segments.noEffortsHint')} />
+          <EmptyState
+            icon={Trophy}
+            title={t('maps.segments.noEfforts')}
+            description={t('maps.segments.noEffortsHint')}
+          />
         </Card>
       ) : (
         <>
@@ -216,7 +252,11 @@ function Body({ detail }: { detail: MapsSegmentDetail }) {
             title={t('maps.segments.trendTitle')}
             subtitle={t('maps.routes.trendSubtitle')}
           />
-          <Leaderboard efforts={efforts} sport={s.sport} bestId={best ? `${best.workoutId}:${best.idx}` : null} />
+          <Leaderboard
+            efforts={efforts}
+            sport={s.sport}
+            bestId={best ? `${best.workoutId}:${best.idx}` : null}
+          />
         </>
       )}
 
@@ -252,7 +292,9 @@ function SegmentMap({ detail }: { detail: MapsSegmentDetail }) {
     const coords = toLngLat(decodePolyline(segment.polyline));
     let box: BBox | null = null;
     for (const [lo, la] of coords) box = unionBox(box, [lo, la, lo, la]);
-    const l: MapLine[] = [{ id: 'segment', lines: [coords], color: chart.accent, width: 5, casing: overlay.casing }];
+    const l: MapLine[] = [
+      { id: 'segment', lines: [coords], color: chart.accent, width: 5, casing: overlay.casing },
+    ];
     const m: MapMarker[] = [
       { id: 'start', coord: [segment.startLon, segment.startLat], color: chart.status.good, radius: 7 },
       { id: 'end', coord: [segment.endLon, segment.endLat], color: chart.fg, radius: 7 },
@@ -261,7 +303,13 @@ function SegmentMap({ detail }: { detail: MapsSegmentDetail }) {
   }, [segment, chart, overlay.casing]);
   return (
     <Card padded={false} className="flex min-h-[22rem] flex-col overflow-hidden">
-      <LineMap className="min-h-[22rem] flex-1 rounded-none" lines={lines} markers={markers} bounds={bounds} padding={64}>
+      <LineMap
+        className="min-h-[22rem] flex-1 rounded-none"
+        lines={lines}
+        markers={markers}
+        bounds={bounds}
+        padding={64}
+      >
         <div className="pointer-events-none absolute left-3 top-3 z-10 rounded-lg border border-border bg-surface/90 px-2.5 py-1.5 text-xs text-fg-2 shadow-card backdrop-blur">
           <span className="inline-flex items-center gap-2">
             <span className="size-2.5 rounded-full" style={{ background: chart.status.good }} aria-hidden />
@@ -289,7 +337,10 @@ function ProfileChart({ detail }: { detail: MapsSegmentDetail }) {
   const name = t('maps.segments.elevationProfile');
 
   const option = useMemo(() => {
-    const data = profile.dist.map((d, i) => [fmt.distanceValue(d), profile.ele[i] == null ? null : eleVal(profile.ele[i]!)]);
+    const data = profile.dist.map((d, i) => [
+      fmt.distanceValue(d),
+      profile.ele[i] == null ? null : eleVal(profile.ele[i]!),
+    ]);
     return {
       grid: grid({ top: 12, right: 30 }),
       tooltip: axisTooltip(theme, (params) => {
@@ -299,7 +350,8 @@ function ProfileChart({ detail }: { detail: MapsSegmentDetail }) {
         const e = profile.ele[p.dataIndex];
         const g = gradeAt(profile.dist, profile.ele, d);
         const rows = [{ color: theme.accent, label: name, value: e == null ? '–' : fmt.elevation(e) }];
-        if (g !== null) rows.push({ color: theme.muted, label: t('maps.segments.grade'), value: `${fmt.signed(g, 1)} %` });
+        if (g !== null)
+          rows.push({ color: theme.muted, label: t('maps.segments.grade'), value: `${fmt.signed(g, 1)} %` });
         return tooltipHtml(fmt.distance(d, 2), rows, theme);
       }),
       xAxis: valueAxis(theme, {
@@ -307,7 +359,11 @@ function ProfileChart({ detail }: { detail: MapsSegmentDetail }) {
         max: fmt.distanceValue(profile.dist[profile.dist.length - 1] ?? 0),
         splitLine: { show: false },
         axisLine: { show: true, lineStyle: { color: theme.axis } },
-        axisLabel: { color: theme.muted, fontSize: 11, formatter: (v: number) => `${fmt.num(v, v < 10 ? 1 : 0)} ${fmt.distanceUnit}` },
+        axisLabel: {
+          color: theme.muted,
+          fontSize: 11,
+          formatter: (v: number) => `${fmt.num(v, v < 10 ? 1 : 0)} ${fmt.distanceUnit}`,
+        },
       }),
       yAxis: valueAxis(theme, {
         scale: true,
@@ -341,14 +397,26 @@ function ProfileChart({ detail }: { detail: MapsSegmentDetail }) {
           }),
       }}
     >
-      {hasEle ? <EChart option={option as never} height={280} ariaLabel={name} /> : <EmptyState title={t('maps.segments.noElevation')} className="py-16" />}
+      {hasEle ? (
+        <EChart option={option as never} height={280} ariaLabel={name} />
+      ) : (
+        <EmptyState title={t('maps.segments.noElevation')} className="py-16" />
+      )}
     </ChartCard>
   );
 }
 
 type SortCol = 'rank' | 'date' | 'pace' | 'hr';
 
-function Leaderboard({ efforts, sport, bestId }: { efforts: MapsSegmentEffort[]; sport: string; bestId: string | null }) {
+function Leaderboard({
+  efforts,
+  sport,
+  bestId,
+}: {
+  efforts: MapsSegmentEffort[];
+  sport: string;
+  bestId: string | null;
+}) {
   const t = useT();
   const fmt = useFormat();
   const { lang } = useI18n();
@@ -358,7 +426,13 @@ function Leaderboard({ efforts, sport, bestId }: { efforts: MapsSegmentEffort[];
   const mixed = new Set(efforts.map((e) => e.sport)).size > 1;
   const rows = useMemo(() => {
     const key = (e: MapsSegmentEffort) =>
-      sort.col === 'rank' ? e.rank : sort.col === 'date' ? e.startTs : sort.col === 'pace' ? e.avgSpeed : (e.avgHr ?? 0);
+      sort.col === 'rank'
+        ? e.rank
+        : sort.col === 'date'
+          ? e.startTs
+          : sort.col === 'pace'
+            ? e.avgSpeed
+            : (e.avgHr ?? 0);
     const list = [...efforts].sort((a, b) => key(a) - key(b) || a.startTs - b.startTs);
     return sort.dir === 'desc' ? list.reverse() : list;
   }, [efforts, sort]);
@@ -368,7 +442,11 @@ function Leaderboard({ efforts, sport, bestId }: { efforts: MapsSegmentEffort[];
       numeric={numeric}
       className={className}
       onClick={() =>
-        setSort((s) => (s.col === col ? { col, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { col, dir: col === 'date' || col === 'pace' ? 'desc' : 'asc' }))
+        setSort((s) =>
+          s.col === col
+            ? { col, dir: s.dir === 'asc' ? 'desc' : 'asc' }
+            : { col, dir: col === 'date' || col === 'pace' ? 'desc' : 'asc' },
+        )
       }
       sorted={sort.col === col ? sort.dir : null}
     >
@@ -405,7 +483,10 @@ function Leaderboard({ efforts, sport, bestId }: { efforts: MapsSegmentEffort[];
                   )}
                 </TD>
                 <TD>
-                  <Link to={`/activities/${e.workoutId}`} className="font-medium text-fg hover:text-accent-fg">
+                  <Link
+                    to={`/activities/${e.workoutId}`}
+                    className="font-medium text-fg hover:text-accent-fg"
+                  >
                     {fmt.date(e.startTs, e.tzMin, 'day')}
                   </Link>
                   <span className="ml-2 text-xs text-fg-3">

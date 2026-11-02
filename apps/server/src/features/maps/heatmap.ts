@@ -51,7 +51,9 @@ export function trimPrivacyZones(points: LatLon[], zones: PrivacyZone[]): LatLon
   if (head.length < 2) return [];
   const out = trimLeading([...head].reverse(), zones).reverse();
   if (out.length < 2) return [];
-  return out.length === points.length && out[0] === points[0] && out[out.length - 1] === points[points.length - 1]
+  return out.length === points.length &&
+    out[0] === points[0] &&
+    out[out.length - 1] === points[points.length - 1]
     ? points
     : out;
 }

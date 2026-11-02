@@ -173,7 +173,10 @@ export function ExplorerMap({
             setPicked(typeof i === 'number' ? { i, lngLat: e.lngLat } : null);
           });
           map.on('mousemove', (e) => {
-            const over = zoomRef.current === 14 && map.getLayer(ID.fill) && map.queryRenderedFeatures(e.point, { layers: [ID.fill] }).length > 0;
+            const over =
+              zoomRef.current === 14 &&
+              map.getLayer(ID.fill) &&
+              map.queryRenderedFeatures(e.point, { layers: [ID.fill] }).length > 0;
             map.getCanvas().style.cursor = over ? 'pointer' : '';
           });
           map.on('moveend', () => {
@@ -201,7 +204,10 @@ function TilePopup({ tile }: { tile: MapsExplorerTile }) {
       <div className="text-xs font-medium text-fg-3">{t('maps.explorer.firstVisit')}</div>
       <div className="font-semibold text-fg">{fmt.date(tile.firstTs, tile.tzMin, 'day')}</div>
       <div className="mt-1 text-xs text-fg-3">{t('maps.explorer.visitsCount', { count: tile.visits })}</div>
-      <Link to={`/activities/${tile.workoutId}`} className="mt-1.5 inline-block text-xs font-medium text-accent-fg hover:underline">
+      <Link
+        to={`/activities/${tile.workoutId}`}
+        className="mt-1.5 inline-block text-xs font-medium text-accent-fg hover:underline"
+      >
         {t('maps.explorer.openFirst')}
       </Link>
     </div>

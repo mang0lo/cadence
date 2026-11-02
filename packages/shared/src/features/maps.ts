@@ -223,13 +223,18 @@ const SEGMENT_FAMILIES: string[][] = [
 ];
 
 /** Sports whose workouts can ride a segment that was drawn on a workout of `sport` (same pace class). */
-export const segmentSports = (sport: string): string[] => SEGMENT_FAMILIES.find((f) => f.includes(sport)) ?? [sport];
+export const segmentSports = (sport: string): string[] =>
+  SEGMENT_FAMILIES.find((f) => f.includes(sport)) ?? [sport];
 
 /** A segment is at least this long (m). */
 export const MIN_SEGMENT_M = 100;
 
 /** Value of a series at distance `d` (linear interpolation, clamped); `dist` must be ascending. */
-export function valueAtDistance(dist: ArrayLike<number>, values: ArrayLike<number | null>, d: number): number | null {
+export function valueAtDistance(
+  dist: ArrayLike<number>,
+  values: ArrayLike<number | null>,
+  d: number,
+): number | null {
   const n = dist.length;
   if (!n) return null;
   if (d <= dist[0]!) return values[0] ?? null;

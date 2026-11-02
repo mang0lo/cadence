@@ -1,6 +1,11 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import type { MapsExplorerMonth, MapsExplorerResponse, MapsExplorerSummary, MapsExplorerTile } from '@cadence/shared';
+import type {
+  MapsExplorerMonth,
+  MapsExplorerResponse,
+  MapsExplorerSummary,
+  MapsExplorerTile,
+} from '@cadence/shared';
 import { all, get, type Db } from '../../db/db';
 import { addDays, localDay, today } from '../../lib/time';
 import { explorerStats, tileBounds, tileKey, type ExplorerStats } from './tiles';
@@ -50,14 +55,16 @@ function dataVersion(db: Db, athleteId: number): string {
      FROM workouts WHERE athlete_id = ? AND has_route = 1`,
     [athleteId],
   )!;
-  const t = get<{ n: number }>(db, 'SELECT COUNT(*) AS n FROM maps_workout_tiles WHERE athlete_id = ? AND z = 14', [
-    athleteId,
-  ])!;
+  const t = get<{ n: number }>(
+    db,
+    'SELECT COUNT(*) AS n FROM maps_workout_tiles WHERE athlete_id = ? AND z = 14',
+    [athleteId],
+  )!;
   return [w.n, w.ids, w.u, w.h, w.d, t.n].join(':');
 }
 
 const cache = new WeakMap<Db, Map<string, ExplorerData>>();
-const CACHE_ENTRIES = 8;
+const CACHE_ENTRIES = 4;
 
 /** First visit per tile, month series and the explorer statistics (cached until the workouts change). */
 export function loadExplorer(db: Db, athleteId: number, zoom: 14 | 17, sports: string[]): ExplorerData {
@@ -219,4 +226,3 @@ export function registerExplorerRoutes(app: FastifyInstance): void {
     };
   });
 }
-

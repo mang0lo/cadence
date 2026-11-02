@@ -14,7 +14,16 @@ import {
   shapeTolerance,
   type RouteSignature,
 } from '../src/features/maps/route-shapes';
-import { VIENNA, circle, insertWorkout, line, makeApp, runMapsSteps, trackAlong, type TestApp } from './maps-fixtures';
+import {
+  VIENNA,
+  circle,
+  insertWorkout,
+  line,
+  makeApp,
+  runMapsSteps,
+  trackAlong,
+  type TestApp,
+} from './maps-fixtures';
 
 const sigOf = (points: LatLon[], opts: Parameters<typeof trackAlong>[1] = {}): RouteSignature => {
   const tr = trackAlong(points, { speed: 3, ...opts });
@@ -33,7 +42,9 @@ describe('makeSignature', () => {
     expect(sig.lengthM).toBeCloseTo(1000, -1);
     const at = (k: number): LatLon => [sig.pts[2 * k]!, sig.pts[2 * k + 1]!];
     expect(haversine(...at(0), tr.lat[0]!, tr.lon[0]!)).toBeLessThan(1);
-    expect(haversine(...at(SIG_POINTS - 1), tr.lat[tr.lat.length - 1]!, tr.lon[tr.lon.length - 1]!)).toBeLessThan(1);
+    expect(
+      haversine(...at(SIG_POINTS - 1), tr.lat[tr.lat.length - 1]!, tr.lon[tr.lon.length - 1]!),
+    ).toBeLessThan(1);
     // equal spacing along the line
     const step = haversine(...at(0), ...at(1));
     expect(step).toBeCloseTo(1000 / (SIG_POINTS - 1), 0);
@@ -86,7 +97,10 @@ describe('compareSignatures', () => {
 
     // straight route; the other one ends 400 m further to the side
     const straight = sigOf(line(VIENNA, 5000), { seed: 10 });
-    const bent = sigOf([...line(VIENNA, 4900), destination(...destination(VIENNA[0], VIENNA[1], 90, 4900), 0, 400)], { seed: 11 });
+    const bent = sigOf(
+      [...line(VIENNA, 4900), destination(...destination(VIENNA[0], VIENNA[1], 90, 4900), 0, 400)],
+      { seed: 11 },
+    );
     expect(compareSignatures(straight, bent).match).toBe(false);
 
     // parallel street 150 m away over 10 km: same start and end region is impossible → shift only the middle
@@ -113,7 +127,9 @@ describe('routeKind', () => {
   it('classifies loops, out-and-backs and point-to-point routes', () => {
     expect(routeKind(sigOf(LOOP, { seed: 1 }))).toBe('loop');
     const there = line(VIENNA, 3000);
-    expect(routeKind(sigOf([...there, ...[...there].reverse().slice(1)], { noiseM: 4, seed: 2 }))).toBe('out_and_back');
+    expect(routeKind(sigOf([...there, ...[...there].reverse().slice(1)], { noiseM: 4, seed: 2 }))).toBe(
+      'out_and_back',
+    );
     expect(routeKind(sigOf(line(VIENNA, 6000), { seed: 3 }))).toBe('point_to_point');
   });
 });
@@ -149,7 +165,11 @@ describe('assignRoutes', () => {
 
   it('joins existing routes (incremental) before founding new ones', () => {
     const existing = [{ id: 42, sport: 'run', sig: sigOf(LOOP, { seed: 1 }) }];
-    const { assignment, founders } = assignRoutes(existing, [w(10, 'run', LOOP, 11), w(11, 'run', otherLoop, 12), w(12, 'run', otherLoop, 13)]);
+    const { assignment, founders } = assignRoutes(existing, [
+      w(10, 'run', LOOP, 11),
+      w(11, 'run', otherLoop, 12),
+      w(12, 'run', otherLoop, 13),
+    ]);
     expect(assignment.get(10)).toBe(42);
     expect(assignment.get(11)).toBe(assignment.get(12));
     expect(assignment.get(11)!).toBeLessThan(0);
@@ -208,7 +228,12 @@ describe('routes derive step + API', () => {
   const day = 86_400;
   const t0 = Date.UTC(2026, 2, 2, 7) / 1000;
 
-  const addRun = (key: string, points: LatLon[], n: number, over: Parameters<typeof insertWorkout>[1] = {}) => {
+  const addRun = (
+    key: string,
+    points: LatLon[],
+    n: number,
+    over: Parameters<typeof insertWorkout>[1] = {},
+  ) => {
     const tr = trackAlong(points, { speed: 3 + n * 0.02, noiseM: 4, seed: n * 7 + 1 });
     ids[key] = insertWorkout(ctx.db, { sport: 'run', startTs: t0 + n * 3 * day, track: tr, ...over });
     return ids[key]!;
@@ -229,7 +254,11 @@ describe('routes derive step + API', () => {
     addRun('rev1', LOOP_REVERSED, 6);
     addRun('other', circle(OTHER_CENTER, 800, 72), 7);
     addRun('hidden', LOOP, 8, { hidden: true });
-    ids.ride = insertWorkout(ctx.db, { sport: 'ride', startTs: t0 + 40 * day, track: trackAlong(LOOP, { speed: 7, noiseM: 4, seed: 99 }) });
+    ids.ride = insertWorkout(ctx.db, {
+      sport: 'ride',
+      startTs: t0 + 40 * day,
+      track: trackAlong(LOOP, { speed: 7, noiseM: 4, seed: 99 }),
+    });
     ids.strength = insertWorkout(ctx.db, { sport: 'strength', startTs: t0 + 50 * day });
     await runMapsSteps(ctx.db, 'all');
   }, 60_000);
@@ -253,7 +282,10 @@ describe('routes derive step + API', () => {
     const repeated = await routes(2);
     expect(repeated.map((r) => r.count).sort()).toEqual([2, 5]);
     // every GPS workout has a shape row, the strength workout has none
-    const n = ctx.db.prepare('SELECT COUNT(*) AS n, COUNT(route_id) AS r FROM maps_workout_geo').get() as { n: number; r: number };
+    const n = ctx.db.prepare('SELECT COUNT(*) AS n, COUNT(route_id) AS r FROM maps_workout_geo').get() as {
+      n: number;
+      r: number;
+    };
     expect(n).toEqual({ n: 10, r: 10 });
   });
 
@@ -280,7 +312,11 @@ describe('routes derive step + API', () => {
 
   it('renames a route and keeps the name across a full rebuild', async () => {
     const loop = (await routes(2)).find((r) => r.count === 5)!;
-    const res = await ctx.app.inject({ method: 'PATCH', url: `/api/maps/routes/${loop.id}`, payload: { name: '  Prater Runde ' } });
+    const res = await ctx.app.inject({
+      method: 'PATCH',
+      url: `/api/maps/routes/${loop.id}`,
+      payload: { name: '  Prater Runde ' },
+    });
     expect(res.statusCode, res.body).toBe(200);
     expect(res.json<MapsRouteSummary>().customName).toBe('Prater Runde');
     await runMapsSteps(ctx.db, 'all');
@@ -288,9 +324,16 @@ describe('routes derive step + API', () => {
     expect(again.id).toBe(loop.id);
     expect(again.customName).toBe('Prater Runde');
     // an empty name resets to the generated one
-    const reset = await ctx.app.inject({ method: 'PATCH', url: `/api/maps/routes/${loop.id}`, payload: { name: '' } });
+    const reset = await ctx.app.inject({
+      method: 'PATCH',
+      url: `/api/maps/routes/${loop.id}`,
+      payload: { name: '' },
+    });
     expect(reset.json<MapsRouteSummary>().customName).toBeNull();
-    expect((await ctx.app.inject({ method: 'PATCH', url: '/api/maps/routes/9999', payload: { name: 'x' } })).statusCode).toBe(404);
+    expect(
+      (await ctx.app.inject({ method: 'PATCH', url: '/api/maps/routes/9999', payload: { name: 'x' } }))
+        .statusCode,
+    ).toBe(404);
     expect((await ctx.app.inject({ url: '/api/maps/routes/9999' })).statusCode).toBe(404);
   });
 

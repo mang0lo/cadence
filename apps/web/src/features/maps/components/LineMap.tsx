@@ -1,7 +1,14 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { Map as MapLibreMap } from 'maplibre-gl';
 import { BaseMap } from '@/components/map/BaseMap';
-import { featureCollection, fitTo, lineFeature, pointFeature, setGeoJSON, type LngLat } from '@/components/map/layers';
+import {
+  featureCollection,
+  fitTo,
+  lineFeature,
+  pointFeature,
+  setGeoJSON,
+  type LngLat,
+} from '@/components/map/layers';
 import '../maps.css';
 import type { BBox } from '../lib/home';
 
@@ -74,12 +81,25 @@ export function LineMap({
       const opacity = l.opacity ?? 1;
       if (l.casing) {
         if (!map.getLayer(`${s}-casing`))
-          map.addLayer({ id: `${s}-casing`, type: 'line', source: s, layout, paint: { 'line-color': l.casing, 'line-width': width + 3 } });
+          map.addLayer({
+            id: `${s}-casing`,
+            type: 'line',
+            source: s,
+            layout,
+            paint: { 'line-color': l.casing, 'line-width': width + 3 },
+          });
         map.setPaintProperty(`${s}-casing`, 'line-color', l.casing);
         map.setPaintProperty(`${s}-casing`, 'line-width', width + 3);
         map.setPaintProperty(`${s}-casing`, 'line-opacity', opacity);
       }
-      if (!map.getLayer(s)) map.addLayer({ id: s, type: 'line', source: s, layout, paint: { 'line-color': l.color, 'line-width': width } });
+      if (!map.getLayer(s))
+        map.addLayer({
+          id: s,
+          type: 'line',
+          source: s,
+          layout,
+          paint: { 'line-color': l.color, 'line-width': width },
+        });
       map.setPaintProperty(s, 'line-color', l.color);
       map.setPaintProperty(s, 'line-width', width);
       map.setPaintProperty(s, 'line-opacity', opacity);

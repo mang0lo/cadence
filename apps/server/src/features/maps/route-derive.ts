@@ -29,7 +29,12 @@ export function storeSignature(
     db,
     `INSERT INTO maps_workout_geo (workout_id, athlete_id, length_m, sig, route_id) VALUES (?, ?, ?, ?, NULL)
      ON CONFLICT (workout_id) DO UPDATE SET length_m = excluded.length_m, sig = excluded.sig`,
-    [workoutId, athleteId, sig.lengthM, new Uint8Array(sig.pts.buffer, sig.pts.byteOffset, sig.pts.byteLength)],
+    [
+      workoutId,
+      athleteId,
+      sig.lengthM,
+      new Uint8Array(sig.pts.buffer, sig.pts.byteOffset, sig.pts.byteLength),
+    ],
   );
   return true;
 }
@@ -84,12 +89,16 @@ export function clusterRoutes(db: Db, athleteId: number, changed: Set<number> | 
 
   tx(db, () => {
     const oldSport = new Map(
-      all<{ id: number; sport: string }>(db, 'SELECT id, sport FROM maps_routes WHERE athlete_id = ?', [athleteId]).map(
-        (r) => [r.id, r.sport],
-      ),
+      all<{ id: number; sport: string }>(db, 'SELECT id, sport FROM maps_routes WHERE athlete_id = ?', [
+        athleteId,
+      ]).map((r) => [r.id, r.sport]),
     );
     const reuse = full
-      ? matchOldRoutes(assignment, oldAssign, (newId, oldId) => oldSport.get(oldId) === sportOf.get(founders.get(newId)!))
+      ? matchOldRoutes(
+          assignment,
+          oldAssign,
+          (newId, oldId) => oldSport.get(oldId) === sportOf.get(founders.get(newId)!),
+        )
       : new Map<number, number>();
     const idOf = new Map<number, number>();
     const insert = prepare(db, 'INSERT INTO maps_routes (athlete_id, sport) VALUES (?, ?)');
@@ -101,7 +110,8 @@ export function clusterRoutes(db: Db, athleteId: number, changed: Set<number> | 
       );
     }
     const update = prepare(db, 'UPDATE maps_workout_geo SET route_id = ? WHERE workout_id = ?');
-    for (const [workoutId, routeId] of assignment) update.run(routeId < 0 ? idOf.get(routeId)! : routeId, workoutId);
+    for (const [workoutId, routeId] of assignment)
+      update.run(routeId < 0 ? idOf.get(routeId)! : routeId, workoutId);
   });
   refreshRoutes(db, athleteId);
 }

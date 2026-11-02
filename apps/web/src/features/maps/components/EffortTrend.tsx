@@ -2,8 +2,16 @@ import { useMemo, useState } from 'react';
 import { sportInfo } from '@cadence/shared';
 import { ChartCard } from '@/components/charts/ChartCard';
 import { EChart } from '@/components/charts/EChart';
-import { axisTooltip, grid, legend, lineSeries, timeAxis, tooltipHtml, valueAxis } from '@/components/charts/options';
-import { useChartTheme } from '@/components/charts/theme';
+import {
+  axisTooltip,
+  grid,
+  legend,
+  lineSeries,
+  timeAxis,
+  tooltipHtml,
+  valueAxis,
+} from '@/components/charts/options';
+import { sportColor, useChartTheme } from '@/components/charts/theme';
 import { SegmentedControl } from '@/components/ui';
 import { useFormat } from '@/lib/format';
 import { useT } from '@/lib/i18n';
@@ -37,6 +45,9 @@ export function EffortTrend({
   const t = useT();
   const fmt = useFormat();
   const theme = useChartTheme();
+  // the efforts carry the sport's fixed color, the running best is a neutral step line
+  const effortColor = sportColor(theme, sport);
+  const bestColor = theme.fg2;
   const mode = sportInfo(sport).speedMode;
   const paceLike = mode === 'pace' || mode === 'pace100';
   const [metric, setMetric] = useState<Metric>('time');
@@ -44,7 +55,8 @@ export function EffortTrend({
 
   const lowerIsBetter = metric === 'time' || paceLike;
   const label = (v: number) => (lowerIsBetter ? fmt.duration(v) : fmt.num(v, 1));
-  const metricName = metric === 'time' ? t('maps.routes.time') : paceLike ? t('common.pace') : t('common.speed');
+  const metricName =
+    metric === 'time' ? t('maps.routes.time') : paceLike ? t('common.pace') : t('common.speed');
 
   const { points, bestSoFar } = useMemo(() => {
     const value = (e: TrendEffort): number | null => {
@@ -77,10 +89,14 @@ export function EffortTrend({
         const eff = ps.find((p) => p.seriesName === effortName);
         const e = eff ? asc[eff.dataIndex] : undefined;
         if (!e || !eff) return '';
-        const rows = [{ color: theme.series[0]!, label: effortName, value: label(eff.value[1]) }];
+        const rows = [{ color: effortColor, label: effortName, value: label(eff.value[1]) }];
         const bs = ps.find((p) => p.seriesName === bestName);
-        if (bs) rows.push({ color: theme.series[1]!, label: bestName, value: label(bs.value[1]) });
-        rows.push({ color: theme.muted, label: t('maps.routes.rankN', { rank: e.rank }), value: e.avgHr ? fmt.hr(e.avgHr) : '–' });
+        if (bs) rows.push({ color: bestColor, label: bestName, value: label(bs.value[1]) });
+        rows.push({
+          color: theme.muted,
+          label: t('maps.routes.rankN', { rank: e.rank }),
+          value: e.avgHr ? fmt.hr(e.avgHr) : '–',
+        });
         return tooltipHtml(fmt.date(e.startTs, e.tzMin, 'day'), rows, theme);
       }),
       xAxis: timeAxis(theme),
@@ -90,16 +106,19 @@ export function EffortTrend({
         axisLabel: { color: theme.muted, fontSize: 11, formatter: (v: number) => label(v) },
       }),
       series: [
-        lineSeries(theme, effortName, points, theme.series[0]!, {
+        lineSeries(theme, effortName, points, effortColor, {
           showSymbol: true,
           symbolSize: 8,
-          lineStyle: { width: 1, color: theme.series[0]!, opacity: 0.45 },
+          lineStyle: { width: 1, color: effortColor, opacity: 0.45 },
         }),
-        lineSeries(theme, bestName, bestSoFar, theme.series[1]!, { step: 'end', lineStyle: { width: 2, color: theme.series[1]! } }),
+        lineSeries(theme, bestName, bestSoFar, bestColor, {
+          step: 'end',
+          lineStyle: { width: 2, color: bestColor },
+        }),
       ],
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [points, bestSoFar, theme, lowerIsBetter, fmt, asc, t]);
+  }, [points, bestSoFar, theme, lowerIsBetter, fmt, asc, t, effortColor, bestColor]);
 
   return (
     <ChartCard

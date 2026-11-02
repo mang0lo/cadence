@@ -5,7 +5,15 @@ import { ArrowLeft, Check, Pencil, Route as RouteIcon, Trophy, X } from 'lucide-
 import { sportInfo, workoutTitle, type MapsRouteDetail, type MapsRouteEffort } from '@cadence/shared';
 import { ChartCard } from '@/components/charts/ChartCard';
 import { EChart } from '@/components/charts/EChart';
-import { axisTooltip, legend, lineSeries, timeAxis, tooltipHtml, valueAxis, grid } from '@/components/charts/options';
+import {
+  axisTooltip,
+  legend,
+  lineSeries,
+  timeAxis,
+  tooltipHtml,
+  valueAxis,
+  grid,
+} from '@/components/charts/options';
 import { useChartTheme } from '@/components/charts/theme';
 import { overlayColors } from '@/components/map/styles';
 import {
@@ -140,7 +148,12 @@ function RouteBody({ detail }: { detail: MapsRouteDetail }) {
                 className="h-10 w-72 max-w-full text-lg font-semibold"
               />
               <IconButton type="submit" icon={Check} label={t('common.save')} disabled={saving} />
-              <IconButton type="button" icon={X} label={t('common.cancel')} onClick={() => setEditing(false)} />
+              <IconButton
+                type="button"
+                icon={X}
+                label={t('common.cancel')}
+                onClick={() => setEditing(false)}
+              />
             </form>
           ) : (
             title
@@ -149,10 +162,15 @@ function RouteBody({ detail }: { detail: MapsRouteDetail }) {
         subtitle={
           <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
             <SportBadge sport={route.sport} />
-            <span aria-hidden>·</span>
-            <span>{kindLabel(route.kind, t)}</span>
-            <span aria-hidden>·</span>
-            <span className="tabular">{fmt.distance(route.distanceM, 1)}</span>
+            {/* the generated name already says kind and distance */}
+            {route.customName && (
+              <>
+                <span aria-hidden>·</span>
+                <span>{kindLabel(route.kind, t)}</span>
+                <span aria-hidden>·</span>
+                <span className="tabular">{fmt.distance(route.distanceM, 1)}</span>
+              </>
+            )}
           </span>
         }
         actions={
@@ -173,7 +191,11 @@ function RouteBody({ detail }: { detail: MapsRouteDetail }) {
 
       <Card>
         <StatRow>
-          <Stat label={t('maps.routes.timesDone')} value={`${fmt.int(route.count)}×`} hint={`${fmt.date(route.firstTs, efforts[efforts.length - 1]?.tzMin ?? 0, 'dayShort')} – ${fmt.date(route.lastTs, route.lastTzMin, 'dayShort')}`} />
+          <Stat
+            label={t('maps.routes.timesDone')}
+            value={`${fmt.int(route.count)}×`}
+            hint={`${fmt.date(route.firstTs, efforts[efforts.length - 1]?.tzMin ?? 0, 'dayShort')} – ${fmt.date(route.lastTs, route.lastTzMin, 'dayShort')}`}
+          />
           <Stat
             label={t('maps.routes.best')}
             value={fmt.duration(route.bestTimeS)}
@@ -191,7 +213,9 @@ function RouteBody({ detail }: { detail: MapsRouteDetail }) {
                 />
               ) : undefined
             }
-            hint={route.count > 1 && route.latestTimeS === route.bestTimeS ? t('maps.routes.isBest') : undefined}
+            hint={
+              route.count > 1 && route.latestTimeS === route.bestTimeS ? t('maps.routes.isBest') : undefined
+            }
           />
           <Stat
             label={t('maps.routes.improvement')}
@@ -235,10 +259,18 @@ function RouteMapCard({ detail }: { detail: MapsRouteDetail }) {
       .map(([, c]) => c);
     const out: MapLine[] = [];
     if (faint.length) out.push({ id: 'tracks', lines: faint, color: overlay.muted, width: 2, opacity: 0.55 });
-    else if (rep.length) out.push({ id: 'tracks', lines: [rep], color: overlay.muted, width: 2, opacity: 0.55 });
+    else if (rep.length)
+      out.push({ id: 'tracks', lines: [rep], color: overlay.muted, width: 2, opacity: 0.55 });
     if (latestLine && route.latestWorkoutId !== route.bestWorkoutId)
-      out.push({ id: 'latest', lines: [latestLine], color: chart.series[1]!, width: 4, casing: overlay.casing });
-    if (bestLine) out.push({ id: 'best', lines: [bestLine], color: chart.series[0]!, width: 4, casing: overlay.casing });
+      out.push({
+        id: 'latest',
+        lines: [latestLine],
+        color: chart.series[1]!,
+        width: 4,
+        casing: overlay.casing,
+      });
+    if (bestLine)
+      out.push({ id: 'best', lines: [bestLine], color: chart.series[0]!, width: 4, casing: overlay.casing });
     let box: BBox | null = null;
     for (const c of [rep, ...decoded.values()]) {
       for (const [lo, la] of c) box = unionBox(box, [lo, la, lo, la]);
@@ -253,14 +285,30 @@ function RouteMapCard({ detail }: { detail: MapsRouteDetail }) {
         { id: 'end', coord: end, color: chart.fg },
       ],
     };
-  }, [tracks, route.polyline, route.bestWorkoutId, route.latestWorkoutId, overlay.muted, overlay.casing, chart]);
+  }, [
+    tracks,
+    route.polyline,
+    route.bestWorkoutId,
+    route.latestWorkoutId,
+    overlay.muted,
+    overlay.casing,
+    chart,
+  ]);
 
   return (
     <Card padded={false} className="flex min-h-[22rem] flex-col overflow-hidden">
-      <LineMap className="min-h-[22rem] flex-1 rounded-none" lines={lines} markers={markers} bounds={bounds} padding={56}>
+      <LineMap
+        className="min-h-[22rem] flex-1 rounded-none"
+        lines={lines}
+        markers={markers}
+        bounds={bounds}
+        padding={56}
+      >
         <div className="pointer-events-none absolute left-3 top-3 z-10 flex flex-col gap-1 rounded-lg border border-border bg-surface/90 px-2.5 py-1.5 text-xs text-fg-2 shadow-card backdrop-blur">
           <LegendItem color={chart.series[0]!} label={t('maps.routes.best')} />
-          {route.latestWorkoutId !== route.bestWorkoutId && <LegendItem color={chart.series[1]!} label={t('maps.routes.latest')} />}
+          {route.latestWorkoutId !== route.bestWorkoutId && (
+            <LegendItem color={chart.series[1]!} label={t('maps.routes.latest')} />
+          )}
           <LegendItem color={overlay.muted} label={t('maps.routes.otherEfforts')} />
         </div>
       </LineMap>
@@ -277,22 +325,39 @@ function LegendItem({ color, label }: { color: string; label: string }) {
   );
 }
 
-function Compare({ best, latest, sport }: { best?: MapsRouteEffort; latest?: MapsRouteEffort; sport: string }) {
+function Compare({
+  best,
+  latest,
+  sport,
+}: {
+  best?: MapsRouteEffort;
+  latest?: MapsRouteEffort;
+  sport: string;
+}) {
   const t = useT();
   const fmt = useFormat();
   const { lang } = useI18n();
   if (!best || !latest) return null;
   const same = best.workoutId === latest.workoutId;
   const col = (label: string, e: MapsRouteEffort, color: string) => (
-    <div className="min-w-0 rounded-control border border-border p-3" style={{ borderTopColor: color, borderTopWidth: 3 }}>
+    <div
+      className="min-w-0 rounded-control border border-border p-3"
+      style={{ borderTopColor: color, borderTopWidth: 3 }}
+    >
       <div className="text-xs font-medium text-fg-3">{label}</div>
-      <Link to={`/activities/${e.workoutId}`} className="mt-0.5 block truncate text-sm font-semibold text-fg hover:text-accent-fg">
+      <Link
+        to={`/activities/${e.workoutId}`}
+        className="mt-0.5 block truncate text-sm font-semibold text-fg hover:text-accent-fg"
+      >
         {fmt.date(e.startTs, e.tzMin, 'day')}
       </Link>
       <div className="truncate text-xs text-fg-3">{workoutTitle(e, lang)}</div>
       <dl className="mt-3 space-y-1.5 text-sm">
         <Row k={t('maps.routes.time')} v={fmt.duration(e.timeS)} />
-        <Row k={sportInfo(sport).speedMode === 'speed' ? t('common.speed') : t('common.pace')} v={fmt.pace(e.avgSpeed, sport)} />
+        <Row
+          k={sportInfo(sport).speedMode === 'speed' ? t('common.speed') : t('common.pace')}
+          v={fmt.pace(e.avgSpeed, sport)}
+        />
         <Row k={t('common.avgHr')} v={e.avgHr ? fmt.hr(e.avgHr) : '–'} />
       </dl>
     </div>
@@ -350,14 +415,28 @@ function EffortsTable({ efforts, sport }: { efforts: MapsRouteEffort[]; sport: s
   const [all, setAll] = useState(false);
   const rows = useMemo(() => {
     const key = (e: MapsRouteEffort): number =>
-      sort.col === 'date' ? e.startTs : sort.col === 'time' ? e.timeS : sort.col === 'pace' ? (e.avgSpeed ?? 0) : sort.col === 'hr' ? (e.avgHr ?? 0) : e.rank;
+      sort.col === 'date'
+        ? e.startTs
+        : sort.col === 'time'
+          ? e.timeS
+          : sort.col === 'pace'
+            ? (e.avgSpeed ?? 0)
+            : sort.col === 'hr'
+              ? (e.avgHr ?? 0)
+              : e.rank;
     const list = [...efforts].sort((a, b) => key(a) - key(b));
     return sort.dir === 'desc' ? list.reverse() : list;
   }, [efforts, sort]);
   const th = (col: SortCol, label: string, numeric = false) => (
     <TH
       numeric={numeric}
-      onClick={() => setSort((s) => (s.col === col ? { col, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { col, dir: col === 'date' ? 'desc' : 'asc' }))}
+      onClick={() =>
+        setSort((s) =>
+          s.col === col
+            ? { col, dir: s.dir === 'asc' ? 'desc' : 'asc' }
+            : { col, dir: col === 'date' ? 'desc' : 'asc' },
+        )
+      }
       sorted={sort.col === col ? sort.dir : null}
     >
       {label}
@@ -367,7 +446,10 @@ function EffortsTable({ efforts, sport }: { efforts: MapsRouteEffort[]; sport: s
   return (
     <Card padded={false}>
       <div className="p-4 pb-0 sm:p-5 sm:pb-0">
-        <CardHeader title={t('maps.routes.efforts')} subtitle={t('maps.routes.effortsSubtitle', { count: efforts.length })} />
+        <CardHeader
+          title={t('maps.routes.efforts')}
+          subtitle={t('maps.routes.effortsSubtitle', { count: efforts.length })}
+        />
       </div>
       <Table>
         <thead>
