@@ -49,8 +49,13 @@
 
 ## Install the Mac app
 
-Requirements: macOS 14+, [Node.js](https://nodejs.org) 24+ and the Xcode Command Line Tools (`xcode-select --install`)
-to build it.
+**Download**: get `Cadence-<version>.dmg` from the
+[latest release](https://github.com/Devine-Coder/cadence/releases/latest) (macOS 14+, Apple silicon) and drag Cadence
+into Applications. The app is not notarized yet, so macOS blocks the first launch: open **System Settings → Privacy &
+Security** and click **Open Anyway**. Release notes: [CHANGELOG.md](CHANGELOG.md).
+
+**Build it yourself** — requirements: macOS 14+, [Node.js](https://nodejs.org) 24+ and the Xcode Command Line Tools
+(`xcode-select --install`):
 
 ```bash
 git clone https://github.com/Devine-Coder/cadence.git && cd cadence
