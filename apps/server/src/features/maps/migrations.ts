@@ -53,4 +53,44 @@ export const migrations: Migration[] = [
       CREATE INDEX ix_maps_routes_athlete ON maps_routes(athlete_id, sport);
     `,
   },
+  {
+    id: 'maps_003_segments',
+    up: /* sql */ `
+      -- User-defined segments (a stretch of a workout's route). The rows are user data; the efforts are derived.
+      CREATE TABLE maps_segments (
+        id INTEGER PRIMARY KEY,
+        athlete_id INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        sport TEXT NOT NULL,             -- sport of the source workout; its compatible sports are matched
+        source_workout_id INTEGER,
+        distance_m REAL NOT NULL,
+        elevation_gain_m REAL,
+        elevation_loss_m REAL,
+        avg_grade REAL,                  -- percent
+        start_lat REAL NOT NULL, start_lon REAL NOT NULL, end_lat REAL NOT NULL, end_lon REAL NOT NULL,
+        min_lat REAL NOT NULL, min_lon REAL NOT NULL, max_lat REAL NOT NULL, max_lon REAL NOT NULL,
+        polyline TEXT NOT NULL,          -- simplified (5 m), for display
+        path BLOB NOT NULL,              -- gzip(JSON {lat, lon, dist, ele}) thinned to ~1.5 m: matching + profile
+        starred INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL DEFAULT (unixepoch())
+      );
+      CREATE INDEX ix_maps_segments_athlete ON maps_segments(athlete_id);
+
+      -- One row per pass of a workout through a segment (a workout can pass several times, e.g. laps).
+      CREATE TABLE maps_segment_efforts (
+        segment_id INTEGER NOT NULL REFERENCES maps_segments(id) ON DELETE CASCADE,
+        workout_id INTEGER NOT NULL REFERENCES workouts(id) ON DELETE CASCADE,
+        idx INTEGER NOT NULL,
+        athlete_id INTEGER NOT NULL,
+        start_ts REAL NOT NULL,          -- interpolated crossing of the start gate (unix seconds)
+        elapsed_s REAL NOT NULL,
+        moving_s REAL,
+        avg_hr REAL,
+        avg_speed REAL NOT NULL,         -- segment length / elapsed
+        track_m REAL,                    -- distance the track covered between the gates
+        PRIMARY KEY (segment_id, workout_id, idx)
+      ) WITHOUT ROWID;
+      CREATE INDEX ix_maps_segment_efforts_workout ON maps_segment_efforts(workout_id);
+    `,
+  },
 ];

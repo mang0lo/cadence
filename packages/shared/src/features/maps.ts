@@ -210,3 +210,228 @@ export interface MapsRouteDetail {
   /** Simplified tracks of the most recent efforts plus the best and the latest one. */
   tracks: { workoutId: number; polyline: string }[];
 }
+
+// ---------------------------------------------------------------------------
+// Segments
+// ---------------------------------------------------------------------------
+
+const SEGMENT_FAMILIES: string[][] = [
+  ['run', 'track_and_field'],
+  ['walk', 'hike'],
+  ['ride', 'handcycle'],
+  ['alpine_ski', 'snowboard'],
+];
+
+/** Sports whose workouts can ride a segment that was drawn on a workout of `sport` (same pace class). */
+export const segmentSports = (sport: string): string[] => SEGMENT_FAMILIES.find((f) => f.includes(sport)) ?? [sport];
+
+/** A segment is at least this long (m). */
+export const MIN_SEGMENT_M = 100;
+
+/** Value of a series at distance `d` (linear interpolation, clamped); `dist` must be ascending. */
+export function valueAtDistance(dist: ArrayLike<number>, values: ArrayLike<number | null>, d: number): number | null {
+  const n = dist.length;
+  if (!n) return null;
+  if (d <= dist[0]!) return values[0] ?? null;
+  if (d >= dist[n - 1]!) return values[n - 1] ?? null;
+  let lo = 0;
+  let hi = n - 1;
+  while (hi - lo > 1) {
+    const mid = (lo + hi) >> 1;
+    if (dist[mid]! <= d) lo = mid;
+    else hi = mid;
+  }
+  const a = values[lo];
+  const b = values[hi];
+  if (a == null) return b ?? null;
+  if (b == null) return a;
+  const span = dist[hi]! - dist[lo]!;
+  return span > 0 ? a + ((b - a) * (d - dist[lo]!)) / span : a;
+}
+
+export interface ProfileSlice {
+  distanceM: number;
+  gainM: number;
+  lossM: number;
+  startEleM: number | null;
+  endEleM: number | null;
+  /** (end − start elevation) / distance in percent. */
+  gradePct: number | null;
+}
+
+/**
+ * Distance / elevation gain & loss / average grade of the part [fromM, toM] of a track given its cumulative distance
+ * and elevation. The elevation is resampled every few meters, lightly smoothed and summed with a 1 m dead band, so
+ * GPS noise does not pile up as "climbing". Used live by the segment editor and again by the server when saving.
+ */
+export function profileSlice(
+  dist: ArrayLike<number>,
+  ele: ArrayLike<number | null> | null | undefined,
+  fromM: number,
+  toM: number,
+): ProfileSlice {
+  const distanceM = Math.max(0, toM - fromM);
+  const out: ProfileSlice = { distanceM, gainM: 0, lossM: 0, startEleM: null, endEleM: null, gradePct: null };
+  if (!ele || dist.length < 2 || distanceM <= 0) return out;
+  // only samples that carry an elevation take part
+  const d: number[] = [];
+  const e: number[] = [];
+  for (let i = 0; i < dist.length; i++) {
+    const v = ele[i];
+    if (v != null && Number.isFinite(v)) {
+      d.push(dist[i]!);
+      e.push(v);
+    }
+  }
+  if (d.length < 2) return out;
+  const step = Math.min(10, Math.max(2, distanceM / 60));
+  const n = Math.max(2, Math.round(distanceM / step) + 1);
+  const raw = new Array<number>(n);
+  for (let k = 0; k < n; k++) raw[k] = valueAtDistance(d, e, fromM + (distanceM * k) / (n - 1))!;
+  const half = 2;
+  const sm = raw.map((_, k) => {
+    let sum = 0;
+    let cnt = 0;
+    for (let q = Math.max(0, k - half); q <= Math.min(n - 1, k + half); q++) {
+      sum += raw[q]!;
+      cnt++;
+    }
+    return sum / cnt;
+  });
+  let ref = sm[0]!;
+  for (let k = 1; k < n; k++) {
+    const v = sm[k]!;
+    if (v - ref >= 1) {
+      out.gainM += v - ref;
+      ref = v;
+    } else if (ref - v >= 1) {
+      out.lossM += ref - v;
+      ref = v;
+    }
+  }
+  out.startEleM = sm[0]!;
+  out.endEleM = sm[n - 1]!;
+  out.gradePct = ((out.endEleM - out.startEleM) / distanceM) * 100;
+  return out;
+}
+
+export interface MapsSegmentSummary {
+  id: number;
+  name: string;
+  /** Sport of the workout the segment was drawn on; efforts of its compatible sports count. */
+  sport: string;
+  starred: boolean;
+  distanceM: number;
+  elevationGainM: number | null;
+  elevationLossM: number | null;
+  /** Average grade in percent. */
+  avgGradePct: number | null;
+  polyline: string;
+  startLat: number;
+  startLon: number;
+  endLat: number;
+  endLon: number;
+  sourceWorkoutId: number | null;
+  createdAt: number;
+  /** Visible efforts (hidden / duplicate workouts excluded). */
+  efforts: number;
+  /** Personal record = fastest effort. */
+  prTimeS: number | null;
+  prWorkoutId: number | null;
+  prTs: number | null;
+  prTzMin: number | null;
+  lastTs: number | null;
+  lastTzMin: number | null;
+  lastTimeS: number | null;
+}
+
+export interface MapsSegmentEffort {
+  workoutId: number;
+  /** Position inside the workout when it passed the segment more than once. */
+  idx: number;
+  name: string;
+  sport: string;
+  startTs: number;
+  tzMin: number;
+  /** Interpolated crossing times: start → end. */
+  elapsedS: number;
+  movingS: number | null;
+  avgSpeed: number;
+  avgHr: number | null;
+  /** 1 = fastest. */
+  rank: number;
+  /** Was the fastest effort at the time it was ridden. */
+  pr: boolean;
+}
+
+/** GET /api/maps/segments/:id */
+export interface MapsSegmentDetail {
+  segment: MapsSegmentSummary;
+  /** Elevation profile along the segment (≤ 300 points); `ele` entries are null when unknown. */
+  profile: { dist: number[]; ele: (number | null)[] };
+  /** Newest first. */
+  efforts: MapsSegmentEffort[];
+}
+
+/** GET /api/maps/segments */
+export interface MapsSegmentsResponse {
+  items: MapsSegmentSummary[];
+}
+
+/** POST /api/maps/segments – positions are meters along the workout's route. */
+export interface MapsSegmentCreate {
+  workoutId: number;
+  startM: number;
+  endM: number;
+  name: string;
+}
+
+/** PATCH /api/maps/segments/:id */
+export interface MapsSegmentPatch {
+  name?: string;
+  starred?: boolean;
+}
+
+/** GET /api/maps/segments/source/:workoutId – the route of a workout, thinned for the segment editor. */
+export interface MapsSegmentSource {
+  workoutId: number;
+  name: string;
+  sport: string;
+  startTs: number;
+  tzMin: number;
+  totalM: number;
+  /** Index-aligned arrays (≤ 1200 points, increasing distance). `t` = seconds since the workout start. */
+  points: { lat: number[]; lon: number[]; dist: number[]; ele: (number | null)[]; t: number[] };
+  /** Segments that already cover (part of) this route, for a hint. */
+  existing: { id: number; name: string }[];
+}
+
+/** GET /api/maps/workouts/:id – what the maps feature knows about one workout (for the activity page). */
+export interface MapsWorkoutLinks {
+  route: {
+    id: number;
+    customName: string | null;
+    area: string | null;
+    kind: MapsRouteKind;
+    distanceM: number;
+    /** Visible workouts on this route. */
+    count: number;
+    /** Rank of this workout's time among them (1 = fastest). */
+    rank: number | null;
+    bestTimeS: number;
+  } | null;
+  segments: {
+    segmentId: number;
+    name: string;
+    starred: boolean;
+    idx: number;
+    elapsedS: number;
+    avgSpeed: number;
+    avgHr: number | null;
+    distanceM: number;
+    /** Rank among all efforts on the segment (1 = personal record). */
+    rank: number;
+    efforts: number;
+    pr: boolean;
+  }[];
+}

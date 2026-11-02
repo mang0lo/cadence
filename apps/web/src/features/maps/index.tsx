@@ -12,6 +12,7 @@ const feature: FeatureModule = {
     { path: 'maps/routes', lazy: () => import('./pages/RoutesPage').then((m) => ({ Component: m.default })) },
     { path: 'maps/routes/:id', lazy: () => import('./pages/RoutePage').then((m) => ({ Component: m.default })) },
     { path: 'maps/segments', lazy: () => import('./pages/SegmentsPage').then((m) => ({ Component: m.default })) },
+    { path: 'maps/segments/new', lazy: () => import('./pages/SegmentNewPage').then((m) => ({ Component: m.default })) },
     { path: 'maps/segments/:id', lazy: () => import('./pages/SegmentPage').then((m) => ({ Component: m.default })) },
   ],
   nav: [

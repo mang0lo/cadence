@@ -2,6 +2,7 @@ import type { Feature } from '../types';
 import { geometryStep } from './geometry';
 import { migrations } from './migrations';
 import { routesStep } from './route-derive';
+import { segmentsStep } from './segments';
 import { mapsRoutes } from './routes';
 
 /**
@@ -13,7 +14,7 @@ import { mapsRoutes } from './routes';
 const feature: Feature = {
   name: 'maps',
   migrations,
-  deriveSteps: [geometryStep, routesStep],
+  deriveSteps: [geometryStep, routesStep, segmentsStep],
   routes: mapsRoutes,
 };
 

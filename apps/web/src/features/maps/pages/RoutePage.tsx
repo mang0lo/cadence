@@ -35,6 +35,7 @@ import { useSettings } from '@/lib/settings';
 import { SportBadge } from '@/lib/sports';
 import { decodePolyline, toLngLat } from '@/lib/polyline';
 import { useResolvedTheme } from '@/lib/theme';
+import { EffortTrend } from '../components/EffortTrend';
 import { LineMap, type MapLine } from '../components/LineMap';
 import { unionBox, type BBox } from '../lib/home';
 import { kindLabel, routeTitle } from '../lib/routeName';
@@ -205,7 +206,12 @@ function RouteBody({ detail }: { detail: MapsRouteDetail }) {
         <Compare best={best} latest={latest} sport={route.sport} />
       </div>
 
-      <TrendChart detail={detail} />
+      <EffortTrend
+        efforts={efforts}
+        sport={route.sport}
+        title={t('maps.routes.trendTitle')}
+        subtitle={t('maps.routes.trendSubtitle')}
+      />
       <EffortsTable efforts={efforts} sport={route.sport} />
     </div>
   );
@@ -333,120 +339,6 @@ function Row({ k, v }: { k: string; v: string }) {
       <dt className="text-fg-3">{k}</dt>
       <dd className="font-medium text-fg tabular">{v}</dd>
     </div>
-  );
-}
-
-function TrendChart({ detail }: { detail: MapsRouteDetail }) {
-  const t = useT();
-  const fmt = useFormat();
-  const theme = useChartTheme();
-  const { route } = detail;
-  const mode = sportInfo(route.sport).speedMode;
-  const paceLike = mode === 'pace' || mode === 'pace100';
-  const [metric, setMetric] = useState<Metric>('time');
-  // chronological efforts
-  const asc = useMemo(() => [...detail.efforts].reverse(), [detail.efforts]);
-
-  const value = (e: MapsRouteEffort): number | null => {
-    if (metric === 'time') return e.timeS;
-    if (e.avgSpeed == null) return null;
-    return paceLike ? fmt.paceSeconds(e.avgSpeed) : fmt.distanceValue(e.avgSpeed * 3600);
-  };
-  // time and pace: smaller is better → the axis is inverted so that improvement always reads as "up"
-  const lowerIsBetter = metric === 'time' || paceLike;
-  const label = (v: number) => (lowerIsBetter ? fmt.duration(v) : fmt.num(v, 1));
-  const metricName =
-    metric === 'time' ? t('maps.routes.time') : paceLike ? t('common.pace') : t('common.speed');
-
-  const { points, bestSoFar } = useMemo(() => {
-    const pts: [number, number | null][] = [];
-    const bests: [number, number][] = [];
-    let b: number | null = null;
-    for (const e of asc) {
-      const v = value(e);
-      pts.push([e.startTs * 1000, v]);
-      if (v != null) {
-        b = b === null ? v : lowerIsBetter ? Math.min(b, v) : Math.max(b, v);
-        bests.push([e.startTs * 1000, b]);
-      }
-    }
-    return { points: pts, bestSoFar: bests };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [asc, metric, fmt]);
-
-  const option = useMemo(() => {
-    const effortName = t('maps.routes.effort');
-    const bestName = t('maps.routes.bestSoFar');
-    return {
-      grid: grid({ top: 34 }),
-      legend: legend(theme, 'line', { itemStyle: { borderWidth: 0 } }),
-      tooltip: axisTooltip(theme, (params) => {
-        const ps = params as { seriesName: string; dataIndex: number; value: [number, number] }[];
-        const eff = ps.find((p) => p.seriesName === effortName);
-        const e = eff ? asc[eff.dataIndex] : undefined;
-        if (!e) return '';
-        const rows = [
-          { color: theme.series[0]!, label: effortName, value: label(eff!.value[1]) },
-        ];
-        const bs = ps.find((p) => p.seriesName === bestName);
-        if (bs) rows.push({ color: theme.series[1]!, label: bestName, value: label(bs.value[1]) });
-        rows.push({ color: theme.muted, label: t('maps.routes.rankN', { rank: e.rank }), value: e.avgHr ? fmt.hr(e.avgHr) : '–' });
-        return tooltipHtml(fmt.date(e.startTs, e.tzMin, 'day'), rows, theme);
-      }),
-      xAxis: timeAxis(theme),
-      yAxis: valueAxis(theme, {
-        scale: true,
-        inverse: lowerIsBetter,
-        axisLabel: { color: theme.muted, fontSize: 11, formatter: (v: number) => label(v) },
-      }),
-      series: [
-        lineSeries(theme, effortName, points, theme.series[0]!, {
-          showSymbol: true,
-          symbolSize: 8,
-          lineStyle: { width: 1, color: theme.series[0]!, opacity: 0.45 },
-        }),
-        lineSeries(theme, bestName, bestSoFar, theme.series[1]!, { step: 'end', lineStyle: { width: 2, color: theme.series[1]! } }),
-      ],
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [points, bestSoFar, theme, lowerIsBetter, fmt, asc, metricName]);
-
-  return (
-    <ChartCard
-      title={t('maps.routes.trendTitle')}
-      subtitle={t('maps.routes.trendSubtitle')}
-      actions={
-        <SegmentedControl
-          size="sm"
-          value={metric}
-          onChange={setMetric}
-          label={t('maps.routes.metric')}
-          items={[
-            { value: 'time', label: t('maps.routes.time') },
-            { value: 'pace', label: paceLike ? t('common.pace') : t('common.speed') },
-          ]}
-        />
-      }
-      table={{
-        columns: [
-          { key: 'date', label: t('common.day') },
-          { key: 'v', label: metricName, numeric: true },
-          { key: 'best', label: t('maps.routes.bestSoFar'), numeric: true },
-          { key: 'rank', label: t('maps.routes.rank'), numeric: true },
-        ],
-        rows: asc.map((e, i) => ({
-          date: fmt.date(e.startTs, e.tzMin, 'day'),
-          v: points[i]![1] == null ? '–' : label(points[i]![1]!),
-          best: (() => {
-            const b = bestSoFar.filter((p) => p[0] <= e.startTs * 1000).pop();
-            return b ? label(b[1]) : '–';
-          })(),
-          rank: String(e.rank),
-        })),
-      }}
-    >
-      <EChart option={option as never} height={300} ariaLabel={t('maps.routes.trendTitle')} />
-    </ChartCard>
   );
 }
 
