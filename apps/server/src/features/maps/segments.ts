@@ -1,0 +1,383 @@
+import {
+  MIN_SEGMENT_M,
+  profileSlice,
+  segmentSports,
+  valueAtDistance,
+  type MapsSegmentEffort,
+} from '@cadence/shared';
+import { getStreams } from '../../core/workouts';
+import { all, get, prepare, run, tx, type Db } from '../../db/db';
+import { badRequest, notFound } from '../../lib/http';
+import {
+  bounds,
+  decodePolyline,
+  distanceToPath,
+  encodePolylineArrays,
+  simplifyIndices,
+  type LatLon,
+} from '../../lib/geo';
+import { gunzipJson, gzipJson } from '../../lib/gzip';
+import type { DeriveStep } from '../types';
+import { GATE_RADIUS_M, matchSegment, sliceStream, thinPath, type SegmentPath } from './segment-match';
+
+export interface SegmentRow {
+  id: number;
+  athlete_id: number;
+  name: string;
+  sport: string;
+  source_workout_id: number | null;
+  distance_m: number;
+  elevation_gain_m: number | null;
+  elevation_loss_m: number | null;
+  avg_grade: number | null;
+  start_lat: number;
+  start_lon: number;
+  end_lat: number;
+  end_lon: number;
+  min_lat: number;
+  min_lon: number;
+  max_lat: number;
+  max_lon: number;
+  polyline: string;
+  starred: number;
+  created_at: number;
+}
+
+const COLS = `id, athlete_id, name, sport, source_workout_id, distance_m, elevation_gain_m, elevation_loss_m, avg_grade,
+  start_lat, start_lon, end_lat, end_lon, min_lat, min_lon, max_lat, max_lon, polyline, starred, created_at`;
+
+export const segmentRows = (db: Db, athleteId: number, ids?: number[]): SegmentRow[] =>
+  all<SegmentRow>(
+    db,
+    `SELECT ${COLS} FROM maps_segments WHERE athlete_id = ?${ids ? ` AND id IN (${ids.map(() => '?').join(',')})` : ''}
+     ORDER BY id`,
+    [athleteId, ...(ids ?? [])],
+  );
+
+/** What the `path` blob holds: the thinned course (matching) and the elevation profile of the dense track (display). */
+export interface StoredPath extends SegmentPath {
+  prof: { dist: number[]; ele: (number | null)[] };
+}
+
+export function loadPath(db: Db, segmentId: number): StoredPath {
+  const r = get<{ path: Uint8Array }>(db, 'SELECT path FROM maps_segments WHERE id = ?', [segmentId]);
+  if (!r) throw notFound('Segment');
+  const p = gunzipJson<StoredPath>(r.path);
+  // a path stored before the profile existed: flat, unknown elevation
+  p.prof ??= { dist: [0, p.dist[p.dist.length - 1] ?? 0], ele: [null, null] };
+  return p;
+}
+
+const r6 = (x: number) => Math.round(x * 1e6) / 1e6;
+const r1 = (x: number) => Math.round(x * 10) / 10;
+
+export interface NewSegment {
+  workoutId: number;
+  startM: number;
+  endM: number;
+  name: string;
+}
+
+/** Cut the segment out of a workout's route, store it and match it against every compatible GPS workout. */
+export function createSegment(db: Db, athleteId: number, input: NewSegment): number {
+  const w = get<{ id: number; sport: string }>(
+    db,
+    'SELECT id, sport FROM workouts WHERE id = ? AND athlete_id = ?',
+    [input.workoutId, athleteId],
+  );
+  if (!w) throw notFound('Workout');
+  const s = getStreams(db, athleteId, w.id);
+  if (!s?.lat || !s.lon || !s.dist || s.lat.length < 2) throw badRequest('This activity has no GPS route');
+  const total = s.dist[s.dist.length - 1]!;
+  const startM = Math.max(0, Math.min(total, input.startM));
+  const endM = Math.max(0, Math.min(total, input.endM));
+  if (endM - startM < MIN_SEGMENT_M) throw badRequest(`A segment has to be at least ${MIN_SEGMENT_M} m long`);
+
+  const dense = sliceStream({ lat: s.lat, lon: s.lon, dist: s.dist, ele: s.ele }, startM, endM);
+  const stats = profileSlice(s.dist, s.ele ?? null, startM, endM);
+  const thin = thinPath(dense, 1.5);
+  const display = simplifyIndices(dense.lat, dense.lon, 5);
+  const bb = bounds(dense.lat, dense.lon)!;
+  // Douglas–Peucker thinning ignores elevation, so the profile is sampled from the dense track (≤ 300 points)
+  const length = endM - startM;
+  const step = Math.max(5, length / 300);
+  const profN = Math.floor(length / step) + 1;
+  const prof: StoredPath['prof'] = { dist: [], ele: [] };
+  for (let k = 0; k <= profN; k++) {
+    const d = k === profN ? length : k * step;
+    if (k === profN && d - prof.dist[prof.dist.length - 1]! < 1) break;
+    prof.dist.push(r1(d));
+    const v = valueAtDistance(dense.dist, dense.ele ?? [], d);
+    prof.ele.push(v === null ? null : r1(v));
+  }
+  const stored: StoredPath = {
+    lat: thin.lat.map(r6),
+    lon: thin.lon.map(r6),
+    dist: thin.dist.map(r1),
+    prof,
+  };
+  const last = dense.lat.length - 1;
+  const id = tx(db, () => {
+    const r = run(
+      db,
+      `INSERT INTO maps_segments (athlete_id, name, sport, source_workout_id, distance_m, elevation_gain_m, elevation_loss_m,
+         avg_grade, start_lat, start_lon, end_lat, end_lon, min_lat, min_lon, max_lat, max_lon, polyline, path)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        athleteId,
+        input.name.trim(),
+        w.sport,
+        w.id,
+        Math.round((endM - startM) * 10) / 10,
+        s.ele ? Math.round(stats.gainM * 10) / 10 : null,
+        s.ele ? Math.round(stats.lossM * 10) / 10 : null,
+        stats.gradePct === null ? null : Math.round(stats.gradePct * 100) / 100,
+        dense.lat[0]!,
+        dense.lon[0]!,
+        dense.lat[last]!,
+        dense.lon[last]!,
+        bb[1],
+        bb[0],
+        bb[3],
+        bb[2],
+        encodePolylineArrays(dense.lat, dense.lon, display),
+        gzipJson(stored),
+      ],
+    );
+    return r.lastInsertRowid;
+  });
+  matchWorkouts(db, athleteId, segmentRows(db, athleteId, [id]), 'all');
+  return id;
+}
+
+interface CandidateWorkout {
+  id: number;
+  sport: string;
+  start_ts: number;
+  min_lat: number;
+  min_lon: number;
+  max_lat: number;
+  max_lon: number;
+  polyline: string | null;
+}
+
+/** Gate slack for the prefilters: polylines are simplified (5 m) and bounding boxes are exact. */
+const PAD_M = GATE_RADIUS_M + 15;
+
+interface Prepared {
+  row: SegmentRow;
+  path: SegmentPath;
+  sports: string[];
+  /** Bounding box padded by PAD_M, in degrees. */
+  box: [minLat: number, minLon: number, maxLat: number, maxLon: number];
+  start: LatLon;
+  end: LatLon;
+}
+
+function preparePath(db: Db, row: SegmentRow): Prepared {
+  const padLat = PAD_M / 111_195;
+  const padLon = PAD_M / (111_195 * Math.max(0.2, Math.cos((row.start_lat * Math.PI) / 180)));
+  return {
+    row,
+    path: loadPath(db, row.id),
+    sports: segmentSports(row.sport),
+    box: [row.min_lat - padLat, row.min_lon - padLon, row.max_lat + padLat, row.max_lon + padLon],
+    start: [row.start_lat, row.start_lon],
+    end: [row.end_lat, row.end_lon],
+  };
+}
+
+/**
+ * Match segments against workouts (ids, or every GPS workout) and replace their stored efforts. A workout's stream is
+ * only decoded when at least one segment of a compatible sport has both gates near the workout's (simplified) route.
+ * Returns the number of efforts stored.
+ */
+export function matchWorkouts(
+  db: Db,
+  athleteId: number,
+  segments: SegmentRow[],
+  workoutIds: number[] | 'all',
+  onProgress?: (done: number, total: number) => void,
+  checkCancelled?: () => void,
+): number {
+  if (!segments.length) return 0;
+  const prepared = segments.map((r) => preparePath(db, r));
+  const segIds = segments.map((s) => s.id);
+  const inSegs = segIds.map(() => '?').join(',');
+  const workouts = all<CandidateWorkout>(
+    db,
+    `SELECT id, sport, start_ts, min_lat, min_lon, max_lat, max_lon, polyline FROM workouts
+     WHERE athlete_id = ? AND has_route = 1 AND min_lat IS NOT NULL
+       ${workoutIds === 'all' ? '' : `AND id IN (${workoutIds.map(() => '?').join(',') || 'NULL'})`}
+     ORDER BY start_ts`,
+    [athleteId, ...(workoutIds === 'all' ? [] : workoutIds)],
+  );
+  // workouts that lost their route (or never had one) must lose their efforts too
+  run(
+    db,
+    `DELETE FROM maps_segment_efforts WHERE segment_id IN (${inSegs})
+       ${workoutIds === 'all' ? '' : `AND workout_id IN (${workoutIds.map(() => '?').join(',') || 'NULL'})`}
+       AND workout_id NOT IN (SELECT id FROM workouts WHERE has_route = 1)`,
+    [...segIds, ...(workoutIds === 'all' ? [] : workoutIds)],
+  );
+  const del = prepare(
+    db,
+    `DELETE FROM maps_segment_efforts WHERE workout_id = ? AND segment_id IN (${inSegs})`,
+  );
+  const ins = prepare(
+    db,
+    `INSERT OR REPLACE INTO maps_segment_efforts (segment_id, workout_id, idx, athlete_id, start_ts, elapsed_s, moving_s, avg_hr, avg_speed, track_m)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  );
+  let stored = 0;
+  const BATCH = 25;
+  for (let b = 0; b < workouts.length; b += BATCH) {
+    checkCancelled?.();
+    tx(db, () => {
+      for (const w of workouts.slice(b, b + BATCH)) {
+        const near = prepared.filter(
+          (p) =>
+            p.sports.includes(w.sport) &&
+            w.max_lat >= p.box[0] &&
+            w.min_lat <= p.box[2] &&
+            w.max_lon >= p.box[1] &&
+            w.min_lon <= p.box[3],
+        );
+        del.run(w.id, ...segIds);
+        if (!near.length) continue;
+        let line: LatLon[] | null = null;
+        const candidates = near.filter((p) => {
+          // both gates must be on (the simplified version of) the workout's route
+          line ??= w.polyline ? decodePolyline(w.polyline) : [];
+          return (
+            line.length > 1 &&
+            distanceToPath(p.start[0], p.start[1], line) <= PAD_M &&
+            distanceToPath(p.end[0], p.end[1], line) <= PAD_M
+          );
+        });
+        if (!candidates.length) continue;
+        const s = getStreams(db, athleteId, w.id);
+        if (!s?.lat || !s.lon || s.t.length < 2) continue;
+        for (const p of candidates) {
+          const matches = matchSegment(p.path, {
+            t: s.t,
+            lat: s.lat,
+            lon: s.lon,
+            dist: s.dist,
+            hr: s.hr,
+            moving: s.moving,
+          });
+          matches.forEach((m, idx) => {
+            ins.run(
+              p.row.id,
+              w.id,
+              idx,
+              athleteId,
+              Math.round((w.start_ts + m.startT) * 10) / 10,
+              Math.round(m.elapsedS * 10) / 10,
+              m.movingS === null ? null : Math.round(m.movingS * 10) / 10,
+              m.avgHr === null ? null : Math.round(m.avgHr * 10) / 10,
+              Math.round((p.row.distance_m / m.elapsedS) * 1000) / 1000,
+              Math.round(m.trackM),
+            );
+            stored++;
+          });
+        }
+      }
+    });
+    onProgress?.(Math.min(workouts.length, b + BATCH), workouts.length);
+  }
+  return stored;
+}
+
+/** Efforts of new / changed workouts (or all of them) against every segment. */
+export const segmentsStep: DeriveStep = {
+  id: 'maps.segments',
+  label: 'Segment efforts',
+  weight: 2,
+  run(ctx) {
+    const segments = segmentRows(ctx.db, ctx.athleteId);
+    if (!segments.length) return;
+    if (ctx.workoutIds !== 'all' && ctx.workoutIds.length === 0) return;
+    matchWorkouts(
+      ctx.db,
+      ctx.athleteId,
+      segments,
+      ctx.workoutIds,
+      (done, total) => ctx.report(done / Math.max(1, total), `${done} / ${total}`),
+      ctx.checkCancelled,
+    );
+  },
+};
+
+// ---------------------------------------------------------------------------------------------------------------
+// Efforts: ranking
+// ---------------------------------------------------------------------------------------------------------------
+
+export interface EffortRow {
+  segment_id: number;
+  workout_id: number;
+  idx: number;
+  start_ts: number;
+  elapsed_s: number;
+  moving_s: number | null;
+  avg_hr: number | null;
+  avg_speed: number;
+  name: string;
+  sport: string;
+  tz_min: number;
+}
+
+/** Efforts of visible workouts (hidden and duplicate workouts do not count), optionally of some segments only. */
+export function effortRows(
+  db: Db,
+  athleteId: number,
+  segmentIds?: number[],
+  workoutId?: number,
+): EffortRow[] {
+  const where = ['e.athlete_id = ?', 'w.hidden = 0', 'w.duplicate_of IS NULL'];
+  const params: unknown[] = [athleteId];
+  if (segmentIds) {
+    where.push(`e.segment_id IN (${segmentIds.map(() => '?').join(',') || 'NULL'})`);
+    params.push(...segmentIds);
+  }
+  if (workoutId !== undefined) {
+    where.push('e.workout_id = ?');
+    params.push(workoutId);
+  }
+  return all<EffortRow>(
+    db,
+    `SELECT e.segment_id, e.workout_id, e.idx, e.start_ts, e.elapsed_s, e.moving_s, e.avg_hr, e.avg_speed,
+            w.name, w.sport, w.tz_min
+     FROM maps_segment_efforts e JOIN workouts w ON w.id = e.workout_id
+     WHERE ${where.join(' AND ')} ORDER BY e.segment_id, e.start_ts, e.workout_id, e.idx`,
+    params,
+  );
+}
+
+/** Rank (1 = fastest) and "was a PR when ridden" for the chronologically sorted efforts of ONE segment. */
+export function rankEfforts(rows: EffortRow[]): MapsSegmentEffort[] {
+  const byTime = [...rows].sort((a, b) => a.elapsed_s - b.elapsed_s || a.start_ts - b.start_ts);
+  const rank = new Map(byTime.map((e, i) => [`${e.workout_id}:${e.idx}`, i + 1]));
+  let best = Infinity;
+  const out: MapsSegmentEffort[] = [];
+  for (const e of rows) {
+    const pr = e.elapsed_s < best;
+    if (pr) best = e.elapsed_s;
+    out.push({
+      workoutId: e.workout_id,
+      idx: e.idx,
+      name: e.name,
+      sport: e.sport,
+      startTs: e.start_ts,
+      tzMin: e.tz_min,
+      elapsedS: e.elapsed_s,
+      movingS: e.moving_s,
+      avgSpeed: e.avg_speed,
+      avgHr: e.avg_hr,
+      rank: rank.get(`${e.workout_id}:${e.idx}`)!,
+      pr,
+    });
+  }
+  return out;
+}
