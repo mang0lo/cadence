@@ -32,11 +32,15 @@ function ActivityBody({
   w,
   streams,
   analysis,
+  analysisLoading,
+  analysisError,
   zoneBounds,
 }: {
   w: WorkoutDetail;
   streams: WorkoutStreams;
   analysis: ActivityAnalysis | undefined;
+  analysisLoading: boolean;
+  analysisError: unknown;
   zoneBounds: number[];
 }) {
   const { t } = useI18n();
@@ -74,7 +78,15 @@ function ActivityBody({
         <Card className="mb-4">
           <EmptyState icon={Activity} title={t('activities.detail.noStreams')} description={t('activities.detail.noStreamsHint')} />
         </Card>
-        <AnalysisSections w={w} P={null} analysis={analysis} zoneBounds={zoneBounds} onSelect={setSelection} />
+        <AnalysisSections
+          w={w}
+          P={null}
+          analysis={analysis}
+          analysisLoading={analysisLoading}
+          analysisError={analysisError}
+          zoneBounds={zoneBounds}
+          onSelect={setSelection}
+        />
       </>
     );
 
@@ -122,7 +134,15 @@ function ActivityBody({
           {selectionPanel}
         </div>
       )}
-      <AnalysisSections w={w} P={P} analysis={analysis} zoneBounds={zoneBounds} onSelect={setSelection} />
+      <AnalysisSections
+        w={w}
+        P={P}
+        analysis={analysis}
+        analysisLoading={analysisLoading}
+        analysisError={analysisError}
+        zoneBounds={zoneBounds}
+        onSelect={setSelection}
+      />
     </>
   );
 }
@@ -175,7 +195,14 @@ function ActivityView({ id }: { id: number }) {
       <HeroStats w={w} analysis={analysis.data} />
       {streams.error && <ErrorState error={streams.error} className="mb-4" />}
       {streams.data ? (
-        <ActivityBody w={w} streams={streams.data} analysis={analysis.data} zoneBounds={zoneBounds} />
+        <ActivityBody
+          w={w}
+          streams={streams.data}
+          analysis={analysis.data}
+          analysisLoading={analysis.isLoading}
+          analysisError={analysis.error}
+          zoneBounds={zoneBounds}
+        />
       ) : (
         streams.isLoading && <Skeleton className="h-[520px] w-full" />
       )}

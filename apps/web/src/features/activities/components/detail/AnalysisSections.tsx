@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { Layers } from 'lucide-react';
 import { sportInfo, type ActivityAnalysis, type WorkoutDetail } from '@cadence/shared';
-import { Card, CardHeader, Table, TD, TH } from '@/components/ui';
+import { Card, CardHeader, ErrorState, Skeleton, Table, TD, TH } from '@/components/ui';
 import { useFormat } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
 import { SportBadge } from '@/lib/sports';
@@ -16,6 +16,9 @@ export interface SectionProps {
   w: WorkoutDetail;
   P: Prepared | null;
   analysis: ActivityAnalysis | undefined;
+  /** The analysis request is still running / failed. */
+  analysisLoading?: boolean;
+  analysisError?: unknown;
   zoneBounds: number[];
   onSelect: (s: [number, number] | null) => void;
 }
@@ -62,7 +65,7 @@ function Pair({ children }: { children: ReactNode }) {
 }
 
 /** Splits, laps, zones, best efforts, analysis cards, climbs, histograms and the comparison with similar efforts. */
-export function AnalysisSections({ w, P, analysis, zoneBounds, onSelect }: SectionProps) {
+export function AnalysisSections({ w, P, analysis, analysisLoading, analysisError, zoneBounds, onSelect }: SectionProps) {
   const similar = useSimilar(w.id);
   const hasSpeed = !!P?.speed && !!P.dist && sportInfo(w.sport).speedMode !== 'none';
   return (
@@ -74,8 +77,17 @@ export function AnalysisSections({ w, P, analysis, zoneBounds, onSelect }: Secti
         <HrZones w={w} zoneBounds={zoneBounds} />
         <BestEfforts w={w} P={P} onSelect={onSelect} />
       </Pair>
+      {analysisError ? <ErrorState error={analysisError} className="mb-4" /> : null}
       <div className="mb-4 empty:hidden">
-        <Insights w={w} analysis={analysis} similar={similar.data} />
+        {analysisLoading && !analysis && P ? (
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            {[0, 1, 2, 3].map((i) => (
+              <Skeleton key={i} className="h-44" />
+            ))}
+          </div>
+        ) : (
+          <Insights w={w} analysis={analysis} similar={similar.data} />
+        )}
       </div>
       <div className="mb-4 empty:hidden">
         <Climbs analysis={analysis} P={P} onSelect={onSelect} />
