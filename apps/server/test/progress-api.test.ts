@@ -23,7 +23,8 @@ import {
 import { generateSample } from '../scripts/sample/generate';
 import { buildApp, migrateAll } from '../src/app';
 import { loadConfig } from '../src/config';
-import { all, get, openDb, type Db } from '../src/db/db';
+import { all, get, openDb, run as run_, type Db } from '../src/db/db';
+import { workoutsToRefresh } from '../src/features/progress/workout-metrics';
 import { addDays } from '../src/lib/time';
 
 const TODAY = '2026-02-20';
@@ -123,6 +124,24 @@ describe('progress API with the sample export', () => {
     const run = rows.find((r) => r.sport === 'run')!;
     expect(run.hist).toBeGreaterThan(0);
     expect(run.stride).toBeGreaterThan(0);
+  });
+
+  it('a full rebuild only recomputes stale cache rows; missing rows are filled lazily', async () => {
+    expect(workoutsToRefresh(db, 1, 'all')).toEqual([]);
+    const run = get<{ id: number }>(db, "SELECT id FROM workouts WHERE sport = 'run' ORDER BY start_ts DESC LIMIT 1")!;
+    run_(db, 'UPDATE workouts SET updated_at = updated_at + 5 WHERE id = ?', [run.id]);
+    expect(workoutsToRefresh(db, 1, 'all').map((w) => w.id)).toEqual([run.id]);
+    expect(workoutsToRefresh(db, 1, [run.id]).map((w) => w.id)).toEqual([run.id]);
+    // a database imported before the feature existed has no rows: the endpoints fill them on first use
+    run_(db, "DELETE FROM progress_workout_metrics WHERE workout_id IN (SELECT id FROM workouts WHERE sport = 'run')");
+    const t = await getJson<ProgressTrendsResponse>(`/api/progress/trends?sport=run&today=${TODAY}`);
+    expect(t.series.find((s) => s.metric === 'stride')!.points.length).toBeGreaterThan(0);
+    const missing = get<{ n: number }>(
+      db,
+      `SELECT COUNT(*) AS n FROM workouts w LEFT JOIN progress_workout_metrics m ON m.workout_id = w.id
+       WHERE w.sport = 'run' AND w.hidden = 0 AND w.duplicate_of IS NULL AND m.workout_id IS NULL`,
+    )!.n;
+    expect(missing).toBe(0);
   });
 
   it('overview lists sports by frequency', async () => {
