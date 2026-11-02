@@ -369,6 +369,25 @@ describe('buildSleepNights', () => {
     });
   });
 
+  it('does not chain around-the-clock data into one endless session', () => {
+    // an app writing back-to-back hourly blocks for 10 days (no gap at all) = 240 records
+    const records: RawSleepRecord[] = Array.from({ length: 240 }, (_, h) => ({
+      startTs: ts('2026-03-01T00:00:00+01:00') + h * H,
+      endTs: ts('2026-03-01T00:00:00+01:00') + (h + 1) * H,
+      tzMin: 60,
+      text: 'Asleep',
+      sourceId: THIRD.id,
+      sourceName: THIRD.name,
+    }));
+    const t0 = Date.now();
+    const sessions = buildSleepNights(records);
+    expect(Date.now() - t0).toBeLessThan(2000);
+    expect(sessions.length).toBeGreaterThanOrEqual(8);
+    for (const s of sessions) expect(s.wakeTs - s.bedTs).toBeLessThanOrEqual(31 * H);
+    // all the data is still accounted for
+    expect(sessions.reduce((n, s) => n + s.asleepS, 0)).toBe(240 * H);
+  });
+
   it('returns nights ordered by bedtime and one main night per wake day', () => {
     const records = [
       ...stagedNight('+01:00', '2026-03-11', '2026-03-12'),

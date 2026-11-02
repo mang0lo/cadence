@@ -19,7 +19,7 @@ import {
 import { useChartTheme } from '@/components/charts/theme';
 import { useFormat } from '@/lib/format';
 import { useT } from '@/lib/i18n';
-import { LEGEND_LINE_ICON, dayAxisLabel } from '../../lib/chart';
+import { LEGEND_LINE_ICON, dayAxisLabel, useChartClick } from '../../lib/chart';
 import {
   STAGE_STACK,
   bedOffset,
@@ -53,6 +53,10 @@ export function StagesChart({ nights, selectedDay, onSelect }: ChartProps) {
   const theme = useChartTheme();
   const stageLabel = useStageLabel();
   const data = useMemo(() => tracked(nights), [nights]);
+  const onChartClick = useChartClick((i) => {
+    const n = data[i];
+    if (n) onSelect(n.day);
+  });
   const stages = useMemo(
     () => STAGE_STACK.filter((s) => s !== 'asleep' || data.some((n) => n.unspecS > 0)),
     [data],
@@ -132,12 +136,7 @@ export function StagesChart({ nights, selectedDay, onSelect }: ChartProps) {
         option={option}
         height={280}
         ariaLabel={t('health.sleep.stages.title')}
-        onEvents={{
-          click: (p: { dataIndex?: number }) => {
-            const n = p.dataIndex === undefined ? undefined : data[p.dataIndex];
-            if (n) onSelect(n.day);
-          },
-        }}
+        onReady={onChartClick}
       />
     </ChartCard>
   );
@@ -242,6 +241,10 @@ export function ScheduleChart({ nights, selectedDay, onSelect }: ChartProps) {
   const fmt = useFormat();
   const theme = useChartTheme();
   const data = useMemo(() => nights.filter((n) => n.kind === 'night'), [nights]);
+  const onChartClick = useChartClick((i) => {
+    const n = data[i];
+    if (n) onSelect(n.day);
+  });
   const stats = useMemo(() => scheduleStats(data), [data]);
   const clock = (minutes: number) => fmt.time(wrapMinutes(minutes) * 60, 0);
 
@@ -362,12 +365,7 @@ export function ScheduleChart({ nights, selectedDay, onSelect }: ChartProps) {
         option={option}
         height={260}
         ariaLabel={t('health.sleep.schedule.title')}
-        onEvents={{
-          click: (p: { dataIndex?: number }) => {
-            const n = p.dataIndex === undefined ? undefined : data[p.dataIndex];
-            if (n) onSelect(n.day);
-          },
-        }}
+        onReady={onChartClick}
       />
     </ChartCard>
   );

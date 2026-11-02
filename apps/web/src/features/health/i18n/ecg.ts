@@ -87,7 +87,7 @@ export const ecg: Dictionary = {
       download: 'CSV herunterladen',
       noWaveform: 'Diese Aufzeichnung enthält keine Kurvendaten.',
       aria: 'EKG-Kurve vom {date}, {seconds} Sekunden, durchschnittliche Herzfrequenz {hr}',
-      note: 'Einkanal-Aufzeichnung (Ableitung I) der Apple Watch. Sie erkennt keinen Herzinfarkt, keine Blutgerinnsel und keine anderen Herzerkrankungen und ist keine Diagnose.',
+      note: 'Einkanal-Aufzeichnung (Ableitung I) der Apple Watch. Damit lassen sich weder ein Herzinfarkt noch Blutgerinnsel oder andere Herzerkrankungen erkennen – sie ersetzt keine Diagnose.',
       rate: 'Ø Frequenz',
     },
     empty: {

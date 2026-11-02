@@ -16,10 +16,12 @@ import {
   tooltipHtml,
   valueAxis,
 } from '@/components/charts/options';
+import { Link } from 'react-router';
 import { ErrorState, Skeleton } from '@/components/ui';
 import { useApi } from '@/lib/api';
 import { useFormat } from '@/lib/format';
 import { useI18n, useT } from '@/lib/i18n';
+import { SportIcon, sportColorVar } from '@/lib/sports';
 import { LEGEND_LINE_ICON } from '../lib/chart';
 import { useMetricFormat } from '../lib/metrics';
 
@@ -266,25 +268,40 @@ export function IntradayChart({
       table={built && d && d.buckets.length ? { columns: built.columns, rows: built.rows } : undefined}
       footer={
         d && stats ? (
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-            {'total' in stats ? (
-              <span>
-                {t('health.common.total')} <b className="font-semibold text-fg">{m.value(type, stats.total, unit)}</b>
-              </span>
-            ) : (
-              <>
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+              {'total' in stats ? (
                 <span>
-                  {t('health.common.min')} <b className="font-semibold text-fg">{m.value(type, stats.lo, unit)}</b>
+                  {t('health.common.total')} <b className="font-semibold text-fg">{m.value(type, stats.total, unit)}</b>
                 </span>
-                <span>
-                  {t('health.common.avg')} <b className="font-semibold text-fg">{m.value(type, stats.avg, unit)}</b>
-                </span>
-                <span>
-                  {t('health.common.max')} <b className="font-semibold text-fg">{m.value(type, stats.hi, unit)}</b>
-                </span>
-              </>
+              ) : (
+                <>
+                  <span>
+                    {t('health.common.min')} <b className="font-semibold text-fg">{m.value(type, stats.lo, unit)}</b>
+                  </span>
+                  <span>
+                    {t('health.common.avg')} <b className="font-semibold text-fg">{m.value(type, stats.avg, unit)}</b>
+                  </span>
+                  <span>
+                    {t('health.common.max')} <b className="font-semibold text-fg">{m.value(type, stats.hi, unit)}</b>
+                  </span>
+                </>
+              )}
+              <span className="text-fg-3">{t('health.common.samplesCount', { count: d.sampleCount })}</span>
+            </div>
+            {wk.length > 0 && (
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                {wk.map((x) => (
+                  <Link key={x.id} to={`/activities/${x.id}`} className="inline-flex items-center gap-1.5 text-fg-2 hover:text-fg hover:underline">
+                    <span className="grid size-4 place-items-center rounded-full text-white" style={{ background: sportColorVar(x.sport) }}>
+                      <SportIcon sport={x.sport} size={10} strokeWidth={2.5} />
+                    </span>
+                    {workoutTitle(x, lang)}
+                    <span className="text-fg-3 tabular">{fmt.time(x.startTs, d.tzMin)}</span>
+                  </Link>
+                ))}
+              </div>
             )}
-            <span className="text-fg-3">{t('health.common.samplesCount', { count: d.sampleCount })}</span>
           </div>
         ) : undefined
       }

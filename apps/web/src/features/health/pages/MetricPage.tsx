@@ -45,6 +45,9 @@ export default function MetricPage() {
   const [mode, setMode] = useState<MetricMode>('average');
   const [pickedDay, setPickedDay] = useState<string | null>(null);
   const agg = aggPref ?? autoAgg(days);
+  // the whole history needs no day filter (and no row count over millions of records)
+  const listFrom = range === 'all' ? undefined : fromDay;
+  const listTo = range === 'all' ? undefined : toDay;
   const ready = !!meta.data?.asOf && !!type;
 
   const q = useApi<MetricSeries>(['health', 'metric', 'series'], ready ? '/health/metric/series' : null, { type, fromDay, toDay, agg });
@@ -194,8 +197,8 @@ export default function MetricPage() {
             />
           )}
 
-          {info && <SourcesCard key={`src-${identifier}`} type={identifier} fromDay={fromDay} toDay={toDay} />}
-          {info && <SamplesCard key={`smp-${identifier}`} type={info} fromDay={fromDay} toDay={toDay} />}
+          {info && <SourcesCard key={`src-${identifier}`} type={identifier} fromDay={listFrom} toDay={listTo} />}
+          {info && <SamplesCard key={`smp-${identifier}`} type={info} fromDay={listFrom} toDay={listTo} />}
         </div>
       )}
     </Page>

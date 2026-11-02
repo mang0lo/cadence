@@ -58,7 +58,7 @@ function Hypnogram({ night }: { night: SleepNightDetail }) {
         return {
           type: 'rect',
           shape: { x: start[0]!, y: start[1]! - h / 2, width: Math.max(end[0]! - start[0]!, 1.5), height: h, r: 3 },
-          style: api.style(),
+          style: { fill: api.visual('color') as string },
         };
       },
     };

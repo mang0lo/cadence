@@ -58,6 +58,11 @@ type RecordStage = 'inbed' | SleepStage;
 export const SESSION_GAP_S = 2 * 3600;
 /** Records longer than this are data errors. */
 const MAX_RECORD_S = 24 * 3600;
+/**
+ * A session never spans more than this: an app that writes back-to-back sleep blocks around the clock would otherwise
+ * chain months of data into one session (and make the overlap resolution quadratic).
+ */
+const MAX_SESSION_S = 30 * 3600;
 /** Awake runs shorter than this inside the night are not counted as awakenings. */
 const MIN_AWAKENING_S = 60;
 
@@ -352,13 +357,15 @@ export function buildSleepNights(records: RawSleepRecord[], opts: { gapS?: numbe
 
   const sessions: Rec[][] = [];
   let cur: Rec[] = [];
+  let curStart = 0;
   let curEnd = -Infinity;
   for (const r of recs) {
-    if (cur.length && r.s - curEnd > gapS) {
+    if (cur.length && (r.s - curEnd > gapS || r.s - curStart > MAX_SESSION_S)) {
       sessions.push(cur);
       cur = [];
       curEnd = -Infinity;
     }
+    if (!cur.length) curStart = r.s;
     cur.push(r);
     curEnd = Math.max(curEnd, r.e);
   }

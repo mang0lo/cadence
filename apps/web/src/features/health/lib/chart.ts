@@ -1,3 +1,5 @@
+import { useCallback, useRef } from 'react';
+import type { ECharts } from 'echarts';
 import type { Formatter } from '@/lib/format';
 
 const pad = (n: number) => (n < 10 ? `0${n}` : String(n));
@@ -24,3 +26,27 @@ export const dayAxisLabelUtc = (fmt: Formatter) => (value: number) => fmt.day(ms
 
 /** Shared legend overrides: line icons must not inherit the 2 px surface ring of the line series (it would hide them). */
 export const LEGEND_LINE_ICON = { itemStyle: { borderWidth: 0 } } as const;
+
+/**
+ * Click on a category chart (bars per night / day): calls `handler` with the index of the category under the pointer, also
+ * when the click lands in the gap between two thin bars. Attached through `onReady`: the shared <EChart onEvents>
+ * detaches its handlers after the instance is disposed on unmount, which makes ECharts warn, whereas handlers attached
+ * to the instance itself disappear with it.
+ */
+export function useChartClick(handler: (dataIndex: number) => void): (chart: ECharts) => void {
+  const ref = useRef(handler);
+  ref.current = handler;
+  return useCallback((chart: ECharts) => {
+    const zr = chart.getZr();
+    const inGrid = (x: number, y: number) => chart.containPixel('grid', [x, y]);
+    zr.on('click', (e: { offsetX: number; offsetY: number }) => {
+      if (!inGrid(e.offsetX, e.offsetY)) return;
+      const v = chart.convertFromPixel({ xAxisIndex: 0 }, e.offsetX);
+      const i = Math.round(Array.isArray(v) ? (v[0] as number) : (v as number));
+      if (Number.isFinite(i) && i >= 0) ref.current(i);
+    });
+    zr.on('mousemove', (e: { offsetX: number; offsetY: number }) => {
+      zr.setCursorStyle(inGrid(e.offsetX, e.offsetY) ? 'pointer' : 'default');
+    });
+  }, []);
+}

@@ -15,7 +15,7 @@ export interface TypeRow {
   aggregation: RecordTypeInfo['aggregation'];
 }
 
-const PREFIXES = ['HKQuantityTypeIdentifier', 'HKCategoryTypeIdentifier', 'HKDataType', ''];
+const PREFIXES = ['', 'HKQuantityTypeIdentifier', 'HKCategoryTypeIdentifier', 'HKDataType'];
 
 /**
  * Looks up a record type by its full identifier; also accepts the short form ('HeartRate') as a convenience.

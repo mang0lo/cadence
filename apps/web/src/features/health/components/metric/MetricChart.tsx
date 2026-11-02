@@ -124,7 +124,15 @@ export function MetricChart({ series, mode, loading }: Props) {
       // minutes → hours once a bar exceeds three hours
       const hours = !isEvent && maxStack >= 180;
       const div = hours ? 60 : 1;
-      const slotNames = all.map((c) => (c.value === '__other' ? t('health.metric.chart.other') : isEvent ? t('health.metric.chart.events') : m.categoryLabel(c.value)));
+      const slotNames = all.map((c) =>
+        c.value === '__other'
+          ? t('health.metric.chart.other')
+          : isEvent
+            ? t('health.metric.chart.events')
+            : c.value === 'NotApplicable'
+              ? t('health.metric.chart.duration')
+              : m.categoryLabel(c.value),
+      );
       return {
         kind: 'category' as const,
         keys,

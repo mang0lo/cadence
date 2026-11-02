@@ -69,6 +69,26 @@ function typeInfo(db: Db, athleteId: number, t: TypeRow): RecordTypeInfo {
 
 const LOCAL_DAY = "date(r.start_ts + r.tz_min * 60, 'unixepoch')";
 
+/** WHERE clause on `records r` for one type and a range; the exact local-day predicates only exist when days are given. */
+function recordWhere(
+  athleteId: number,
+  typeId: number,
+  o: { fromDay?: string; toDay?: string; from?: number; to?: number },
+): { sql: string; params: (string | number)[] } {
+  const win = tsWindow(o.fromDay, o.toDay);
+  let sql = 'r.athlete_id = ? AND r.type_id = ? AND r.start_ts >= ? AND r.start_ts < ?';
+  const params: (string | number)[] = [athleteId, typeId, o.from ?? win.lo, o.to ?? win.hi];
+  if (o.fromDay) {
+    sql += ` AND ${LOCAL_DAY} >= ?`;
+    params.push(o.fromDay);
+  }
+  if (o.toDay) {
+    sql += ` AND ${LOCAL_DAY} <= ?`;
+    params.push(o.toDay);
+  }
+  return { sql, params };
+}
+
 export function registerMetricRoutes(app: FastifyInstance): void {
   app.get('/explorer', async (req): Promise<ExplorerResponse> => buildExplorer(app.db, req.athleteId));
 
@@ -131,7 +151,7 @@ export function registerMetricRoutes(app: FastifyInstance): void {
     const q = rangeQuery.parse(req.query);
     checkDayOrder(q.fromDay, q.toDay);
     const t = resolveType(app.db, q.type);
-    const { lo, hi } = tsWindow(q.fromDay, q.toDay);
+    const w = recordWhere(req.athleteId, t.id, q);
     const rows = all<{
       source_id: number;
       name: string | null;
@@ -144,10 +164,9 @@ export function registerMetricRoutes(app: FastifyInstance): void {
       `SELECT r.source_id, s.name, COALESCE(d.name, '') || CASE WHEN d.hardware IS NULL THEN '' ELSE ' (' || d.hardware || ')' END AS device,
               COUNT(*) AS n, MIN(r.start_ts) AS first_ts, MAX(r.start_ts) AS last_ts
        FROM records r LEFT JOIN sources s ON s.id = r.source_id LEFT JOIN devices d ON d.id = r.device_id
-       WHERE r.athlete_id = ? AND r.type_id = ? AND r.start_ts >= ? AND r.start_ts < ?
-         AND (? IS NULL OR ${LOCAL_DAY} >= ?) AND (? IS NULL OR ${LOCAL_DAY} <= ?)
+       WHERE ${w.sql}
        GROUP BY r.source_id, device`,
-      [req.athleteId, t.id, lo, hi, q.fromDay ?? null, q.fromDay ?? null, q.toDay ?? null, q.toDay ?? null],
+      w.params,
     );
     const by = new Map<number, MetricSourceRow & { devSet: Set<string> }>();
     for (const r of rows) {
@@ -173,25 +192,20 @@ export function registerMetricRoutes(app: FastifyInstance): void {
     const q = samplesQuery.parse(req.query);
     checkDayOrder(q.fromDay, q.toDay);
     const t = resolveType(app.db, q.type);
-    const win = tsWindow(q.fromDay, q.toDay);
-    const lo = q.from ?? win.lo;
-    const hi = q.to ?? win.hi;
-    const where = `r.athlete_id = ? AND r.type_id = ? AND r.start_ts >= ? AND r.start_ts < ?
-      AND (? IS NULL OR ${LOCAL_DAY} >= ?) AND (? IS NULL OR ${LOCAL_DAY} <= ?)`;
-    const params = [req.athleteId, t.id, lo, hi, q.fromDay ?? null, q.fromDay ?? null, q.toDay ?? null, q.toDay ?? null];
+    const w = recordWhere(req.athleteId, t.id, q);
     const unbounded = q.from === undefined && q.to === undefined && !q.fromDay && !q.toDay;
     // the whole history is already counted in record_type_stats (a COUNT(*) over millions of rows would block the loop)
     const total = unbounded
       ? (get<{ count: number }>(app.db, 'SELECT count FROM record_type_stats WHERE athlete_id = ? AND type_id = ?', [req.athleteId, t.id])?.count ?? 0)
-      : (get<{ n: number }>(app.db, `SELECT COUNT(*) AS n FROM records r WHERE ${where}`, params)?.n ?? 0);
+      : (get<{ n: number }>(app.db, `SELECT COUNT(*) AS n FROM records r WHERE ${w.sql}`, w.params)?.n ?? 0);
     const items = all<MetricSample>(
       app.db,
       `SELECT r.start_ts AS startTs, r.end_ts AS endTs, r.tz_min AS tzMin, r.value, r.text, s.name AS source,
               CASE WHEN d.id IS NULL THEN NULL ELSE COALESCE(d.name, d.model, '') || CASE WHEN d.hardware IS NULL THEN '' ELSE ' (' || d.hardware || ')' END END AS device
        FROM records r LEFT JOIN sources s ON s.id = r.source_id LEFT JOIN devices d ON d.id = r.device_id
-       WHERE ${where}
+       WHERE ${w.sql}
        ORDER BY r.start_ts ${q.order === 'asc' ? 'ASC' : 'DESC'} LIMIT ? OFFSET ?`,
-      [...params, q.limit, q.offset],
+      [...w.params, q.limit, q.offset],
     );
     return { items, total, limit: q.limit, offset: q.offset };
   });
