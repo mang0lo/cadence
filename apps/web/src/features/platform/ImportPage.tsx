@@ -66,7 +66,7 @@ function ActiveJob({ job }: { job: ImportJob }) {
   const [cancelling, setCancelling] = useState(false);
   const s = job.stats;
   const elapsed = job.startedAt ? Date.now() / 1000 - job.startedAt : 0;
-  const eta = job.progress > 0.03 && elapsed > 5 ? (elapsed / job.progress) * (1 - job.progress) : null;
+  const eta = job.etaS ?? (job.progress > 0.03 && elapsed > 5 ? (elapsed / job.progress) * (1 - job.progress) : null);
   return (
     <Card>
       <CardHeader
@@ -90,7 +90,7 @@ function ActiveJob({ job }: { job: ImportJob }) {
       <div className="mb-2 flex items-baseline justify-between gap-3">
         <div className="text-sm font-medium text-fg">
           {job.phase ? t(`platform.import.phases.${job.phase}`) : t('platform.import.status.queued')}
-          {job.message && <span className="ml-2 font-normal text-fg-3">{job.message}</span>}
+          {(job.step ?? job.message) && <span className="ml-2 font-normal text-fg-3">{job.step ?? job.message}</span>}
         </div>
         <div className="text-sm font-semibold text-fg">
           {fmt.pct(job.progress)}
