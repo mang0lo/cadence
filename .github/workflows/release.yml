@@ -1,15 +1,40 @@
 name: Release
 
+# Start a release either by pushing a tag (git tag -a v0.2.0 -m … && git push origin v0.2.0) or from the Actions tab:
+# "Release" → "Run workflow" with the version. A dispatched run creates the tag on the commit it builds.
+# The version must match package.json; the release notes come from the matching CHANGELOG.md section.
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release, e.g. v0.1.0 (must match package.json)'
+        required: true
+        type: string
 
 permissions:
   contents: write
   packages: write
 
+env:
+  TAG: ${{ inputs.version || github.ref_name }}
+
 jobs:
+  check-version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tag matches package.json
+        run: |
+          expected="v$(node -p "require('./package.json').version")"
+          if [ "$TAG" != "$expected" ]; then
+            echo "::error::Release tag $TAG does not match package.json version ($expected)"
+            exit 1
+          fi
+
   mac-app:
+    needs: check-version
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -22,18 +47,22 @@ jobs:
       # release notes = the "## [x.y.z]" section of CHANGELOG.md for this tag
       - name: Release notes
         run: |
-          awk -v v="${GITHUB_REF_NAME#v}" '
+          awk -v v="${TAG#v}" '
             /^## / { if (found) exit; if (index($0, "[" v "]")) { found = 1; next } }
             found { print }
           ' CHANGELOG.md > release-notes.md
           test -s release-notes.md || echo "See CHANGELOG.md." > release-notes.md
+      # creates the tag on this commit when the run was dispatched (no-op when the tag was pushed)
       - uses: softprops/action-gh-release@v2
         with:
-          name: Cadence ${{ github.ref_name }}
+          tag_name: ${{ env.TAG }}
+          target_commitish: ${{ github.sha }}
+          name: Cadence ${{ env.TAG }}
           body_path: release-notes.md
           files: build/Cadence-*.dmg
 
   docker-image:
+    needs: check-version
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -53,4 +82,4 @@ jobs:
           push: true
           tags: |
             ${{ env.IMAGE }}:latest
-            ${{ env.IMAGE }}:${{ github.ref_name }}
+            ${{ env.IMAGE }}:${{ env.TAG }}
