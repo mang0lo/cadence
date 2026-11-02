@@ -133,6 +133,10 @@ export interface WorkoutSummary {
   polyline: string | null;
   sourceName: string | null;
   notes: string | null;
+  /** True when the user hid the workout (only returned with includeHidden). */
+  hidden?: boolean;
+  /** Id of the workout this one duplicates (only returned with includeDuplicates). */
+  duplicateOf?: number | null;
 }
 
 export interface WorkoutEvent {
@@ -226,8 +230,11 @@ export interface WorkoutStreams {
   /** Smoothed speed in m/s. */
   speed?: (number | null)[];
   hr?: (number | null)[];
+  /** Running: steps per minute (both feet); cycling: rpm. */
   cadence?: (number | null)[];
   power?: (number | null)[];
+  /** 1 while moving, 0 while stopped/paused (basis of moving time). */
+  moving?: number[];
 }
 
 export interface WorkoutListQuery {
@@ -241,6 +248,8 @@ export interface WorkoutListQuery {
   limit?: number;
   offset?: number;
   includeHidden?: boolean;
+  /** Also list workouts flagged as duplicates of another workout (excluded by default). */
+  includeDuplicates?: boolean;
 }
 
 export interface Page<T> {
@@ -325,6 +334,10 @@ export interface ImportStats {
   locale: string | null;
   /** Non-fatal problems (malformed elements, unreadable route files, …). */
   warnings: string[];
+  /** Workouts derived (streams, splits, efforts) by this job. */
+  workoutsDerived?: number;
+  /** Seconds spent per phase, e.g. { parse: 12.3, routes: 2.1, derive: 8.4 }. */
+  phaseSeconds?: Partial<Record<ImportPhase, number>>;
 }
 
 export interface ImportJob {
@@ -342,6 +355,26 @@ export interface ImportJob {
   createdAt: number;
   startedAt: number | null;
   finishedAt: number | null;
+  /** Estimated seconds until the job finishes (running jobs only, null while unknown). */
+  etaS?: number | null;
+  /** Label of the current derive step while phase = 'derive'. */
+  step?: string | null;
+}
+
+/** POST /api/import/local */
+export interface LocalImportRequest {
+  path: string;
+}
+
+/** POST /api/import/rederive (empty body = full rebuild of all derived data). */
+export interface RederiveRequest {
+  workoutIds?: number[];
+  sinceDay?: string | null;
+}
+
+/** POST /api/import/reset – wipes every imported and derived row of the athlete. */
+export interface ResetRequest {
+  confirm: 'DELETE';
 }
 
 export interface ApiError {

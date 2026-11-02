@@ -1,2 +1,65 @@
-/** Entry of the import worker thread (see src/index.ts). Implemented by the importer. */
-export async function runWorker(): Promise<void> {}
+import { parentPort, workerData } from 'node:worker_threads';
+import { openDb } from '../db/db';
+import { CancelledError } from '../derive/context';
+import { executeJob, type JobSpec } from './run-job';
+import { emptyStats } from './writer';
+
+/** workerData of an import / derive worker (see jobs.ts). */
+export interface JobWorkerData {
+  role: 'cadence-job';
+  dbPath: string;
+  job: JobSpec;
+  /** Int32Array(1) flag: set to 1 by the main thread to cancel. */
+  cancel: SharedArrayBuffer;
+}
+
+export type WorkerMessage =
+  | {
+      type: 'progress';
+      phase: string;
+      progress: number;
+      message: string | null;
+      step: string | null;
+      stats: unknown;
+    }
+  | { type: 'log'; message: string }
+  | { type: 'done'; stats: unknown }
+  | { type: 'failed'; error: string; cancelled: boolean; stats: unknown };
+
+/** Entry of the import worker thread (src/index.ts runs this when !isMainThread). */
+export async function runWorker(): Promise<void> {
+  const data = workerData as JobWorkerData | undefined;
+  if (!parentPort || !data || data.role !== 'cadence-job') return;
+  const port = parentPort;
+  const post = (m: WorkerMessage) => port.postMessage(m);
+  const flag = new Int32Array(data.cancel);
+  const stats = emptyStats();
+  const db = openDb(data.dbPath);
+  // the importer benefits from a bigger page cache than the HTTP connection
+  db.exec('PRAGMA cache_size = -131072');
+  try {
+    await executeJob(
+      db,
+      data.job,
+      {
+        progress: (p) => post({ type: 'progress', ...p, stats: p.stats }),
+        checkCancelled: () => {
+          if (Atomics.load(flag, 0)) throw new CancelledError();
+        },
+        log: (message) => post({ type: 'log', message }),
+      },
+      stats,
+    );
+    post({ type: 'done', stats });
+  } catch (e) {
+    if (db.isTransaction) db.exec('ROLLBACK');
+    post({
+      type: 'failed',
+      error: e instanceof Error ? e.message : String(e),
+      cancelled: e instanceof CancelledError,
+      stats,
+    });
+  } finally {
+    db.close();
+  }
+}

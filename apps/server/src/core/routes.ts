@@ -40,10 +40,16 @@ export default async function coreRoutes(app: FastifyInstance) {
   app.get('/status', async (req): Promise<ServerStatus & { authenticated: boolean }> => {
     const db = app.db;
     if (!countsCache || Date.now() - countsCache.at > 30_000) {
-      const workouts = get<{ n: number }>(db, 'SELECT COUNT(*) AS n FROM workouts')!.n;
-      const recordTypes = get<{ n: number }>(db, 'SELECT COUNT(*) AS n FROM record_types')!.n;
-      const records = get<{ n: number }>(db, 'SELECT COUNT(*) AS n FROM records')!.n;
-      countsCache = { at: Date.now(), value: { workouts, records, recordTypes } };
+      // record_type_stats instead of COUNT(*) over records: tens of millions of rows would block the event loop
+      const workouts = get<{ n: number }>(db, 'SELECT COUNT(*) AS n FROM workouts WHERE athlete_id = ?', [
+        req.athleteId,
+      ])!.n;
+      const r = get<{ types: number; records: number | null }>(
+        db,
+        'SELECT COUNT(*) AS types, SUM(count) AS records FROM record_type_stats WHERE athlete_id = ?',
+        [req.athleteId],
+      )!;
+      countsCache = { at: Date.now(), value: { workouts, records: r.records ?? 0, recordTypes: r.types } };
     }
     const last = get<{ t: number | null }>(
       db,
@@ -74,7 +80,15 @@ export default async function coreRoutes(app: FastifyInstance) {
 
   app.patch('/settings', async (req): Promise<AthleteSettings> => {
     const patch = settingsPatch.parse(req.body ?? {});
-    return updateSettings(app.db, req.athleteId, patch as Partial<AthleteSettings>);
+    const before = getSettings(app.db, req.athleteId);
+    const next = updateSettings(app.db, req.athleteId, patch as Partial<AthleteSettings>);
+    // HR settings change zones and relative effort: recompute them in the background (cheap, histogram based)
+    const hrKeys = ['maxHr', 'restingHr', 'hrZoneMethod', 'hrZones', 'sex', 'birthDate'] as const;
+    if (hrKeys.some((k) => JSON.stringify(before[k]) !== JSON.stringify(next[k])) && app.jobs) {
+      const today = new Date().toISOString().slice(0, 10);
+      app.jobs.enqueueDerive(req.athleteId, { origin: 'settings', workoutIds: [], sinceDay: today });
+    }
+    return next;
   });
 }
 
