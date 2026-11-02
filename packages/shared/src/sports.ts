@@ -273,3 +273,48 @@ export const BEST_EFFORTS: Record<string, EffortDefinition[]> = {
     { key: '10k', distanceM: 10000, label: { en: '10K', de: '10 km' } },
   ],
 };
+
+// ---------------------------------------------------------------------------
+// Default workout names ("Morning Run" / "Lauf am Morgen"). Apple Health workouts have no titles, so
+// workouts.name stays '' unless the user renames one; the UI (and GPX export) derive a localized title.
+// ---------------------------------------------------------------------------
+
+export type TimeOfDay = 'morning' | 'lunch' | 'afternoon' | 'evening' | 'night';
+
+export function timeOfDay(localHour: number): TimeOfDay {
+  if (localHour >= 4 && localHour < 11) return 'morning';
+  if (localHour >= 11 && localHour < 14) return 'lunch';
+  if (localHour >= 14 && localHour < 17) return 'afternoon';
+  if (localHour >= 17 && localHour < 21) return 'evening';
+  return 'night';
+}
+
+const TOD_EN: Record<TimeOfDay, string> = {
+  morning: 'Morning',
+  lunch: 'Lunch',
+  afternoon: 'Afternoon',
+  evening: 'Evening',
+  night: 'Night',
+};
+const TOD_DE: Record<TimeOfDay, string> = {
+  morning: 'am Morgen',
+  lunch: 'am Mittag',
+  afternoon: 'am Nachmittag',
+  evening: 'am Abend',
+  night: 'in der Nacht',
+};
+
+export function defaultWorkoutName(sport: string, startTs: number, tzMin: number, lang: 'en' | 'de' = 'en'): string {
+  const hour = new Date((startTs + tzMin * 60) * 1000).getUTCHours();
+  const tod = timeOfDay(hour);
+  const info = sportInfo(sport);
+  return lang === 'de' ? `${info.label.de} ${TOD_DE[tod]}` : `${TOD_EN[tod]} ${info.label.en}`;
+}
+
+/** Display title of a workout: the user's name if set, else the localized default name. */
+export function workoutTitle(
+  w: { name: string; sport: string; startTs: number; tzMin: number },
+  lang: 'en' | 'de' = 'en',
+): string {
+  return w.name?.trim() ? w.name : defaultWorkoutName(w.sport, w.startTs, w.tzMin, lang);
+}
