@@ -123,7 +123,8 @@ export function PaceAtHrCard({ sport, range }: { sport: string; range: RangePara
   const single = sport !== 'all' && sportInfo(sport).distance;
   const q = usePaceAtHr(single ? sport : null, range, band);
   const data = single ? q.data : undefined;
-  const tf = speedFormat(fmt, data?.sport ?? sport);
+  const tfSport = data?.sport ?? sport;
+  const tf = useMemo(() => speedFormat(fmt, tfSport), [fmt, tfSport]);
   const color = sportColor(theme, sport);
   const option = useMemo(
     () => (data && data.months.some((m) => m.speed !== null) ? mainOption(data, { theme, fmt, t, tf, color }) : null),

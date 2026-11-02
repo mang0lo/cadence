@@ -80,7 +80,7 @@ export function IntensityCard({ sport, range }: { sport: string; range: RangePar
     return {
       columns: [
         { key: 'period', label: t('progress.common.period') },
-        ...labels.map((l, z) => ({ key: `z${z}`, label: `Z${z + 1}`, numeric: true })),
+        ...labels.map((_, z) => ({ key: `z${z}`, label: `Z${z + 1}`, numeric: true })),
         { key: 'easy', label: t('progress.intensity.easyShare'), numeric: true },
       ],
       rows: [...data.buckets].reverse().map((b) => ({

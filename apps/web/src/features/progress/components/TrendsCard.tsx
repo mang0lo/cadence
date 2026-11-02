@@ -141,7 +141,9 @@ export function TrendsCard({
   const series = data?.series ?? [];
   const selected = series.find((s) => s.metric === picked) ?? series.find((s) => s.metric === 'speed') ?? series[0] ?? null;
   const dataSport = data?.sport ?? sport;
-  const tf = selected ? trendFormat(fmt, t, selected.metric, dataSport) : null;
+  const selectedMetric = selected?.metric ?? null;
+  // stable across renders, so the chart option is only rebuilt when something really changed
+  const tf = useMemo(() => (selectedMetric ? trendFormat(fmt, t, selectedMetric, dataSport) : null), [fmt, t, selectedMetric, dataSport]);
   const names = useMemo(
     () => ({ points: t('progress.trends.legend.points'), median: t('progress.trends.legend.median'), trend: t('progress.trends.legend.trend') }),
     [t],

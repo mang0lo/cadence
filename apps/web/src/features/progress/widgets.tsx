@@ -11,7 +11,7 @@ import { useT } from '@/lib/i18n';
 import { addDays, todayKey } from '@/lib/time';
 import { useFitness, useSnapshot } from './api';
 import { signedRounded } from './format';
-import { FormZoneBadge } from './components/fitness';
+import { FormZoneBadge } from './components/FormZoneBadge';
 import { Spark } from './components/Spark';
 
 function DetailsLink({ to, label }: { to: string; label: string }) {

@@ -4,13 +4,9 @@ import {
   AlertOctagon,
   AlertTriangle,
   ArrowDownRight,
-  BatteryFull,
-  BatteryLow,
   CheckCircle2,
   Gauge,
   HeartPulse,
-  Sparkles,
-  Target,
   TrendingUp,
   Waves,
   type LucideIcon,
@@ -47,16 +43,7 @@ import { useT, type TFunction } from '@/lib/i18n';
 import { bucketLabel, chartLegend, dayMs, timeAxisLabel } from '../chart';
 import { signedRounded } from '../format';
 import { ChartSkeleton } from './common';
-
-type BadgeTone = 'neutral' | 'accent' | 'good' | 'warning' | 'critical';
-
-export const ZONE_STYLE: Record<ProgressFormZone, { tone: BadgeTone; icon: LucideIcon }> = {
-  transition: { tone: 'neutral', icon: BatteryFull },
-  fresh: { tone: 'good', icon: Sparkles },
-  optimal: { tone: 'accent', icon: Target },
-  tired: { tone: 'warning', icon: BatteryLow },
-  overreaching: { tone: 'critical', icon: AlertTriangle },
-};
+import { FormZoneBadge, type BadgeTone } from './FormZoneBadge';
 
 const RAMP_STYLE: Record<ProgressRampStatus, { tone: BadgeTone; icon: LucideIcon }> = {
   normal: { tone: 'neutral', icon: CheckCircle2 },
@@ -70,17 +57,6 @@ const ACWR_STYLE: Record<ProgressAcwrStatus, { tone: BadgeTone; icon: LucideIcon
   elevated: { tone: 'warning', icon: AlertTriangle },
   high: { tone: 'critical', icon: AlertOctagon },
 };
-
-/** Form zone as a status badge (icon + label, never color alone). */
-export function FormZoneBadge({ zone }: { zone: ProgressFormZone }) {
-  const t = useT();
-  const s = ZONE_STYLE[zone];
-  return (
-    <Badge tone={s.tone} icon={s.icon}>
-      {t(`progress.fitness.zones.${zone}`)}
-    </Badge>
-  );
-}
 
 const signed1 = (fmt: Formatter, v: number) => signedRounded(fmt, v, Math.abs(v) < 10 ? 1 : 0);
 
