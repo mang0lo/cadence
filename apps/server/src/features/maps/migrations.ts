@@ -22,4 +22,35 @@ export const migrations: Migration[] = [
       CREATE INDEX ix_maps_workout_tiles_workout ON maps_workout_tiles(workout_id);
     `,
   },
+  {
+    id: 'maps_002_routes',
+    up: /* sql */ `
+      -- Shape signature of every workout with a GPS track (see route-shapes.ts) and the route it was assigned to.
+      CREATE TABLE maps_workout_geo (
+        workout_id INTEGER PRIMARY KEY REFERENCES workouts(id) ON DELETE CASCADE,
+        athlete_id INTEGER NOT NULL,
+        length_m REAL NOT NULL,
+        sig BLOB NOT NULL,               -- Float64Array: lat0, lon0, lat1, lon1, … resampled by arc length
+        route_id INTEGER                 -- maps_routes.id (NULL until clustered)
+      );
+      CREATE INDEX ix_maps_workout_geo_route ON maps_workout_geo(route_id);
+      CREATE INDEX ix_maps_workout_geo_athlete ON maps_workout_geo(athlete_id);
+
+      -- A route = a group of same-sport workouts that follow the same course. Stats (count, best time …) are computed
+      -- when reading so hiding a workout needs no rebuild. custom_name is the only user data in here.
+      CREATE TABLE maps_routes (
+        id INTEGER PRIMARY KEY,
+        athlete_id INTEGER NOT NULL,
+        sport TEXT NOT NULL,
+        rep_workout_id INTEGER,          -- representative = earliest member
+        kind TEXT NOT NULL DEFAULT 'loop',   -- loop | out_and_back | point_to_point
+        area TEXT,                       -- city of the representative's time zone, if known
+        distance_m REAL NOT NULL DEFAULT 0,  -- median length of the members
+        start_lat REAL, start_lon REAL, end_lat REAL, end_lon REAL,
+        polyline TEXT,
+        custom_name TEXT
+      );
+      CREATE INDEX ix_maps_routes_athlete ON maps_routes(athlete_id, sport);
+    `,
+  },
 ];

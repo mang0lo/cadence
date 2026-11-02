@@ -36,7 +36,7 @@ export interface TestTrack {
 export interface TrackOptions {
   /** m/s (default 3) */
   speed?: number;
-  /** Gaussian-ish GPS noise in meters (default 0) */
+  /** Std. deviation of the slowly drifting GPS error in meters (default 0) */
   noiseM?: number;
   seed?: number;
   /** elevation in meters at a distance along the track (default flat 200 m) */
@@ -67,6 +67,12 @@ export function trackAlong(points: LatLon[], opts: TrackOptions = {}): TestTrack
   const ele: number[] = [];
   const delay = opts.startDelayS ?? 0;
   const n = Math.ceil(total / speed) + 1;
+  // GPS error drifts slowly (AR(1) with ρ = 0.97), it is not white noise: a 1 Hz track stays about as long as the road
+  const rho = 0.97;
+  const innov = Math.sqrt(1 - rho * rho);
+  const gauss = () => (rand() + rand() + rand() - 1.5) * 2; // ≈ unit variance
+  let errLat = 0;
+  let errLon = 0;
   let si = 0;
   for (let k = -delay; k <= n; k++) {
     const d = Math.min(total, Math.max(0, k * speed));
@@ -76,8 +82,10 @@ export function trackAlong(points: LatLon[], opts: TrackOptions = {}): TestTrack
     let la = s.a[0] + (s.b[0] - s.a[0]) * f;
     let lo = s.a[1] + (s.b[1] - s.a[1]) * f;
     if (noise > 0) {
-      la += ((rand() + rand() + rand() - 1.5) * noise) / M_PER_DEG_LAT;
-      lo += ((rand() + rand() + rand() - 1.5) * noise) / (M_PER_DEG_LAT * Math.cos((la * Math.PI) / 180));
+      errLat = rho * errLat + innov * gauss() * noise;
+      errLon = rho * errLon + innov * gauss() * noise;
+      la += errLat / M_PER_DEG_LAT;
+      lo += errLon / (M_PER_DEG_LAT * Math.cos((la * Math.PI) / 180));
     }
     t.push(k + delay + 1);
     lat.push(Math.round(la * 1e6) / 1e6);

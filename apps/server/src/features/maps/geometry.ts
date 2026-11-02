@@ -1,6 +1,7 @@
 import { getStreams } from '../../core/workouts';
 import { all, prepare, run, tx, type Db } from '../../db/db';
 import type { DeriveStep } from '../types';
+import { storeSignature } from './route-derive';
 import { coarsen, keyX, keyY, tileCover } from './tiles';
 
 export const TILE_ZOOMS = [14, 17] as const;
@@ -37,8 +38,8 @@ export function routeWorkoutIds(db: Db, athleteId: number): number[] {
 }
 
 /**
- * Per-workout geometry from the stored GPS stream: explorer tiles. (Route shapes are added by the routes module
- * so each stream is only decoded once.)
+ * Per-workout geometry from the stored GPS stream, decoded once: explorer tiles and the route-shape signature
+ * (the routes step clusters the signatures afterwards).
  */
 export const geometryStep: DeriveStep = {
   id: 'maps.geometry',
@@ -47,7 +48,16 @@ export const geometryStep: DeriveStep = {
   run(ctx) {
     const { db, athleteId } = ctx;
     const ids = ctx.workoutIds === 'all' ? routeWorkoutIds(db, athleteId) : ctx.workoutIds;
-    if (ctx.workoutIds === 'all') run(db, 'DELETE FROM maps_workout_tiles WHERE athlete_id = ?', [athleteId]);
+    if (ctx.workoutIds === 'all') {
+      run(db, 'DELETE FROM maps_workout_tiles WHERE athlete_id = ?', [athleteId]);
+      // signatures are upserted below (keeping route ids for the rebuild); drop those of workouts without a route
+      run(
+        db,
+        `DELETE FROM maps_workout_geo WHERE athlete_id = ?
+           AND workout_id NOT IN (SELECT id FROM workouts WHERE has_route = 1)`,
+        [athleteId],
+      );
+    }
     const BATCH = 20;
     for (let i = 0; i < ids.length; i += BATCH) {
       ctx.checkCancelled();
@@ -56,6 +66,7 @@ export const geometryStep: DeriveStep = {
         for (const id of slice) {
           const s = getStreams(db, athleteId, id);
           storeTiles(db, athleteId, id, s?.lat, s?.lon);
+          storeSignature(db, athleteId, id, s?.lat, s?.lon, s?.dist);
         }
       });
       ctx.report(Math.min(1, (i + slice.length) / Math.max(1, ids.length)), `${Math.min(ids.length, i + BATCH)} / ${ids.length}`);

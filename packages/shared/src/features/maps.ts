@@ -143,3 +143,70 @@ export interface MapsExplorerSummary {
   newLastMonth: number;
   workouts: number;
 }
+
+// ---------------------------------------------------------------------------
+// Routes (same course, done repeatedly)
+// ---------------------------------------------------------------------------
+
+export type MapsRouteKind = 'loop' | 'out_and_back' | 'point_to_point';
+
+export interface MapsRouteSummary {
+  id: number;
+  sport: string;
+  kind: MapsRouteKind;
+  /** City of the start (from the activity's time zone); null when unknown. */
+  area: string | null;
+  /** The user's own name; null = show the generated name (area + kind + distance). */
+  customName: string | null;
+  /** Median length of the efforts. */
+  distanceM: number;
+  /** Visible (not hidden, not duplicate) workouts on this route. */
+  count: number;
+  firstTs: number;
+  lastTs: number;
+  lastTzMin: number;
+  /** Times are moving times (the recorded duration when moving time is unknown). */
+  bestTimeS: number;
+  bestWorkoutId: number;
+  latestTimeS: number;
+  latestWorkoutId: number;
+  firstTimeS: number;
+  polyline: string | null;
+  startLat: number | null;
+  startLon: number | null;
+  endLat: number | null;
+  endLon: number | null;
+  /** Average speed (m/s) of up to the last 12 efforts, oldest first (higher = faster). */
+  trend: number[];
+}
+
+/** GET /api/maps/routes?sport=run&min=2 */
+export interface MapsRoutesResponse {
+  items: MapsRouteSummary[];
+  /** Routes per sport (independent of the sport filter) for the filter chips. */
+  sports: { sport: string; count: number }[];
+}
+
+export interface MapsRouteEffort {
+  workoutId: number;
+  name: string;
+  sport: string;
+  startTs: number;
+  tzMin: number;
+  timeS: number;
+  elapsedS: number;
+  distanceM: number | null;
+  avgSpeed: number | null;
+  avgHr: number | null;
+  /** 1 = fastest effort on the route. */
+  rank: number;
+}
+
+/** GET /api/maps/routes/:id */
+export interface MapsRouteDetail {
+  route: MapsRouteSummary;
+  /** Newest first. */
+  efforts: MapsRouteEffort[];
+  /** Simplified tracks of the most recent efforts plus the best and the latest one. */
+  tracks: { workoutId: number; polyline: string }[];
+}
