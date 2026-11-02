@@ -1,0 +1,16 @@
+/*
+ * Workaround for components/map/BaseMap.tsx (shared code): maplibre-gl.css is unlayered, so its
+ * `.maplibregl-map { position: relative }` beats Tailwind's layered `.absolute` on the map container and the
+ * container collapses to 0 px height (the map is invisible). Remove once BaseMap sizes its container itself.
+ */
+.maplibregl-map.absolute {
+  position: absolute;
+}
+
+/*
+ * Workaround for the shared <Switch/> (components/ui.tsx): its knob is absolutely positioned without `left`, so inside
+ * the <button> (which centers its content) it starts in the middle of the track and sticks out when switched on.
+ */
+button[role='switch'] > span {
+  left: 0;
+}

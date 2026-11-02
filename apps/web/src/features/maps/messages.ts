@@ -7,7 +7,7 @@ export const messages: Dictionary = {
       heatmap: 'Heatmap',
       explorer: 'Explorer',
       routes: 'Routes',
-      segments: 'Segments'
+      segments: 'Segments',
     },
     titles: {
       HeatmapPage: 'Heatmap',
@@ -15,15 +15,40 @@ export const messages: Dictionary = {
       RoutesPage: 'Routes',
       RoutePage: 'Route',
       SegmentsPage: 'Segments',
-      SegmentPage: 'Segment'
-    }
+      SegmentPage: 'Segment',
+      SegmentNewPage: 'New segment',
+    },
+    heatmap: {
+      subtitle: 'All your routes on one map. Streets you use often glow brighter.',
+      timelapse: 'Time-lapse',
+      period: 'Period',
+      colors: 'Colors',
+      themes: { hot: 'Hot', blue: 'Blue', purple: 'Purple' },
+      basemap: 'Basemap',
+      bases: { dark: 'Dark', satellite: 'Satellite', streets: 'Streets' },
+      density: 'Density',
+      fit: 'Fit to routes',
+      showAll: 'Show all routes (incl. far away)',
+      play: 'Play',
+      pause: 'Pause',
+      restart: 'Restart',
+      scrub: 'Position in time-lapse',
+      speed: 'Speed',
+      exitTimelapse: 'Close time-lapse',
+      more: '+{count} more',
+      empty: 'No GPS routes yet',
+      emptyHint:
+        'Activities with a route (running, cycling, walking …) show up here after you import your Apple Health export.',
+      noMatch: 'No routes match these filters.',
+      privacy: 'Starts and ends inside your privacy zones are hidden.',
+    },
   },
   de: {
     nav: {
       heatmap: 'Heatmap',
       explorer: 'Explorer',
       routes: 'Strecken',
-      segments: 'Segmente'
+      segments: 'Segmente',
     },
     titles: {
       HeatmapPage: 'Heatmap',
@@ -31,7 +56,32 @@ export const messages: Dictionary = {
       RoutesPage: 'Strecken',
       RoutePage: 'Strecke',
       SegmentsPage: 'Segmente',
-      SegmentPage: 'Segment'
-    }
-  }
+      SegmentPage: 'Segment',
+      SegmentNewPage: 'Neues Segment',
+    },
+    heatmap: {
+      subtitle: 'Alle deine Strecken auf einer Karte. Häufig genutzte Straßen leuchten heller.',
+      timelapse: 'Zeitraffer',
+      period: 'Zeitraum',
+      colors: 'Farben',
+      themes: { hot: 'Heiß', blue: 'Blau', purple: 'Violett' },
+      basemap: 'Karte',
+      bases: { dark: 'Dunkel', satellite: 'Satellit', streets: 'Straßen' },
+      density: 'Dichte',
+      fit: 'Auf Strecken zoomen',
+      showAll: 'Alle Strecken zeigen (auch weit entfernte)',
+      play: 'Abspielen',
+      pause: 'Pause',
+      restart: 'Neu starten',
+      scrub: 'Position im Zeitraffer',
+      speed: 'Tempo',
+      exitTimelapse: 'Zeitraffer beenden',
+      more: '+{count} weitere',
+      empty: 'Noch keine GPS-Strecken',
+      emptyHint:
+        'Aktivitäten mit Route (Laufen, Radfahren, Gehen …) erscheinen hier, sobald du deinen Apple-Health-Export importiert hast.',
+      noMatch: 'Keine Strecken für diese Filter.',
+      privacy: 'Start und Ziel in deinen Privatsphäre-Zonen sind ausgeblendet.',
+    },
+  },
 };
