@@ -147,6 +147,9 @@ lucide-react icons. Path alias `@/` = `apps/web/src`.
   switch). Helpers: `setGeoJSON`, `addRouteLayers`, `gradientExpression`, `addCircleLayer`, `lineFeature`,
   `pointFeature`, `featureCollection`, `fitTo`, `overlayColors(pref, theme)`. For lists use `<RouteThumbnail polyline/>`
   (SVG) — never many WebGL maps on one page. `decodePolyline` in `src/lib/polyline.ts`.
+- **Layout**: the content area is the viewport minus a 240 px sidebar (784 px at a 1024 px window). Use
+  `minmax(0,1fr)` instead of `1fr` in custom grid templates and `min-w-0` on flex children so long content never
+  forces horizontal scrolling; put fixed-width side columns behind `xl:`. Check pages at 1024 px and ~1440 px.
 - **Native shell**: `src/lib/native.ts` (`isNativeShell`, `postNative`).
 
 ## Development

@@ -202,7 +202,7 @@ export default function ImportPage() {
     <Page>
       <PageHeader title={t('platform.import.title')} subtitle={t('platform.import.subtitle')} icon={Upload} />
 
-      <div className="grid gap-4 lg:grid-cols-[1fr_360px]">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
         <div className="flex flex-col gap-4">
           {active ? (
             <ActiveJob job={active} />
