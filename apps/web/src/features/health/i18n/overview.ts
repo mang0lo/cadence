@@ -42,16 +42,18 @@ export const overview: Dictionary = {
 export const widget: Dictionary = {
   en: {
     title: 'Health snapshot',
-    all: 'All health data',
+    all: 'More',
     sleep: 'Last night',
+    restingHr: 'Resting HR',
     hrv: 'HRV',
     efficiency: 'efficiency {value}',
     goalProgress: '{pct} of your sleep goal',
   },
   de: {
     title: 'Gesundheit im Überblick',
-    all: 'Alle Gesundheitsdaten',
+    all: 'Mehr',
     sleep: 'Letzte Nacht',
+    restingHr: 'Ruhepuls',
     hrv: 'HRV',
     efficiency: 'Effizienz {value}',
     goalProgress: '{pct} deines Schlafziels',

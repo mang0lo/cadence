@@ -26,7 +26,8 @@ const WIDGETS: [string, () => ReactNode][] = [
 function Widgets() {
   const t = useT();
   return (
-    <div className="grid min-w-0 gap-4">
+    // minmax(0,1fr): an `auto` track would grow with the widest widget and overflow the side column
+    <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-4">
       {WIDGETS.map(([key, W]) => (
         <WidgetBoundary key={key} fallback={<ErrorState error={t('activities.widgets.error')} />}>
           <W />

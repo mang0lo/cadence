@@ -53,7 +53,7 @@ function Tile({
         <span className="text-2xl font-semibold tracking-tight text-fg">{value}</span>
         {unit && <span className="text-sm font-medium text-fg-3">{unit}</span>}
       </div>
-      {hint && <div className="mt-0.5 truncate text-xs text-fg-3">{hint}</div>}
+      {hint && <div className="mt-0.5 text-xs text-fg-3">{hint}</div>}
       <Spark data={spark} height={26} className="mt-2" ariaLabel={label} />
       {extra}
     </Link>
@@ -70,9 +70,9 @@ export function HealthSnapshotWidget() {
 
   if (q.isLoading) {
     return (
-      <Card>
+      <Card className="@container">
         <Skeleton className="h-4 w-40" />
-        <div className="mt-4 grid grid-cols-2 gap-6 lg:grid-cols-4">
+        <div className="mt-4 grid grid-cols-2 gap-6 @lg:grid-cols-4">
           {Array.from({ length: 4 }, (_, i) => (
             <div key={i}>
               <Skeleton className="h-3 w-20" />
@@ -97,7 +97,7 @@ export function HealthSnapshotWidget() {
   const sleepPct = sleep ? sleep.value / sleep.goalMin : 0;
 
   return (
-    <Card>
+    <Card className="@container">
       <CardHeader
         title={t('health.widget.title')}
         subtitle={d.asOf ? t('health.common.asOf', { date: fmt.day(d.asOf, 'day') }) : undefined}
@@ -109,15 +109,16 @@ export function HealthSnapshotWidget() {
           </Link>
         }
       />
-      <div className="grid grid-cols-2 gap-x-6 gap-y-6 lg:grid-cols-4">
-        {simple(d.restingHr, RHR, '/health/heart', HeartPulse, m.name(RHR))}
+      <div className="grid grid-cols-2 gap-x-6 gap-y-6 @lg:grid-cols-4">
+        {simple(d.restingHr, RHR, '/health/heart', HeartPulse, t('health.widget.restingHr'))}
         {simple(d.hrv, HRV, '/health/heart', Activity, t('health.widget.hrv'))}
         {sleep && (
           <Tile
             to="/health/sleep"
             icon={Moon}
             label={t('health.widget.sleep')}
-            value={m.parts(SLEEP, sleep.value).value}
+            value={`${Math.floor(Math.round(sleep.value) / 60)}:${String(Math.round(sleep.value) % 60).padStart(2, '0')}`}
+            unit="h"
             hint={
               <>
                 {dayLabel(sleep.day)}

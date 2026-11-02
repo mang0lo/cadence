@@ -70,7 +70,7 @@ export function WeeklySnapshotWidget() {
   const dist = fmt.distanceParts(cur.distanceM);
   const elev = fmt.elevationParts(cur.elevationM);
   const stat = (label: string, value: ReactNode, unit: string | undefined, delta: ReactNode, last: string) => (
-    <Stat size="sm" label={label} value={value} unit={unit} delta={delta} hint={<span className="truncate">{last}</span>} />
+    <Stat size="sm" label={label} value={value} unit={unit} delta={delta} hint={last} />
   );
   const spark = d.weeks.map((w) => (useDistance ? fmt.distanceValue(w.totals.distanceM) : w.totals.movingS / 3600));
   return (

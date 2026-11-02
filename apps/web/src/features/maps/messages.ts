@@ -178,6 +178,7 @@ export const messages: Dictionary = {
       title: 'Explorer',
       subtitle: 'Map tiles you have been through',
       open: 'Open explorer',
+      newThisMonth: 'New this month',
     },
   },
   de: {
@@ -366,6 +367,7 @@ export const messages: Dictionary = {
       title: 'Explorer',
       subtitle: 'Kartenkacheln, durch die du gekommen bist',
       open: 'Explorer öffnen',
+      newThisMonth: 'Neu im Monat',
     },
   },
 };
