@@ -69,6 +69,8 @@ export const messages: Dictionary = {
       from: 'From',
       to: 'To',
       clear: 'Reset filters',
+      exportCsv: 'Export CSV',
+      exportCsvHint: 'All activities matching the filters as a spreadsheet (Excel, Numbers), in your units',
       totals: 'Totals for this filter',
       columns: {
         date: 'Date',
@@ -431,6 +433,8 @@ export const messages: Dictionary = {
       from: 'Von',
       to: 'Bis',
       clear: 'Filter zurücksetzen',
+      exportCsv: 'CSV exportieren',
+      exportCsvHint: 'Alle Aktivitäten der aktuellen Auswahl als Tabelle (Excel, Numbers), in deinen Einheiten',
       totals: 'Summen für diesen Filter',
       columns: {
         date: 'Datum',

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
-import { ChevronLeft, ChevronRight, Eye, EyeOff, ListChecks, MapPin, RotateCcw, Search, Shapes, Upload } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Download, Eye, EyeOff, ListChecks, MapPin, RotateCcw, Search, Shapes, Upload } from 'lucide-react';
 import {
   sportInfo,
   workoutTitle,
@@ -460,6 +460,14 @@ export default function ActivitiesPage() {
   }, [s.sports, s.range, s.fromDay, s.toDay, s.q, s.gps, s.hidden, s.sort, s.order, s.size, s.page, settings.weekStart]);
   const list = useActivityList(query);
   const data = list.data;
+  // the same selection as a spreadsheet (all pages)
+  const csvHref = useMemo(() => {
+    const p = new URLSearchParams();
+    const { limit: _limit, offset: _offset, ...filter } = query;
+    for (const [k, v] of Object.entries({ ...filter, lang, units: settings.units }))
+      if (v !== undefined && v !== null && v !== '') p.set(k, String(v));
+    return `/api/activities/export.csv?${p.toString()}`;
+  }, [query, lang, settings.units]);
   const stale = list.isPlaceholderData;
 
   // a deep link past the last page (e.g. after hiding) snaps back to the last page
@@ -489,7 +497,24 @@ export default function ActivitiesPage() {
 
   return (
     <Page wide>
-      <PageHeader title={t('activities.titles.ActivitiesPage')} subtitle={t('activities.list.subtitle')} icon={ListChecks}>
+      <PageHeader
+        title={t('activities.titles.ActivitiesPage')}
+        subtitle={t('activities.list.subtitle')}
+        icon={ListChecks}
+        actions={
+          data && data.total > 0 ? (
+            <a
+              href={csvHref}
+              download
+              title={t('activities.list.exportCsvHint')}
+              className="inline-flex h-8 items-center gap-1.5 rounded-control border border-border-strong bg-surface px-2.5 text-xs font-medium text-fg hover:bg-surface-2"
+            >
+              <Download size={14} aria-hidden />
+              {t('activities.list.exportCsv')}
+            </a>
+          ) : undefined
+        }
+      >
         <div className="grid gap-3">
           <SportChips selected={s.sports} onChange={(sp) => update({ sport: sp.join(',') || null })} />
           <FilterBar>

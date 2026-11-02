@@ -116,7 +116,7 @@ export function listWhere(athleteId: number, f: ListFilter): { sql: string; para
   return { sql: where.join(' AND '), params };
 }
 
-const SORT_EXPR: Record<ActivitySort, string> = {
+export const SORT_EXPR: Record<ActivitySort, string> = {
   start: 'start_ts',
   distance: 'distance_m',
   time: 'COALESCE(moving_s, duration_s)',
