@@ -291,7 +291,7 @@ export const messages: Dictionary = {
     widgets: {
       snapshot: {
         title: 'This week',
-        vsLastWeek: 'vs. last week (same days)',
+        vsLastWeek: 'Changes compared with last week up to the same weekday.',
         lastWeek: 'Last week: {value}',
         sparkline: 'Distance, last 12 weeks',
         sparklineTime: 'Moving time, last 12 weeks',
@@ -594,7 +594,7 @@ export const messages: Dictionary = {
     widgets: {
       snapshot: {
         title: 'Diese Woche',
-        vsLastWeek: 'ggü. Vorwoche (gleiche Tage)',
+        vsLastWeek: 'Veränderung gegenüber der Vorwoche bis zum gleichen Wochentag.',
         lastWeek: 'Vorwoche: {value}',
         sparkline: 'Distanz, letzte 12 Wochen',
         sparklineTime: 'Bewegungszeit, letzte 12 Wochen',
