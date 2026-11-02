@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { DailyMetric, HealthMeta, HealthOverview, HealthSettings, HealthSnapshot } from '@cadence/shared';
 import { badRequest } from '../../lib/http';
 import { buildMeta, buildOverview, buildSnapshot, dailyMulti } from './overview';
+import { registerSleepRoutes } from './sleep-routes';
 import { checkDayOrder, dayParam, getHealthSettings, putHealthSettings } from './util';
 
 const dailyQuery = z.object({
@@ -36,4 +37,6 @@ export default async function healthRoutes(app: FastifyInstance) {
     if (metrics.length === 0 || metrics.length > 24) throw badRequest('metrics: expected 1 to 24 comma separated metrics');
     return dailyMulti(app.db, req.athleteId, metrics, q.fromDay, q.toDay);
   });
+
+  registerSleepRoutes(app);
 }

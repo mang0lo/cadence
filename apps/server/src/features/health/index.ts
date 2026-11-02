@@ -1,6 +1,7 @@
 import type { Feature } from '../types';
 import { healthMigrations } from './migrations';
 import healthRoutes from './routes';
+import { sleepStep } from './sleep';
 
 /**
  * "health" feature module (server side).
@@ -11,7 +12,7 @@ import healthRoutes from './routes';
 const feature: Feature = {
   name: 'health',
   migrations: healthMigrations,
-  deriveSteps: [],
+  deriveSteps: [sleepStep],
   routes: healthRoutes,
 };
 
