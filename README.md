@@ -89,7 +89,8 @@ CADENCE_PASSWORD=choose-something docker compose up -d     # → http://<server>
 - **Move your data**: Settings → *Backup & moving to a server* → download the backup in the Mac app, restore it on
   the server (keeps renamed activities, goals and segments).
 - Point the Mac app at the server via **Cadence → Connect to Server…**.
-- Every `v*` tag builds a DMG and pushes `ghcr.io/devine-coder/cadence` (see `.github/workflows/release.yml`).
+- Releases: push a `v*` tag or run the **Release** workflow from the Actions tab (with the version from
+  `package.json`); it builds the DMG and pushes `ghcr.io/devine-coder/cadence` (see `.github/workflows/release.yml`).
 
 Configuration is done with environment variables (`PORT`, `HOST`, `CADENCE_DATA_DIR`, `CADENCE_PASSWORD`,
 `CADENCE_IMPORT_DIR`, …) — see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#runtime-modes--configuration).
