@@ -132,17 +132,23 @@ const emptyTotals = (): ActivityTotals => ({ count: 0, distanceM: 0, movingS: 0,
 export function medalsFor(db: Db, athleteId: number, ids: number[]): Map<number, ActivityMedal[]> {
   const out = new Map<number, ActivityMedal[]>();
   if (!ids.length) return out;
+  // One ranking pass over the (sport, effort) groups that occur on this page — same order as core's
+  // bestEffortsOf (elapsed time, then workout id), among visible workouts.
   const rows = all<{ workout_id: number; effort: string; distance_m: number; elapsed_s: number; rank: number }>(
     db,
-    `SELECT be.workout_id, be.effort, be.distance_m, be.elapsed_s,
-       1 + (SELECT COUNT(*) FROM best_efforts b2 JOIN workouts w2 ON w2.id = b2.workout_id
-            WHERE b2.athlete_id = be.athlete_id AND b2.sport = be.sport AND b2.effort = be.effort
-              AND w2.hidden = 0 AND w2.duplicate_of IS NULL
-              AND (b2.elapsed_s < be.elapsed_s OR (b2.elapsed_s = be.elapsed_s AND b2.workout_id < be.workout_id))) AS rank
-     FROM best_efforts be JOIN workouts w ON w.id = be.workout_id
-     WHERE be.athlete_id = ? AND w.hidden = 0 AND w.duplicate_of IS NULL
-       AND be.workout_id IN (${ids.map(() => '?').join(',')})`,
-    [athleteId, ...ids],
+    `WITH page AS (
+       SELECT DISTINCT sport, effort FROM best_efforts WHERE workout_id IN (${ids.map(() => '?').join(',')})
+     ), ranked AS (
+       SELECT be.workout_id, be.effort, be.distance_m, be.elapsed_s,
+              ROW_NUMBER() OVER (PARTITION BY be.sport, be.effort ORDER BY be.elapsed_s, be.workout_id) AS rank
+       FROM best_efforts be
+       JOIN page p ON p.sport = be.sport AND p.effort = be.effort
+       JOIN workouts w ON w.id = be.workout_id
+       WHERE be.athlete_id = ? AND w.hidden = 0 AND w.duplicate_of IS NULL
+     )
+     SELECT workout_id, effort, distance_m, elapsed_s, rank FROM ranked
+     WHERE rank <= 3 AND workout_id IN (${ids.map(() => '?').join(',')})`,
+    [...ids, athleteId, ...ids],
   );
   for (const r of rows) {
     if (r.rank > 3) continue;

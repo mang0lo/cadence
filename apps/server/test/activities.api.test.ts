@@ -11,6 +11,7 @@ import type {
   ActivitySimilar,
   ImportJob,
   SportCount,
+  WorkoutDetail,
 } from '@cadence/shared';
 import { generateSample } from '../scripts/sample/generate';
 import { buildApp, migrateAll } from '../src/app';
@@ -116,6 +117,20 @@ describe('activities API', () => {
     const gps = await getJson<ActivityListPage>('/api/activities/list?hasRoute=true&limit=200');
     expect(gps.items.every((w) => w.hasRoute)).toBe(true);
     expect((await app.inject({ url: '/api/activities/list?sort=bogus' })).statusCode).toBe(400);
+  });
+
+  it('agrees with the core best effort ranks of the activity detail', async () => {
+    const runs = await getJson<ActivityListPage>('/api/activities/list?sport=run&limit=200');
+    const withMedals = runs.items.filter((w) => w.medals.length).slice(0, 5);
+    const without = runs.items.filter((w) => !w.medals.length).slice(0, 3);
+    for (const w of [...withMedals, ...without]) {
+      const d = await getJson<WorkoutDetail>(`/api/workouts/${w.id}`);
+      const core = d.bestEfforts
+        .filter((e) => e.rank !== null)
+        .map((e) => `${e.effort}:${e.rank}`)
+        .sort();
+      expect(w.medals.map((m) => `${m.effort}:${m.rank}`).sort()).toEqual(core);
+    }
   });
 
   it('includes hidden activities only when asked', async () => {
