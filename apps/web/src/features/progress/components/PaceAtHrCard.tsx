@@ -51,7 +51,7 @@ function mainOption(
     yAxis: valueAxis(theme, {
       scale: true,
       inverse: tf.inverse,
-      ...(tf.inverse ? clockAxis([...values, ...trend].filter((v): v is number => v !== null), 4) : {}),
+      ...(tf.inverse ? clockAxis([...values, ...trend].filter((v): v is number => v !== null), 4, 30) : {}),
       axisLabel: { color: theme.muted, fontSize: 11, formatter: (n: number) => tf.axisLabel(n) },
     }),
     tooltip: axisTooltip(theme, (params: unknown) => {

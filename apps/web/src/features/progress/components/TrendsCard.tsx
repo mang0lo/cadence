@@ -93,7 +93,7 @@ function buildOption(
       scale: true,
       inverse: tf.inverse,
       // pace: round clock steps (0:30, 1:00 …)
-      ...(tf.inverse ? clockAxis([...pts.map((p) => p.value[1]!), ...trend.map((p) => p[1]!)]) : {}),
+      ...(tf.inverse ? clockAxis([...pts.map((p) => p.value[1]!), ...trend.map((p) => p[1]!)], 5, 60) : {}),
       axisLabel: { color: theme.muted, fontSize: 11, formatter: (n: number) => tf.axisLabel(n) },
     }),
     tooltip: itemTooltip(theme, tooltip),

@@ -138,11 +138,21 @@ const CLOCK_STEPS = [1, 2, 5, 10, 15, 20, 30, 60, 120, 300, 600, 900, 1200, 1800
  * Value-axis settings for clock values (seconds shown as m:ss / h:mm:ss): ticks on round clock steps
  * (0:30, 1:00, 5:00 …) instead of decimal steps like 3:20.
  */
-export function clockAxis(values: readonly number[], targetTicks = 5): { min: number; max: number; interval: number } | Record<string, never> {
+export function clockAxis(
+  values: readonly number[],
+  targetTicks = 5,
+  /** Minimum visible span in seconds, so a 1 s wobble does not fill the whole chart. */
+  minSpan = 0,
+): { min: number; max: number; interval: number } | Record<string, never> {
   const finite = values.filter((v) => Number.isFinite(v));
   if (!finite.length) return {};
-  const lo = Math.min(...finite);
-  const hi = Math.max(...finite);
+  let lo = Math.min(...finite);
+  let hi = Math.max(...finite);
+  if (hi - lo < minSpan) {
+    const mid = (lo + hi) / 2;
+    lo = mid - minSpan / 2;
+    hi = mid + minSpan / 2;
+  }
   const span = Math.max(hi - lo, 1);
   const interval = CLOCK_STEPS.find((s) => span / s <= targetTicks) ?? CLOCK_STEPS.at(-1)!;
   const min = Math.floor(lo / interval) * interval;
