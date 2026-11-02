@@ -49,7 +49,7 @@ export function SelectionPanel({
           </Button>
         }
       />
-      <dl className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3 lg:grid-cols-6">
+      <dl className="grid grid-cols-[repeat(auto-fill,minmax(8.5rem,1fr))] gap-x-6 gap-y-3">
         {items.map(([k, v]) => (
           <div key={k} className="min-w-0">
             <dt className="truncate text-xs text-fg-3">{k}</dt>

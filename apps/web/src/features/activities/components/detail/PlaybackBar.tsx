@@ -148,11 +148,11 @@ function LiveReadout({ P, playback, sport, zoneBounds }: { P: Prepared; playback
   }
   if (P.cadence) {
     const c = valueAt(P.cadence, fi);
-    items.push({ key: 'c', label: t('common.cadence'), value: c === c ? fmt.int(c) : '–', unit: sport === 'ride' ? 'rpm' : 'spm' });
+    items.push({ key: 'c', label: t('activities.charts.cadence'), value: c === c ? fmt.int(c) : '–', unit: sport === 'ride' ? 'rpm' : 'spm' });
   }
   if (P.power) {
     const w = valueAt(P.power, fi);
-    items.push({ key: 'w', label: t('common.power'), value: w === w ? fmt.int(w) : '–', unit: 'W' });
+    items.push({ key: 'w', label: t('activities.charts.power'), value: w === w ? fmt.int(w) : '–', unit: 'W' });
   }
   return (
     <div className="grid grid-cols-[repeat(auto-fill,minmax(6.5rem,1fr))] gap-x-4 gap-y-2" aria-live="off">

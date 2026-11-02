@@ -78,7 +78,6 @@ function buildMetrics(
       color: theme.other,
       y: Array.from(e, (v) => finite(v * k)),
       min: Math.floor((lo - pad) * k),
-      max: Math.ceil((hi + pad) * k),
       area: true,
       readout: (fi) => fmt.elevation(valueAt(P.ele, fi)),
       axis: (v) => fmt.num(v),
@@ -189,7 +188,8 @@ function chartOption(m: Metric, xs: number[], x0: number, x1: number, last: bool
   const data = xs.map((x, i) => [x, m.y[i] ?? null]);
   return {
     animation: false,
-    grid: { left: GL, right: GR, top: 4, bottom: last ? 22 : 3, containLabel: false },
+    // fixed plot rect in every chart (ECharts 6 would otherwise shrink grids whose labels touch the canvas edge)
+    grid: { left: GL, right: GR, top: 6, bottom: last ? 22 : 5, containLabel: false, outerBoundsMode: 'none' as const },
     xAxis: {
       type: 'value' as const,
       min: x0,
@@ -204,7 +204,8 @@ function chartOption(m: Metric, xs: number[], x0: number, x1: number, last: bool
       max: m.max,
       inverse: !!m.inverse,
       splitNumber: 2,
-      axisLabel: { color: theme.muted, fontSize: 10, formatter: m.axis, showMinLabel: false },
+      // explicit bounds are rarely round numbers: only label the (nice) interior ticks
+      axisLabel: { color: theme.muted, fontSize: 10, formatter: m.axis, showMinLabel: false, showMaxLabel: m.max === undefined },
     }),
     tooltip: { show: false },
     series: [
@@ -397,7 +398,7 @@ export function StreamCharts({ P, sport, zoneBounds, playback, hover, selection,
           />
         ) : undefined
       }
-      footer={footer ?? t('activities.charts.hint')}
+      footer={footer ?? (playback ? t('activities.charts.hint') : t('activities.charts.hintNoReplay'))}
     >
       <div
         ref={wrap}

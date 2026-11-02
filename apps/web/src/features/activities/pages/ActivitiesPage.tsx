@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
-import { Check, ChevronLeft, ChevronRight, Eye, EyeOff, ListChecks, MapPin, RotateCcw, Search, Shapes, Upload, type LucideIcon } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Eye, EyeOff, ListChecks, MapPin, RotateCcw, Search, Shapes, Upload } from 'lucide-react';
 import {
   sportInfo,
   workoutTitle,
@@ -35,6 +35,7 @@ import { SportIcon, sportColorVar, sportLabel } from '@/lib/sports';
 import { addDays, dayStartTs, startOfMonth, startOfWeek, startOfYear, todayKey } from '@/lib/time';
 import { useActivityList, usePatchWorkout, useSportCounts } from '../api';
 import { MedalBadge } from '../components/MedalBadge';
+import { ToggleChip, chipClass } from '../components/ToggleChip';
 import { SportDialog } from '../components/SportDialog';
 import { StatList } from '../components/StatList';
 import { keyStats, shortDistanceParts } from '../lib/display';
@@ -117,32 +118,6 @@ function rangeBounds(range: Range, fromDay: string, toDay: string, weekStart: 0 
     default:
       return {};
   }
-}
-
-const chipClass = (active: boolean) =>
-  cn(
-    'inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-sm font-medium transition-colors',
-    active ? 'border-accent bg-accent-soft text-fg' : 'border-border-strong bg-surface text-fg-2 hover:bg-surface-2 hover:text-fg',
-  );
-
-/** On/off filter as a chip (pressed state = check mark + accent outline). */
-function ToggleChip({
-  active,
-  onChange,
-  icon: Icon,
-  children,
-}: {
-  active: boolean;
-  onChange: (v: boolean) => void;
-  icon: LucideIcon;
-  children: ReactNode;
-}) {
-  return (
-    <button className={chipClass(active)} aria-pressed={active} onClick={() => onChange(!active)}>
-      {active ? <Check size={14} aria-hidden /> : <Icon size={14} aria-hidden />}
-      {children}
-    </button>
-  );
 }
 
 function SportChips({ selected, onChange }: { selected: string[]; onChange: (s: string[]) => void }) {
