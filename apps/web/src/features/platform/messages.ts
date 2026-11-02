@@ -95,6 +95,15 @@ export const messages: Dictionary = {
       workouts: 'Workouts',
       lastImport: 'Last import',
       never: 'never',
+      backup: 'Backup & moving to a server',
+      backupHint:
+        'Download the complete database — including renamed activities, goals and segments — and restore it on another Cadence installation, e.g. when moving from the Mac app to your own server.',
+      download: 'Download backup',
+      restore: 'Restore backup…',
+      restoreConfirm: 'This replaces ALL data of this installation with the backup. Continue?',
+      restarting: 'Restoring the backup — Cadence restarts…',
+      restoredDev: 'Backup saved. Restart the server to apply it.',
+      openFolder: 'Open data folder',
     },
     login: {
       title: 'Sign in',
@@ -198,6 +207,15 @@ export const messages: Dictionary = {
       workouts: 'Trainings',
       lastImport: 'Letzter Import',
       never: 'nie',
+      backup: 'Backup & Umzug auf einen Server',
+      backupHint:
+        'Lade die komplette Datenbank herunter – inklusive umbenannter Aktivitäten, Ziele und Segmente – und stelle sie in einer anderen Cadence-Installation wieder her, z. B. beim Umzug von der Mac-App auf deinen eigenen Server.',
+      download: 'Backup herunterladen',
+      restore: 'Backup wiederherstellen…',
+      restoreConfirm: 'Damit werden ALLE Daten dieser Installation durch das Backup ersetzt. Fortfahren?',
+      restarting: 'Backup wird wiederhergestellt – Cadence startet neu…',
+      restoredDev: 'Backup gespeichert. Starte den Server neu, um es anzuwenden.',
+      openFolder: 'Datenordner öffnen',
     },
     login: {
       title: 'Anmelden',

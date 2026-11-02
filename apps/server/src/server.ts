@@ -2,11 +2,13 @@ import fs from 'node:fs';
 import type { AddressInfo } from 'node:net';
 import { buildApp, migrateAll } from './app';
 import { loadConfig } from './config';
+import { applyPendingRestore, RESTART_EXIT_CODE } from './core/backup-routes';
 import { openDb } from './db/db';
 
 export async function startServer(): Promise<void> {
   const config = loadConfig();
   fs.mkdirSync(config.dataDir, { recursive: true });
+  if (applyPendingRestore(config.dbPath)) console.log('Restored the database from an uploaded backup');
   const db = openDb(config.dbPath);
   migrateAll(db);
 
@@ -19,18 +21,20 @@ export async function startServer(): Promise<void> {
   if (config.mode !== 'desktop') console.log(`Cadence ${config.version} (${config.mode}) → ${url}  data: ${config.dataDir}`);
 
   let closing = false;
-  const shutdown = async () => {
+  const shutdown = async (code = 0) => {
     if (closing) return;
     closing = true;
     try {
       await app.close();
     } finally {
       db.close();
-      process.exit(0);
+      process.exit(code);
     }
   };
-  process.on('SIGINT', shutdown);
-  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', () => void shutdown());
+  process.on('SIGTERM', () => void shutdown());
+  // A restored backup is applied on the next start; the exit code tells the shell / Docker to restart us.
+  process.on('SIGUSR2', () => void shutdown(RESTART_EXIT_CODE));
   if (config.parentPid) {
     setInterval(() => {
       try {

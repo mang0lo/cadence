@@ -10,6 +10,7 @@ import { api } from '@/lib/api';
 import { useFormat } from '@/lib/format';
 import { useT } from '@/lib/i18n';
 import { useSettings } from '@/lib/settings';
+import { BackupSection } from './BackupSection';
 
 function Section({ title, icon, children, hint }: { title: string; icon: typeof User; children: ReactNode; hint?: string }) {
   return (
@@ -306,6 +307,10 @@ export default function SettingsPage() {
             ]}
           />
         </Section>
+
+        <div className="lg:col-span-2">
+          <BackupSection />
+        </div>
 
         <div className="lg:col-span-2">
           <Section title={t('platform.settings.privacy')} icon={MapPin} hint={t('platform.settings.privacyHint')}>

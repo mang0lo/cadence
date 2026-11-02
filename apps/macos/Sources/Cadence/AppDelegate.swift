@@ -27,7 +27,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
         web.onRestartRequested = { [weak self] in self?.startBackend() }
         server.onUnexpectedExit = { [weak self] code in
-            self?.web.showError(ServerError.exited(code))
+            // 75 = the server restarts itself on purpose (e.g. to apply a restored backup)
+            if code == 75 {
+                self?.startBackend()
+            } else {
+                self?.web.showError(ServerError.exited(code))
+            }
         }
         startBackend()
     }

@@ -10,6 +10,7 @@ import type { Db } from './db/db';
 import { migrate } from './db/migrate';
 import { coreMigrations } from './db/schema';
 import { registerAuth } from './core/auth';
+import backupRoutes from './core/backup-routes';
 import coreRoutes from './core/routes';
 import metricsRoutes from './core/metrics-routes';
 import workoutRoutes from './core/workouts-routes';
@@ -70,6 +71,7 @@ export async function buildApp(config: Config, db: Db, opts: BuildAppOptions = {
   await app.register(coreRoutes, { prefix: '/api' });
   await app.register(workoutRoutes, { prefix: '/api' });
   await app.register(metricsRoutes, { prefix: '/api' });
+  await app.register(backupRoutes, { prefix: '/api' });
   await app.register(importRoutes, { prefix: '/api/import' });
   for (const feature of features) {
     if (feature.routes) await app.register(feature.routes, { prefix: `/api/${feature.name}` });
