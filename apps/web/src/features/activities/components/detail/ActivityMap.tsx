@@ -250,6 +250,24 @@ export function ActivityMap({ P, geo, sport, playback, hover, selection, zoneBou
   /** Track part shown by the overview camera (several parts: workout continued elsewhere). */
   const shownPart = useRef(0);
   const [activePart, setActivePart] = useState(0);
+  /** Parts worth a chip and a camera move: at least 200 m and 2 % of the activity (not a few fixes between jumps). */
+  const bigParts = useMemo(() => {
+    const min = Math.max(200, 0.02 * P.totalDist);
+    const out = geo.parts
+      .map((p, i) => ({ i, p, m: P.dist ? P.dist[geo.idx[p.v1]!]! - P.dist[geo.idx[p.v0]!]! : null }))
+      .filter((x) => x.m === null || x.m >= min);
+    return out.length > 1 ? out : [];
+  }, [geo, P]);
+  const bigPartsRef = useRef(bigParts);
+  bigPartsRef.current = bigParts;
+  /** First view: the first big part; with one big part (plus stray fixes elsewhere) the longest part; else all. */
+  const homeBounds = useMemo(() => {
+    if (bigParts.length) return bigParts[0]!.p.bounds;
+    if (geo.parts.length < 2) return geo.bounds;
+    return geo.parts.reduce((a, b) => (b.v1 - b.v0 > a.v1 - a.v0 ? b : a)).bounds;
+  }, [bigParts, geo]);
+  const homeBoundsRef = useRef(homeBounds);
+  homeBoundsRef.current = homeBounds;
   const chunksRef = useRef(chunks);
   chunksRef.current = chunks;
   const selectionRef = useRef(selection);
@@ -316,10 +334,10 @@ export function ActivityMap({ P, geo, sport, playback, hover, selection, zoneBou
     const dt = Math.min(0.5, (now - (lastFrameAt.current || now)) / 1000);
     lastFrameAt.current = now;
     const cam = cameraRef.current;
-    if (cam === 'overview' && geo.parts.length > 1 && !dragging.current && !easing.current) {
+    if (cam === 'overview' && bigPartsRef.current.length > 1 && !dragging.current && !easing.current) {
       // a workout in several parts (continued elsewhere): the overview shows the part being replayed
       const p = partOfVertex(geo, Math.max(0, vertexAfter(geo, fi) - 1));
-      if (p !== shownPart.current) {
+      if (p !== shownPart.current && bigPartsRef.current.some((x) => x.i === p)) {
         shownPart.current = p;
         setActivePart(p);
         map.fitBounds(geo.parts[p]!.bounds as LngLatBoundsLike, { padding: FIT_PADDING, maxZoom: 16, duration: 800 });
@@ -481,7 +499,7 @@ export function ActivityMap({ P, geo, sport, playback, hover, selection, zoneBou
     (map: Map) => {
       mapRef.current = map;
       map.resize();
-      map.fitBounds(geo.parts[0]!.bounds as LngLatBoundsLike, { padding: FIT_PADDING, maxZoom: 16, animate: false });
+      map.fitBounds(homeBoundsRef.current as LngLatBoundsLike, { padding: FIT_PADDING, maxZoom: 16, animate: false });
       const start = new Marker({
         element: markerEl({ ...DOT, background: 'var(--good)', display: 'grid', placeItems: 'center' }, START_HTML, t('activities.map.start')),
       })
@@ -599,9 +617,10 @@ export function ActivityMap({ P, geo, sport, playback, hover, selection, zoneBou
       request();
     });
     if (camera === 'overview') {
-      const part = geo.parts.length > 1 ? geo.parts[partOfVertex(geo, Math.max(0, vertexAfter(geo, fi) - 1))]! : null;
-      shownPart.current = part ? geo.parts.indexOf(part) : 0;
-      map.fitBounds((part?.bounds ?? geo.bounds) as LngLatBoundsLike, {
+      const p = partOfVertex(geo, Math.max(0, vertexAfter(geo, fi) - 1));
+      const big = bigPartsRef.current.find((x) => x.i === p);
+      shownPart.current = big ? p : shownPart.current;
+      map.fitBounds((big?.p.bounds ?? homeBoundsRef.current) as LngLatBoundsLike, {
         padding: FIT_PADDING,
         pitch: 0,
         bearing: 0,
@@ -640,13 +659,11 @@ export function ActivityMap({ P, geo, sport, playback, hover, selection, zoneBou
           />
         </div>
       </div>
-      {geo.parts.length > 1 && (
+      {bigParts.length > 1 && (
         <div className="flex flex-wrap items-center gap-1.5 text-xs" role="group" aria-label={t('activities.map.parts.label')}>
           <Split size={15} className="shrink-0 text-fg-3" aria-hidden />
-          {geo.parts.map((p, i) => {
+          {bigParts.map(({ i, p, m: km }, n) => {
             const from = geo.idx[p.v0]!;
-            const to = geo.idx[p.v1]!;
-            const km = P.dist ? P.dist[to]! - P.dist[from]! : null;
             return (
               <button
                 key={i}
@@ -668,7 +685,7 @@ export function ActivityMap({ P, geo, sport, playback, hover, selection, zoneBou
                   activePart === i ? 'border-accent bg-accent-soft text-accent-fg' : 'border-border text-fg-2 hover:bg-surface-2',
                 )}
               >
-                {t('activities.map.parts.part', { n: i + 1 })}
+                {t('activities.map.parts.part', { n: n + 1 })}
                 {km !== null && <span className="ml-1 font-normal text-fg-3">{fmt.distance(km)}</span>}
               </button>
             );
@@ -678,7 +695,7 @@ export function ActivityMap({ P, geo, sport, playback, hover, selection, zoneBou
       )}
       <BaseMap
         className="h-[min(62vh,520px)] min-h-72"
-        bounds={geo.parts[0]!.bounds}
+        bounds={homeBounds}
         terrain={camera === 'flyover'}
         onReady={onReady}
         onStyleLoad={onStyleLoad}

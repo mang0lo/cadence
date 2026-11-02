@@ -184,8 +184,22 @@ function buildMetrics(
   return out;
 }
 
-function chartOption(m: Metric, xs: number[], x0: number, x1: number, last: boolean, xLabel: (v: number) => string, theme: ChartTheme) {
-  const data = xs.map((x, i) => [x, m.y[i] ?? null]);
+function chartOption(
+  m: Metric,
+  xs: number[],
+  x0: number,
+  x1: number,
+  last: boolean,
+  xLabel: (v: number) => string,
+  theme: ChartTheme,
+  gaps: Set<number>,
+) {
+  // a gap (null) before every bucket where a new part of the track starts: the line is not drawn across the jump
+  const data: [number, number | null][] = [];
+  xs.forEach((x, i) => {
+    if (i > 0 && gaps.has(i)) data.push([x, null]);
+    data.push([x, m.y[i] ?? null]);
+  });
   return {
     animation: false,
     // fixed plot rect in every chart (ECharts 6 would otherwise shrink grids whose labels touch the canvas edge)
@@ -272,9 +286,14 @@ export function StreamCharts({ P, sport, zoneBounds, playback, hover, selection,
     () => (xMode === 'time' ? (v: number) => clock(v) : (v: number) => `${fmt.num(v, x1 < 10 ? 1 : 0)}`),
     [xMode, fmt, x1],
   );
+  /** Buckets in which a new part of the GPS track starts (paused and continued elsewhere). */
+  const gaps = useMemo(() => {
+    const size = B.to[0]! - B.from[0]! + 1;
+    return new Set(P.breaks.map((k) => Math.floor(k / size)));
+  }, [P.breaks, B]);
   const options = useMemo(
-    () => metrics.map((m, i) => chartOption(m, xs, x0, x1, i === metrics.length - 1, xLabel, theme)),
-    [metrics, xs, x0, x1, xLabel, theme],
+    () => metrics.map((m, i) => chartOption(m, xs, x0, x1, i === metrics.length - 1, xLabel, theme, gaps)),
+    [metrics, xs, x0, x1, xLabel, theme, gaps],
   );
 
   // ---- overlays (imperative) ----
