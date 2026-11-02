@@ -3,6 +3,9 @@ import { z } from 'zod';
 import type { DailyMetric, HealthMeta, HealthOverview, HealthSettings, HealthSnapshot } from '@cadence/shared';
 import { badRequest } from '../../lib/http';
 import { buildMeta, buildOverview, buildSnapshot, dailyMulti } from './overview';
+import { registerBodyRoutes } from './body-routes';
+import { registerHeartRoutes } from './heart-routes';
+import { registerMetricRoutes } from './metric-routes';
 import { registerSleepRoutes } from './sleep-routes';
 import { checkDayOrder, dayParam, getHealthSettings, putHealthSettings } from './util';
 
@@ -39,4 +42,7 @@ export default async function healthRoutes(app: FastifyInstance) {
   });
 
   registerSleepRoutes(app);
+  registerHeartRoutes(app);
+  registerBodyRoutes(app);
+  registerMetricRoutes(app);
 }

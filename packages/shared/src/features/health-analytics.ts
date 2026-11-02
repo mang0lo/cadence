@@ -158,3 +158,52 @@ export function bmi(weightKg: number, heightM: number): number | null {
   if (!(weightKg > 0) || !(heightM > 0.5 && heightM < 2.8)) return null;
   return weightKg / (heightM * heightM);
 }
+
+/** Mean of the values whose day lies in [fromDay, toDay]; null when there is none. */
+export function meanBetween(points: readonly DayValue[], fromDay: string, toDay: string): number | null {
+  const vals: number[] = [];
+  for (const p of points) if (p.day >= fromDay && p.day <= toDay) vals.push(p.value);
+  return mean(vals);
+}
+
+export interface TrailingChange {
+  recent: number;
+  prior: number;
+  /** recent − prior */
+  diff: number;
+}
+
+/**
+ * Change of a sparse measure (weight, body fat …): the mean of the last `windowDays` days up to the latest point
+ * versus the mean of the `windowDays` days that ended `lagDays` before it. Null when either window is empty.
+ */
+export function trailingChange(points: readonly DayValue[], lagDays = 30, windowDays = 14): TrailingChange | null {
+  const last = points[points.length - 1];
+  if (!last) return null;
+  const recent = meanBetween(points, shiftDay(last.day, -(windowDays - 1)), last.day);
+  const priorEnd = shiftDay(last.day, -lagDays);
+  const prior = meanBetween(points, shiftDay(priorEnd, -(windowDays - 1)), priorEnd);
+  return recent === null || prior === null ? null : { recent, prior, diff: recent - prior };
+}
+
+/** BMI per day from a weight series (kg) and a height (m); empty without a plausible height. */
+export function bmiSeries(weight: readonly DayValue[], heightM: number | null): DayValue[] {
+  if (heightM === null) return [];
+  const out: DayValue[] = [];
+  for (const p of weight) {
+    const v = bmi(p.value, heightM);
+    if (v !== null) out.push({ day: p.day, value: v });
+  }
+  return out;
+}
+
+/** Lean body mass (kg) = weight × (1 − body fat fraction) on days that have both measurements. */
+export function leanMassSeries(weight: readonly DayValue[], bodyFat: readonly DayValue[]): DayValue[] {
+  const fat = new Map(bodyFat.map((p) => [p.day, p.value]));
+  const out: DayValue[] = [];
+  for (const p of weight) {
+    const f = fat.get(p.day);
+    if (f !== undefined && f >= 0 && f < 1) out.push({ day: p.day, value: p.value * (1 - f) });
+  }
+  return out;
+}

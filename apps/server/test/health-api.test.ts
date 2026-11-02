@@ -8,6 +8,8 @@ import type {
   HealthMeta,
   HealthOverview,
   HealthSnapshot,
+  HeartEvent,
+  IntradayResponse,
   SleepNight,
   SleepNightDetail,
 } from '@cadence/shared';
@@ -16,6 +18,8 @@ import { loadConfig } from '../src/config';
 import { all, openDb, run, type Db } from '../src/db/db';
 import { addDays } from '../src/lib/time';
 import { rebuildSleepNights } from '../src/features/health/sleep';
+import { bucketize } from '../src/features/health/intraday';
+import { parseThreshold } from '../src/features/health/heart-routes';
 import { summarizeWindows } from '../src/features/health/overview';
 
 let dir: string;
@@ -271,5 +275,84 @@ describe('health feature: overview', () => {
     expect((await getJson<HealthMeta>('/api/health/meta')).sleepGoalMin).toBe(450);
     expect((await app.inject({ method: 'PUT', url: '/api/health/settings', payload: { sleepGoalMin: 5 } })).statusCode).toBe(400);
     await app.inject({ method: 'PUT', url: '/api/health/settings', payload: { sleepGoalMin: 480 } });
+  });
+});
+
+describe('health feature: heart', () => {
+  it('lists heart notifications with their thresholds, newest first, filtered by local day', async () => {
+    const ev = (iso: string, meta: string | null, typeId = T.hrEvent) =>
+      run(
+        db,
+        `INSERT INTO records (athlete_id, type_id, start_ts, hash, end_ts, tz_min, text, source_id, meta)
+         VALUES (1, ?, ?, ?, ?, 60, 'NotApplicable', 2, ?)`,
+        [typeId, ts(iso), hashSeq++, ts(iso), meta],
+      );
+    const irregular = addType(14, 'HKCategoryTypeIdentifierIrregularHeartRhythmEvent', 'category', null, 'duration');
+    ev('2026-02-10T08:15:00+01:00', JSON.stringify({ HKMetadataKeyHeartRateEventThreshold: '120 count/min' }));
+    ev('2026-03-05T22:30:00+01:00', JSON.stringify({ HKMetadataKeyHeartRateEventThreshold: 130 }));
+    ev('2026-03-07T03:00:00+01:00', null, irregular);
+    const all = await getJson<HeartEvent[]>('/api/health/heart/events');
+    expect(all.map((e) => [e.type, e.threshold])).toEqual([
+      ['irregular', null],
+      ['high', 130],
+      ['high', 120],
+    ]);
+    expect(all[0]!.source).toBe('Apple Watch von Hannes');
+    // 2026-03-05T22:30+01:00 is still the 5th locally
+    const some = await getJson<HeartEvent[]>('/api/health/heart/events?fromDay=2026-03-05&toDay=2026-03-05');
+    expect(some).toHaveLength(1);
+    expect(some[0]!.threshold).toBe(130);
+    expect(await getJson<HeartEvent[]>('/api/health/heart/events?fromDay=2025-01-01&toDay=2025-12-31')).toEqual([]);
+    expect(parseThreshold('{"HKMetadataKeyHeartRateEventThreshold":"110 count/min"}')).toBe(110);
+    expect(parseThreshold('not json')).toBeNull();
+    expect(parseThreshold(null)).toBeNull();
+  });
+
+  it('buckets samples of a day (avg types by mean/min/max, cumulative types by max over sources)', () => {
+    const rows = [
+      { start_ts: 1000, tz_min: 0, value: 60, source_id: 1 },
+      { start_ts: 1100, tz_min: 0, value: 80, source_id: 1 },
+      { start_ts: 1400, tz_min: 0, value: 100, source_id: 1 },
+    ];
+    expect(bucketize(rows, 1000, 1000 + 86400, 300, 'avg')).toEqual([
+      { ts: 1000, avg: 70, min: 60, max: 80, n: 2 },
+      { ts: 1300, avg: 100, min: 100, max: 100, n: 1 },
+    ]);
+    const steps = [
+      { start_ts: 1000, tz_min: 0, value: 30, source_id: 1 },
+      { start_ts: 1010, tz_min: 0, value: 20, source_id: 1 },
+      { start_ts: 1020, tz_min: 0, value: 45, source_id: 2 }, // the watch counted fewer steps than the phone: 50 wins
+      { start_ts: 5000, tz_min: 0, value: 10, source_id: 2 },
+    ];
+    expect(bucketize(steps, 1000, 1000 + 86400, 3600, 'sum')).toEqual([
+      { ts: 1000, avg: 50, min: 50, max: 50, n: 2 },
+      { ts: 1000 + 3600, avg: 10, min: 10, max: 10, n: 1 },
+    ]);
+  });
+
+  it('serves the intraday view of one local day', async () => {
+    // 2026-03-15 (+01:00): three heart rate samples on the day, one the evening before and one just after midnight
+    const hr = (iso: string, value: number) => rec(T.hr, iso, iso, { value });
+    hr('2026-03-14T23:50:00+01:00', 41);
+    hr('2026-03-15T08:01:00+01:00', 60);
+    hr('2026-03-15T08:03:00+01:00', 80);
+    hr('2026-03-15T23:59:00+01:00', 55);
+    hr('2026-03-16T00:05:00+01:00', 99);
+    const r = await getJson<IntradayResponse>('/api/health/intraday?type=HKQuantityTypeIdentifierHeartRate&day=2026-03-15');
+    expect(r).toMatchObject({ day: '2026-03-15', tzMin: 60, bucketS: 300, sampleCount: 3, aggregation: 'avg' });
+    expect(r.dayStartTs).toBe(ts('2026-03-15T00:00:00+01:00'));
+    expect(r.dayEndTs).toBe(ts('2026-03-16T00:00:00+01:00'));
+    expect(r.buckets).toHaveLength(2);
+    expect(r.buckets[0]).toMatchObject({ ts: ts('2026-03-15T08:00:00+01:00'), avg: 70, min: 60, max: 80, n: 2 });
+    // the short identifier works as well, hourly buckets are accepted
+    const hourly = await getJson<IntradayResponse>('/api/health/intraday?type=HeartRate&day=2026-03-15&bucket=60');
+    expect(hourly.buckets[0]!.ts).toBe(ts('2026-03-15T08:00:00+01:00'));
+    // no samples → empty buckets with the fallback offset
+    expect((await getJson<IntradayResponse>('/api/health/intraday?type=HeartRate&day=2020-01-01')).buckets).toEqual([]);
+    // errors
+    expect((await app.inject({ url: '/api/health/intraday?type=HeartRate&day=2026-03-15&bucket=7' })).statusCode).toBe(400);
+    expect((await app.inject({ url: '/api/health/intraday?type=NopeNope&day=2026-03-15' })).statusCode).toBe(404);
+    expect((await app.inject({ url: '/api/health/intraday?type=SleepAnalysis&day=2026-03-15' })).statusCode).toBe(400);
+    expect((await app.inject({ url: '/api/health/intraday?type=HeartRate' })).statusCode).toBe(400);
   });
 });

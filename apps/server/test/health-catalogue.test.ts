@@ -4,6 +4,7 @@ import {
   METRIC_DEFS,
   autoDigits,
   bmi,
+  bmiSeries,
   categoryValueLabel,
   classifyBloodPressure,
   compareWindows,
@@ -11,7 +12,9 @@ import {
   dayNumber,
   displaySpec,
   inferKind,
+  leanMassSeries,
   mean,
+  meanBetween,
   median,
   metricCategory,
   metricDef,
@@ -25,6 +28,7 @@ import {
   shiftDay,
   splitMetric,
   stdev,
+  trailingChange,
 } from '@cadence/shared';
 
 describe('health catalogue', () => {
@@ -215,5 +219,46 @@ describe('health analytics helpers', () => {
     expect(bmi(75, 1.82)).toBeCloseTo(22.64, 2);
     expect(bmi(75, 0)).toBeNull();
     expect(bmi(0, 1.8)).toBeNull();
+  });
+
+  it('averages values within a day range', () => {
+    const pts = [
+      { day: '2026-03-01', value: 10 },
+      { day: '2026-03-05', value: 20 },
+      { day: '2026-03-09', value: 30 },
+    ];
+    expect(meanBetween(pts, '2026-03-02', '2026-03-09')).toBe(25);
+    expect(meanBetween(pts, '2026-04-01', '2026-04-30')).toBeNull();
+  });
+
+  it('compares the latest weeks of a sparse measure with the weeks a month earlier', () => {
+    const pts: { day: string; value: number }[] = [];
+    // weight every third day: 80 kg until Feb 10, then 78 kg
+    for (let i = 0; i < 60; i += 3) {
+      const day = dayFromNumber(dayNumber('2026-01-01') + i);
+      pts.push({ day, value: day <= '2026-02-10' ? 80 : 78 });
+    }
+    const c = trailingChange(pts, 30, 14)!;
+    expect(c.recent).toBe(78);
+    expect(c.prior).toBe(80);
+    expect(c.diff).toBe(-2);
+    expect(trailingChange([], 30, 14)).toBeNull();
+    // no data in the window a month earlier
+    expect(trailingChange([{ day: '2026-03-01', value: 70 }], 30, 14)).toBeNull();
+  });
+
+  it('derives BMI and lean mass series where the inputs exist', () => {
+    const weight = [
+      { day: '2026-03-01', value: 80 },
+      { day: '2026-03-02', value: 79 },
+    ];
+    expect(bmiSeries(weight, 1.8).map((p) => Math.round(p.value * 10) / 10)).toEqual([24.7, 24.4]);
+    expect(bmiSeries(weight, null)).toEqual([]);
+    const lean = leanMassSeries(weight, [{ day: '2026-03-02', value: 0.2 }, { day: '2026-03-03', value: 0.2 }]);
+    expect(lean).toHaveLength(1);
+    expect(lean[0]!.day).toBe('2026-03-02');
+    expect(lean[0]!.value).toBeCloseTo(63.2, 6);
+    // body fat given as a percentage instead of a fraction is ignored
+    expect(leanMassSeries(weight, [{ day: '2026-03-01', value: 20 }])).toEqual([]);
   });
 });
