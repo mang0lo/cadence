@@ -1,0 +1,86 @@
+import type { Dictionary } from '@/lib/i18n';
+
+export const heart: Dictionary = {
+  en: {
+    subtitle: 'Resting heart rate, variability, fitness and notifications',
+    restingHr: { title: 'Resting heart rate', subtitle: 'Lower is better – measured while you are calm' },
+    hrv: { title: 'Heart rate variability', subtitle: 'SDNN – higher usually means better recovery' },
+    walking: { title: 'Walking heart rate', subtitle: 'Average while walking at an easy pace' },
+    range: {
+      title: 'Daily heart rate',
+      subtitle: 'Lowest to highest measurement of each day; the line is the daily mean (workouts included)',
+    },
+    vo2: { title: 'Cardio fitness', subtitle: 'VO₂ max – estimated from outdoor walks, runs and hikes' },
+    recovery: {
+      title: 'Heart rate recovery',
+      subtitle: 'How far your heart rate drops in the first minute after a workout',
+      empty:
+        'Your export has no heart rate recovery data. Apple Watch records it after workouts when it has enough heart rate data.',
+    },
+    events: {
+      title: 'Heart notifications',
+      subtitle: 'High and low heart rate, irregular rhythm and low cardio fitness',
+      high: 'High heart rate',
+      low: 'Low heart rate',
+      irregular: 'Irregular rhythm',
+      lowCardio: 'Low cardio fitness',
+      none: 'No heart notifications in this time range',
+      noneHint: 'Apple Watch writes a notification record when it alerts you about your heart.',
+      count: '{count} in this range',
+      threshold: 'Threshold {value}',
+      when: 'When',
+      type: 'Notification',
+      thresholdLabel: 'Threshold',
+      moreShown: 'Showing the latest {count} of {total}',
+    },
+    intraday: {
+      title: 'Heart rate on a day',
+      subtitle: 'Five-minute mean with min–max band; workouts are shaded',
+      resting: 'Resting {value}',
+      prev: 'Previous day',
+      next: 'Next day',
+      pick: 'Choose a day',
+    },
+  },
+  de: {
+    subtitle: 'Ruhepuls, Variabilität, Fitness und Benachrichtigungen',
+    restingHr: { title: 'Ruheherzfrequenz', subtitle: 'Niedriger ist besser – gemessen, wenn du ruhig bist' },
+    hrv: { title: 'Herzfrequenzvariabilität', subtitle: 'SDNN – höher bedeutet meist bessere Erholung' },
+    walking: { title: 'Herzfrequenz beim Gehen', subtitle: 'Durchschnitt beim Gehen in lockerem Tempo' },
+    range: {
+      title: 'Tägliche Herzfrequenz',
+      subtitle: 'Niedrigster bis höchster Messwert pro Tag; die Linie ist der Tagesmittelwert (inkl. Training)',
+    },
+    vo2: { title: 'Cardio-Fitness', subtitle: 'VO₂max – geschätzt aus Spaziergängen, Läufen und Wanderungen im Freien' },
+    recovery: {
+      title: 'Herzfrequenzerholung',
+      subtitle: 'Wie stark deine Herzfrequenz in der ersten Minute nach dem Training sinkt',
+      empty:
+        'Dein Export enthält keine Daten zur Herzfrequenzerholung. Die Apple Watch zeichnet sie nach Trainings auf, wenn genug Herzfrequenzdaten vorliegen.',
+    },
+    events: {
+      title: 'Herz-Benachrichtigungen',
+      subtitle: 'Hohe und niedrige Herzfrequenz, unregelmäßiger Rhythmus und niedrige Cardio-Fitness',
+      high: 'Hohe Herzfrequenz',
+      low: 'Niedrige Herzfrequenz',
+      irregular: 'Unregelmäßiger Rhythmus',
+      lowCardio: 'Niedrige Cardio-Fitness',
+      none: 'Keine Herz-Benachrichtigungen in diesem Zeitraum',
+      noneHint: 'Die Apple Watch speichert einen Eintrag, wenn sie dich auf dein Herz hinweist.',
+      count: '{count} im Zeitraum',
+      threshold: 'Schwelle {value}',
+      when: 'Wann',
+      type: 'Benachrichtigung',
+      thresholdLabel: 'Schwelle',
+      moreShown: 'Die letzten {count} von {total}',
+    },
+    intraday: {
+      title: 'Herzfrequenz an einem Tag',
+      subtitle: 'Fünf-Minuten-Mittel mit Min.–Max.-Band; Trainings sind hinterlegt',
+      resting: 'Ruhe {value}',
+      prev: 'Vorheriger Tag',
+      next: 'Nächster Tag',
+      pick: 'Tag auswählen',
+    },
+  },
+};

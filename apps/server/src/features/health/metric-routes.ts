@@ -1,0 +1,212 @@
+import type { FastifyInstance } from 'fastify';
+import { z } from 'zod';
+import type {
+  ExplorerResponse,
+  MetricCategorySeries,
+  MetricSample,
+  MetricSeries,
+  MetricSourceRow,
+  MetricSources,
+  Page,
+  RecordTypeInfo,
+} from '@cadence/shared';
+import { all, get, type Db } from '../../db/db';
+import { getSettings } from '../../core/settings';
+import { parseDay } from '../../lib/time';
+import { buildExplorer } from './explorer';
+import { aggregatePoints, combineCategoryRows, summarize, type DailyRow } from './series';
+import { checkDayOrder, dayParam, resolveType, type TypeRow } from './util';
+
+const seriesQuery = z.object({
+  type: z.string().min(1).max(200),
+  fromDay: dayParam.optional(),
+  toDay: dayParam.optional(),
+  agg: z.enum(['day', 'week', 'month']).default('day'),
+});
+
+const rangeQuery = z.object({
+  type: z.string().min(1).max(200),
+  fromDay: dayParam.optional(),
+  toDay: dayParam.optional(),
+});
+
+const samplesQuery = z.object({
+  type: z.string().min(1).max(200),
+  fromDay: dayParam.optional(),
+  toDay: dayParam.optional(),
+  from: z.coerce.number().int().optional(),
+  to: z.coerce.number().int().optional(),
+  limit: z.coerce.number().int().min(1).max(500).default(50),
+  offset: z.coerce.number().int().min(0).max(10_000_000).default(0),
+  order: z.enum(['asc', 'desc']).default('desc'),
+});
+
+/** UTC window that surely contains a local day range (offsets reach ±14 h); exact filtering happens on the local day. */
+function tsWindow(fromDay: string | undefined, toDay: string | undefined): { lo: number; hi: number } {
+  return {
+    lo: fromDay ? (parseDay(fromDay) ?? 0) * 86400 - 15 * 3600 : -1e12,
+    hi: toDay ? ((parseDay(toDay) ?? 0) + 1) * 86400 + 15 * 3600 : 1e12,
+  };
+}
+
+function typeInfo(db: Db, athleteId: number, t: TypeRow): RecordTypeInfo {
+  const s = get<{ count: number; first_ts: number | null; last_ts: number | null }>(
+    db,
+    'SELECT count, first_ts, last_ts FROM record_type_stats WHERE athlete_id = ? AND type_id = ?',
+    [athleteId, t.id],
+  );
+  return {
+    id: t.id,
+    identifier: t.identifier,
+    kind: t.kind,
+    unit: t.unit,
+    aggregation: t.aggregation,
+    count: s?.count ?? 0,
+    firstTs: s?.first_ts ?? null,
+    lastTs: s?.last_ts ?? null,
+  };
+}
+
+const LOCAL_DAY = "date(r.start_ts + r.tz_min * 60, 'unixepoch')";
+
+/** WHERE clause on `records r` for one type and a range; the exact local-day predicates only exist when days are given. */
+function recordWhere(
+  athleteId: number,
+  typeId: number,
+  o: { fromDay?: string; toDay?: string; from?: number; to?: number },
+): { sql: string; params: (string | number)[] } {
+  const win = tsWindow(o.fromDay, o.toDay);
+  let sql = 'r.athlete_id = ? AND r.type_id = ? AND r.start_ts >= ? AND r.start_ts < ?';
+  const params: (string | number)[] = [athleteId, typeId, o.from ?? win.lo, o.to ?? win.hi];
+  if (o.fromDay) {
+    sql += ` AND ${LOCAL_DAY} >= ?`;
+    params.push(o.fromDay);
+  }
+  if (o.toDay) {
+    sql += ` AND ${LOCAL_DAY} <= ?`;
+    params.push(o.toDay);
+  }
+  return { sql, params };
+}
+
+export function registerMetricRoutes(app: FastifyInstance): void {
+  app.get('/explorer', async (req): Promise<ExplorerResponse> => buildExplorer(app.db, req.athleteId));
+
+  // One record type aggregated per day / week / month from daily_metrics (+ statistics of the range)
+  app.get('/metric/series', async (req): Promise<MetricSeries> => {
+    const q = seriesQuery.parse(req.query);
+    checkDayOrder(q.fromDay, q.toDay);
+    const t = resolveType(app.db, q.type);
+    const weekStart = getSettings(app.db, req.athleteId).weekStart;
+    const from = q.fromDay ?? '0000-00-00';
+    const to = q.toDay ?? '9999-12-31';
+    const base = { type: typeInfo(app.db, req.athleteId, t), agg: q.agg, fromDay: q.fromDay ?? null, toDay: q.toDay ?? null };
+
+    if (t.aggregation === 'duration') {
+      const rows = all<{ metric: string; day: string; value: number; n: number }>(
+        app.db,
+        `SELECT metric, day, value, n FROM daily_metrics
+         WHERE athlete_id = ? AND metric >= ? AND metric < ? AND day >= ? AND day <= ? ORDER BY day`,
+        [req.athleteId, `${t.identifier}:`, `${t.identifier};`, from, to],
+      );
+      const byValue = new Map<string, DailyRow[]>();
+      for (const r of rows) {
+        const value = r.metric.slice(t.identifier.length + 1);
+        const arr = byValue.get(value) ?? [];
+        arr.push({ day: r.day, value: r.value, min: null, max: null, n: r.n });
+        byValue.set(value, arr);
+      }
+      const categories: MetricCategorySeries[] = [...byValue.entries()]
+        .map(([value, rs]) => ({
+          value,
+          total: rs.reduce((s, r) => s + r.value, 0),
+          points: aggregatePoints(rs, q.agg, weekStart, 'duration'),
+        }))
+        .sort((a, b) => b.total - a.total || a.value.localeCompare(b.value));
+      const combined = combineCategoryRows(byValue, t.identifier);
+      return {
+        ...base,
+        points: aggregatePoints(combined, q.agg, weekStart, 'duration'),
+        categories,
+        stats: summarize(combined, 'duration'),
+      };
+    }
+
+    const rows = all<DailyRow>(
+      app.db,
+      `SELECT day, value, min, max, n FROM daily_metrics
+       WHERE athlete_id = ? AND metric = ? AND day >= ? AND day <= ? ORDER BY day`,
+      [req.athleteId, t.identifier, from, to],
+    );
+    return {
+      ...base,
+      points: aggregatePoints(rows, q.agg, weekStart, t.aggregation),
+      categories: [],
+      stats: summarize(rows, t.aggregation),
+    };
+  });
+
+  // Which sources / devices wrote the samples of a type (in a range)
+  app.get('/metric/sources', async (req): Promise<MetricSources> => {
+    const q = rangeQuery.parse(req.query);
+    checkDayOrder(q.fromDay, q.toDay);
+    const t = resolveType(app.db, q.type);
+    const w = recordWhere(req.athleteId, t.id, q);
+    const rows = all<{
+      source_id: number;
+      name: string | null;
+      device: string | null;
+      n: number;
+      first_ts: number;
+      last_ts: number;
+    }>(
+      app.db,
+      `SELECT r.source_id, s.name, COALESCE(d.name, '') || CASE WHEN d.hardware IS NULL THEN '' ELSE ' (' || d.hardware || ')' END AS device,
+              COUNT(*) AS n, MIN(r.start_ts) AS first_ts, MAX(r.start_ts) AS last_ts
+       FROM records r LEFT JOIN sources s ON s.id = r.source_id LEFT JOIN devices d ON d.id = r.device_id
+       WHERE ${w.sql}
+       GROUP BY r.source_id, device`,
+      w.params,
+    );
+    const by = new Map<number, MetricSourceRow & { devSet: Set<string> }>();
+    for (const r of rows) {
+      let s = by.get(r.source_id);
+      if (!s) {
+        s = { sourceId: r.source_id, name: r.name ?? '–', count: 0, firstTs: r.first_ts, lastTs: r.last_ts, devices: [], devSet: new Set() };
+        by.set(r.source_id, s);
+      }
+      s.count += r.n;
+      s.firstTs = Math.min(s.firstTs, r.first_ts);
+      s.lastTs = Math.max(s.lastTs, r.last_ts);
+      const dev = (r.device ?? '').trim();
+      if (dev) s.devSet.add(dev);
+    }
+    const sources = [...by.values()]
+      .map(({ devSet, ...s }) => ({ ...s, devices: [...devSet].sort() }))
+      .sort((a, b) => b.count - a.count);
+    return { type: t.identifier, total: sources.reduce((n, s) => n + s.count, 0), sources };
+  });
+
+  // Raw samples, paginated
+  app.get('/metric/samples', async (req): Promise<Page<MetricSample>> => {
+    const q = samplesQuery.parse(req.query);
+    checkDayOrder(q.fromDay, q.toDay);
+    const t = resolveType(app.db, q.type);
+    const w = recordWhere(req.athleteId, t.id, q);
+    const unbounded = q.from === undefined && q.to === undefined && !q.fromDay && !q.toDay;
+    // the whole history is already counted in record_type_stats (a COUNT(*) over millions of rows would block the loop)
+    const total = unbounded
+      ? (get<{ count: number }>(app.db, 'SELECT count FROM record_type_stats WHERE athlete_id = ? AND type_id = ?', [req.athleteId, t.id])?.count ?? 0)
+      : (get<{ n: number }>(app.db, `SELECT COUNT(*) AS n FROM records r WHERE ${w.sql}`, w.params)?.n ?? 0);
+    const items = all<MetricSample>(
+      app.db,
+      `SELECT r.start_ts AS startTs, r.end_ts AS endTs, r.tz_min AS tzMin, r.value, r.text, s.name AS source,
+              CASE WHEN d.id IS NULL THEN NULL ELSE COALESCE(d.name, d.model, '') || CASE WHEN d.hardware IS NULL THEN '' ELSE ' (' || d.hardware || ')' END END AS device
+       FROM records r LEFT JOIN sources s ON s.id = r.source_id LEFT JOIN devices d ON d.id = r.device_id
+       WHERE ${w.sql}
+       ORDER BY r.start_ts ${q.order === 'asc' ? 'ASC' : 'DESC'} LIMIT ? OFFSET ?`,
+      [...w.params, q.limit, q.offset],
+    );
+    return { items, total, limit: q.limit, offset: q.offset };
+  });
+}
