@@ -143,21 +143,18 @@ describe('maps on imported data', () => {
     ).toEqual(routesBefore);
   });
 
-  it('is wiped by a reset together with everything else', async () => {
+  it('is wiped by a reset, except the user-made segments', async () => {
+    const segments = count('maps_segments');
     const res = await app.inject({
       method: 'POST',
       url: '/api/import/reset',
       payload: { confirm: 'DELETE' },
     });
     expect(res.statusCode, res.body).toBeLessThan(300);
-    for (const table of [
-      'maps_workout_tiles',
-      'maps_workout_geo',
-      'maps_routes',
-      'maps_segments',
-      'maps_segment_efforts',
-    ])
+    for (const table of ['maps_workout_tiles', 'maps_workout_geo', 'maps_routes', 'maps_segment_efforts'])
       expect(count(table), table).toBe(0);
+    // segments are listed in Feature.keepOnReset; their efforts are matched again after the next import
+    expect(count('maps_segments')).toBe(segments);
     const explorer = await get<MapsExplorerResponse>('/api/maps/explorer');
     expect(explorer.totals.tiles).toBe(0);
     expect((await get<MapsHeatmapResponse>('/api/maps/heatmap')).items).toEqual([]);

@@ -275,6 +275,14 @@ describe('metrics API', () => {
 
 describe('reset', () => {
   it('requires confirmation and wipes all data', async () => {
+    // a user-made segment (Feature.keepOnReset) must survive the reset, without its link to the deleted workout
+    const gps = (await getJson<Page<WorkoutSummary>>('/api/workouts?hasRoute=true&limit=1')).items[0]!;
+    const seg = await app.inject({
+      method: 'POST',
+      url: '/api/maps/segments',
+      payload: { workoutId: gps.id, startM: 100, endM: 900, name: 'Kept segment' },
+    });
+    expect(seg.statusCode).toBe(201);
     expect((await app.inject({ method: 'POST', url: '/api/import/reset', payload: {} })).statusCode).toBe(
       400,
     );
@@ -291,5 +299,7 @@ describe('reset', () => {
     expect(await getJson<RecordTypeInfo[]>('/api/metrics/types')).toEqual([]);
     const status = await getJson<{ counts: { workouts: number; records: number } }>('/api/status');
     expect(status.counts).toMatchObject({ workouts: 0, records: 0 });
+    const kept = db.prepare('SELECT name, source_workout_id FROM maps_segments').all();
+    expect(kept).toEqual([{ name: 'Kept segment', source_workout_id: null }]);
   });
 });

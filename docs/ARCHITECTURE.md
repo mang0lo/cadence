@@ -98,7 +98,9 @@ Each product area is a vertical slice with three parts that a single owner can c
 | Contract | `packages/shared/src/features/<name>.ts` | `packages/shared/src/index.ts` |
 
 Routes of a feature are mounted under `/api/<name>`. Migration ids are prefixed `<name>_`.
-Derive step ids are prefixed `<name>.`.
+Derive step ids are prefixed `<name>.`. "Delete all data" (`POST /api/import/reset`) empties every table with an
+`athlete_id` column except `settings` and the tables a feature lists in `keepOnReset` (user-written data such as goals
+and segments); `onReset` lets a feature clear references from kept rows to deleted workouts.
 
 Current features: `activities`, `progress`, `consistency`, `maps`, `health` (+ `platform` in the web app for import/settings).
 

@@ -41,4 +41,9 @@ export interface Feature {
    * (POST /api/import/reset). Every other table with an `athlete_id` column is emptied by a reset.
    */
   keepOnReset?: string[];
+  /**
+   * Runs inside the reset transaction after the data is deleted, e.g. to clear references from kept rows to
+   * deleted workouts (workout ids are reused by the next import).
+   */
+  onReset?: (db: Db, athleteId: number) => void;
 }

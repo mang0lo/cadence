@@ -55,6 +55,7 @@ export function resetAthleteData(db: Db, athleteId: number): Record<string, numb
       for (const t of ['record_types', 'sources', 'devices'])
         if (tables.includes(t)) counts[t] = run(db, `DELETE FROM "${t}"`).changes;
     }
+    for (const f of features) f.onReset?.(db, athleteId);
     run(db, "DELETE FROM settings WHERE athlete_id = ? AND key IN ('core.effortBasis')", [athleteId]);
     run(db, "DELETE FROM import_jobs WHERE athlete_id = ? AND status NOT IN ('queued', 'running')", [
       athleteId,
