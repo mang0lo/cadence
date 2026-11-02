@@ -16,8 +16,8 @@ import {
 } from '@cadence/shared';
 import { badRequest, notFound } from '../../lib/http';
 import { dayString, parseDay } from '../../lib/time';
-import { resolveDays } from './data';
-import { DAY_RE, daysBetween } from './days';
+import { resolveDays, weekStartOfAthlete } from './data';
+import { DAY_RE, daysBetween, plusDays, weekStartOf } from './days';
 import { isFeasible, PERIOD_DAYS_MAX } from './goals';
 import { createGoal, deleteGoal, getGoal, goalsResponse, updateGoal } from './goals-service';
 import { calendar, dayDetail, getPrefs, overview, punchcard, setPrefs, streakSummary } from './overview';
@@ -37,9 +37,16 @@ const year = z.coerce.number().int().min(1970).max(2200);
 const idParam = z.object({ id: z.coerce.number().int().positive() });
 
 const calendarQuery = z
-  .object({ year: year.optional(), from: day.optional(), to: day.optional(), today: day.optional() })
-  .refine((q) => q.year !== undefined || (q.from !== undefined && q.to !== undefined), {
-    message: 'Pass year or from + to',
+  .object({
+    year: year.optional(),
+    from: day.optional(),
+    to: day.optional(),
+    /** The last N weeks (by the athlete's week start) up to asOf. */
+    weeks: z.coerce.number().int().min(1).max(110).optional(),
+    today: day.optional(),
+  })
+  .refine((q) => q.year !== undefined || q.weeks !== undefined || (q.from !== undefined && q.to !== undefined), {
+    message: 'Pass year, weeks or from + to',
   });
 
 const punchcardQuery = z.object({ year: z.union([year, z.literal('all')]).optional() });
@@ -82,8 +89,18 @@ export default async function consistencyRoutes(app: FastifyInstance) {
 
   app.get('/calendar', async (req): Promise<CalendarResponse> => {
     const q = calendarQuery.parse(req.query);
-    const from = q.year !== undefined ? `${q.year}-01-01` : q.from!;
-    const to = q.year !== undefined ? `${q.year}-12-31` : q.to!;
+    let from: string;
+    let to: string;
+    if (q.year !== undefined) {
+      from = `${q.year}-01-01`;
+      to = `${q.year}-12-31`;
+    } else if (q.weeks !== undefined) {
+      to = resolveDays(app.db, req.athleteId, q.today).asOf;
+      from = plusDays(weekStartOf(to, weekStartOfAthlete(app.db, req.athleteId)), -7 * (q.weeks - 1));
+    } else {
+      from = q.from!;
+      to = q.to!;
+    }
     if (from > to) throw badRequest('from must not be after to');
     if (daysBetween(from, to) > 800) throw badRequest('Range too long (max 800 days)');
     return calendar(app.db, req.athleteId, from, to, q.today);

@@ -26,7 +26,7 @@ export function useStreaks() {
   return useApi<StreakSummary>(['consistency', 'streaks'], '/consistency/streaks', { today: todayKey() });
 }
 
-export function useCalendar(range: { year: number } | { from: string; to: string } | null) {
+export function useCalendar(range: { year: number } | { from: string; to: string } | { weeks: number } | null) {
   return useApi<CalendarResponse>(['consistency', 'calendar'], range ? '/consistency/calendar' : null, {
     ...(range ?? {}),
     today: todayKey(),

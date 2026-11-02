@@ -372,6 +372,16 @@ export const messages: Dictionary = {
       change: 'Change',
       empty: 'No activities in {year}',
     },
+    widgets: {
+      streak: 'Streak',
+      more: 'More',
+      last14: 'The last 14 days',
+      active: 'active',
+      rest: 'rest day',
+      goals: 'Goals',
+      allGoals: 'All goals',
+      calendar: 'Last {count} weeks',
+    },
   },
   de: {
     nav: {
@@ -744,6 +754,16 @@ export const messages: Dictionary = {
       compareTitleToDate: 'Im Vergleich zu {year} bis zum selben Datum',
       change: 'Veränderung',
       empty: 'Keine Aktivitäten im Jahr {year}',
+    },
+    widgets: {
+      streak: 'Serie',
+      more: 'Mehr',
+      last14: 'Die letzten 14 Tage',
+      active: 'aktiv',
+      rest: 'Ruhetag',
+      goals: 'Ziele',
+      allGoals: 'Alle Ziele',
+      calendar: 'Letzte {count} Wochen',
     },
   },
 };
