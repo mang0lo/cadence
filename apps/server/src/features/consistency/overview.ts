@@ -53,8 +53,8 @@ export function streakSummary(db: Db, athleteId: number, today?: string): Streak
   const active = loadActiveDays(db, athleteId);
   const rings = loadRings(db, athleteId);
   const activeSet = new Set(active);
-  const closedDays = (pick: (f: ReturnType<typeof ringFractions>) => number | null) =>
-    rings.filter((r) => closed(pick(ringFractions(r)))).map((r) => r.day);
+  const fractions = rings.map((r) => ({ day: r.day, ...ringFractions(r) }));
+  const closedDays = (pick: (f: (typeof fractions)[number]) => boolean) => fractions.filter(pick).map((f) => f.day);
   return {
     today: days.today,
     asOf: days.asOf,
@@ -63,9 +63,10 @@ export function streakSummary(db: Db, athleteId: number, today?: string): Streak
     weekly: weeklyStreak(active, days.asOf, weekStart, 1),
     rings: rings.length
       ? {
-          move: dailyStreak(closedDays((f) => f.move), days.asOf),
-          exercise: dailyStreak(closedDays((f) => f.exercise), days.asOf),
-          stand: dailyStreak(closedDays((f) => f.stand), days.asOf),
+          move: dailyStreak(closedDays((f) => closed(f.move)), days.asOf),
+          exercise: dailyStreak(closedDays((f) => closed(f.exercise)), days.asOf),
+          stand: dailyStreak(closedDays((f) => closed(f.stand)), days.asOf),
+          all: dailyStreak(closedDays((f) => closed(f.move) && closed(f.exercise) && closed(f.stand)), days.asOf),
         }
       : null,
     recent: Array.from({ length: 14 }, (_, i) => {

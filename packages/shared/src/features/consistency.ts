@@ -34,6 +34,8 @@ export interface RingStreaks {
   move: StreakInfo;
   exercise: StreakInfo;
   stand: StreakInfo;
+  /** All three rings closed. */
+  all: StreakInfo;
 }
 
 export interface StreakSummary {
