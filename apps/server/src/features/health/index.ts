@@ -1,16 +1,18 @@
 import type { Feature } from '../types';
+import { healthMigrations } from './migrations';
+import healthRoutes from './routes';
 
 /**
  * "health" feature module (server side).
- * - migrations: ids must start with 'health_'
- * - routes: mounted under /api/health
- * - deriveSteps: run in the import worker after core derivation
+ * - migrations: ids start with 'health_'
+ * - routes: mounted under /api/health (see routes.ts)
+ * - deriveSteps: run in the import worker after core derivation (ids start with 'health.')
  */
 const feature: Feature = {
   name: 'health',
-  migrations: [],
+  migrations: healthMigrations,
   deriveSteps: [],
-  routes: async () => {},
+  routes: healthRoutes,
 };
 
 export default feature;
