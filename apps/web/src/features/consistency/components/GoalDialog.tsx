@@ -1,15 +1,38 @@
 import { useEffect, useState } from 'react';
-import { GOAL_METRICS, sportInfo, type GoalInput, type GoalMetric, type GoalPeriod } from '@cadence/shared';
+import {
+  GOAL_METRICS,
+  LONGEST_PRESETS,
+  M_PER_KM,
+  M_PER_MI,
+  sportInfo,
+  type GoalInput,
+  type GoalMetric,
+  type GoalPeriod,
+} from '@cadence/shared';
 import { Button, Dialog, ErrorState, Field, Input, SegmentedControl, Select } from '@/components/ui';
 import { useFormat } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
 import { sortSports, sportLabel } from '@/lib/sports';
 import { useConsistencyMutations, useSports } from '../api';
-import { fromInputValue, targetUnit, toInputValue } from '../lib';
+import { formatGoalValue, fromInputValue, targetUnit, toInputValue } from '../lib';
 import { FieldGroup } from './FieldGroup';
 
 const MAX_DAYS: Record<GoalPeriod, number> = { week: 7, month: 31, year: 366 };
 const COMMON_SPORTS = ['run', 'ride', 'swim', 'walk', 'hike'];
+type PresetSport = keyof typeof LONGEST_PRESETS;
+const PRESET_SPORTS: PresetSport[] = ['run', 'ride', 'swim'];
+
+/**
+ * Ambitious round targets per metric and period ("bigger goals"); distances in km or miles (the unit setting), time
+ * in hours, elevation in m, the rest as counts.
+ */
+const BIG_GOALS: Partial<Record<GoalMetric, Record<GoalPeriod, number[]>>> = {
+  distance: { week: [25, 50, 100, 250], month: [100, 250, 500, 1000], year: [1000, 2500, 5000, 10000] },
+  time: { week: [5, 10, 15], month: [20, 40, 60], year: [100, 250, 500] },
+  elevation: { week: [500, 1000, 2500], month: [2000, 5000, 10000], year: [10000, 50000, 100000] },
+  activities: { week: [3, 5, 7], month: [12, 20, 30], year: [150, 250, 365] },
+  active_days: { week: [4, 5, 6], month: [15, 20, 25], year: [150, 250, 300] },
+};
 
 /** Create or edit a goal. `initial` with an id edits, without one it pre-fills a new goal. */
 export function GoalDialog({
@@ -47,7 +70,7 @@ export function GoalDialog({
   const known = (sportsQ.data ?? []).map((s) => s.sport);
   const sports = sortSports([...new Set([...known, ...COMMON_SPORTS, ...(sport !== 'all' ? [sport] : [])])]);
   const hasDistance = sport === 'all' || sportInfo(sport).distance;
-  const metricOptions = GOAL_METRICS.filter((m) => m !== 'distance' || hasDistance);
+  const metricOptions = GOAL_METRICS.filter((m) => (m !== 'distance' && m !== 'longest') || hasDistance);
   const effectiveMetric: GoalMetric = metricOptions.includes(metric) ? metric : 'time';
 
   const parsed = Number(target.replace(',', '.'));
@@ -58,6 +81,18 @@ export function GoalDialog({
       ? t(`consistency.goals.form.tooMany.${period}`, { count: MAX_DAYS[period] })
       : null;
   const problem = target.trim() === '' ? null : (invalid ?? tooMany);
+
+  // quick picks: classic single distances (marathon, Ironman legs …) or bigger round targets
+  const pick = (m: GoalMetric, v: number, s?: string) => {
+    if (s) setSport(s);
+    setMetric(m);
+    setTarget(String(toInputValue(fmt, m, v)));
+  };
+  const presetSports = effectiveMetric === 'longest' ? PRESET_SPORTS.filter((s) => sport === 'all' || s === sport) : [];
+  const big = BIG_GOALS[effectiveMetric]?.[period] ?? [];
+  const bigCanonical = (v: number) =>
+    effectiveMetric === 'distance' ? v * (fmt.units === 'imperial' ? M_PER_MI : M_PER_KM) : effectiveMetric === 'time' ? v * 3600 : v;
+  const chip = 'rounded-full border border-border px-2.5 py-1 text-xs font-medium text-fg-2 hover:bg-surface-2';
 
   const save = async () => {
     if (invalid || tooMany || saving) return;
@@ -150,10 +185,41 @@ export function GoalDialog({
               aria-invalid={!!problem}
             />
             <span className="text-sm text-fg-3">
-              {targetUnit(fmt, t, effectiveMetric)} {t(`consistency.goals.perUnit.${period}`)}
+              {targetUnit(fmt, t, effectiveMetric)}{' '}
+              {t(`consistency.goals.${effectiveMetric === 'longest' ? 'onceUnit' : 'perUnit'}.${period}`)}
             </span>
           </div>
         </Field>
+        {presetSports.length > 0 && (
+          <div className="grid gap-2" role="group" aria-label={t('consistency.goals.presets.title')}>
+            <span className="text-xs font-medium text-fg-2">{t('consistency.goals.presets.title')}</span>
+            {presetSports.map((s) => (
+              <div key={s} className="flex flex-wrap items-center gap-1.5">
+                {sport === 'all' && <span className="w-20 shrink-0 text-xs text-fg-3">{sportLabel(s, lang)}</span>}
+                {LONGEST_PRESETS[s].map((p) => (
+                  <button
+                    key={p.key}
+                    type="button"
+                    className={chip}
+                    onClick={() => pick('longest', p.distanceM, sport === 'all' ? s : undefined)}
+                  >
+                    {t(`consistency.goals.presets.${p.key}`)}
+                  </button>
+                ))}
+              </div>
+            ))}
+          </div>
+        )}
+        {big.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label={t('consistency.goals.presets.bigger')}>
+            <span className="mr-1 text-xs font-medium text-fg-2">{t('consistency.goals.presets.bigger')}</span>
+            {big.map((v) => (
+              <button key={v} type="button" className={chip} onClick={() => pick(effectiveMetric, bigCanonical(v))}>
+                {formatGoalValue(fmt, t, effectiveMetric, bigCanonical(v))}
+              </button>
+            ))}
+          </div>
+        )}
         {problem && <p className="text-xs text-critical-fg">{problem}</p>}
         {error ? <ErrorState error={error} /> : null}
       </div>

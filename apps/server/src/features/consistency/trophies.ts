@@ -11,12 +11,13 @@ import {
   type AchievementTier,
   type ChallengeMonth,
   type TrophiesResponse,
+  type WorkoutStatistic,
 } from '@cadence/shared';
-import { all, run, tx, type Db } from '../../db/db';
+import { all, json, run, tx, type Db } from '../../db/db';
 import { getSetting, setSetting } from '../../core/settings';
 import type { DeriveStep } from '../types';
 import { nowSec } from '../../lib/time';
-import { ACHIEVEMENTS_VERSION, buildCatalog, evaluateAchievements, type EvalInput } from './achievements';
+import { ACHIEVEMENTS_VERSION, buildCatalog, evaluateAchievements, type EvalInput, type EvalWorkout } from './achievements';
 import { CHALLENGES, computeChallenges, type ChallengeWorkout } from './challenges';
 import { loadRings, loadWorkouts, resolveDays, ringFractions, weekStartOfAthlete } from './data';
 import { daysBetween, daysInMonth, localParts, monthEndOf } from './days';
@@ -30,6 +31,36 @@ interface History {
   sports: string[];
   hasRings: boolean;
   challengeWorkouts: ChallengeWorkout[];
+}
+
+/** Swim / bike / run legs of visible multisport workouts (triathlons) with the distance of each leg. */
+function loadLegs(db: Db, athleteId: number): EvalWorkout[] {
+  const rows = all<{ workout_id: number; sport: string; start_ts: number; tz_min: number; stats: string | null }>(
+    db,
+    `SELECT a.workout_id, a.sport, a.start_ts, w.tz_min, a.stats FROM workout_activities a
+     JOIN workouts w ON w.id = a.workout_id
+     WHERE w.athlete_id = ? AND w.hidden = 0 AND w.duplicate_of IS NULL AND w.sport = 'multisport'
+     ORDER BY a.start_ts, a.workout_id, a.idx`,
+    [athleteId],
+  );
+  const out: EvalWorkout[] = [];
+  for (const r of rows) {
+    const stats = json<WorkoutStatistic[]>(r.stats, []);
+    const distanceM = stats.find((s) => s.type.startsWith('HKQuantityTypeIdentifierDistance') && s.sum)?.sum ?? 0;
+    if (!(distanceM > 0)) continue;
+    const p = localParts(r.start_ts, r.tz_min);
+    out.push({
+      id: r.workout_id,
+      sport: r.sport,
+      startTs: r.start_ts,
+      day: p.day,
+      weekday: p.weekday,
+      hour: p.hour,
+      distanceM,
+      elevationM: 0,
+    });
+  }
+  return out;
 }
 
 function loadHistory(db: Db, athleteId: number): History {
@@ -48,7 +79,7 @@ function loadHistory(db: Db, athleteId: number): History {
   });
   const rings = loadRings(db, athleteId).map((r) => ({ day: r.day, ...ringFractions(r) }));
   return {
-    input: { workouts, rings, weekStart: weekStartOfAthlete(db, athleteId), challengeDays: [] },
+    input: { workouts, legs: loadLegs(db, athleteId), rings, weekStart: weekStartOfAthlete(db, athleteId), challengeDays: [] },
     sports: [...new Set(workouts.map((w) => w.sport))],
     hasRings: rings.length > 0,
     challengeWorkouts: workouts.map((w) => ({

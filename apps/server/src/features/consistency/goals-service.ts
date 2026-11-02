@@ -157,7 +157,7 @@ export function goalWithProgress(
   const history = goalHistory(goal, buckets(goal.period), asOf, weekStart, firstDay);
   return {
     ...goal,
-    current: goalProjection({ value, target: goal.target, start, end, asOf }),
+    current: goalProjection({ value, target: goal.target, start, end, asOf, single: goal.metric === 'longest' }),
     history,
     hitRate: history.length ? history.filter((h) => h.hit).length / history.length : null,
   };

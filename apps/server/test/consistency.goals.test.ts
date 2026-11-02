@@ -210,3 +210,43 @@ describe('consistency score', () => {
     expect(fallback).toMatchObject({ basis: 'days', met: 12 });
   });
 });
+
+describe('single-activity goals (longest)', () => {
+  const rows = [
+    row('2026-03-01', 'run', { longestM: 21_097.5, distanceM: 21_097.5 }),
+    row('2026-05-10', 'run', { longestM: 30_000, distanceM: 38_000, count: 2 }),
+    row('2026-06-01', 'ride', { longestM: 120_000, distanceM: 120_000 }),
+  ];
+
+  it('takes the longest single activity, not the sum', () => {
+    expect(goalValue(rows, 'longest', 'run')).toBe(30_000);
+    expect(goalValue(rows, 'longest', null)).toBe(120_000);
+    expect(goalValue(rows, 'distance', 'run')).toBeCloseTo(59_097.5, 6);
+  });
+
+  it('is open until reached: no pace, no per-day need', () => {
+    const open = goalProjection({ value: 30_000, target: 42_195, start: '2026-01-01', end: '2026-12-31', asOf: '2026-11-02', single: true });
+    expect(open.status).toBe('open');
+    expect(open.expected).toBe(0);
+    expect(open.perDayNeeded).toBeNull();
+    expect(open.remaining).toBeCloseTo(12_195, 6);
+    const done = goalProjection({ value: 42_300, target: 42_195, start: '2026-01-01', end: '2026-12-31', asOf: '2026-11-02', single: true });
+    expect(done.status).toBe('done');
+  });
+
+  it('suggests the next classic distance above the longest of the last year', () => {
+    const recent = [
+      ...Array.from({ length: 30 }, (_, i) => row(plusDays('2026-10-31', -7 * i), 'run', { distanceM: 12_000, longestM: 12_000 })),
+      row('2026-09-20', 'run', { distanceM: 25_000, longestM: 25_000 }),
+    ];
+    const s = suggestGoals(recent, [], '2026-11-02', 1, '2026-01-01', 10);
+    const longest = s.find((g) => g.metric === 'longest');
+    expect(longest).toMatchObject({ period: 'year', sport: 'run', target: 42_195, average: 25_000 });
+    // not suggested again when such a goal exists
+    expect(
+      suggestGoals(recent, [{ period: 'year', metric: 'longest', sport: 'run' }], '2026-11-02', 1, '2026-01-01', 10).some(
+        (g) => g.metric === 'longest',
+      ),
+    ).toBe(false);
+  });
+});

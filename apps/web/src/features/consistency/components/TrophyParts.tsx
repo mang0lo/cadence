@@ -1,7 +1,14 @@
 import { useState } from 'react';
 import { Link } from 'react-router';
 import { Activity, CalendarCheck, Check, Mountain, Repeat, type LucideIcon } from 'lucide-react';
-import { workoutTitle, type Achievement, type ChallengeDef, type ChallengeMonth, type ChallengeProgress } from '@cadence/shared';
+import {
+  TRIATHLON_DISTANCES,
+  workoutTitle,
+  type Achievement,
+  type ChallengeDef,
+  type ChallengeMonth,
+  type ChallengeProgress,
+} from '@cadence/shared';
 import { Badge, Button, ProgressBar, Table, TD, TH, cn } from '@/components/ui';
 import { useFormat, type Formatter } from '@/lib/format';
 import { useI18n, type Lang, type TFunction } from '@/lib/i18n';
@@ -35,6 +42,15 @@ export function achievementDesc(a: Achievement, t: TFunction, fmt: Formatter, la
     sport: a.sport ? sportLabel(a.sport, lang) : '',
   };
   if (a.kind === 'elevation' && a.name) return t(`consistency.trophies.nameDesc.${a.name}`, vars);
+  if (a.kind === 'triathlon') {
+    const tri = TRIATHLON_DISTANCES.find((d) => d.key === a.name);
+    if (tri)
+      return t('consistency.trophies.kinds.triathlon.desc', {
+        swim: shortDistance(fmt, tri.swim),
+        ride: shortDistance(fmt, tri.ride),
+        run: shortDistance(fmt, tri.run),
+      });
+  }
   return t(`consistency.trophies.kinds.${a.kind}.desc`, vars);
 }
 
@@ -43,6 +59,7 @@ export function achievementProgress(a: Achievement, t: TFunction, fmt: Formatter
   switch (a.kind) {
     case 'sport_distance':
     case 'longest':
+    case 'triathlon':
       return `${shortDistance(fmt, a.progress)} / ${shortDistance(fmt, a.threshold)}`;
     case 'elevation':
       return `${fmt.elevation(a.progress)} / ${fmt.elevation(a.threshold)}`;
