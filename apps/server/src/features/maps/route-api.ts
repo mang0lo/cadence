@@ -23,6 +23,7 @@ interface RouteRow {
   sport: string;
   kind: MapsRouteKind;
   area: string | null;
+  area_end: string | null;
   custom_name: string | null;
   distance_m: number;
   polyline: string | null;
@@ -83,7 +84,7 @@ export function routeSummaries(
   }
   const routes = all<RouteRow>(
     db,
-    `SELECT id, sport, kind, area, custom_name, distance_m, polyline, start_lat, start_lon, end_lat, end_lon
+    `SELECT id, sport, kind, area, area_end, custom_name, distance_m, polyline, start_lat, start_lon, end_lat, end_lon
      FROM maps_routes WHERE ${where.join(' AND ')}`,
     params,
   );
@@ -108,6 +109,7 @@ export function routeSummaries(
       sport: r.sport,
       kind: r.kind,
       area: r.area,
+      areaEnd: r.area_end,
       customName: r.custom_name,
       distanceM: r.distance_m,
       count: list.length,

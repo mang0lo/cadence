@@ -9,7 +9,7 @@ import type { MapsExplorerSummary, MapsWorkoutLinks } from '@cadence/shared';
 import { Badge, Card, CardHeader, Delta, ErrorState, Skeleton, Stat, Table, TD, TH } from '@/components/ui';
 import { useApi } from '@/lib/api';
 import { useFormat } from '@/lib/format';
-import { useT } from '@/lib/i18n';
+import { useI18n, useT } from '@/lib/i18n';
 import { routeTitle } from './lib/routeName';
 
 /** Explorer tiles at a glance: visited tiles, max square and the tiles that are new this month. */
@@ -81,6 +81,7 @@ export function ExplorerWidget() {
 export function WorkoutMapsCard({ workoutId, sport }: { workoutId: number; sport: string }) {
   const t = useT();
   const fmt = useFormat();
+  const { lang } = useI18n();
   const q = useApi<MapsWorkoutLinks>(['maps', 'workout', workoutId], `/maps/workouts/${workoutId}`);
   const d = q.data;
   // nothing to show (yet): render nothing rather than an empty card
@@ -109,7 +110,7 @@ export function WorkoutMapsCard({ workoutId, sport }: { workoutId: number; sport
         >
           <span className="min-w-0">
             <span className="block truncate text-sm font-medium text-fg">
-              {routeTitle({ ...r, startLat: null, startLon: null }, t, fmt)}
+              {routeTitle({ ...r, startLat: null, startLon: null }, t, fmt, lang)}
             </span>
             <span className="block text-xs text-fg-3">
               {t('maps.workoutCard.routeDone', { count: r.count })} · {t('maps.workoutCard.best', { time: fmt.duration(r.bestTimeS) })}

@@ -1,7 +1,7 @@
 import { all, prepare, run, tx, type Db } from '../../db/db';
 import type { DeriveStep } from '../types';
+import { nearestPlace } from '../../lib/places';
 import {
-  areaFromTimezone,
   assignRoutes,
   makeSignature,
   matchOldRoutes,
@@ -129,7 +129,6 @@ export function refreshRoutes(db: Db, athleteId: number): void {
     length_m: number;
     sig: Uint8Array;
     workout_id: number;
-    timezone: string | null;
     polyline: string | null;
     start_lat: number | null;
     start_lon: number | null;
@@ -137,7 +136,7 @@ export function refreshRoutes(db: Db, athleteId: number): void {
     end_lon: number | null;
   }>(
     db,
-    `SELECT g.route_id, g.length_m, g.sig, g.workout_id, w.timezone, w.polyline,
+    `SELECT g.route_id, g.length_m, g.sig, g.workout_id, w.polyline,
             w.start_lat, w.start_lon, w.end_lat, w.end_lon
      FROM maps_workout_geo g JOIN workouts w ON w.id = g.workout_id
      WHERE g.athlete_id = ? AND g.route_id IS NOT NULL
@@ -153,15 +152,23 @@ export function refreshRoutes(db: Db, athleteId: number): void {
   tx(db, () => {
     const upd = prepare(
       db,
-      `UPDATE maps_routes SET rep_workout_id = ?, kind = ?, area = ?, distance_m = ?, start_lat = ?, start_lon = ?,
-         end_lat = ?, end_lon = ?, polyline = ? WHERE id = ? AND athlete_id = ?`,
+      `UPDATE maps_routes SET rep_workout_id = ?, kind = ?, area = ?, area_end = ?, distance_m = ?, start_lat = ?,
+         start_lon = ?, end_lat = ?, end_lon = ?, polyline = ? WHERE id = ? AND athlete_id = ?`,
     );
     for (const [routeId, members] of groups) {
       const rep = members[0]!;
+      const kind = routeKind(decodeSignature(rep.sig, rep.length_m));
+      // the nearest town / village / district of the start (offline gazetteer); a route from A to B names both
+      const start = rep.start_lat !== null && rep.start_lon !== null ? nearestPlace(rep.start_lat, rep.start_lon) : null;
+      const end =
+        kind === 'point_to_point' && rep.end_lat !== null && rep.end_lon !== null
+          ? nearestPlace(rep.end_lat, rep.end_lon)
+          : null;
       upd.run(
         rep.workout_id,
-        routeKind(decodeSignature(rep.sig, rep.length_m)),
-        areaFromTimezone(rep.timezone),
+        kind,
+        start?.name ?? null,
+        end && end.name !== start?.name ? end.name : null,
         Math.round(median(members.map((m) => m.length_m))),
         rep.start_lat,
         rep.start_lon,

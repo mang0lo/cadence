@@ -126,4 +126,5 @@ Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (conventions, feature modules,
 ## License
 
 [MIT](LICENSE). Map data © OpenStreetMap contributors, OpenFreeMap, CARTO; imagery © Esri; terrain © Mapzen/AWS.
+Place names: [GeoNames](https://www.geonames.org) (CC BY 4.0), bundled offline — positions are never sent anywhere.
 Not affiliated with Strava or Apple.

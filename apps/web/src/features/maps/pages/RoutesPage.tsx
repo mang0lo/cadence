@@ -19,7 +19,7 @@ import {
 } from '@/components/ui';
 import { useApi } from '@/lib/api';
 import { useFormat } from '@/lib/format';
-import { useT } from '@/lib/i18n';
+import { useI18n, useT } from '@/lib/i18n';
 import { SportIcon, sortSports, sportColorVar, useSportLabel } from '@/lib/sports';
 import { useStoredState } from '@/lib/storage';
 import { TrendSparkline } from '../components/TrendSparkline';
@@ -175,6 +175,7 @@ function Chip({
 function RouteCard({ route: r }: { route: MapsRouteSummary }) {
   const t = useT();
   const fmt = useFormat();
+  const { lang } = useI18n();
   const sportLabel = useSportLabel();
   const change = trendChange(r.trend);
   return (
@@ -188,12 +189,12 @@ function RouteCard({ route: r }: { route: MapsRouteSummary }) {
         width={320}
         height={150}
         className="h-36 w-full rounded-none"
-        ariaLabel={routeTitle(r, t, fmt)}
+        ariaLabel={routeTitle(r, t, fmt, lang)}
       />
       <div className="flex min-w-0 flex-1 flex-col gap-3 p-4">
         <div className="min-w-0">
           <h3 className="truncate text-sm font-semibold text-fg group-hover:text-accent-fg">
-            {routeTitle(r, t, fmt)}
+            {routeTitle(r, t, fmt, lang)}
           </h3>
           <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-fg-3">
             <span className="inline-flex items-center gap-1" style={{ color: sportColorVar(r.sport) }}>

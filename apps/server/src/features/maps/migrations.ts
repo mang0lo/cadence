@@ -93,4 +93,11 @@ export const migrations: Migration[] = [
       CREATE INDEX ix_maps_segment_efforts_workout ON maps_segment_efforts(workout_id);
     `,
   },
+  {
+    id: 'maps_004_route_area_end',
+    up: /* sql */ `
+      -- Place names now come from the offline gazetteer (start, and the end of point-to-point routes)
+      ALTER TABLE maps_routes ADD COLUMN area_end TEXT;
+    `,
+  },
 ];
