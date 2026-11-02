@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import '../maps.css';
 import { createPortal } from 'react-dom';
 import { Link } from 'react-router';
 import { Popup, type LngLat } from 'maplibre-gl';

@@ -152,6 +152,10 @@ lucide-react icons. Path alias `@/` = `apps/web/src`.
 - **Layout**: the content area is the viewport minus a 240 px sidebar (784 px at a 1024 px window). Use
   `minmax(0,1fr)` instead of `1fr` in custom grid templates and `min-w-0` on flex children so long content never
   forces horizontal scrolling; put fixed-width side columns behind `xl:`. Check pages at 1024 px and ~1440 px.
+  Custom breakpoints must be in rem (`min-[85rem]:`): px arbitrary breakpoints sort before `lg:` and lose.
+- **Pitfalls**: `maplibre-gl.css` is not in a cascade layer, so its rules beat Tailwind utilities on MapLibre elements
+  (use inline styles there). ECharts 6 shrinks grids whose labels touch the edge unless `containLabel` is set — use
+  `outerBoundsMode: 'none'` on grids that need a fixed plot area (e.g. stacked, synced charts).
 - **Native shell**: `src/lib/native.ts` (`isNativeShell`, `postNative`).
 
 ## Development

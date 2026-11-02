@@ -9,7 +9,6 @@ import {
   setGeoJSON,
   type LngLat,
 } from '@/components/map/layers';
-import '../maps.css';
 import type { BBox } from '../lib/home';
 
 export interface MapLine {

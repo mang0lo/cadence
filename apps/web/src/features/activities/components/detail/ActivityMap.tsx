@@ -437,9 +437,6 @@ export function ActivityMap({ P, geo, sport, playback, hover, selection, zoneBou
   const onReady = useCallback(
     (map: Map) => {
       mapRef.current = map;
-      // Workaround (shared BaseMap): MapLibre's un-layered `.maplibregl-map { position: relative }` overrides the
-      // layered Tailwind `absolute inset-0` of the container, which then collapses to 0 px height.
-      Object.assign(map.getContainer().style, { position: 'absolute', inset: '0' });
       map.resize();
       map.fitBounds(geo.bounds as LngLatBoundsLike, { padding: FIT_PADDING, maxZoom: 16, animate: false });
       const start = new Marker({

@@ -10,7 +10,6 @@ import { useChartTheme } from '@/components/charts/theme';
 import { useFormat } from '@/lib/format';
 import { useT } from '@/lib/i18n';
 import { useResolvedTheme } from '@/lib/theme';
-import '../maps.css';
 import {
   ID,
   applyExplorerColors,
