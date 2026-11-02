@@ -114,3 +114,20 @@ export function nearestPlace(lat: number, lon: number, maxKm = 30): Place | null
     }
   return best < 0 ? null : placeAt(g, best);
 }
+
+const nameCache = new Map<string, string | null>();
+
+/**
+ * Name of the place at a position (see nearestPlace), cached on a ~100 m grid: lists name the same start points over
+ * and over.
+ */
+export function placeNameAt(lat: number | null, lon: number | null, maxKm = 25): string | null {
+  if (lat === null || lon === null || !Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+  const key = `${lat.toFixed(3)},${lon.toFixed(3)},${maxKm}`;
+  const hit = nameCache.get(key);
+  if (hit !== undefined) return hit;
+  const name = nearestPlace(lat, lon, maxKm)?.name ?? null;
+  if (nameCache.size >= 20_000) nameCache.clear();
+  nameCache.set(key, name);
+  return name;
+}

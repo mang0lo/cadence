@@ -71,6 +71,9 @@ export const messages: Dictionary = {
       monday: 'Monday',
       sunday: 'Sunday',
       mapStyle: 'Default map',
+      thumbnailMaps: 'Map background in route previews',
+      thumbnailMapsHint:
+        'Feeds and lists show the route on a small map (tiles from the map provider, cached by the browser). Off: the route shape only, without network requests.',
       heart: 'Heart rate & zones',
       heartHint: 'Used for zones, relative effort and fitness. Leave empty to derive from your data.',
       maxHr: 'Max heart rate',
@@ -183,6 +186,9 @@ export const messages: Dictionary = {
       monday: 'Montag',
       sunday: 'Sonntag',
       mapStyle: 'Standardkarte',
+      thumbnailMaps: 'Kartenhintergrund in Streckenvorschauen',
+      thumbnailMapsHint:
+        'Feed und Listen zeigen die Strecke auf einer kleinen Karte (Kacheln vom Kartenanbieter, vom Browser zwischengespeichert). Aus: nur die Form der Strecke, ohne Netzwerkanfragen.',
       heart: 'Herzfrequenz & Zonen',
       heartHint: 'Für Zonen, relative Anstrengung und Fitness. Leer lassen, um sie aus deinen Daten abzuleiten.',
       maxHr: 'Maximale Herzfrequenz',

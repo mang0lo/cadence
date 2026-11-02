@@ -178,7 +178,7 @@ export function RouteThumbnail({
   height?: number;
   strokeWidth?: number;
   ariaLabel?: string;
-  /** Show map tiles behind the route (default true). */
+  /** Show map tiles behind the route (default true; the user can turn them off for all previews in the settings). */
   basemap?: boolean;
 }) {
   const { settings } = useSettings();
@@ -191,7 +191,7 @@ export function RouteThumbnail({
   const layout = useMemo(() => (polyline ? thumbnailLayout(polyline, w, h) : null), [polyline, w, h]);
   const darkBase = base === 'dark' || base === 'satellite';
   const casing = darkBase ? 'rgba(0,0,0,0.55)' : 'rgba(255,255,255,0.95)';
-  const showTiles = basemap && near && !!box && !!layout?.tiles.length;
+  const showTiles = basemap && settings.thumbnailMaps !== false && near && !!box && !!layout?.tiles.length;
 
   return (
     <svg

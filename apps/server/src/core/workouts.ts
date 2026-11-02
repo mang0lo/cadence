@@ -9,12 +9,14 @@ import type {
   WorkoutSummary,
 } from '@cadence/shared';
 import { all, get, json, type Db } from '../db/db';
+import { haversine } from '../lib/geo';
 import { gunzipJson } from '../lib/gzip';
+import { placeNameAt } from '../lib/places';
 
 /** Columns of `workouts` needed for WorkoutSummary. */
 export const SUMMARY_COLS = `id, name, sport, activity_type, start_ts, end_ts, tz_min, duration_s, moving_s, distance_m,
   energy_kcal, elevation_gain_m, avg_hr, max_hr, avg_speed, effort, effort_estimated, indoor, has_route, polyline,
-  source_name, notes, hidden, duplicate_of`;
+  source_name, notes, hidden, duplicate_of, start_lat, start_lon, end_lat, end_lon`;
 
 export interface WorkoutRow {
   id: number;
@@ -41,6 +43,10 @@ export interface WorkoutRow {
   notes: string | null;
   hidden: number;
   duplicate_of: number | null;
+  start_lat: number | null;
+  start_lon: number | null;
+  end_lat: number | null;
+  end_lon: number | null;
 }
 
 export interface WorkoutFullRow extends WorkoutRow {
@@ -63,17 +69,27 @@ export interface WorkoutFullRow extends WorkoutRow {
   min_lon: number | null;
   max_lat: number | null;
   max_lon: number | null;
-  start_lat: number | null;
-  start_lon: number | null;
-  end_lat: number | null;
-  end_lon: number | null;
   hr_zones: string | null;
   stats: string | null;
   meta: string | null;
 }
 
+/** One-way activities end at least this far from the start to be named "A → B". */
+const ONE_WAY_MIN_M = 2000;
+
+/** Start place and, for one-way activities, the place where it ended. */
+function placesOf(r: WorkoutRow): { place: string | null; placeEnd: string | null } {
+  const place = placeNameAt(r.start_lat, r.start_lon);
+  if (!place || r.end_lat === null || r.end_lon === null || r.start_lat === null || r.start_lon === null)
+    return { place, placeEnd: null };
+  if (haversine(r.start_lat, r.start_lon, r.end_lat, r.end_lon) < ONE_WAY_MIN_M) return { place, placeEnd: null };
+  const end = placeNameAt(r.end_lat, r.end_lon);
+  return { place, placeEnd: end && end !== place ? end : null };
+}
+
 export function toSummary(r: WorkoutRow): WorkoutSummary {
   return {
+    ...placesOf(r),
     id: r.id,
     name: r.name,
     sport: r.sport,

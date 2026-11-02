@@ -127,6 +127,14 @@ describe('a ride paused for a train ride and continued in another city', () => {
     expect(s.dist![s.dist!.length - 1]!).toBeLessThan(9000);
   });
 
+  it('names the start and the end of the one-way activity after the real places', async () => {
+    const w = (await getJson<Page<WorkoutSummary>>('/api/workouts')).items[0]!;
+    expect(w.place).toBe('Rostock');
+    expect(w.placeEnd).toMatch(/Berlin|Mitte|Gesundbrunnen|Prenzlauer Berg|Pankow|Wedding/);
+    const detail = await getJson<WorkoutSummary>(`/api/workouts/${id}`);
+    expect(detail.place).toBe('Rostock');
+  });
+
   it('stores and serves the route in two parts', async () => {
     const w = (await getJson<Page<WorkoutSummary>>('/api/workouts')).items[0]!;
     const parts = decodePolylineParts(w.polyline!);

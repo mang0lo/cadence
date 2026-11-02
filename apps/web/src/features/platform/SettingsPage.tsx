@@ -5,7 +5,7 @@ import type { Map } from 'maplibre-gl';
 import type { AthleteSettings, PrivacyZone } from '@cadence/shared';
 import { BaseMap } from '@/components/map/BaseMap';
 import { featureCollection, pointFeature, setGeoJSON } from '@/components/map/layers';
-import { Button, Card, CardHeader, Field, IconButton, Input, KeyValues, Page, PageHeader, SegmentedControl, Select, Slider } from '@/components/ui';
+import { Button, Card, CardHeader, Field, IconButton, Input, KeyValues, Page, PageHeader, SegmentedControl, Select, Slider, Switch } from '@/components/ui';
 import { api } from '@/lib/api';
 import { useFormat } from '@/lib/format';
 import { useT } from '@/lib/i18n';
@@ -219,6 +219,14 @@ export default function SettingsPage() {
                 options={(['streets', 'outdoor', 'satellite', 'dark'] as const).map((v) => ({ value: v, label: t(`common.map.styles.${v}`) }))}
               />
             </Field>
+          </div>
+          <div>
+            <Switch
+              checked={settings.thumbnailMaps}
+              onChange={(v) => set({ thumbnailMaps: v })}
+              label={t('platform.settings.thumbnailMaps')}
+            />
+            <p className="mt-1 pl-11 text-xs text-fg-3">{t('platform.settings.thumbnailMapsHint')}</p>
           </div>
         </Section>
 

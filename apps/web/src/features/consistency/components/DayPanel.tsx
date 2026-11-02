@@ -1,6 +1,7 @@
 import { Link } from 'react-router';
 import { HeartPulse, ListChecks, X } from 'lucide-react';
 import { workoutTitle, type RingValues } from '@cadence/shared';
+import { PlaceText } from '@/components/map/PlaceText';
 import { Card, CardHeader, EmptyState, ErrorState, IconButton, KeyValues, Skeleton } from '@/components/ui';
 import { useFormat, type Formatter } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
@@ -77,7 +78,15 @@ export function DayPanel({ day, onClose }: { day: string; onClose: () => void })
                       <Link to={`/activities/${w.id}`} className="block truncate text-sm font-medium text-fg hover:text-accent-fg hover:underline">
                         {workoutTitle(w, lang)}
                       </Link>
-                      <div className="text-xs text-fg-3">{fmt.time(w.startTs, w.tzMin)}</div>
+                      <div className="flex min-w-0 items-center gap-x-1 text-xs text-fg-3">
+                        <span className="shrink-0">{fmt.time(w.startTs, w.tzMin)}</span>
+                        {w.place && (
+                          <>
+                            <span aria-hidden>·</span>
+                            <PlaceText w={w} size={11} />
+                          </>
+                        )}
+                      </div>
                     </div>
                     <div className="shrink-0 text-right text-sm tabular text-fg-2">
                       {w.distanceM ? <div>{fmt.distance(w.distanceM)}</div> : null}

@@ -28,6 +28,7 @@ import {
   TH,
   cn,
 } from '@/components/ui';
+import { PlaceText } from '@/components/map/PlaceText';
 import { useFormat } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
 import { useSettings } from '@/lib/settings';
@@ -303,6 +304,7 @@ function ListTable({
                 </div>
                 <div className="mt-0.5 flex min-w-0 items-center gap-1.5 overflow-hidden pl-7.5 text-xs text-fg-3">
                   <span className="shrink-0">{sportLabel(w.sport, lang)}</span>
+                  {w.place && <PlaceText w={w} size={11} className="max-w-48" />}
                   {w.medals[0] && (
                     <MedalBadge rank={w.medals[0].rank} effort={w.medals[0].effort} sport={w.sport} elapsedS={w.medals[0].elapsedS} />
                   )}
@@ -365,8 +367,16 @@ function ListCards({ items, actions }: { items: ActivityListItem[]; actions: Row
               <Link to={`/activities/${w.id}`} className="block truncate font-semibold text-fg hover:text-accent-fg">
                 {workoutTitle(w, lang)}
               </Link>
-              <div className="text-xs text-fg-3">
-                {fmt.date(w.startTs, w.tzMin, 'dateTime')} · {sportLabel(w.sport, lang)}
+              <div className="flex min-w-0 items-center gap-x-1 text-xs text-fg-3">
+                <span className="shrink-0">
+                  {fmt.date(w.startTs, w.tzMin, 'dateTime')} · {sportLabel(w.sport, lang)}
+                </span>
+                {w.place && (
+                  <>
+                    <span aria-hidden>·</span>
+                    <PlaceText w={w} size={11} />
+                  </>
+                )}
               </div>
             </div>
             <Actions w={w} a={actions} />

@@ -28,6 +28,8 @@ export interface AthleteSettings {
   language: Language;
   theme: ThemePref;
   mapStyle: MapStylePref;
+  /** Map tiles behind the route previews in feeds and lists (loaded from the map provider); off = the route only. */
+  thumbnailMaps: boolean;
   /** 1 = Monday (default), 0 = Sunday. */
   weekStart: 0 | 1;
   maxHr: number | null;
@@ -48,6 +50,7 @@ export const DEFAULT_SETTINGS: AthleteSettings = {
   language: 'auto',
   theme: 'system',
   mapStyle: 'streets',
+  thumbnailMaps: true,
   weekStart: 1,
   maxHr: null,
   restingHr: null,
@@ -133,6 +136,10 @@ export interface WorkoutSummary {
   polyline: string | null;
   sourceName: string | null;
   notes: string | null;
+  /** Town or city district of the start (offline GeoNames gazetteer, English/local name), null without GPS. */
+  place?: string | null;
+  /** Where a one-way activity ended, when that is another place (A → B); null for loops. */
+  placeEnd?: string | null;
   /** True when the user hid the workout (only returned with includeHidden). */
   hidden?: boolean;
   /** Id of the workout this one duplicates (only returned with includeDuplicates). */

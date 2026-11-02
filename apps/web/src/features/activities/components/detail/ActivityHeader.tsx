@@ -15,6 +15,7 @@ import {
   Waypoints,
 } from 'lucide-react';
 import { workoutTitle, type ActivityNav, type WorkoutDetail } from '@cadence/shared';
+import { PlaceText } from '@/components/map/PlaceText';
 import { Badge, Button, ErrorState, IconButton, Input, Textarea, cn } from '@/components/ui';
 import { useFormat } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
@@ -201,6 +202,12 @@ export function ActivityHeader({ w, nav }: { w: WorkoutDetail; nav: ActivityNav 
             <span aria-hidden>·</span>
             <time dateTime={new Date(w.startTs * 1000).toISOString()}>{fmt.date(w.startTs, w.tzMin, 'weekday')}, {fmt.time(w.startTs, w.tzMin)}</time>
             <span className="text-xs">{zone}</span>
+            {w.place && (
+              <>
+                <span aria-hidden>·</span>
+                <PlaceText w={w} size={14} />
+              </>
+            )}
             {w.indoor && (
               <Badge icon={MapPinOff}>{t('activities.detail.indoor')}</Badge>
             )}
