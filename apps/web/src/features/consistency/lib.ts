@@ -42,8 +42,12 @@ export function formatCalendarValue(fmt: Formatter, t: TFunction, m: CalendarMet
 export function formatGoalValue(fmt: Formatter, t: TFunction, metric: GoalMetric, v: number): string {
   switch (metric) {
     case 'distance':
-    case 'longest':
       return fmt.distance(v, v > 0 && v < 10_000 ? 1 : 0);
+    case 'longest': {
+      // classic distances keep their decimal: 21.1 km, 42.2 km, 180.2 km
+      const shown = Math.round(fmt.distanceValue(v) * 10) / 10;
+      return fmt.distance(v, Number.isInteger(shown) ? 0 : 1);
+    }
     case 'time':
       return v < 60 ? (fmt.lang === 'de' ? '0 Min.' : '0m') : fmt.durationShort(v);
     case 'elevation':

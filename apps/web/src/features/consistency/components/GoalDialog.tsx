@@ -61,7 +61,7 @@ export function GoalDialog({
     setPeriod(g.period);
     setSport(g.sport ?? 'all');
     setMetric(g.metric);
-    setTarget(String(toInputValue(fmt, g.metric, g.target)));
+    setTarget(fieldValue(toInputValue(fmt, g.metric, g.target)));
     setError(null);
     setSaving(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -73,6 +73,10 @@ export function GoalDialog({
   const metricOptions = GOAL_METRICS.filter((m) => (m !== 'distance' && m !== 'longest') || hasDistance);
   const effectiveMetric: GoalMetric = metricOptions.includes(metric) ? metric : 'time';
 
+  // the input shows the locale's decimal separator (42,195 km in German, not "42.195")
+  function fieldValue(v: number): string {
+    return lang === 'de' ? String(v).replace('.', ',') : String(v);
+  }
   const parsed = Number(target.replace(',', '.'));
   const canonical = Number.isFinite(parsed) ? fromInputValue(fmt, effectiveMetric, parsed) : NaN;
   const invalid = !(canonical > 0) ? t('consistency.goals.form.invalid') : null;
@@ -86,7 +90,7 @@ export function GoalDialog({
   const pick = (m: GoalMetric, v: number, s?: string) => {
     if (s) setSport(s);
     setMetric(m);
-    setTarget(String(toInputValue(fmt, m, v)));
+    setTarget(fieldValue(toInputValue(fmt, m, v)));
   };
   const presetSports = effectiveMetric === 'longest' ? PRESET_SPORTS.filter((s) => sport === 'all' || s === sport) : [];
   const big = BIG_GOALS[effectiveMetric]?.[period] ?? [];

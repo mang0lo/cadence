@@ -253,7 +253,18 @@ export function suggestGoals(
   const weekB = bucketByPeriod(rows, 'week', weekStart);
   const monthB = bucketByPeriod(rows, 'month', weekStart);
   const out: GoalSuggestion[] = [];
+  // a bigger single effort early in the list: the next classic distance above the longest of the last year
+  // (10K → half → marathon …)
+  const longC = { period: 'year', metric: 'longest', sport: top } as const;
+  let longSuggestion: GoalSuggestion | null = null;
+  if (top && !existing.some((e) => sameGoal(e, longC))) {
+    const longest = goalValue(rowsIn(rows, plusDays(asOf, -364), asOf), 'longest', top);
+    const next = nextMilestone(top, longest);
+    if (longest > 0 && next) longSuggestion = { ...longC, target: next, average: longest, periods: 1 };
+  }
   for (const c of candidates) {
+    if (longSuggestion && out.length === 1) out.push(longSuggestion);
+    if (out.length >= max) break;
     if (existing.some((e) => sameGoal(e, c))) continue;
     let avg: AverageResult;
     if (c.period === 'year') {
@@ -270,13 +281,7 @@ export function suggestGoals(
     out.push({ ...c, target: niceTarget(c.metric, c.period, avg.average), average: avg.average, periods: avg.periods });
     if (out.length >= max) break;
   }
-  // a bigger single effort: the next classic distance above the longest of the last year (10K → half → marathon …)
-  const longC = { period: 'year', metric: 'longest', sport: top } as const;
-  if (top && out.length < max && !existing.some((e) => sameGoal(e, longC))) {
-    const longest = goalValue(rowsIn(rows, plusDays(asOf, -364), asOf), 'longest', top);
-    const next = nextMilestone(top, longest);
-    if (longest > 0 && next) out.push({ ...longC, target: next, average: longest, periods: 1 });
-  }
+  if (longSuggestion && !out.includes(longSuggestion) && out.length < max) out.push(longSuggestion);
   return out;
 }
 
