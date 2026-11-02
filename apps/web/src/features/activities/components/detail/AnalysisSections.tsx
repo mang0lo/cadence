@@ -5,6 +5,7 @@ import { Card, CardHeader, ErrorState, Skeleton, Table, TD, TH } from '@/compone
 import { useFormat } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
 import { SportBadge } from '@/lib/sports';
+import { WorkoutMapsCard } from '../../../maps/widgets';
 import { useSimilar } from '../../api';
 import type { Prepared } from '../../lib/streams';
 import { HrHistogram, HrZones, PaceHistogram } from './Distributions';
@@ -76,6 +77,7 @@ export function AnalysisSections({ w, P, analysis, analysisLoading, analysisErro
         <Laps w={w} P={P} analysis={analysis} onSelect={onSelect} />
         <HrZones w={w} zoneBounds={zoneBounds} />
         <BestEfforts w={w} P={P} onSelect={onSelect} />
+        {w.hasRoute && <WorkoutMapsCard workoutId={w.id} sport={w.sport} />}
       </Pair>
       {analysisError ? <ErrorState error={analysisError} className="mb-4" /> : null}
       <div className="mb-4 empty:hidden">

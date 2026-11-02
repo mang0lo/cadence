@@ -69,7 +69,7 @@ export function SportSelect({
       return { value: s.sport, label: n !== undefined ? `${sportLabel(s.sport, lang)} (${n})` : sportLabel(s.sport, lang) };
     }),
   ];
-  // Select's own `w-auto` loses against the `w-full` of the shared control class, so size it via a wrapper
+  // Select is full width by default; the wrapper sets the width of the filter control
   return (
     <div className={cn('w-60 max-w-full', className)}>
       <Select value={value} onChange={onChange} options={options} aria-label={t('progress.filters.sport')} />
