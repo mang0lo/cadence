@@ -10,6 +10,7 @@ import { useFormat, type Formatter } from '@/lib/format';
 import { useT } from '@/lib/i18n';
 import { addDays, todayKey } from '@/lib/time';
 import { useFitness, useSnapshot } from './api';
+import { signedRounded } from './format';
 import { FormZoneBadge } from './components/fitness';
 import { Spark } from './components/Spark';
 
@@ -41,8 +42,8 @@ function change(cur: number, prev: number, fmt: Formatter, t: (k: string) => str
   if (cur === 0 && prev === 0) return null;
   if (absolute) return <Delta value={cur - prev} text={fmt.signed(cur - prev)} />;
   if (prev <= 0) return cur > 0 ? <Delta value={1} text={t('progress.compare.new')} /> : <Delta value={0} text="±0 %" />;
-  const pct = (cur - prev) / prev;
-  return <Delta value={pct} text={`${fmt.signed(pct * 100, 0)} %`} />;
+  const text = `${signedRounded(fmt, ((cur - prev) / prev) * 100)} %`;
+  return <Delta value={text.startsWith('±') ? 0 : cur - prev} text={text} />;
 }
 
 /** This week vs last week (same weekdays) + 12-week sparkline. */

@@ -71,7 +71,7 @@ export function SportSelect({
   ];
   // Select's own `w-auto` loses against the `w-full` of the shared control class, so size it via a wrapper
   return (
-    <div className={cn('w-52 max-w-full', className)}>
+    <div className={cn('w-60 max-w-full', className)}>
       <Select value={value} onChange={onChange} options={options} aria-label={t('progress.filters.sport')} />
     </div>
   );

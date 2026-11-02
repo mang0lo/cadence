@@ -96,6 +96,12 @@ export interface TrendFormat {
   delta: (from: number, to: number) => string;
 }
 
+/** fmt.signed, but rounded before the sign is chosen (no "+0.0" / "−0" for tiny differences). */
+export function signedRounded(fmt: Formatter, v: number, digits = 0): string {
+  const r = Math.round(v * 10 ** digits) / 10 ** digits;
+  return fmt.signed(r === 0 ? 0 : r, digits);
+}
+
 function numberFormat(fmt: Formatter, unit: string, digits: number, scale = 1): TrendFormat {
   const withUnit = (s: string) => (unit ? `${s} ${unit}` : s);
   return {
@@ -104,7 +110,7 @@ function numberFormat(fmt: Formatter, unit: string, digits: number, scale = 1): 
     format: (v) => withUnit(fmt.num(v * scale, digits)),
     unit,
     inverse: false,
-    delta: (a, b) => withUnit(fmt.signed((b - a) * scale, digits)),
+    delta: (a, b) => withUnit(signedRounded(fmt, (b - a) * scale, digits)),
   };
 }
 
@@ -123,7 +129,7 @@ export function speedFormat(fmt: Formatter, sport: string): TrendFormat {
       unit,
       inverse: true,
       delta: (a, b) => {
-        const d = secs(b) - secs(a);
+        const d = Math.round(secs(b) - secs(a));
         return `${d > 0 ? '+' : d < 0 ? '−' : '±'}${clock(Math.abs(d))} ${unit}`;
       },
     };
@@ -164,6 +170,6 @@ export function formatChange(
   tf: TrendFormat,
   unsigned = false,
 ): string {
-  if (kind === 'relative') return unsigned ? `${fmt.num(Math.abs(change) * 100, 1)} %` : `${fmt.signed(change * 100, 1)} %`;
+  if (kind === 'relative') return unsigned ? `${fmt.num(Math.abs(change) * 100, 1)} %` : `${signedRounded(fmt, change * 100, 1)} %`;
   return unsigned ? tf.format(Math.abs(change)) : tf.delta(0, change);
 }

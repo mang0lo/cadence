@@ -45,6 +45,7 @@ import { Badge, Card, EmptyState, ErrorState, Hint, Stat } from '@/components/ui
 import { useFormat, type Formatter } from '@/lib/format';
 import { useT, type TFunction } from '@/lib/i18n';
 import { bucketLabel, chartLegend, dayMs, timeAxisLabel } from '../chart';
+import { signedRounded } from '../format';
 import { ChartSkeleton } from './common';
 
 type BadgeTone = 'neutral' | 'accent' | 'good' | 'warning' | 'critical';
@@ -81,7 +82,7 @@ export function FormZoneBadge({ zone }: { zone: ProgressFormZone }) {
   );
 }
 
-const signed1 = (fmt: Formatter, v: number) => fmt.signed(v, Math.abs(v) < 10 ? 1 : 0);
+const signed1 = (fmt: Formatter, v: number) => signedRounded(fmt, v, Math.abs(v) < 10 ? 1 : 0);
 
 // ---------------------------------------------------------------------------
 // Stat tiles

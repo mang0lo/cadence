@@ -12,7 +12,7 @@ import { useI18n, useT, type TFunction } from '@/lib/i18n';
 import { sportLabel } from '@/lib/sports';
 import { useYoy } from '../api';
 import { DAY_MS, msDay, chartLegend } from '../chart';
-import { formatVolume, volumeAxisLabel, volumeChartValue } from '../format';
+import { formatVolume, signedRounded, volumeAxisLabel, volumeChartValue } from '../format';
 import { ChartSkeleton } from './common';
 
 const HEIGHT = 330;
@@ -133,7 +133,7 @@ export function YoyCard({ sport, metric }: { sport: string; metric: ProgressVolu
           Math.abs(c.diff) < 1e-6
             ? t('progress.yoy.even', { year: c.previousYear })
             : t(c.diff > 0 ? 'progress.yoy.ahead' : 'progress.yoy.behind', {
-                value: `${formatVolume(fmt, metric, Math.abs(c.diff))}${c.pct !== null ? ` (${fmt.signed(c.pct * 100, 0)} %)` : ''}`,
+                value: `${formatVolume(fmt, metric, Math.abs(c.diff))}${c.pct !== null ? ` (${signedRounded(fmt, c.pct * 100)} %)` : ''}`,
                 year: c.previousYear,
               })
         }

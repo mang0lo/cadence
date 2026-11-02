@@ -28,6 +28,7 @@ export default function FitnessPage() {
             label={t('progress.filters.period')}
             items={PERIOD_PRESETS.map((p) => ({ value: p, label: t(`progress.filters.periods.${p}`) }))}
           />
+          {f.sport === 'all' && <span className="text-xs text-fg-3">{t('progress.fitness.sportHint')}</span>}
         </FilterBar>
       </PageHeader>
       {overview.error || fitness.error ? (

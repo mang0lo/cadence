@@ -6,7 +6,7 @@ import { useFormat, type Formatter } from '@/lib/format';
 import { useT } from '@/lib/i18n';
 import { addDays, todayKey } from '@/lib/time';
 import { useCompare } from '../api';
-import { speedFormat } from '../format';
+import { signedRounded, speedFormat } from '../format';
 import { ChangeBadge } from './common';
 
 type Mode = 'rolling' | 'week' | 'month' | 'year' | 'custom';
@@ -66,7 +66,7 @@ function rowsFor(cur: ProgressCompareTotals, prev: ProgressCompareTotals, sport:
     format: fmt.hr,
     change: 'abs',
     better: null,
-    delta: (a, b) => `${fmt.signed(b - a)} bpm`,
+    delta: (a, b) => `${signedRounded(fmt, b - a)} bpm`,
   });
   if (hasDistance)
     rows.push({ key: 'longest', label: t('progress.compare.metrics.longest'), current: cur.longestM, previous: prev.longestM, format: (v) => fmt.distance(v), change: 'pct', better: 'up' });
@@ -85,12 +85,15 @@ function ChangeCell({ row, t, fmt }: { row: Row; t: (k: string) => string; fmt: 
   const { current: c, previous: p } = row;
   if (c === null || p === null) return <span className="text-fg-3">–</span>;
   if (row.change === 'abs') {
-    if (Math.abs(c - p) < 1e-9) return <ChangeBadge value={0} text="±0" better={row.better} />;
-    return <ChangeBadge value={row.deltaValue ? row.deltaValue(p, c) : c - p} text={row.delta!(p, c)} better={row.better} />;
+    const text = row.delta!(p, c);
+    // formatters print '±' when the rounded difference is zero
+    if (Math.abs(c - p) < 1e-9 || text.startsWith('±')) return <ChangeBadge value={0} text={text} better={null} />;
+    return <ChangeBadge value={row.deltaValue ? row.deltaValue(p, c) : c - p} text={text} better={row.better} />;
   }
   if (p === 0) return c > 0 ? <ChangeBadge value={1} text={t('progress.compare.new')} better={row.better} /> : <span className="text-fg-3">–</span>;
   const pct = (c - p) / p;
-  return <ChangeBadge value={pct} text={`${fmt.signed(pct * 100, 0)} %`} better={row.better} />;
+  const text = `${signedRounded(fmt, pct * 100)} %`;
+  return <ChangeBadge value={text.startsWith('±') ? 0 : pct} text={text} better={text.startsWith('±') ? null : row.better} />;
 }
 
 export function CompareCard({ sport }: { sport: string }) {
