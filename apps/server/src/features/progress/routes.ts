@@ -1,11 +1,12 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import type { ProgressPreferences } from '@cadence/shared';
+import { PROGRESS_POWER_COMPARES, PROGRESS_POWER_PERIODS, type ProgressPreferences } from '@cadence/shared';
 import { setSetting } from '../../core/settings';
 import { badRequest, notFound } from '../../lib/http';
 import { addDays, parseDay } from '../../lib/time';
 import { firstActivityDay, resolveToday, zDay, zSport, zVolumeMetric } from './common';
 import { fitness, physiology } from './fitness';
+import { ftpEstimate, powerCurve } from './power';
 import { effortHistory, predictions, records } from './records';
 import { getPreferences, intensity, paceAtHr, PREFERENCES_KEY, trends } from './trends';
 import { compare, overview, volume, weeklySnapshot, yearOverYear } from './volume';
@@ -127,6 +128,31 @@ export default async function progressRoutes(app: FastifyInstance) {
     const q = rangeQuery.parse(req.query);
     const r = range(app, req.athleteId, { ...q, sport: null });
     return physiology(app.db, req.athleteId, { fromDay: r.fromDay, toDay: r.toDay });
+  });
+
+  app.get('/power/curve', async (req) => {
+    const q = z
+      .object({
+        sport: zSport,
+        period: z.enum(PROGRESS_POWER_PERIODS).default('90d'),
+        year: z.coerce.number().int().min(1970).max(2200).optional(),
+        fromDay: zDay.optional(),
+        toDay: zDay.optional(),
+        compare: z.enum(PROGRESS_POWER_COMPARES).default('allTime'),
+        today: zDay.optional(),
+      })
+      .parse(req.query);
+    if (q.period === 'custom') {
+      if (!q.fromDay || !q.toDay) throw badRequest('custom period needs fromDay and toDay');
+      if (q.fromDay > q.toDay) throw badRequest('fromDay must not be after toDay');
+      if (parseDay(q.toDay)! - parseDay(q.fromDay)! > MAX_RANGE_DAYS) throw badRequest('Range too long');
+    }
+    return powerCurve(app.db, req.athleteId, { ...q, today: resolveToday(q.today) });
+  });
+
+  app.get('/power/ftp', async (req) => {
+    const q = z.object({ sport: zSport, today: zDay.optional() }).parse(req.query);
+    return ftpEstimate(app.db, req.athleteId, { sport: q.sport, today: resolveToday(q.today) });
   });
 
   app.get('/preferences', async (req): Promise<ProgressPreferences> => getPreferences(app.db, req.athleteId));

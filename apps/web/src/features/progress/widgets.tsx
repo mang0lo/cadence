@@ -4,15 +4,17 @@
  */
 import type { ReactNode } from 'react';
 import { Link } from 'react-router';
-import { ArrowRight, CalendarDays, Gauge } from 'lucide-react';
+import { ArrowRight, CalendarDays, Gauge, Zap } from 'lucide-react';
 import { Card, CardHeader, Delta, ErrorState, Skeleton, Stat } from '@/components/ui';
 import { useFormat, type Formatter } from '@/lib/format';
-import { useT } from '@/lib/i18n';
+import { useI18n, useT } from '@/lib/i18n';
+import { sportLabel } from '@/lib/sports';
 import { addDays, todayKey } from '@/lib/time';
-import { useFitness, useSnapshot } from './api';
+import { useFitness, useFtpEstimate, usePowerCurve, useSnapshot } from './api';
 import { signedRounded } from './format';
 import { FormZoneBadge } from './components/FormZoneBadge';
 import { Spark } from './components/Spark';
+import { durationLabel, isCycling } from './power';
 
 function DetailsLink({ to, label }: { to: string; label: string }) {
   return (
@@ -165,6 +167,67 @@ export function FitnessWidget() {
         <Spark data={d.days.map((x) => x.ctl)} height={32} ariaLabel={t('progress.widgets.fitness.sparkline')} />
         <div className="mt-1 text-[11px] text-fg-3">{t('progress.widgets.fitness.sparkline')}</div>
       </div>
+    </Card>
+  );
+}
+
+/**
+ * FTP (threshold) estimate and the 5 / 20 minute peak power of the same window (6 weeks, or 90 days when the
+ * estimate had to fall back), for the default power sport. Renders nothing without power data (no power meter,
+ * no Apple Watch running power).
+ */
+export function PowerWidget() {
+  const t = useT();
+  const fmt = useFormat();
+  const { lang } = useI18n();
+  const ftp = useFtpEstimate(null);
+  const period = ftp.data?.windowDays === 90 ? '90d' : '42d';
+  const curve = usePowerCurve(ftp.data ? { sport: ftp.data.sport, period, compare: 'none' } : null);
+  const title = t('progress.widgets.power.title');
+  const error = ftp.error ?? curve.error;
+  if (error)
+    return (
+      <Card>
+        <CardHeader title={title} icon={Zap} />
+        <ErrorState error={error} />
+      </Card>
+    );
+  if (!curve.data || !ftp.data) return <WidgetSkeleton title={title} icon={Zap} />;
+  if (!curve.data.sports.length) return null;
+  const d = ftp.data;
+  const peak = (s: number) => curve.data!.current.points.find((p) => p.durationS === s);
+  const tile = (s: number) => {
+    const p = peak(s);
+    return (
+      <Stat
+        size="sm"
+        label={durationLabel(t, fmt, s)}
+        value={p ? fmt.int(p.watts) : '–'}
+        unit={p ? 'W' : undefined}
+        hint={p?.wkg != null ? `${fmt.num(p.wkg, 1)} W/kg` : undefined}
+      />
+    );
+  };
+  return (
+    <Card>
+      <CardHeader
+        title={title}
+        subtitle={sportLabel(d.sport, lang)}
+        icon={Zap}
+        actions={<DetailsLink to={`/progress/power?sport=${d.sport}`} label={t('progress.widgets.power.details')} />}
+      />
+      <div className="grid grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)] gap-3">
+        <Stat
+          size="sm"
+          label={t(isCycling(d.sport) ? 'progress.widgets.power.ftp' : 'progress.widgets.power.threshold')}
+          value={d.ftp !== null ? fmt.int(d.ftp) : '–'}
+          unit={d.ftp !== null ? 'W' : undefined}
+          hint={d.ftpWkg !== null ? `${fmt.num(d.ftpWkg, 2)} W/kg` : undefined}
+        />
+        {tile(300)}
+        {tile(1200)}
+      </div>
+      <p className="mt-3 text-[11px] text-fg-3">{t(period === '90d' ? 'progress.widgets.power.note90' : 'progress.widgets.power.note')}</p>
     </Card>
   );
 }
