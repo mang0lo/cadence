@@ -3,7 +3,25 @@
 All notable changes to Cadence. Versions follow [semantic versioning](https://semver.org); every `v*` tag builds a
 release (see `.github/workflows/release.yml`), whose notes are taken from the matching section below.
 
-## [Unreleased]
+## [0.2.0] – 2026-11-03
+
+Compare activities, share them as an image, a power curve with FTP estimate, a daily readiness score and a summary
+of what is new after every import — plus the fixes from testing 0.1.0.
+
+> 🇩🇪 **Neu in 0.2.0:** Zwei Aktivitäten vergleichen (wer war wo vorne), Teilen-Bild mit Karte und Werten,
+> Leistungskurve mit FTP-Schätzung, tägliche Erholungs-Einschätzung, „Was ist neu“ nach jedem Import, Ort an jeder
+> Aktivität, CSV-Export, Kartenhintergrund in den Vorschauen, Marathon- und Ironman-Ziele. Behoben: Trainings, die
+> pausiert und woanders fortgesetzt wurden (z. B. nach einer Zugfahrt), ziehen keinen Strich mehr über die Karte, und
+> Strecken heißen nach dem echten Ort statt immer „Berlin“.
+
+### Install
+
+- **Mac app**: download `Cadence-0.2.0.dmg` below and drag Cadence into Applications (replaces 0.1.0, your data is
+  kept). Requires macOS 14+ on Apple silicon. Not notarized yet: on first launch open **System Settings → Privacy &
+  Security** and click **Open Anyway** (or run `xattr -dr com.apple.quarantine /Applications/Cadence.app`).
+- **Server**: `ghcr.io/mang0lo/cadence:v0.2.0` (also `:latest`) — the repository moved to `mang0lo/cadence`, so the
+  image moved as well.
+- After the update Cadence rebuilds its analysis once in the background (progress on the Import page).
 
 ### Fixed
 
@@ -17,6 +35,18 @@ release (see `.github/workflows/release.yml`), whose notes are taken from the ma
 
 ### Added
 
+- **Compare two activities**: pick another effort of the same route, a similar activity or any activity of the
+  sport; both routes on one map with a synchronized replay ("A ahead by 67 m"), the time gap over the distance, pace,
+  heart rate and elevation of both, and a side-by-side summary with the differences.
+- **Share image**: a picture of an activity with the map, route and key stats — square, portrait or story format,
+  map / plain / transparent sticker background, light or dark; privacy zones are cut out of the route by default.
+  Save, copy or share it (the Mac app saves it to Downloads).
+- **Power curve** (Progress → Power curve): best average power from 1 s to 5 h for rides and runs with power, per
+  period and against your all-time bests or the previous period, in W or W/kg; an **FTP estimate** (95 % of the best
+  20 minutes) you can adopt with one click, critical power and W′ when the data fits, and the FTP history.
+- **Readiness** (Health → Readiness): a daily 0–100 estimate from HRV, resting heart rate, sleep, training load and
+  overnight vitals, each compared with your own normal range of the last 60 days, with the factors, a trend and a
+  dashboard widget. An estimate, not medical advice.
 - **What's new after an import**: the import screen and a note in the sidebar show the new activities by sport, the
   newest ones, new personal records and podiums, trophies, explorer tiles, recurring routes, route best times and
   segment PRs.

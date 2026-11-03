@@ -31,17 +31,21 @@
   elevation / pace / heart-rate / cadence / power charts with section selection, splits, laps, HR zones, best efforts
   with medals, aerobic decoupling, efficiency factor, grade-adjusted pace, power (NP, IF, TSS, peaks), climbs,
   distributions, a comparison with similar activities, the route rank and segment efforts, and GPX export.
+  **Compare two activities** on one map with a synchronized replay and the time gap over the distance, and create a
+  **share image** (map, route and stats; privacy zones cut out).
 - **Progress over time**: weekly / monthly / yearly volume, year over year, period comparison, per-activity trends
   (pace, heart rate, efficiency, cadence, power, running dynamics) with trend lines, pace at a given heart rate and
   intensity distribution; records per distance with progression, top 10 and a race predictor; fitness, fatigue &
-  form with ramp-rate warnings, VO2max with fitness level, resting HR and HRV.
+  form with ramp-rate warnings, VO2max with fitness level, resting HR and HRV; a **power curve** (1 s – 5 h) with FTP
+  estimate, critical power and FTP history.
 - **Consistency**: calendar heatmap with day details, daily / weekly / activity-ring streaks, a consistency score,
   active days per month, a weekday × hour punchcard and ring history; goals with on-track projection, history and
   suggestions; about 100 trophies (bronze / silver / gold) and monthly challenges; a Wrapped-style year in review.
 - **Maps**: personal heatmap with glow themes and time-lapse, explorer tiles (zoom 14 and 17, max square and max
   cluster), automatically detected recurring routes with time trends, and personal segments with leaderboards that
   are matched against all your activities.
-- **Health**: key metrics with 30-day trends; sleep (nights merged from all sources, stages, hypnogram, regularity,
+- **Health**: a daily **readiness** estimate from HRV, resting HR, sleep and training load against your personal
+  baselines; key metrics with 30-day trends; sleep (nights merged from all sources, stages, hypnogram, regularity,
   overnight vitals); heart (resting and walking HR, HRV, recovery, daily range, intraday, notifications); body
   (weight, BMI, body fat, blood pressure); an explorer for every record type in the export and an ECG viewer on
   paper grid.
@@ -123,7 +127,7 @@ Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (conventions, feature modules,
 - Multi-user accounts and sharing on the server (the schema is already athlete-scoped)
 - Live sync from the iPhone (e.g. via the *Health Auto Export* app's REST integration) instead of manual exports
 - Native iOS companion reading HealthKit directly
-- Apply privacy zones to shared/exported routes
+- Apply privacy zones to GPX exports (share images already use them)
 
 ## License
 
