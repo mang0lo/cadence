@@ -20,11 +20,13 @@
 - **Imports everything** in Apple Health's export: every record type, workouts (incl. iOS 16+ multi-sport
   activities and events), GPS routes, ECGs, activity rings, blood-pressure correlations, audiograms and clinical
   records — lossless, streamed (multi-GB exports in seconds) and idempotent: re-importing a newer export only adds
-  what is new.
+  what is new. After every import a **what's new** summary lists the new activities, records, trophies, explorer
+  tiles, route best times and segment PRs.
 - **Dashboard**: activity feed with route thumbnails, PR medals and sport-specific stats; athlete card with this
   week and all-time totals; widgets for this week, fitness & form, streaks, goals, the last 18 weeks, a health
   snapshot and explorer tiles.
-- **Activities**: filterable, sortable list (sport, period, search, GPS) with quick actions. The activity page has a
+- **Activities**: filterable, sortable list (sport, period, search, GPS) with quick actions and **CSV export**; every
+  activity shows where it took place (offline place names, "Rostock → Berlin" for one-way trips). The activity page has a
   **map replay** (1×–300×, follow camera, 3D flyover, route colored by pace, heart rate, grade or HR zones), synced
   elevation / pace / heart-rate / cadence / power charts with section selection, splits, laps, HR zones, best efforts
   with medals, aerobic decoupling, efficiency factor, grade-adjusted pace, power (NP, IF, TSS, peaks), climbs,
