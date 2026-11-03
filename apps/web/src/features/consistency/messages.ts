@@ -3,6 +3,10 @@ import type { Dictionary } from '@/lib/i18n';
 /** i18n namespace 'consistency' → t('consistency.…'). Always provide en + de (du-Form). */
 export const messages: Dictionary = {
   en: {
+    whatsNew: {
+      trophies: { one: '{count} new trophy', other: '{count} new trophies' },
+      allTrophies: 'All trophies',
+    },
     nav: {
       consistency: 'Consistency',
       goals: 'Goals',
@@ -423,6 +427,10 @@ export const messages: Dictionary = {
     },
   },
   de: {
+    whatsNew: {
+      trophies: { one: '{count} neue Trophäe', other: '{count} neue Trophäen' },
+      allTrophies: 'Alle Trophäen',
+    },
     nav: {
       consistency: 'Konstanz',
       goals: 'Ziele',

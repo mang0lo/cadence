@@ -1,3 +1,4 @@
+import { lazy } from 'react';
 import { CalendarCheck, Target, Trophy, Sparkles } from 'lucide-react';
 import type { FeatureModule } from '../types';
 import { messages } from './messages';
@@ -24,6 +25,7 @@ const feature: FeatureModule = {
     { path: '/trophies', labelKey: 'consistency.nav.trophies', icon: Trophy, group: 'habits', order: 20 },
     { path: '/year', labelKey: 'consistency.nav.year', icon: Sparkles, group: 'habits', order: 30 },
   ],
+  whatsNew: lazy(() => import('./components/WhatsNewTrophies')),
 };
 
 export default feature;

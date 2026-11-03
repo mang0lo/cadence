@@ -2,6 +2,7 @@ import type { Feature } from '../types';
 import { migrations } from './migrations';
 import routes from './routes';
 import { achievementsStep } from './trophies';
+import { consistencyWhatsNew } from './whats-new';
 
 /**
  * "consistency" feature module (server side): calendar, streaks, consistency score, goals, trophies and
@@ -17,6 +18,7 @@ const feature: Feature = {
   routes,
   // goals are user-written: keep them when the user deletes all imported data
   keepOnReset: ['consistency_goals'],
+  whatsNew: consistencyWhatsNew,
 };
 
 export default feature;

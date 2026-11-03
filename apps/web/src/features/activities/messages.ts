@@ -3,6 +3,9 @@ import type { Dictionary } from '@/lib/i18n';
 /** i18n namespace 'activities' → t('activities.…'). Always provide en + de. */
 export const messages: Dictionary = {
   en: {
+    whatsNew: {
+      records: 'Records',
+    },
     nav: {
       dashboard: 'Dashboard',
       activities: 'Activities',
@@ -364,6 +367,9 @@ export const messages: Dictionary = {
     },
   },
   de: {
+    whatsNew: {
+      records: 'Bestleistungen',
+    },
     nav: {
       dashboard: 'Dashboard',
       activities: 'Aktivitäten',

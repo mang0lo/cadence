@@ -1,5 +1,7 @@
+import type { ComponentType } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import type { RouteObject } from 'react-router';
+import type { ImportHighlight } from '@cadence/shared';
 import type { Dictionary } from '@/lib/i18n';
 
 export type NavGroup = 'training' | 'habits' | 'explore' | 'health' | 'app';
@@ -27,4 +29,13 @@ export interface FeatureModule {
   routes: RouteObject[];
   nav: NavItem[];
   messages: Dictionary;
+  /**
+   * Renders this feature's highlights in the summary after an import ("what's new": records, trophies …), i.e. the
+   * ImportHighlights whose `feature` is this module's name. Use React.lazy: it is only needed on the import screen.
+   */
+  whatsNew?: ComponentType<WhatsNewProps>;
+}
+
+export interface WhatsNewProps {
+  items: ImportHighlight[];
 }

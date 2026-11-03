@@ -33,6 +33,8 @@ export interface ImportResult {
   stats: ImportStats;
   /** Workouts that are new or got a new route → input for derive. */
   changedWorkoutIds: number[];
+  /** Workouts inserted by this import (a subset of changedWorkoutIds). */
+  newWorkoutIds: number[];
   /** Earliest local day with new data (minus one day margin), or null if nothing changed. */
   sinceDay: string | null;
   /** record type id → earliest start_ts of newly inserted records. */
@@ -118,6 +120,7 @@ export async function runImport(o: RunImportOptions): Promise<ImportResult> {
     return {
       stats,
       changedWorkoutIds: [...changed].sort((a, b) => a - b),
+      newWorkoutIds: [...writer.newWorkoutIds].sort((a, b) => a - b),
       sinceDay,
       typeSince: writer.typeMinTs,
       elapsedMs: Date.now() - t0,

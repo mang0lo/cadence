@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigation } from 'react-router';
-import { Menu, Moon, Sun, X } from 'lucide-react';
+import { Menu, Moon, Sparkles, Sun, X } from 'lucide-react';
 import { featureModules } from '@/features/registry';
 import type { NavGroup, NavItem } from '@/features/types';
 import { useImportJobs } from '@/features/platform/useImportJobs';
+import { latestSummaryJob, markSummarySeen, summaryCounts, useSeenSummaryId } from '@/features/platform/whatsNewState';
 import { cn, ProgressBar } from '@/components/ui';
 import { useT } from '@/lib/i18n';
 import { useSettings } from '@/lib/settings';
@@ -53,10 +54,48 @@ function NavEntry({ item, onNavigate }: { item: NavItem; onNavigate?: () => void
   );
 }
 
+/** Finished import with news the user has not looked at yet (from the last 3 days). */
+function WhatsNewNote() {
+  const t = useT();
+  const { jobs } = useImportJobs();
+  const seen = useSeenSummaryId();
+  const job = latestSummaryJob(jobs);
+  if (!job || job.id === seen || job.stats.summary.count === 0) return null;
+  if (!job.finishedAt || Date.now() / 1000 - job.finishedAt > 3 * 86_400) return null;
+  const s = job.stats.summary;
+  const c = summaryCounts(s);
+  const parts = [
+    t(s.initial ? 'platform.whatsNew.initial' : 'platform.whatsNew.activities', { count: s.count, n: s.count }),
+    c.records ? t('platform.whatsNew.records', { count: c.records }) : null,
+    c.trophies ? t('platform.whatsNew.trophies', { count: c.trophies }) : null,
+  ].filter(Boolean);
+  return (
+    <div className="relative rounded-control border border-border bg-surface-2 p-2.5 pr-8 text-xs">
+      <Link to="/import" className="block">
+        <div className="mb-0.5 flex items-center gap-1.5 font-medium text-fg">
+          <Sparkles size={13} className="text-accent-fg" aria-hidden />
+          {t('platform.whatsNew.done')}
+        </div>
+        <div className="text-fg-2">{parts.join(' · ')}</div>
+        <div className="mt-1 font-medium text-accent-fg">{t('platform.whatsNew.show')}</div>
+      </Link>
+      <button
+        type="button"
+        onClick={() => markSummarySeen(job.id)}
+        className="absolute right-1.5 top-1.5 grid size-6 place-items-center rounded-control text-fg-3 hover:bg-surface-3 hover:text-fg"
+        aria-label={t('platform.whatsNew.dismiss')}
+        title={t('platform.whatsNew.dismiss')}
+      >
+        <X size={13} aria-hidden />
+      </button>
+    </div>
+  );
+}
+
 function ImportIndicator() {
   const t = useT();
   const { active } = useImportJobs();
-  if (!active) return null;
+  if (!active) return <WhatsNewNote />;
   return (
     <Link to="/import" className="block rounded-control border border-border bg-surface-2 p-2.5 text-xs">
       <div className="mb-1.5 flex items-center justify-between font-medium text-fg">

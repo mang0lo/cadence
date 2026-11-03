@@ -3,6 +3,18 @@ import type { Dictionary } from '@/lib/i18n';
 /** i18n namespace 'maps' → t('maps.…'). Always provide en + de. */
 export const messages: Dictionary = {
   en: {
+    whatsNew: {
+      title: 'Maps',
+      tiles: { one: '{count} new explorer tile', other: '{count} new explorer tiles' },
+      squadratinhos: { one: '{count} new at zoom 17', other: '{count} new at zoom 17' },
+      newRoute: 'New recurring route:',
+      efforts: { one: '{count} effort', other: '{count} efforts' },
+      routeBest: 'Best time on',
+      faster: '{time} faster',
+      segmentPr: 'Segment PR on',
+      segmentEfforts: { one: '{count} segment effort', other: '{count} segment efforts' },
+      onSegments: { one: 'on {count} segment', other: 'on {count} segments' },
+    },
     nav: {
       heatmap: 'Heatmap',
       explorer: 'Explorer',
@@ -200,6 +212,18 @@ export const messages: Dictionary = {
     },
   },
   de: {
+    whatsNew: {
+      title: 'Karten',
+      tiles: { one: '{count} neue Explorer-Kachel', other: '{count} neue Explorer-Kacheln' },
+      squadratinhos: { one: '{count} neu bei Zoom 17', other: '{count} neu bei Zoom 17' },
+      newRoute: 'Neue wiederkehrende Strecke:',
+      efforts: { one: '{count}-mal', other: '{count}-mal' },
+      routeBest: 'Bestzeit auf',
+      faster: '{time} schneller',
+      segmentPr: 'Segment-Bestzeit auf',
+      segmentEfforts: { one: '{count} Segment-Versuch', other: '{count} Segment-Versuche' },
+      onSegments: { one: 'auf {count} Segment', other: 'auf {count} Segmenten' },
+    },
     nav: {
       heatmap: 'Heatmap',
       explorer: 'Explorer',

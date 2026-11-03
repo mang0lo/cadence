@@ -1,3 +1,4 @@
+import { lazy } from 'react';
 import { LayoutDashboard, ListChecks } from 'lucide-react';
 import type { FeatureModule } from '../types';
 import { messages } from './messages';
@@ -15,6 +16,7 @@ const feature: FeatureModule = {
     { path: '/', labelKey: 'activities.nav.dashboard', icon: LayoutDashboard, group: 'training', order: 0, end: true },
     { path: '/activities', labelKey: 'activities.nav.activities', icon: ListChecks, group: 'training', order: 10 },
   ],
+  whatsNew: lazy(() => import('./components/WhatsNewRecords')),
 };
 
 export default feature;

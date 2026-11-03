@@ -360,6 +360,49 @@ export interface ImportStats {
   workoutsDerived?: number;
   /** Seconds spent per phase, e.g. { parse: 12.3, routes: 2.1, derive: 8.4 }. */
   phaseSeconds?: Partial<Record<ImportPhase, number>>;
+  /** What the import brought (import jobs that finished, see ImportSummary). */
+  summary?: ImportSummary;
+}
+
+/** A new activity in an import summary (slim: summaries are kept with every job). */
+export interface ImportSummaryWorkout {
+  id: number;
+  name: string;
+  sport: string;
+  startTs: number;
+  tzMin: number;
+  distanceM: number | null;
+  movingS: number;
+  place: string | null;
+}
+
+/**
+ * Something a feature module found noteworthy in the new activities (a personal record, a trophy, new explorer
+ * tiles …). The web module of `feature` renders it; `data` holds values in canonical units.
+ */
+export interface ImportHighlight {
+  feature: string;
+  kind: string;
+  workoutId: number | null;
+  /** The activity behind workoutId (added by the summary, for titles and links). */
+  workout?: { id: number; name: string; sport: string; startTs: number; tzMin: number } | null;
+  data: Record<string, string | number | boolean | null>;
+}
+
+/** "What's new" after an import: the new visible activities and their highlights. */
+export interface ImportSummary {
+  /** Visible new activities (no duplicates, not hidden). */
+  count: number;
+  /** True for the first import (everything is new, so records and tiles are not listed). */
+  initial: boolean;
+  /** Per sport, most activities first. */
+  sports: { sport: string; count: number; distanceM: number; movingS: number }[];
+  /** Local days of the oldest and newest new activity. */
+  fromDay: string | null;
+  toDay: string | null;
+  /** The newest new activities (max 5). */
+  latest: ImportSummaryWorkout[];
+  highlights: ImportHighlight[];
 }
 
 export interface ImportJob {

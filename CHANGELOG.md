@@ -17,7 +17,14 @@ release (see `.github/workflows/release.yml`), whose notes are taken from the ma
 
 ### Added
 
-- **Map background in route previews** (feed, lists, routes, segments, records), following your map style and theme.
+- **What's new after an import**: the import screen and a note in the sidebar show the new activities by sport, the
+  newest ones, new personal records and podiums, trophies, explorer tiles, recurring routes, route best times and
+  segment PRs.
+- **Place of every activity** in the feed, the activity list and the activity page ("Warnemünde", "Rostock → Berlin"
+  for one-way activities), from the offline gazetteer.
+- **CSV export** of the activity list (current filters, your units and language; German files open directly in Excel).
+- **Map background in route previews** (feed, lists, routes, segments, records), following your map style and theme;
+  can be turned off in the settings (no tile requests).
 - **Goals for a single activity** ("longest activity"): run a marathon this year, swim 3.8 km, ride 180 km … with quick
   picks for 5K to 100 km and the Olympic / 70.3 / Ironman distances; **bigger goals** presets per metric and period;
   a suggestion for your next classic distance.
