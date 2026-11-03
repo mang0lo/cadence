@@ -1,3 +1,4 @@
+import { heartMetric } from '../../core/sources';
 /** Year in review ("Wrapped"): totals, sports, months, highlights, rhythm, streaks, PRs, rings and health. */
 import type {
   YearEffort,
@@ -185,7 +186,10 @@ interface MetricAgg {
 }
 
 function metricAggs(db: Db, athleteId: number, from: string, to: string): Map<string, MetricAgg> {
-  const metrics = ['RestingHeartRate', 'HeartRateVariabilitySDNN', 'VO2Max', 'StepCount', 'ActiveEnergyBurned', 'FlightsClimbed'].map(HK);
+  const metrics = [
+    ...(['restingHr', 'hrv', 'vo2max', 'steps'] as const).map((m) => heartMetric(db, athleteId, m)),
+    ...['ActiveEnergyBurned', 'FlightsClimbed'].map(HK),
+  ];
   return new Map(
     all<{ metric: string } & MetricAgg>(
       db,
@@ -215,14 +219,18 @@ function health(db: Db, athleteId: number, range: [string, string], prevRange: [
   const cur = metricAggs(db, athleteId, ...range);
   const prev = metricAggs(db, athleteId, ...prevRange);
   const hv = (metric: string, field: keyof MetricAgg): YearHealthValue => ({
-    value: cur.get(HK(metric))?.[field] ?? null,
-    prev: prev.get(HK(metric))?.[field] ?? null,
+    value: cur.get(metric.startsWith('COROS') ? metric : HK(metric))?.[field] ?? null,
+    prev: prev.get(metric.startsWith('COROS') ? metric : HK(metric))?.[field] ?? null,
   });
+  const heart = (m: 'restingHr' | 'hrv' | 'vo2max' | 'steps') => {
+    const id = heartMetric(db, athleteId, m);
+    return id.startsWith('COROS') ? id : id.replace('HKQuantityTypeIdentifier', '');
+  };
   const best = get<{ day: string; value: number }>(
     db,
     `SELECT day, value FROM daily_metrics WHERE athlete_id = ? AND metric = ? AND day >= ? AND day <= ?
      ORDER BY value DESC LIMIT 1`,
-    [athleteId, HK('StepCount'), ...range],
+    [athleteId, heartMetric(db, athleteId, 'steps'), ...range],
   );
   const weight = (dir: 'ASC' | 'DESC') =>
     get<{ value: number }>(
@@ -232,11 +240,11 @@ function health(db: Db, athleteId: number, range: [string, string], prevRange: [
       [athleteId, HK('BodyMass'), ...range],
     )?.value ?? null;
   return {
-    restingHr: hv('RestingHeartRate', 'avg'),
-    hrv: hv('HeartRateVariabilitySDNN', 'avg'),
-    vo2max: hv('VO2Max', 'max'),
-    stepsPerDay: hv('StepCount', 'avg'),
-    stepsTotal: cur.get(HK('StepCount'))?.sum ?? null,
+    restingHr: hv(heart('restingHr'), 'avg'),
+    hrv: hv(heart('hrv'), 'avg'),
+    vo2max: hv(heart('vo2max'), 'max'),
+    stepsPerDay: hv(heart('steps'), 'avg'),
+    stepsTotal: cur.get(heartMetric(db, athleteId, 'steps'))?.sum ?? null,
     bestStepsDay: best ?? null,
     sleepPerNightMin: { value: sleepAvg(db, athleteId, ...range), prev: sleepAvg(db, athleteId, ...prevRange) },
     activeEnergyKcal: hv('ActiveEnergyBurned', 'sum'),

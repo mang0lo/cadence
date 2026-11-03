@@ -24,6 +24,7 @@ import {
 import { api, useApi } from '@/lib/api';
 import { useFormat } from '@/lib/format';
 import { useT } from '@/lib/i18n';
+import { useSettings } from '@/lib/settings';
 import { useStoredState } from '@/lib/storage';
 import { addDays } from '@/lib/time';
 import { TrendDelta } from '../components/TrendDelta';
@@ -47,6 +48,7 @@ export default function SleepPage() {
   const fmt = useFormat();
   const qc = useQueryClient();
   const meta = useHealthMeta();
+  const { settings } = useSettings();
   const [span, setSpan] = useStoredState<number>('health.sleep.span', 90);
   const [selected, setSelected] = useState<string | null>(null);
 
@@ -83,8 +85,9 @@ export default function SleepPage() {
     const asleepPrev = avgOf(trackedPrev, (n) => n.asleepS);
     const eff = avgOf(trackedNow, (n) => n.efficiency);
     const effPrev = avgOf(trackedPrev, (n) => n.efficiency);
-    const sched = scheduleStats(main);
-    const schedPrev = scheduleStats(previous);
+    // nights without real times (COROS totals) say nothing about the schedule
+    const sched = scheduleStats(main.filter((n) => n.timed));
+    const schedPrev = scheduleStats(previous.filter((n) => n.timed));
     return {
       asleep,
       asleepPrev,
@@ -153,7 +156,7 @@ export default function SleepPage() {
           <EmptyState
             icon={Moon}
             title={t('health.sleep.empty.title')}
-            description={t('health.sleep.empty.description')}
+            description={t(settings.watch === 'coros' ? 'health.sleep.empty.coros' : 'health.sleep.empty.description')}
             action={
               <Link to="/import">
                 <Button>{t('common.importNow')}</Button>
@@ -224,7 +227,13 @@ export default function SleepPage() {
               {trackedNow.length > 0 && (
                 <div className="grid grid-cols-[minmax(0,1fr)] gap-4 xl:grid-cols-2">
                   <DurationChart nights={main} goalMin={goalMin} />
-                  <ScheduleChart nights={main} selectedDay={day} onSelect={setSelected} />
+                  {main.some((n) => n.timed) ? (
+                    <ScheduleChart nights={main.filter((n) => n.timed)} selectedDay={day} onSelect={setSelected} />
+                  ) : (
+                    <Card>
+                      <EmptyState icon={Moon} title={t('health.sleep.schedule.title')} description={t('health.sleep.untimed')} />
+                    </Card>
+                  )}
                 </div>
               )}
             </>

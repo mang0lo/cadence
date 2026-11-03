@@ -87,6 +87,12 @@ Migrations are code (`Migration { id, up }`) applied in order: core, then each f
    `deriveSteps` run in registration order with a `DeriveContext` (changed workout ids / earliest changed day).
 4. Progress is polled by the UI via `GET /api/import/jobs/:id`.
 
+**FIT files** (other watches): the same job imports a `.fit` file, a folder of them or a zip without `export.xml`
+(`src/import/fit`, Garmin's `@garmin/fitsdk` decoder). Each file becomes a workout (`ext_key` `fit:<serial>:<start>`)
+with its GPS track (`workout_routes`, `linked_by = 'fit'`) and the device's own sensor samples in `workout_samples`
+(HR, power, cadence, distance). `core.workouts` prefers those samples over Apple Health records, and duplicate
+detection prefers the FIT copy when the vendor app also wrote the workout to Health.
+
 ## Feature modules
 
 Each product area is a vertical slice with three parts that a single owner can change without touching shared files:
@@ -102,7 +108,24 @@ Derive step ids are prefixed `<name>.`. "Delete all data" (`POST /api/import/res
 `athlete_id` column except `settings` and the tables a feature lists in `keepOnReset` (user-written data such as goals
 and segments); `onReset` lets a feature clear references from kept rows to deleted workouts.
 
-Current features: `activities`, `progress`, `consistency`, `maps`, `health` (+ `platform` in the web app for import/settings).
+Current features: `activities`, `progress`, `consistency`, `maps`, `health`, `connect` (+ `platform` in the web app for import/settings).
+
+`connect` pulls activities from vendor clouds. COROS uses the private Training Hub API (unofficial, see
+`features/connect/coros-client.ts`): the settings key `connect.coros` holds the token and the MD5 of the password (what
+COROS' login takes, never the plain password), `connect_activities` tracks fetched / failed activities, FIT files are
+cached in `DATA_DIR/connect/coros/` (with a `<file>.json` sidecar for name and device) and imported by a regular import
+job (`origin: 'connect'`, `options.files`). Auto sync runs 90 s after start and every 3 h.
+Each sync also fetches COROS' daily health values (`analyse/query`, ~30 days per call, walked back month by month on
+the first sync; VO₂max / stamina from `dashboard/detail/query`) into records of their own types — `COROSRestingHeartRate`,
+`COROSSleepHRV`, `COROSSleepHRVBaseline`, `COROSTrainingLoad`, `COROSAcuteLoad`, `COROSBaseFitness`, `COROSLoadRatio`,
+`COROSFatigue`, `COROSVO2Max`, `COROSStaminaLevel` (source `COROS`, one value per day) — and refreshes their
+`daily_metrics` directly (`features/connect/coros-health.ts`). They are never averaged with Apple's values.
+
+**Data sources** (Settings → My watch, `AthleteSettings.watch` + `sources.{workouts,heart}`): `core/sources.ts` decides
+which source wins. `heartMetric(db, athleteId, 'restingHr' | 'hrv' | 'vo2max')` returns the daily_metrics key to read
+(the preferred source if it has data, else the other) — use it instead of hard-coding the HealthKit identifier.
+Duplicate detection keeps the preferred copy of a workout (`fit:` = the watch's own file). Changing the workout
+preference queues a full rederive. Connecting COROS sets `watch: 'coros'` unless the athlete chose a watch before.
 
 ## API conventions
 

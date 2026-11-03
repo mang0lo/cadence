@@ -6,6 +6,7 @@ import {
   type EffectiveHr,
 } from '@cadence/shared';
 import { all, get, json, run, type Db } from '../db/db';
+import { heartMetric } from './sources';
 
 /** Generic per-athlete JSON setting (features use namespaced keys like 'consistency.goals'). */
 export function getSetting<T>(db: Db, athleteId: number, key: string, fallback: T): T {
@@ -95,9 +96,9 @@ export function getEffectiveHr(db: Db, athleteId: number): EffectiveHr {
   } else {
     const recent = all<{ value: number }>(
       db,
-      `SELECT value FROM daily_metrics WHERE athlete_id = ? AND metric = 'HKQuantityTypeIdentifierRestingHeartRate'
+      `SELECT value FROM daily_metrics WHERE athlete_id = ? AND metric = ?
        ORDER BY day DESC LIMIT 90`,
-      [athleteId],
+      [athleteId, heartMetric(db, athleteId, 'restingHr', settings)],
     ).map((r) => r.value);
     const m = median(recent);
     if (m !== null && m > 25 && m < 120) {

@@ -1,6 +1,9 @@
 import { all, run, tx, type Db } from '../../db/db';
 import { SLEEP_TYPE } from '../../import/hk';
+import { getSettings } from '../../core/settings';
+import { preferred } from '../../core/sources';
 import { addDays, parseDay } from '../../lib/time';
+import { tzOffsetMinutes } from '../../lib/tz';
 import type { DeriveStep } from '../types';
 import { buildSleepNights, type BuiltSleep, type RawSleepRecord } from './sleep-builder';
 import { typeIdByIdentifier } from './util';
@@ -57,9 +60,11 @@ export function rebuildSleepNights(db: Db, athleteId: number, sinceDay: string |
   const typeId = typeIdByIdentifier(db, SLEEP_TYPE);
   const fromDay = sinceDay ? addDays(sinceDay, -2) : null;
   if (typeId === null) {
-    // no sleep data (left): nothing to keep
-    run(db, 'DELETE FROM health_sleep_nights WHERE athlete_id = ? AND day >= ?', [athleteId, fromDay ?? '0000-00-00']);
-    return 0;
+    // no Apple sleep data (left): only nights from device clouds
+    return tx(db, () => {
+      run(db, 'DELETE FROM health_sleep_nights WHERE athlete_id = ? AND day >= ?', [athleteId, fromDay ?? '0000-00-00']);
+      return mergeExternalNights(db, athleteId, fromDay);
+    });
   }
   // records from well before fromDay so sessions that end on fromDay are complete (offsets reach ±14 h)
   const lo = fromDay ? (parseDay(addDays(fromDay, -2)) ?? 0) * 86400 - 14 * 3600 : -1e12;
@@ -81,11 +86,92 @@ export function rebuildSleepNights(db: Db, athleteId: number, sinceDay: string |
     sourceName: r.name,
   }));
   const nights = buildSleepNights(records).filter((n) => !fromDay || n.day >= fromDay);
-  tx(db, () => {
+  return tx(db, () => {
     run(db, 'DELETE FROM health_sleep_nights WHERE athlete_id = ? AND day >= ?', [athleteId, fromDay ?? '0000-00-00']);
     for (const n of nights) insertNight(db, athleteId, n);
+    return nights.length + mergeExternalNights(db, athleteId, fromDay);
   });
-  return nights.length;
+}
+
+interface ExternalNightRow {
+  source: string;
+  day: string;
+  asleep_s: number;
+  deep_s: number;
+  light_s: number;
+  rem_s: number;
+  awake_s: number;
+  avg_hr: number | null;
+  min_hr: number | null;
+}
+
+/** Assumed wake-up time of nights without times (only used to place them on the right day; timed = 0). */
+const UNTIMED_WAKE_MIN = 7 * 60;
+const localZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+/**
+ * Add the nights device clouds report as totals (COROS) to health_sleep_nights: they fill days without an Apple night,
+ * and replace Apple's nights when the athlete prefers the watch's own data (Settings → My watch). Their bed / wake
+ * times are unknown (timed = 0): the schedule charts and sleep timing skip them.
+ */
+export function mergeExternalNights(db: Db, athleteId: number, fromDay: string | null): number {
+  const rows = all<ExternalNightRow>(
+    db,
+    `SELECT source, day, asleep_s, deep_s, light_s, rem_s, awake_s, avg_hr, min_hr FROM health_external_nights
+     WHERE athlete_id = ? AND day >= ? AND asleep_s > 0 ORDER BY day`,
+    [athleteId, fromDay ?? '0000-00-00'],
+  );
+  if (!rows.length) return 0;
+  const preferDevice = preferred(getSettings(db, athleteId), 'heart') === 'device';
+  const existing = new Set(
+    all<{ day: string }>(
+      db,
+      `SELECT day FROM health_sleep_nights WHERE athlete_id = ? AND kind = 'night' AND day >= ?`,
+      [athleteId, fromDay ?? '0000-00-00'],
+    ).map((r) => r.day),
+  );
+  let n = 0;
+  for (const r of rows) {
+    if (existing.has(r.day)) {
+      if (!preferDevice) continue;
+      run(db, `DELETE FROM health_sleep_nights WHERE athlete_id = ? AND kind = 'night' AND day = ?`, [athleteId, r.day]);
+    }
+    const midnightUtc = (parseDay(r.day) ?? 0) * 86400;
+    const tz = tzOffsetMinutes(localZone, midnightUtc + 12 * 3600) ?? 0;
+    const wake = midnightUtc - tz * 60 + UNTIMED_WAKE_MIN * 60;
+    const inBed = r.asleep_s + r.awake_s;
+    const staged = r.deep_s + r.light_s + r.rem_s > 0;
+    run(
+      db,
+      `INSERT OR REPLACE INTO health_sleep_nights
+         (athlete_id, day, kind, bed_ts, wake_ts, tz_bed_min, tz_wake_min, onset_ts, final_ts, in_bed_s, asleep_s,
+          core_s, deep_s, rem_s, unspec_s, awake_s, awakenings, latency_s, efficiency, staged, source, segments, timed,
+          avg_hr, min_hr)
+       VALUES (?, ?, 'night', ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?, '[]', 0, ?, ?)`,
+      [
+        athleteId,
+        r.day,
+        wake - inBed,
+        wake,
+        tz,
+        tz,
+        inBed,
+        r.asleep_s,
+        r.light_s,
+        r.deep_s,
+        r.rem_s,
+        staged ? 0 : r.asleep_s,
+        r.awake_s,
+        inBed > 0 ? r.asleep_s / inBed : null,
+        staged ? 1 : 0,
+        r.source,
+        r.avg_hr,
+        r.min_hr,
+      ],
+    );
+    n++;
+  }
+  return n;
 }
 
 export const sleepStep: DeriveStep = {
@@ -126,11 +212,14 @@ export interface NightRow {
   efficiency: number | null;
   staged: number;
   source: string | null;
+  timed: number;
+  avg_hr: number | null;
+  min_hr: number | null;
   segments?: string;
 }
 
 export const NIGHT_COLS = `id, day, kind, bed_ts, wake_ts, tz_bed_min, tz_wake_min, onset_ts, final_ts, in_bed_s, asleep_s,
-  core_s, deep_s, rem_s, unspec_s, awake_s, awakenings, latency_s, efficiency, staged, source`;
+  core_s, deep_s, rem_s, unspec_s, awake_s, awakenings, latency_s, efficiency, staged, source, timed, avg_hr, min_hr`;
 
 export function toNight(r: NightRow) {
   return {
@@ -155,5 +244,8 @@ export function toNight(r: NightRow) {
     efficiency: r.efficiency,
     staged: r.staged === 1,
     source: r.source,
+    timed: r.timed !== 0,
+    avgHr: r.avg_hr,
+    minHr: r.min_hr,
   };
 }

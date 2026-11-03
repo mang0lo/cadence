@@ -43,9 +43,11 @@ export default async function importRoutes(app: FastifyInstance) {
     const file = await req.file();
     if (!file) throw badRequest('No file in upload');
     const name = safeName(file.filename);
-    if (!/\.(zip|xml)$/i.test(name)) {
+    if (!/\.(zip|xml|fit)$/i.test(name)) {
       file.file.resume();
-      throw badRequest('Upload the export.zip (or export.xml) from the Health app');
+      throw badRequest(
+        'Upload the export.zip (or export.xml) from the Health app, or FIT files (.fit / .zip)',
+      );
     }
     fs.mkdirSync(app.config.uploadsDir, { recursive: true });
     const dest = path.join(app.config.uploadsDir, `${randomUUID()}-${name}`);

@@ -49,4 +49,27 @@ export const healthMigrations: Migration[] = [
       );
     `,
   },
+  {
+    id: 'health_003_external_nights',
+    up: /* sql */ `
+      -- Nights a device cloud reports as daily totals only (COROS: minutes per stage, no times). Written by the
+      -- connectors; health.sleep merges them into health_sleep_nights (timed = 0: bed / wake time unknown).
+      CREATE TABLE health_external_nights (
+        athlete_id INTEGER NOT NULL,
+        source TEXT NOT NULL,              -- 'COROS'
+        day TEXT NOT NULL,                 -- local day of waking up
+        asleep_s INTEGER NOT NULL,
+        deep_s INTEGER NOT NULL DEFAULT 0,
+        light_s INTEGER NOT NULL DEFAULT 0,
+        rem_s INTEGER NOT NULL DEFAULT 0,
+        awake_s INTEGER NOT NULL DEFAULT 0,
+        nap_s INTEGER NOT NULL DEFAULT 0,
+        avg_hr REAL, min_hr REAL, max_hr REAL,
+        PRIMARY KEY (athlete_id, source, day)
+      ) WITHOUT ROWID;
+      ALTER TABLE health_sleep_nights ADD COLUMN timed INTEGER NOT NULL DEFAULT 1;
+      ALTER TABLE health_sleep_nights ADD COLUMN avg_hr REAL;
+      ALTER TABLE health_sleep_nights ADD COLUMN min_hr REAL;
+    `,
+  },
 ];

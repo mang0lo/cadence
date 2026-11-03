@@ -143,7 +143,8 @@ export interface ReadinessNight {
   inBedS?: number;
   efficiency?: number | null;
   /** Midpoint of the night in minutes from local midnight (negative = before midnight). */
-  midpointMin: number;
+  /** null when the night's times are unknown (device clouds that report totals only). */
+  midpointMin: number | null;
   /** Means of the samples recorded during the night (null = none). */
   respiratoryRate?: number | null;
   wristTemp?: number | null;

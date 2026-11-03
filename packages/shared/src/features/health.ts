@@ -38,6 +38,11 @@ export interface HealthMeta {
   sleepNights: number;
   ecgCount: number;
   sleepGoalMin: number;
+  /**
+   * daily_metrics keys of the heart metrics to show: Apple's or COROS' (Settings → My watch), e.g.
+   * 'COROSSleepHRV' instead of 'HKQuantityTypeIdentifierHeartRateVariabilitySDNN'.
+   */
+  metrics: { restingHr: string; hrv: string; vo2max: string; steps: string; heartRate: string };
 }
 
 export interface HealthSettings {
@@ -154,6 +159,14 @@ export interface SleepNight {
   /** True when the night has Core/Deep/REM stage detail. */
   staged: boolean;
   source: string | null;
+  /**
+   * False for nights a device cloud reports as totals only (COROS): bed / wake times are unknown (placed at 07:00
+   * for the day), so schedule charts and sleep timing skip them.
+   */
+  timed: boolean;
+  /** Heart rate while asleep as reported by the device (COROS); Apple nights compute it from samples. */
+  avgHr: number | null;
+  minHr: number | null;
 }
 
 export interface TimedValue {

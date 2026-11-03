@@ -43,6 +43,22 @@ export interface AthleteSettings {
   sex: 'male' | 'female' | 'other' | null;
   birthDate: string | null;
   privacyZones: PrivacyZone[];
+  /** The watch the athlete wears: decides which source wins when several record the same thing. */
+  watch: WatchKind;
+  /** Per data type override of `watch` ('auto' = follow the watch). */
+  sources: DataSourcePrefs;
+}
+
+/** 'apple' = Apple Watch via Apple Health, 'coros' = COROS cloud sync, 'other' = FIT files from any other watch. */
+export type WatchKind = 'apple' | 'coros' | 'other';
+/** Source preference of one data type: 'device' = the watch's own files / cloud (COROS, FIT). */
+export type SourcePref = 'auto' | 'apple' | 'device';
+
+export interface DataSourcePrefs {
+  /** Which copy of a workout recorded by several sources is shown (the other becomes a duplicate). */
+  workouts: SourcePref;
+  /** Resting heart rate, HRV and VO₂max (readiness, health overview, fitness). */
+  heart: SourcePref;
 }
 
 export const DEFAULT_SETTINGS: AthleteSettings = {
@@ -60,6 +76,8 @@ export const DEFAULT_SETTINGS: AthleteSettings = {
   sex: null,
   birthDate: null,
   privacyZones: [],
+  watch: 'apple',
+  sources: { workouts: 'auto', heart: 'auto' },
 };
 
 /** Zone upper bounds as a fraction of max HR (maxhr) or heart-rate reserve (hrr), for Z1..Z4. */

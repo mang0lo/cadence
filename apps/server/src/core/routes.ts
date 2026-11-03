@@ -4,6 +4,7 @@ import type { AthleteSettings, ServerStatus } from '@cadence/shared';
 import { get, run } from '../db/db';
 import { isAuthenticated } from './auth';
 import { getAthlete, getSettings, updateSettings } from './settings';
+import { preferred } from './sources';
 
 let countsCache: { at: number; value: ServerStatus['counts'] } | null = null;
 
@@ -25,6 +26,11 @@ const settingsPatch = z
       .string()
       .regex(/^\d{4}-\d{2}-\d{2}$/)
       .nullable(),
+    watch: z.enum(['apple', 'coros', 'other']),
+    sources: z.object({
+      workouts: z.enum(['auto', 'apple', 'device']),
+      heart: z.enum(['auto', 'apple', 'device']),
+    }),
     privacyZones: z.array(
       z.object({
         lat: z.number().min(-90).max(90),
@@ -84,10 +90,19 @@ export default async function coreRoutes(app: FastifyInstance) {
     const before = getSettings(app.db, req.athleteId);
     const next = updateSettings(app.db, req.athleteId, patch as Partial<AthleteSettings>);
     // HR settings change zones and relative effort: recompute them in the background (cheap, histogram based)
-    const hrKeys = ['maxHr', 'restingHr', 'hrZoneMethod', 'hrZones', 'sex', 'birthDate'] as const;
-    if (hrKeys.some((k) => JSON.stringify(before[k]) !== JSON.stringify(next[k])) && app.jobs) {
-      const today = new Date().toISOString().slice(0, 10);
-      app.jobs.enqueueDerive(req.athleteId, { origin: 'settings', workoutIds: [], sinceDay: today });
+    const changed = (k: keyof AthleteSettings) => JSON.stringify(before[k]) !== JSON.stringify(next[k]);
+    const workoutSource =
+      preferred(before, 'workouts') !== preferred(next, 'workouts') && app.jobs !== undefined;
+    if (workoutSource) {
+      // another copy of overlapping workouts wins now: duplicates and every total built on them change
+      app.jobs.enqueueDerive(req.athleteId, { origin: 'settings' });
+    } else if (app.jobs) {
+      // HR settings (and the resting HR source) change zones and relative effort: recompute them (histogram based)
+      const hrKeys = ['maxHr', 'restingHr', 'hrZoneMethod', 'hrZones', 'sex', 'birthDate'] as const;
+      if (hrKeys.some(changed) || preferred(before, 'heart') !== preferred(next, 'heart')) {
+        const today = new Date().toISOString().slice(0, 10);
+        app.jobs.enqueueDerive(req.athleteId, { origin: 'settings', workoutIds: [], sinceDay: today });
+      }
     }
     return next;
   });

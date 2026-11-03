@@ -4,7 +4,7 @@ export const heart: Dictionary = {
   en: {
     subtitle: 'Resting heart rate, variability, fitness and notifications',
     restingHr: { title: 'Resting heart rate', subtitle: 'Lower is better – measured while you are calm' },
-    hrv: { title: 'Heart rate variability', subtitle: 'SDNN – higher usually means better recovery' },
+    hrv: { title: 'Heart rate variability', subtitle: 'Higher usually means better recovery' },
     walking: { title: 'Walking heart rate', subtitle: 'Average while walking at an easy pace' },
     range: {
       title: 'Daily heart rate',
@@ -45,7 +45,7 @@ export const heart: Dictionary = {
   de: {
     subtitle: 'Ruhepuls, Variabilität, Fitness und Benachrichtigungen',
     restingHr: { title: 'Ruheherzfrequenz', subtitle: 'Niedriger ist besser – gemessen, wenn du ruhig bist' },
-    hrv: { title: 'Herzfrequenzvariabilität', subtitle: 'SDNN – höher bedeutet meist bessere Erholung' },
+    hrv: { title: 'Herzfrequenzvariabilität', subtitle: 'Höher bedeutet meist bessere Erholung' },
     walking: { title: 'Herzfrequenz beim Gehen', subtitle: 'Durchschnitt beim Gehen in lockerem Tempo' },
     range: {
       title: 'Tägliche Herzfrequenz',

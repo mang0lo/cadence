@@ -305,8 +305,8 @@ export function NightDetail({
           </div>
         ) : (
           <StatRow>
-            <Stat label={t('health.sleep.night.bedtime')} value={fmt.time(n.bedTs, n.tzBedMin)} />
-            <Stat label={t('health.sleep.night.wake')} value={fmt.time(n.wakeTs, n.tzWakeMin)} />
+            <Stat label={t('health.sleep.night.bedtime')} value={n.timed ? fmt.time(n.bedTs, n.tzBedMin) : '–'} />
+            <Stat label={t('health.sleep.night.wake')} value={n.timed ? fmt.time(n.wakeTs, n.tzWakeMin) : '–'} />
             <Stat label={t('health.sleep.night.inBed')} value={fmt.durationShort(n.inBedS)} />
             <Stat label={t('health.sleep.night.asleep')} value={n.asleepS > 0 ? fmt.durationShort(n.asleepS) : '–'} />
             <Stat label={t('health.sleep.night.efficiency')} value={n.efficiency !== null && n.asleepS > 0 ? fmt.pct(n.efficiency) : '–'} />

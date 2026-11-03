@@ -1,3 +1,5 @@
+import { getSettings } from '../../core/settings';
+import { heartMetric } from '../../core/sources';
 import {
   OVERVIEW_METRICS,
   OVERVIEW_SPARK_DAYS,
@@ -125,6 +127,13 @@ export function buildMeta(db: Db, athleteId: number): HealthMeta {
         ?.n ?? 0,
     ecgCount: get<{ n: number }>(db, 'SELECT COUNT(*) AS n FROM ecg_readings WHERE athlete_id = ?', [athleteId])?.n ?? 0,
     sleepGoalMin: getHealthSettings(db, athleteId).sleepGoalMin,
+    metrics: {
+      restingHr: heartMetric(db, athleteId, 'restingHr'),
+      hrv: heartMetric(db, athleteId, 'hrv'),
+      vo2max: heartMetric(db, athleteId, 'vo2max'),
+      steps: heartMetric(db, athleteId, 'steps'),
+      heartRate: heartMetric(db, athleteId, 'heartRate'),
+    },
   };
 }
 
@@ -133,7 +142,13 @@ export function buildOverview(db: Db, athleteId: number): HealthOverview {
   if (!asOf) return { asOf: null, cards: [] };
   const todayKey = today();
   const cards: HealthMetricCard[] = [];
-  for (const def of OVERVIEW_METRICS) {
+  const settings = getSettings(db, athleteId);
+  for (const base of OVERVIEW_METRICS) {
+    // resting HR, HRV, VO₂max: Apple's or COROS' values (Settings → My watch)
+    const def =
+      base.key === 'restingHr' || base.key === 'hrv' || base.key === 'vo2max' || base.key === 'steps'
+        ? { ...base, metric: heartMetric(db, athleteId, base.key, settings) }
+        : base;
     const firstDay = firstDayOf(db, athleteId, def.metric);
     if (!firstDay) continue;
     const agg = def.metric === 'sleep' ? 'avg' : aggregationOfMetric(db, def.metric);
@@ -190,9 +205,9 @@ export function buildSnapshot(db: Db, athleteId: number): HealthSnapshot {
   }
   return {
     asOf,
-    restingHr: snapshotValue(db, athleteId, 'HKQuantityTypeIdentifierRestingHeartRate', asOf, 14),
-    hrv: snapshotValue(db, athleteId, 'HKQuantityTypeIdentifierHeartRateVariabilitySDNN', asOf, 14),
-    steps: snapshotValue(db, athleteId, 'HKQuantityTypeIdentifierStepCount', asOf, 14),
+    restingHr: snapshotValue(db, athleteId, heartMetric(db, athleteId, 'restingHr'), asOf, 14),
+    hrv: snapshotValue(db, athleteId, heartMetric(db, athleteId, 'hrv'), asOf, 14),
+    steps: snapshotValue(db, athleteId, heartMetric(db, athleteId, 'steps'), asOf, 14),
     sleep,
   };
 }

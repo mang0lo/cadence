@@ -43,8 +43,8 @@ export const readiness: Dictionary = {
         spo2: 'Blood oxygen',
       },
       hint: {
-        hrv: '{days}-day average (SDNN)',
-        hrvToday: '{days}-day average (SDNN) · day value {value}',
+        hrv: '{days}-day average',
+        hrvToday: '{days}-day average · day value {value}',
         restingHr: 'Measured on this day',
         restingHrYesterday: 'From the day before – not recorded for this day yet',
         sleep: 'Asleep in the night that ended on this day',
@@ -100,7 +100,7 @@ export const readiness: Dictionary = {
     },
     charts: {
       trend: { title: 'Readiness trend', subtitle: 'Daily score; the shaded areas are the bands' },
-      hrv: { title: 'HRV vs. your baseline', subtitle: 'SDNN – the {days}-day average against its normal range' },
+      hrv: { title: 'HRV vs. your baseline', subtitle: 'The {days}-day average against its normal range' },
       restingHr: { title: 'Resting heart rate vs. your baseline', subtitle: 'Daily value against its normal range' },
       score: 'Score',
       band: 'Band',
@@ -180,8 +180,8 @@ export const readiness: Dictionary = {
         spo2: 'Blutsauerstoff',
       },
       hint: {
-        hrv: '{days}-Tage-Durchschnitt (SDNN)',
-        hrvToday: '{days}-Tage-Durchschnitt (SDNN) · Tageswert {value}',
+        hrv: '{days}-Tage-Durchschnitt',
+        hrvToday: '{days}-Tage-Durchschnitt · Tageswert {value}',
         restingHr: 'An diesem Tag gemessen',
         restingHrYesterday: 'Vom Vortag – für diesen Tag noch nicht erfasst',
         sleep: 'Geschlafen in der Nacht, die an diesem Tag endete',
@@ -241,7 +241,7 @@ export const readiness: Dictionary = {
     },
     charts: {
       trend: { title: 'Erholung im Verlauf', subtitle: 'Täglicher Wert; die Flächen sind die Bereiche' },
-      hrv: { title: 'HRV im Vergleich zu deiner Basis', subtitle: 'SDNN – der {days}-Tage-Durchschnitt im Vergleich zu seinem Normalbereich' },
+      hrv: { title: 'HRV im Vergleich zu deiner Basis', subtitle: 'Der {days}-Tage-Durchschnitt im Vergleich zu seinem Normalbereich' },
       restingHr: { title: 'Ruhepuls im Vergleich zu deiner Basis', subtitle: 'Tageswert im Vergleich zu seinem Normalbereich' },
       score: 'Wert',
       band: 'Bereich',
