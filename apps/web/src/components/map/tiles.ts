@@ -15,7 +15,10 @@ export function project(lat: number, lon: number): [number, number] {
 
 export type ThumbnailBasemap = 'light' | 'dark' | 'voyager' | 'satellite';
 
-/** Raster basemap for the user's map style (raster tiles: no WebGL, hundreds can render at once). */
+/**
+ * Basemap of a preview for the user's map style. Satellite imagery comes as raster tiles; the other styles are
+ * OpenFreeMap vector maps, rendered once per preview and kept as an image (see snapshot.ts) — no API key needed.
+ */
 export function thumbnailBasemap(pref: MapStylePref, theme: 'light' | 'dark'): ThumbnailBasemap {
   switch (pref) {
     case 'satellite':
@@ -29,24 +32,46 @@ export function thumbnailBasemap(pref: MapStylePref, theme: 'light' | 'dark'): T
   }
 }
 
-/** URL of one raster tile (CARTO basemaps in 2× resolution, Esri World Imagery for satellite). */
-export function tileUrl(base: ThumbnailBasemap, z: number, x: number, y: number): string {
-  if (base === 'satellite')
-    return `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`;
-  const path = base === 'voyager' ? 'rastertiles/voyager' : base === 'dark' ? 'dark_all' : 'light_all';
-  return `https://${'abcd'[(x + y) % 4]}.basemaps.cartocdn.com/${path}/${z}/${x}/${y}@2x.png`;
+/** Raster tiles are drawn directly (satellite); vector basemaps are rendered into a snapshot image. */
+export const isRasterBasemap = (base: ThumbnailBasemap): boolean => base === 'satellite';
+
+/** URL of one satellite raster tile (Esri World Imagery, 256 px). */
+export function tileUrl(_base: ThumbnailBasemap, z: number, x: number, y: number): string {
+  return `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`;
 }
 
-/** Attribution the tile providers require wherever their tiles are shown. */
+/** Attribution the map providers require wherever their maps are shown. */
 export const TILE_ATTRIBUTION: Record<ThumbnailBasemap, string> = {
-  light: '© OpenStreetMap contributors © CARTO',
-  dark: '© OpenStreetMap contributors © CARTO',
-  voyager: '© OpenStreetMap contributors © CARTO',
+  light: '© OpenFreeMap © OpenMapTiles © OpenStreetMap contributors',
+  dark: '© OpenFreeMap © OpenMapTiles © OpenStreetMap contributors',
+  voyager: '© OpenFreeMap © OpenMapTiles © OpenStreetMap contributors',
   satellite: 'Imagery © Esri, Maxar, Earthstar Geographics',
 };
 
-/** Pixel size of the tile images (CARTO is fetched @2x, Esri imagery is 256 px). */
-export const TILE_IMAGE_PX: Record<ThumbnailBasemap, number> = { light: 512, dark: 512, voyager: 512, satellite: 256 };
+/** Short form for small previews. */
+export const TILE_ATTRIBUTION_SHORT: Record<ThumbnailBasemap, string> = {
+  light: '© OpenFreeMap · OSM',
+  dark: '© OpenFreeMap · OSM',
+  voyager: '© OpenFreeMap · OSM',
+  satellite: '© Esri',
+};
+
+/** Pixel size of the raster tile images. */
+export const TILE_IMAGE_PX: Record<ThumbnailBasemap, number> = { light: 256, dark: 256, voyager: 256, satellite: 256 };
+
+/** The camera of a fitted view box: its center (unit-square world coordinates) and view-box units per world unit. */
+export interface FitView {
+  cx: number;
+  cy: number;
+  scale: number;
+}
+
+/** Longitude / latitude of a unit-square world point (inverse of `project`). */
+export function unproject(x: number, y: number): [number, number] {
+  const lon = x * 360 - 180;
+  const lat = (Math.atan(Math.sinh(Math.PI * (1 - 2 * y))) * 180) / Math.PI;
+  return [lon, lat];
+}
 
 export interface FitPadding {
   top: number;
@@ -71,6 +96,7 @@ export interface TrackFit {
   end: readonly [number, number];
   /** Tiles covering the whole view box, positioned in view-box units. */
   tiles: FitTile[];
+  view: FitView;
 }
 
 const MAX_Z = 18;
@@ -131,7 +157,7 @@ export function fitTracks(
     for (let ty = y0; ty <= y1; ty++)
       for (let tx = x0; tx <= x1; tx++)
         tiles.push({ z, x: ((tx % n) + n) % n, y: ty, left: px(tx / n), top: py(ty / n), size });
-  return { parts: out, start: first, end: last, tiles };
+  return { parts: out, start: first, end: last, tiles, view: { cx: ux(width / 2), cy: uy(height / 2), scale } };
 }
 
 export interface ThumbnailLayout {
@@ -141,6 +167,7 @@ export interface ThumbnailLayout {
   end: readonly [number, number];
   /** Tiles covering the view box, positioned in view-box units. */
   tiles: FitTile[];
+  view: FitView;
 }
 
 /** `fitTracks` for an encoded (possibly multi-part) polyline, with the route as one SVG path. */
@@ -150,5 +177,5 @@ export function thumbnailLayout(polyline: string, width: number, height: number,
   const d = fit.parts
     .map((part) => part.map(([x, y], i) => `${i ? 'L' : 'M'}${x.toFixed(1)},${y.toFixed(1)}`).join(''))
     .join('');
-  return { d, start: fit.start, end: fit.end, tiles: fit.tiles };
+  return { d, start: fit.start, end: fit.end, tiles: fit.tiles, view: fit.view };
 }

@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import type { PrivacyZone } from '@cadence/shared';
-import { fitTracks, project, thumbnailLayout, type ThumbnailLayout } from '../../web/src/components/map/tiles';
+import { fitTracks, project, thumbnailLayout, unproject, type ThumbnailLayout } from '../../web/src/components/map/tiles';
 import {
   SHARE_FORMATS,
   hidePrivacyZones,
@@ -185,7 +185,9 @@ function previousThumbnailLayout(polyline: string, width: number, height: number
     for (let ty = y0; ty <= y1; ty++)
       for (let tx = x0; tx <= x1; tx++)
         tiles.push({ z, x: ((tx % n) + n) % n, y: ty, left: px(tx / n), top: py(ty / n), size });
-  return { d, start: [px(first[0]), py(first[1])], end: [px(last[0]), py(last[1])], tiles };
+  // new in 0.2.1: the camera of the box, for the rendered (vector) map images
+  const view = { cx: ux(width / 2), cy: uy(height / 2), scale };
+  return { d, start: [px(first[0]), py(first[1])], end: [px(last[0]), py(last[1])], tiles, view };
 }
 
 describe('map tiles (shared by thumbnails and share images)', () => {
@@ -209,6 +211,19 @@ describe('map tiles (shared by thumbnails and share images)', () => {
       ] as const)
         expect(thumbnailLayout(poly, w, h, pad)).toEqual(previousThumbnailLayout(poly, w, h, pad));
     expect(thumbnailLayout('', 160, 100)).toBeNull();
+  });
+
+  it('describes the camera of the box for rendered map images', () => {
+    const [lat, lon] = [54.17, 12.08];
+    const [x, y] = project(lat, lon);
+    const [lon2, lat2] = unproject(x, y);
+    expect(lat2).toBeCloseTo(lat, 9);
+    expect(lon2).toBeCloseTo(lon, 9);
+    const l = thumbnailLayout(encodePolylineParts([loop]), 640, 220)!;
+    // the box center in view-box units maps back to the view center
+    expect(l.view.scale).toBeGreaterThan(0);
+    const fit = fitTracks(decodePolylineParts(encodePolylineParts([loop])), 640, 220, 8)!;
+    expect(fit.view).toEqual(l.view);
   });
 
   it('fits into an asymmetric padding box; a zoom bias of −1 draws the tiles twice as large', () => {

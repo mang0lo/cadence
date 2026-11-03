@@ -2,10 +2,16 @@ import type { StyleSpecification, RasterDEMSourceSpecification } from 'maplibre-
 import type { MapStylePref } from '@cadence/shared';
 import type { ResolvedTheme } from '@/lib/theme';
 
-/** Free basemaps without API keys (OpenFreeMap / CARTO / Esri imagery). */
-const POSITRON = 'https://tiles.openfreemap.org/styles/positron';
-const LIBERTY = 'https://tiles.openfreemap.org/styles/liberty';
-const DARK = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json';
+/**
+ * Free basemaps without API keys (OpenFreeMap vector styles, Esri imagery). CARTO's basemaps need an API key now, so
+ * they are not used.
+ */
+export const POSITRON = 'https://tiles.openfreemap.org/styles/positron';
+export const LIBERTY = 'https://tiles.openfreemap.org/styles/liberty';
+export const DARK = 'https://tiles.openfreemap.org/styles/dark';
+
+/** Style to use when a style cannot be loaded (e.g. the dark style): the light map still shows the area. */
+export const FALLBACK_STYLE = POSITRON;
 
 const SATELLITE: StyleSpecification = {
   version: 8,

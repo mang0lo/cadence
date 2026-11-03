@@ -2,9 +2,44 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { cn } from '@/components/ui';
 import { useSettings } from '@/lib/settings';
 import { useResolvedTheme } from '@/lib/theme';
-import { TILE_ATTRIBUTION as ATTRIBUTION, thumbnailBasemap, thumbnailLayout, tileUrl } from './tiles';
+import { mapSnapshot, peekSnapshot, snapshotKey, type SnapshotRequest } from './snapshot';
+import {
+  TILE_ATTRIBUTION as ATTRIBUTION,
+  TILE_ATTRIBUTION_SHORT,
+  isRasterBasemap,
+  thumbnailBasemap,
+  thumbnailLayout,
+  tileUrl,
+} from './tiles';
 
 export { thumbnailBasemap, thumbnailLayout, tileUrl, type ThumbnailBasemap, type ThumbnailLayout } from './tiles';
+
+const devicePixelRatioOf = () => (typeof window !== 'undefined' && window.devicePixelRatio >= 1.5 ? 2 : 1);
+
+/** Object URL of the snapshot for a request (null while it renders or when it cannot be rendered). */
+function useSnapshot(req: SnapshotRequest | null): string | null {
+  const key = req ? snapshotKey(req) : null;
+  const [state, setState] = useState<{ key: string | null; url: string | null }>(() => ({
+    key,
+    url: key ? peekSnapshot(key) : null,
+  }));
+  useEffect(() => {
+    if (!req || !key) return;
+    const known = peekSnapshot(key);
+    if (known) {
+      setState({ key, url: known });
+      return;
+    }
+    let live = true;
+    void mapSnapshot(req).then((url) => live && setState({ key, url }));
+    return () => {
+      live = false;
+    };
+    // the key identifies the request
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+  return state.key === key ? state.url : null;
+}
 
 /**
  * Rendered size of the element (CSS px, rounded) and whether it came near the viewport. Off-screen thumbnails load no
@@ -84,7 +119,18 @@ export function RouteThumbnail({
   const layout = useMemo(() => (polyline ? thumbnailLayout(polyline, w, h) : null), [polyline, w, h]);
   const darkBase = base === 'dark' || base === 'satellite';
   const casing = darkBase ? 'rgba(0,0,0,0.55)' : 'rgba(255,255,255,0.95)';
-  const showTiles = basemap && settings.thumbnailMaps !== false && near && !!box && !!layout?.tiles.length;
+  const wantMap = basemap && settings.thumbnailMaps !== false && near && !!box && !!layout;
+  const raster = isRasterBasemap(base);
+  // vector basemaps: one rendered image of exactly this view box
+  const snapReq = useMemo<SnapshotRequest | null>(
+    () =>
+      wantMap && !raster && base !== 'satellite' && layout
+        ? { base, width: w, height: h, pixelRatio: devicePixelRatioOf(), view: layout.view }
+        : null,
+    [wantMap, raster, base, w, h, layout],
+  );
+  const snapshot = useSnapshot(snapReq);
+  const showTiles = wantMap && (raster ? !!layout?.tiles.length : !!snapshot);
 
   return (
     <svg
@@ -95,7 +141,13 @@ export function RouteThumbnail({
       aria-label={ariaLabel}
       preserveAspectRatio="xMidYMid meet"
     >
-      {showTiles && (
+      {showTiles && !raster && (
+        <g aria-hidden>
+          <title>{ATTRIBUTION[base]}</title>
+          <image href={snapshot!} x={0} y={0} width={w} height={h} preserveAspectRatio="none" />
+        </g>
+      )}
+      {showTiles && raster && (
         <g aria-hidden>
           <title>{ATTRIBUTION[base]}</title>
           {layout!.tiles.map((tl) => (
@@ -129,7 +181,7 @@ export function RouteThumbnail({
           fill={darkBase ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.55)'}
           aria-hidden
         >
-          {base === 'satellite' ? '© Esri' : '© OSM · CARTO'}
+          {TILE_ATTRIBUTION_SHORT[base]}
         </text>
       )}
     </svg>
