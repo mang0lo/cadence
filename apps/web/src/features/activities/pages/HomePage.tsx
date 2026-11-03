@@ -4,9 +4,9 @@ import { Activity, Upload } from 'lucide-react';
 import { Button, Card, EmptyState, ErrorState, Page } from '@/components/ui';
 import { useT } from '@/lib/i18n';
 import { CalendarWidget, GoalsWidget, StreakWidget } from '../../consistency/widgets';
-import { HealthSnapshotWidget } from '../../health/widgets';
+import { HealthSnapshotCard, ReadinessWidget } from '../../health/widgets';
 import { ExplorerWidget } from '../../maps/widgets';
-import { FitnessWidget, WeeklySnapshotWidget } from '../../progress/widgets';
+import { FitnessWidget, PowerWidget, WeeklySnapshotWidget } from '../../progress/widgets';
 import { useActivitiesSummary, useFeed } from '../api';
 import { AthleteCard, AthleteCardSkeleton } from '../components/AthleteCard';
 import { FeedCard, FeedCardSkeleton } from '../components/FeedCard';
@@ -15,11 +15,13 @@ import { WidgetBoundary } from '../components/WidgetBoundary';
 /** Other features' dashboard widgets, in the agreed order. Each renders its own Card (or null). */
 const WIDGETS: [string, () => ReactNode][] = [
   ['weekly-snapshot', WeeklySnapshotWidget],
+  ['readiness', ReadinessWidget],
   ['fitness', FitnessWidget],
+  ['power', PowerWidget],
   ['streak', StreakWidget],
   ['goals', GoalsWidget],
   ['calendar', CalendarWidget],
-  ['health', HealthSnapshotWidget],
+  ['health', HealthSnapshotCard],
   ['explorer', ExplorerWidget],
 ];
 
