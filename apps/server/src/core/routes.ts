@@ -1,10 +1,10 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import type { AthleteSettings, ServerStatus } from '@cadence/shared';
+import type { AthleteSettings, DataSourcesInfo, ServerStatus } from '@cadence/shared';
 import { get, run } from '../db/db';
 import { isAuthenticated } from './auth';
 import { getAthlete, getSettings, updateSettings } from './settings';
-import { preferred } from './sources';
+import { dataSources, preferred } from './sources';
 
 let countsCache: { at: number; value: ServerStatus['counts'] } | null = null;
 
@@ -84,6 +84,9 @@ export default async function coreRoutes(app: FastifyInstance) {
   });
 
   app.get('/settings', async (req): Promise<AthleteSettings> => getSettings(app.db, req.athleteId));
+
+  // Which watch, which sources have data and which metrics exist (pages hide what cannot have data)
+  app.get('/sources', async (req): Promise<DataSourcesInfo> => dataSources(app.db, req.athleteId));
 
   app.patch('/settings', async (req): Promise<AthleteSettings> => {
     const patch = settingsPatch.parse(req.body ?? {});

@@ -1,22 +1,32 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigation } from 'react-router';
-import { Menu, Moon, Sparkles, Sun, X } from 'lucide-react';
+import { Menu, Moon, Sparkles, Sun, Watch, X } from 'lucide-react';
 import { featureModules } from '@/features/registry';
 import type { NavGroup, NavItem } from '@/features/types';
 import { useImportJobs } from '@/features/platform/useImportJobs';
-import { latestSummaryJob, markSummarySeen, summaryCounts, useSeenSummaryId } from '@/features/platform/whatsNewState';
+import {
+  latestSummaryJob,
+  markSummarySeen,
+  summaryCounts,
+  useSeenSummaryId,
+} from '@/features/platform/whatsNewState';
 import { cn, ProgressBar } from '@/components/ui';
 import { useFormat } from '@/lib/format';
 import { useT } from '@/lib/i18n';
 import { useSettings } from '@/lib/settings';
+import { useDataSources } from '@/lib/sources';
 import { useResolvedTheme } from '@/lib/theme';
 import { Logo } from './Logo';
 
 const GROUPS: NavGroup[] = ['training', 'habits', 'explore', 'health', 'app'];
 
 function useNav() {
+  const sources = useDataSources().data;
   return useMemo(() => {
-    const items = featureModules.flatMap((f) => f.nav);
+    // pages that cannot have data for this athlete (ECG, body …) are left out once the data sources are known
+    const items = featureModules
+      .flatMap((f) => f.nav)
+      .filter((it) => !it.available || !sources || it.available(sources));
     // An item whose path prefixes another item must match exactly, else both would be active.
     const withEnd = items.map((it) => ({
       ...it,
@@ -26,7 +36,7 @@ function useNav() {
       group: g,
       items: withEnd.filter((i) => i.group === g).sort((a, b) => a.order - b.order),
     })).filter((g) => g.items.length);
-  }, []);
+  }, [sources]);
 }
 
 function NavEntry({ item, onNavigate }: { item: NavItem; onNavigate?: () => void }) {
@@ -67,7 +77,10 @@ function WhatsNewNote() {
   const s = job.stats.summary;
   const c = summaryCounts(s);
   const parts = [
-    t(s.initial ? 'platform.whatsNew.initial' : 'platform.whatsNew.activities', { count: s.count, n: fmt.int(s.count) }),
+    t(s.initial ? 'platform.whatsNew.initial' : 'platform.whatsNew.activities', {
+      count: s.count,
+      n: fmt.int(s.count),
+    }),
     c.records ? t('platform.whatsNew.records', { count: c.records }) : null,
     c.trophies ? t('platform.whatsNew.trophies', { count: c.trophies }) : null,
   ].filter(Boolean);
@@ -126,6 +139,56 @@ function ThemeToggle() {
   );
 }
 
+/** Global indicator of the athlete's watch (Settings → My watch) and, for COROS, the sync state. */
+function WatchBadge({ onNavigate }: { onNavigate?: () => void }) {
+  const t = useT();
+  const fmt = useFormat();
+  const { settings } = useSettings();
+  const src = useDataSources().data;
+  const watch = settings.watch;
+  const name = t(`common.watch.${watch}`);
+  let hint: string;
+  let tone: 'good' | 'warning' | 'neutral' = 'neutral';
+  let to = '/settings';
+  if (watch === 'coros') {
+    to = '/connect';
+    if (!src?.coros.connected) {
+      hint = t('common.watch.corosOff');
+      tone = 'warning';
+    } else if (src.coros.lastError) {
+      hint = t('common.watch.corosError');
+      tone = 'warning';
+    } else if (src.coros.lastSyncAt) {
+      hint = t('common.watch.corosSynced', { when: fmt.relative(src.coros.lastSyncAt) });
+      tone = 'good';
+    } else hint = t('common.watch.corosNever');
+  } else if (watch === 'other') {
+    hint = t('common.watch.otherHint', { count: src?.fitWorkouts ?? 0 });
+  } else hint = t('common.watch.appleHint');
+  return (
+    <Link
+      to={to}
+      onClick={onNavigate}
+      title={t('common.watch.change', { watch: name })}
+      className="flex items-center gap-2.5 rounded-control px-2 py-1.5 transition-colors hover:bg-surface-2"
+    >
+      <span className="relative grid size-7 shrink-0 place-items-center rounded-lg bg-accent-soft text-accent-fg">
+        <Watch size={15} aria-hidden />
+        <span
+          className={cn(
+            'absolute -right-0.5 -top-0.5 size-2 rounded-full ring-2 ring-surface',
+            tone === 'good' ? 'bg-good' : tone === 'warning' ? 'bg-warning' : 'hidden',
+          )}
+        />
+      </span>
+      <span className="min-w-0">
+        <span className="block truncate text-xs font-semibold text-fg">{name}</span>
+        <span className="block truncate text-[11px] text-fg-3">{hint}</span>
+      </span>
+    </Link>
+  );
+}
+
 function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const t = useT();
   const nav = useNav();
@@ -155,6 +218,7 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
       </nav>
       <div className="space-y-2 border-t border-border p-3">
         <ImportIndicator />
+        <WatchBadge onNavigate={onNavigate} />
         {athlete && (
           <div className="flex items-center gap-2 px-1 text-xs text-fg-3">
             <span className="grid size-6 place-items-center rounded-full bg-surface-3 text-[11px] font-semibold text-fg-2">
@@ -201,7 +265,11 @@ export function AppShell() {
       )}
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-12 items-center gap-2 border-b border-border bg-surface px-3 lg:hidden">
-          <button className="grid size-8 place-items-center rounded-control text-fg-2" onClick={() => setOpen(true)} aria-label="Menu">
+          <button
+            className="grid size-8 place-items-center rounded-control text-fg-2"
+            onClick={() => setOpen(true)}
+            aria-label="Menu"
+          >
             <Menu size={18} />
           </button>
           <Logo size={22} />

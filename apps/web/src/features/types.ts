@@ -1,7 +1,7 @@
 import type { ComponentType } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import type { RouteObject } from 'react-router';
-import type { ImportHighlight } from '@cadence/shared';
+import type { DataSourcesInfo, ImportHighlight } from '@cadence/shared';
 import type { Dictionary } from '@/lib/i18n';
 
 export type NavGroup = 'training' | 'habits' | 'explore' | 'health' | 'app';
@@ -17,6 +17,8 @@ export interface NavItem {
   order: number;
   /** Match only the exact path (for '/' style routes). */
   end?: boolean;
+  /** Shown only when this returns true for the athlete's data (e.g. ECG only with ECG recordings). */
+  available?: (sources: DataSourcesInfo) => boolean;
 }
 
 /**

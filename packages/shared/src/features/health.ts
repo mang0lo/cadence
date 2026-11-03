@@ -73,6 +73,14 @@ export const OVERVIEW_METRICS: { key: string; metric: string }[] = [
   { key: 'exercise', metric: 'HKQuantityTypeIdentifierAppleExerciseTime' },
   { key: 'mindful', metric: 'HKCategoryTypeIdentifierMindfulSession:NotApplicable' },
   { key: 'daylight', metric: 'HKQuantityTypeIdentifierTimeInDaylight' },
+  // COROS training model (EvoLab) and daily values from the COROS app
+  { key: 'corosBaseFitness', metric: 'COROSBaseFitness' },
+  { key: 'corosAcuteLoad', metric: 'COROSAcuteLoad' },
+  { key: 'corosLoadRatio', metric: 'COROSLoadRatio' },
+  { key: 'corosFatigue', metric: 'COROSFatigue' },
+  { key: 'corosStamina', metric: 'COROSStaminaLevel' },
+  { key: 'corosCalories', metric: 'COROSCalories' },
+  { key: 'corosActiveTime', metric: 'COROSActiveMinutes' },
 ];
 
 export const OVERVIEW_SPARK_DAYS = 60;

@@ -1,5 +1,6 @@
 import { HeartPulse, Moon, Heart, Scale, Database, Activity, BatteryCharging } from 'lucide-react';
 import type { FeatureModule } from '../types';
+import { hasBodyData } from '@/lib/sources';
 import { messages } from './messages';
 
 /** "health" feature (web). Routes are children of the app shell; pages are lazy-loaded. */
@@ -21,9 +22,16 @@ const feature: FeatureModule = {
     { path: '/health/readiness', labelKey: 'health.nav.readiness', icon: BatteryCharging, group: 'health', order: 5 },
     { path: '/health/sleep', labelKey: 'health.nav.sleep', icon: Moon, group: 'health', order: 10 },
     { path: '/health/heart', labelKey: 'health.nav.heart', icon: Heart, group: 'health', order: 20 },
-    { path: '/health/body', labelKey: 'health.nav.body', icon: Scale, group: 'health', order: 30 },
+    { path: '/health/body', labelKey: 'health.nav.body', icon: Scale, group: 'health', order: 30, available: hasBodyData },
     { path: '/health/explorer', labelKey: 'health.nav.explorer', icon: Database, group: 'health', order: 40 },
-    { path: '/health/ecg', labelKey: 'health.nav.ecg', icon: Activity, group: 'health', order: 50 },
+    {
+      path: '/health/ecg',
+      labelKey: 'health.nav.ecg',
+      icon: Activity,
+      group: 'health',
+      order: 50,
+      available: (s) => s.ecgCount > 0,
+    },
   ],
 };
 

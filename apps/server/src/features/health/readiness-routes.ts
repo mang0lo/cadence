@@ -4,7 +4,14 @@ import { midnightOffsetMin, type DayValue, type ReadinessResponse } from '@caden
 import { heartMetric } from '../../core/sources';
 import { all, get, type Db } from '../../db/db';
 import { addDays, parseDay } from '../../lib/time';
-import { BASELINE_DAYS, HRV_DAYS, createReadinessModel, readinessModelInfo, type ReadinessInput, type ReadinessNight } from './readiness';
+import {
+  BASELINE_DAYS,
+  HRV_DAYS,
+  createReadinessModel,
+  readinessModelInfo,
+  type ReadinessInput,
+  type ReadinessNight,
+} from './readiness';
 import { dataRange, dayParam, getHealthSettings, typeIdByIdentifier } from './util';
 
 const RESP = 'HKQuantityTypeIdentifierRespiratoryRate';
@@ -42,9 +49,17 @@ interface SampleRow {
   value: number;
 }
 
-const exists = (db: Db, sql: string, params: (string | number)[]): boolean => get(db, `${sql} LIMIT 1`, params) !== undefined;
+const exists = (db: Db, sql: string, params: (string | number)[]): boolean =>
+  get(db, `${sql} LIMIT 1`, params) !== undefined;
 
-function dailyValues(db: Db, athleteId: number, metric: string, from: string, to: string, [lo, hi]: readonly [number, number]): DayValue[] {
+function dailyValues(
+  db: Db,
+  athleteId: number,
+  metric: string,
+  from: string,
+  to: string,
+  [lo, hi]: readonly [number, number],
+): DayValue[] {
   return all<DayValue>(
     db,
     `SELECT day, value FROM daily_metrics
@@ -58,7 +73,11 @@ function dailyValues(db: Db, athleteId: number, metric: string, from: string, to
  * starts before waking up, ends after going to bed and starts at most `leadS` before bedtime – the sleeping wrist
  * temperature is one sample spanning the night, respiratory rate and SpO₂ are spot readings.
  */
-export function nightMeans(samples: SampleRow[], nights: { bed_ts: number; wake_ts: number }[], leadS: number): (number | null)[] {
+export function nightMeans(
+  samples: SampleRow[],
+  nights: { bed_ts: number; wake_ts: number }[],
+  leadS: number,
+): (number | null)[] {
   const out: (number | null)[] = [];
   let lo = 0;
   for (const n of nights) {
@@ -78,7 +97,12 @@ export function nightMeans(samples: SampleRow[], nights: { bed_ts: number; wake_
 }
 
 /** Everything the model needs to evaluate the days fromDay … toDay (baselines reach 60 + 7 days further back). */
-export function loadReadinessInput(db: Db, athleteId: number, fromDay: string, toDay: string): ReadinessInput {
+export function loadReadinessInput(
+  db: Db,
+  athleteId: number,
+  fromDay: string,
+  toDay: string,
+): ReadinessInput {
   // Apple or COROS values, as chosen in Settings → My watch (never mixed: they are different measurements)
   const HRV = heartMetric(db, athleteId, 'hrv');
   const RHR = heartMetric(db, athleteId, 'restingHr');
@@ -92,21 +116,48 @@ export function loadReadinessInput(db: Db, athleteId: number, fromDay: string, t
 
   const present: ReadinessInput['present'] = {
     hrv: exists(db, 'SELECT 1 FROM daily_metrics WHERE athlete_id = ? AND metric = ?', [athleteId, HRV]),
-    restingHr: exists(db, 'SELECT 1 FROM daily_metrics WHERE athlete_id = ? AND metric = ?', [athleteId, RHR]),
-    sleep: exists(db, `SELECT 1 FROM health_sleep_nights WHERE athlete_id = ? AND kind = 'night' AND asleep_s > 0`, [athleteId]),
+    restingHr: exists(db, 'SELECT 1 FROM daily_metrics WHERE athlete_id = ? AND metric = ?', [
+      athleteId,
+      RHR,
+    ]),
+    sleep: exists(
+      db,
+      `SELECT 1 FROM health_sleep_nights WHERE athlete_id = ? AND kind = 'night' AND asleep_s > 0`,
+      [athleteId],
+    ),
+    // COROS nights have no times: without any timed night the watch does not record sleep timing at all
+    sleepTiming: exists(
+      db,
+      `SELECT 1 FROM health_sleep_nights WHERE athlete_id = ? AND kind = 'night' AND asleep_s > 0 AND timed = 1`,
+      [athleteId],
+    ),
     load: exists(db, 'SELECT 1 FROM daily_activity WHERE athlete_id = ?', [athleteId]),
   };
 
-  const perNight = (identifier: string, key: 'respiratoryRate' | 'wristTemp' | 'spo2', range: readonly [number, number], leadS: number) => {
+  const perNight = (
+    identifier: string,
+    key: 'respiratoryRate' | 'wristTemp' | 'spo2',
+    range: readonly [number, number],
+    leadS: number,
+  ) => {
     const typeId = typeIdByIdentifier(db, identifier);
-    present[key] = typeId !== null && exists(db, 'SELECT 1 FROM records WHERE athlete_id = ? AND type_id = ?', [athleteId, typeId]);
+    present[key] =
+      typeId !== null &&
+      exists(db, 'SELECT 1 FROM records WHERE athlete_id = ? AND type_id = ?', [athleteId, typeId]);
     if (!present[key] || !nightRows.length) return nightRows.map(() => null);
     const samples = all<SampleRow>(
       db,
       `SELECT start_ts, end_ts, value FROM records
        WHERE athlete_id = ? AND type_id = ? AND start_ts >= ? AND start_ts <= ? AND value BETWEEN ? AND ?
        ORDER BY start_ts`,
-      [athleteId, typeId!, nightRows[0]!.bed_ts - leadS, nightRows[nightRows.length - 1]!.wake_ts, range[0], range[1]],
+      [
+        athleteId,
+        typeId!,
+        nightRows[0]!.bed_ts - leadS,
+        nightRows[nightRows.length - 1]!.wake_ts,
+        range[0],
+        range[1],
+      ],
     );
     return nightMeans(samples, nightRows, leadS);
   };
@@ -141,7 +192,11 @@ export function loadReadinessInput(db: Db, athleteId: number, fromDay: string, t
   };
 }
 
-export function buildReadiness(db: Db, athleteId: number, q: { day?: string; days: number }): ReadinessResponse {
+export function buildReadiness(
+  db: Db,
+  athleteId: number,
+  q: { day?: string; days: number },
+): ReadinessResponse {
   const { asOf } = dataRange(db, athleteId);
   const day = q.day ?? asOf;
   if (!asOf || !day) return { asOf, day: null, current: null, history: [], model: readinessModelInfo() };

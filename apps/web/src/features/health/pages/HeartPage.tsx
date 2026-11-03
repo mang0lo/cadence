@@ -1,12 +1,36 @@
 import { useMemo, useState } from 'react';
-import { Activity, CheckCircle2, Gauge, Heart, HeartPulse, TrendingDown, TrendingUp, type LucideIcon } from 'lucide-react';
+import {
+  Activity,
+  CheckCircle2,
+  Gauge,
+  Heart,
+  HeartPulse,
+  TrendingDown,
+  TrendingUp,
+  type LucideIcon,
+} from 'lucide-react';
 import { Link } from 'react-router';
 import { shiftDay, type HeartEvent, type HeartEventType } from '@cadence/shared';
 import { useChartTheme } from '@/components/charts/theme';
-import { Badge, Button, Card, CardHeader, EmptyState, ErrorState, FilterBar, Page, PageHeader, Stat, Table, TD, TH } from '@/components/ui';
+import {
+  Badge,
+  Button,
+  Card,
+  CardHeader,
+  EmptyState,
+  ErrorState,
+  FilterBar,
+  Page,
+  PageHeader,
+  Stat,
+  Table,
+  TD,
+  TH,
+} from '@/components/ui';
 import { useApi } from '@/lib/api';
 import { useFormat } from '@/lib/format';
 import { useT } from '@/lib/i18n';
+import { useHasMetric } from '@/lib/sources';
 import { DayNav } from '../components/DayNav';
 import { IntradayChart } from '../components/IntradayChart';
 import { RangeSelect } from '../components/RangeSelect';
@@ -34,6 +58,13 @@ const EVENT_ICON: Record<HeartEventType, LucideIcon> = {
   lowCardio: Gauge,
 };
 
+const EVENT_TYPES = [
+  'HighHeartRateEvent',
+  'LowHeartRateEvent',
+  'IrregularHeartRhythmEvent',
+  'LowCardioFitnessEvent',
+].map((s) => `HKCategoryTypeIdentifier${s}`);
+
 const EVENT_ORDER: HeartEventType[] = ['high', 'low', 'irregular', 'lowCardio'];
 const EVENT_ROWS = 12;
 
@@ -41,7 +72,12 @@ function HeartEvents({ fromDay, toDay }: { fromDay?: string; toDay?: string }) {
   const t = useT();
   const fmt = useFormat();
   const m = useMetricFormat();
-  const q = useApi<HeartEvent[]>(['health', 'heart', 'events'], '/health/heart/events', { fromDay, toDay }, { enabled: !!toDay });
+  const q = useApi<HeartEvent[]>(
+    ['health', 'heart', 'events'],
+    '/health/heart/events',
+    { fromDay, toDay },
+    { enabled: !!toDay },
+  );
   const events = q.data ?? [];
   const counts = useMemo(() => {
     const c: Record<HeartEventType, number> = { high: 0, low: 0, irregular: 0, lowCardio: 0 };
@@ -52,7 +88,11 @@ function HeartEvents({ fromDay, toDay }: { fromDay?: string; toDay?: string }) {
 
   return (
     <Card>
-      <CardHeader title={t('health.heart.events.title')} subtitle={t('health.heart.events.subtitle')} icon={HeartPulse} />
+      <CardHeader
+        title={t('health.heart.events.title')}
+        subtitle={t('health.heart.events.subtitle')}
+        icon={HeartPulse}
+      />
       {q.error ? (
         <ErrorState error={q.error} />
       ) : events.length === 0 ? (
@@ -89,14 +129,18 @@ function HeartEvents({ fromDay, toDay }: { fromDay?: string; toDay?: string }) {
                         {t(`health.heart.events.${e.type}`)}
                       </Badge>
                     </TD>
-                    <TD numeric>{e.threshold !== null ? m.value('HKQuantityTypeIdentifierHeartRate', e.threshold) : '–'}</TD>
+                    <TD numeric>
+                      {e.threshold !== null ? m.value('HKQuantityTypeIdentifierHeartRate', e.threshold) : '–'}
+                    </TD>
                   </tr>
                 );
               })}
             </tbody>
           </Table>
           {events.length > EVENT_ROWS && (
-            <p className="mt-2 text-xs text-fg-3">{t('health.heart.events.moreShown', { count: EVENT_ROWS, total: events.length })}</p>
+            <p className="mt-2 text-xs text-fg-3">
+              {t('health.heart.events.moreShown', { count: EVENT_ROWS, total: events.length })}
+            </p>
           )}
         </>
       )}
@@ -111,6 +155,8 @@ export default function HeartPage() {
   const theme = useChartTheme();
   const { range, setRange, fromDay, toDay, meta } = useRange('heart', '1y');
   const ready = !!meta.data?.asOf;
+  // charts of metrics this athlete never recorded (walking HR without an Apple Watch …) are left out
+  const has = useHasMetric();
   const metrics = meta.data?.metrics ?? APPLE;
   const RHR = metrics.restingHr;
   const HRV = metrics.hrv;
@@ -156,96 +202,109 @@ export default function HeartPage() {
       {ready && (
         <div className="space-y-4">
           <div className="grid grid-cols-[minmax(0,1fr)] gap-4 xl:grid-cols-2">
-            <TrendChart
-              title={t('health.heart.restingHr.title')}
-              subtitle={t('health.heart.restingHr.subtitle')}
-              icon={HeartPulse}
-              metric={RHR}
-              unit="count/min"
-              points={toPoints(d?.[RHR])}
-              fromDay={fromDay}
-              color={measureColor(theme, 'restingHr')}
-              rolling={7}
-              good="down"
-              loading={loading}
-              emptyText={noRange}
-            />
-            <TrendChart
-              title={t('health.heart.hrv.title')}
-              subtitle={t('health.heart.hrv.subtitle')}
-              icon={Activity}
-              metric={HRV}
-              unit="ms"
-              points={toPoints(d?.[HRV])}
-              fromDay={fromDay}
-              color={measureColor(theme, 'hrv')}
-              rolling={7}
-              good="up"
-              loading={loading}
-              emptyText={noRange}
-            />
-            <div className="xl:col-span-2">
+            {has(RHR) && (
               <TrendChart
-                title={t('health.heart.range.title')}
-                subtitle={t('health.heart.range.subtitle')}
-                icon={Heart}
-                metric={HR}
+                title={t('health.heart.restingHr.title')}
+                subtitle={t('health.heart.restingHr.subtitle')}
+                icon={HeartPulse}
+                metric={RHR}
                 unit="count/min"
-                points={toPoints(d?.[HR])}
+                points={toPoints(d?.[RHR])}
                 fromDay={fromDay}
-                color={measureColor(theme, 'heartRate')}
-                band
-                height={280}
+                color={measureColor(theme, 'restingHr')}
+                rolling={7}
+                good="down"
                 loading={loading}
                 emptyText={noRange}
               />
-            </div>
-            <TrendChart
-              title={t('health.heart.walking.title')}
-              subtitle={t('health.heart.walking.subtitle')}
-              icon={Heart}
-              metric={WHR}
-              unit="count/min"
-              points={toPoints(d?.[WHR])}
-              fromDay={fromDay}
-              color={measureColor(theme, 'walkingHr')}
-              rolling={7}
-              good="down"
-              loading={loading}
-              emptyText={noRange}
-            />
-            <TrendChart
-              title={t('health.heart.vo2.title')}
-              subtitle={t('health.heart.vo2.subtitle')}
-              icon={Gauge}
-              metric={VO2}
-              unit="mL/min·kg"
-              points={toPoints(d?.[VO2])}
-              fromDay={fromDay}
-              color={measureColor(theme, 'vo2max')}
-              good="up"
-              loading={loading}
-              emptyText={noRange}
-            />
-            <TrendChart
-              title={t('health.heart.recovery.title')}
-              subtitle={t('health.heart.recovery.subtitle')}
-              icon={TrendingDown}
-              metric={REC}
-              unit="count/min"
-              points={toPoints(d?.[REC])}
-              fromDay={fromDay}
-              color={measureColor(theme, 'recovery')}
-              good="up"
-              loading={loading}
-              height={200}
-              emptyText={t('health.heart.recovery.empty')}
-            />
+            )}
+            {has(HRV) && (
+              <TrendChart
+                title={t('health.heart.hrv.title')}
+                subtitle={t('health.heart.hrv.subtitle')}
+                icon={Activity}
+                metric={HRV}
+                unit="ms"
+                points={toPoints(d?.[HRV])}
+                fromDay={fromDay}
+                color={measureColor(theme, 'hrv')}
+                rolling={7}
+                good="up"
+                loading={loading}
+                emptyText={noRange}
+              />
+            )}
+            {has(HR) && (
+              <div className="xl:col-span-2">
+                <TrendChart
+                  title={t('health.heart.range.title')}
+                  subtitle={t('health.heart.range.subtitle')}
+                  icon={Heart}
+                  metric={HR}
+                  unit="count/min"
+                  points={toPoints(d?.[HR])}
+                  fromDay={fromDay}
+                  color={measureColor(theme, 'heartRate')}
+                  band
+                  height={280}
+                  loading={loading}
+                  emptyText={noRange}
+                />
+              </div>
+            )}
+            {has(WHR) && (
+              <TrendChart
+                title={t('health.heart.walking.title')}
+                subtitle={t('health.heart.walking.subtitle')}
+                icon={Heart}
+                metric={WHR}
+                unit="count/min"
+                points={toPoints(d?.[WHR])}
+                fromDay={fromDay}
+                color={measureColor(theme, 'walkingHr')}
+                rolling={7}
+                good="down"
+                loading={loading}
+                emptyText={noRange}
+              />
+            )}
+            {has(VO2) && (
+              <TrendChart
+                title={t('health.heart.vo2.title')}
+                subtitle={t('health.heart.vo2.subtitle')}
+                icon={Gauge}
+                metric={VO2}
+                unit="mL/min·kg"
+                points={toPoints(d?.[VO2])}
+                fromDay={fromDay}
+                color={measureColor(theme, 'vo2max')}
+                good="up"
+                loading={loading}
+                emptyText={noRange}
+              />
+            )}
+            {has(REC) && (
+              <TrendChart
+                title={t('health.heart.recovery.title')}
+                subtitle={t('health.heart.recovery.subtitle')}
+                icon={TrendingDown}
+                metric={REC}
+                unit="count/min"
+                points={toPoints(d?.[REC])}
+                fromDay={fromDay}
+                color={measureColor(theme, 'recovery')}
+                good="up"
+                loading={loading}
+                height={200}
+                emptyText={t('health.heart.recovery.empty')}
+              />
+            )}
           </div>
 
-          <HeartEvents fromDay={fromDay} toDay={toDay} />
+          {EVENT_TYPES.some(has) && <HeartEvents fromDay={fromDay} toDay={toDay} />}
 
-          {day && meta.data && (
+          {/* the day's samples: Apple Watch heart rate (COROS only reports daily values) */}
+          {day && meta.data && HR.startsWith('HK') && has(HR) && (
             <IntradayChart
               type={HR}
               unit="count/min"
@@ -254,7 +313,14 @@ export default function HeartPage() {
               subtitle={`${fmt.day(day, 'weekday')} · ${t('health.heart.intraday.subtitle')}`}
               icon={HeartPulse}
               color={measureColor(theme, 'heartRate')}
-              reference={rhrOfDay !== undefined ? { value: rhrOfDay, label: t('health.heart.intraday.resting', { value: m.value(RHR, rhrOfDay) }) } : null}
+              reference={
+                rhrOfDay !== undefined
+                  ? {
+                      value: rhrOfDay,
+                      label: t('health.heart.intraday.resting', { value: m.value(RHR, rhrOfDay) }),
+                    }
+                  : null
+              }
               workouts
               height={280}
               actions={

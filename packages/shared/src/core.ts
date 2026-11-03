@@ -61,6 +61,23 @@ export interface DataSourcePrefs {
   heart: SourcePref;
 }
 
+/** GET /api/sources: which watch the athlete uses and what data exists, so pages show only what can have data. */
+export interface DataSourcesInfo {
+  watch: WatchKind;
+  /** Data from an Apple Health export (records or workouts). */
+  apple: { records: number; workouts: number };
+  /** COROS connection (Watches page). */
+  coros: { connected: boolean; lastSyncAt: number | null; lastError: string | null; workouts: number };
+  /** Workouts imported from FIT files of other watches (COROS included). */
+  fitWorkouts: number;
+  /** Record types with at least one value (HealthKit identifiers and COROS… metrics). */
+  metrics: string[];
+  sleepNights: number;
+  ecgCount: number;
+  /** Apple activity rings. */
+  rings: boolean;
+}
+
 export const DEFAULT_SETTINGS: AthleteSettings = {
   units: 'metric',
   language: 'auto',
