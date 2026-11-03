@@ -2,6 +2,8 @@ import { all, get, prepare, run, tx, type Db } from '../../db/db';
 import { recomputeDailyMetrics, refreshTypeStats } from '../../derive/daily';
 import { fnv1a } from '../../lib/hash';
 import { parseDay } from '../../lib/time';
+import { getSettings } from '../../core/settings';
+import { preferred } from '../../core/sources';
 import { rebuildSleepNights } from '../health/sleep';
 import { MOBILE_DATA, type MobileDay } from './coros-mobile';
 
@@ -339,10 +341,11 @@ export async function syncCorosMobile(
   for (let w = 0; w < (opts.maxWindows ?? 60); w++) {
     const start = addDaysStr(end, -(MOBILE_WINDOW_DAYS - 1));
     const lists: Partial<Record<keyof typeof MOBILE_DATA, MobileDay[]>> = {};
-    for (const key of ['steps', 'calories', 'activeTime', 'heartRate', 'sleep'] as const)
+    for (const key of ['steps', 'calories', 'activeTime', 'heartRate', 'sleep', 'calendar'] as const)
       lists[key] = await daily(MOBILE_DATA[key], Number(compact(start)), Number(compact(end)));
     const r = storeCorosDays(db, athleteId, mobileRows(lists), COROS_MOBILE_METRICS);
     const s = storeCorosNights(db, athleteId, lists.sleep ?? []);
+    storeCorosRings(db, athleteId, lists.calendar ?? []);
     days += r.days;
     nights += s.nights;
     for (const e of [r.earliest, s.earliest]) if (e && (!earliest || e < earliest)) earliest = e;
@@ -355,4 +358,50 @@ export async function syncCorosMobile(
   refreshCorosMetrics(db, athleteId, from);
   rebuildSleepNights(db, athleteId, from);
   return { days, nights, earliest };
+}
+
+/**
+ * The COROS app's daily goals as activity rings (activity_summaries): calories → Move, active time → Exercise (COROS
+ * has no Stand ring). COROS reports the share of each goal in % capped at 100: below 100 it gives the goal exactly
+ * (value / share), at 100 the ring is closed and the goal is the last one known (or the value itself). Days with
+ * Apple rings keep them unless the athlete prefers the watch's own data (Settings → My watch).
+ */
+export function storeCorosRings(db: Db, athleteId: number, days: MobileDay[]): number {
+  const preferDevice = preferred(getSettings(db, athleteId), 'heart') === 'device';
+  const rows = days
+    .map((d) => ({ day: dayOf(d.happenDay), c: d.calendarData }))
+    .filter((r): r is { day: string; c: NonNullable<MobileDay['calendarData']> } => !!r.day && !!r.c)
+    .sort((a, b) => a.day.localeCompare(b.day));
+  let kcalGoal: number | null = null;
+  let minGoal: number | null = null;
+  // shares are whole percent: only days with enough progress give a reliable goal, rounded to COROS' steps
+  const goalOf = (value: number, rate: number | undefined, last: number | null, minValue: number, step: number) =>
+    rate && rate >= 20 && rate < 100 && value >= minValue
+      ? Math.max(step, Math.round((value * 100) / rate / step) * step)
+      : (last ?? (value > 0 ? value : null));
+  const upsert = prepare(
+    db,
+    `INSERT INTO activity_summaries (athlete_id, day, active_energy_kcal, active_energy_goal_kcal, exercise_min, exercise_goal_min)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT (athlete_id, day) DO UPDATE SET active_energy_kcal = excluded.active_energy_kcal,
+       active_energy_goal_kcal = excluded.active_energy_goal_kcal, exercise_min = excluded.exercise_min,
+       exercise_goal_min = excluded.exercise_goal_min, move_time_min = NULL, move_time_goal_min = NULL,
+       stand_hours = NULL, stand_goal_hours = NULL
+     WHERE ?`,
+  );
+  let n = 0;
+  tx(db, () => {
+    for (const { day, c } of rows) {
+      const kcal = Math.round((c.calorie ?? 0) / 1000);
+      const min = Math.round((c.motionTime ?? 0) / 60);
+      if (!kcal && !min) continue;
+      kcalGoal = goalOf(kcal, c.calorieStandardRate, kcalGoal, 20, 10);
+      minGoal = goalOf(min, c.motionTimeStandardRate, minGoal, 5, 5);
+      // the stored goal of a closed day is at most its value (else a closed COROS ring would show as open)
+      const kg = c.calorieStandardRate === 100 && kcalGoal !== null ? Math.min(kcalGoal, kcal) : kcalGoal;
+      const mg = c.motionTimeStandardRate === 100 && minGoal !== null ? Math.min(minGoal, min) : minGoal;
+      n += Number(upsert.run(athleteId, day, kcal, kg, min, mg, preferDevice ? 1 : 0).changes);
+    }
+  });
+  return n;
 }

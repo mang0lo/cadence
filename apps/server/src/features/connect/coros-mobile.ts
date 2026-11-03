@@ -39,7 +39,16 @@ export function mobileEncrypt(plain: string, appKey: string): string {
 }
 
 /** dataType values of coros/data/statistic/daily (others answer nothing). */
-export const MOBILE_DATA = { calories: 1, activeTime: 2, steps: 3, heartRate: 4, sleep: 5, restingHr: 6 } as const;
+export const MOBILE_DATA = {
+  calories: 1,
+  activeTime: 2,
+  steps: 3,
+  heartRate: 4,
+  sleep: 5,
+  restingHr: 6,
+  /** Day summary with the progress towards the daily goals (the COROS app's rings). */
+  calendar: 12,
+} as const;
 
 export interface MobileDay {
   happenDay: number;
@@ -62,6 +71,8 @@ export interface MobileDay {
     maxHeartRate?: number;
   };
   rhr?: number;
+  /** Day summary: calories (cal) and active time (s) with the share of the daily goal in % (capped at 100). */
+  calendarData?: { calorie?: number; calorieStandardRate?: number; motionTime?: number; motionTimeStandardRate?: number };
   [key: string]: unknown;
 }
 
