@@ -19,6 +19,7 @@
  *   GET  /metric/samples?type=&from=&to=&limit=&offset=&order=   Page<MetricSample>
  *   GET  /ecg                       EcgSummary[]
  *   GET  /ecg/:id                   EcgDetail
+ *   GET  /readiness?day=&days=      ReadinessResponse
  */
 import type { RecordTypeInfo } from '../core';
 
@@ -361,4 +362,138 @@ export interface EcgDetail extends EcgSummary {
   samples: number[];
   /** R-peak sample indices. */
   rPeaks: number[];
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Readiness – daily estimate of how recovered the athlete is (model: apps/server/src/features/health/readiness.ts)
+// ---------------------------------------------------------------------------------------------------------------
+
+/** Signals of the readiness model, in display order. */
+export const READINESS_FACTORS = [
+  'hrv',
+  'restingHr',
+  'sleep',
+  'sleepTiming',
+  'load',
+  'respiratoryRate',
+  'wristTemp',
+  'spo2',
+] as const;
+export type ReadinessFactorKey = (typeof READINESS_FACTORS)[number];
+
+export type ReadinessBand = 'ready' | 'normal' | 'easy' | 'recover';
+
+/** Why a signal is not part of the score: not in the data at all / nothing for this day / baseline still too short. */
+export type ReadinessMissing = 'never' | 'noValue' | 'baseline';
+
+/** Personal normal range of a signal. */
+export interface ReadinessRange {
+  /** Baseline mean (HRV: geometric mean in ms). */
+  mean: number;
+  /** Normal range = mean ± 1 SD (HRV: computed on ln(SDNN), converted back to ms; load: the balanced ratio range). */
+  low: number;
+  high: number;
+}
+
+export interface ReadinessFactor {
+  key: ReadinessFactorKey;
+  /** Went into the score. */
+  used: boolean;
+  missing: ReadinessMissing | null;
+  /** Nominal weight; the weights of all signals add up to 100 and are re-normalised over the signals used. */
+  weight: number;
+  /** Day the measured value belongs to (resting heart rate falls back to the day before). */
+  valueDay: string | null;
+  /**
+   * Measured value in canonical units:
+   *  hrv – geometric mean SDNN of the last 7 days (ms) · restingHr – bpm ·
+   *  sleep – seconds asleep in the night that ended on the day · sleepTiming – midpoint of that night, minutes from
+   *  local midnight (negative = before midnight) · load – fatigue ÷ fitness (ATL / CTL) at the end of the day before ·
+   *  respiratoryRate – breaths/min during the night · wristTemp – °C during the night · spo2 – fraction 0..1 during the night.
+   */
+  value: number | null;
+  /** Personal normal range from the baseline window (load: the balanced range of the ratio). */
+  range: ReadinessRange | null;
+  /** Days (nights) with data in the baseline window; load: days of training history. */
+  baselineDays: number;
+  /** Deviation from the baseline mean in baseline standard deviations (+ = higher than usual); null for load. */
+  z: number | null;
+  /** Effect on recovery, −1 … +1 (+ = better recovered); ±0.5 at the edge of the normal range. */
+  effect: number | null;
+  /** Score points this signal adds (+) or takes away (−); the score is 50 + the sum of all points (before the cap). */
+  points: number | null;
+  /** Machine-readable reason, e.g. 'hrv.low', 'restingHr.normal', 'load.high'. */
+  reason: string | null;
+  /**
+   * Extra numbers for the explanation: hrv { today } (ms) · sleep { goalS, inBedS, efficiency } ·
+   * sleepTiming { shiftMin } (minutes later (+) / earlier (−) than usual) · load { ctl, atl, tsb, yesterday, hardDay (0/1) }.
+   */
+  detail: Record<string, number | null>;
+}
+
+export interface ReadinessDay {
+  day: string;
+  /** 0–100; 50 = every signal exactly at your personal baseline. Null when there is not enough data. */
+  score: number | null;
+  band: ReadinessBand | null;
+  /** Score before the cap. */
+  rawScore: number | null;
+  /** Signal whose strong warning limited the score to the top of the 'easy' band. */
+  cappedBy: ReadinessFactorKey | null;
+  /** Share of the full model's weight that went into the score (0..1). */
+  coverage: number;
+  /** Why there is no score: no HRV / resting heart rate signal ('noCore') or fewer than two signals ('tooFew'). */
+  insufficient: 'noCore' | 'tooFew' | null;
+  /** Notable reasons, most important first: signals outside their normal range, 'capped', 'load.hardDay'; 'allNormal'. */
+  reasons: string[];
+  /** All signals in display order, used or not. */
+  factors: ReadinessFactor[];
+}
+
+export interface ReadinessTrendDay {
+  day: string;
+  score: number | null;
+  band: ReadinessBand | null;
+  /** Number of signals that went into the score. */
+  used: number;
+  /** Daily mean SDNN (ms), its 7-day geometric mean and the normal range of that 7-day mean. */
+  hrv: number | null;
+  hrv7: number | null;
+  hrvRange: ReadinessRange | null;
+  /** Resting heart rate of the day (bpm) and its normal range. */
+  restingHr: number | null;
+  restingHrRange: ReadinessRange | null;
+}
+
+/** Parameters of the model, so the UI can explain it without duplicating numbers. */
+export interface ReadinessModelInfo {
+  /** Length of the personal baseline window (days before the evaluated day). */
+  baselineDays: number;
+  /** Days (nights) with data a signal needs in its baseline window. */
+  minBaselineDays: number;
+  /** HRV is compared as the mean of ln(SDNN) over this many days. */
+  hrvDays: number;
+  weights: Record<ReadinessFactorKey, number>;
+  /** Bands, best first: a score belongs to the first band whose `min` it reaches. */
+  bands: { key: ReadinessBand; min: number }[];
+  /** Highest score while one key signal shows a strong warning. */
+  cap: number;
+  /** Fatigue ÷ fitness inside this range counts as balanced. */
+  loadRange: { low: number; high: number };
+  /** Time constants (days) of fatigue (ATL) and fitness (CTL). */
+  atlDays: number;
+  ctlDays: number;
+  /** Days of training history the load signal needs. */
+  minLoadDays: number;
+}
+
+export interface ReadinessResponse {
+  /** Latest local day with health data; null without any data. */
+  asOf: string | null;
+  /** Evaluated day: `?day=`, default `asOf`. */
+  day: string | null;
+  current: ReadinessDay | null;
+  /** One entry per day, oldest first, ending at `day` (`?days=`, default 90; 0 = none). */
+  history: ReadinessTrendDay[];
+  model: ReadinessModelInfo;
 }
