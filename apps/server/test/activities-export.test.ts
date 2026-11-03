@@ -119,6 +119,11 @@ describe('activities CSV export', () => {
     const withDistance = rows.slice(1).find((r) => r[i]);
     expect(withDistance?.[i]).toMatch(/^\d+,\d{2}$/);
     expect(rows.slice(1).every((r) => r[head.indexOf('Sportart')] === 'Radfahrt')).toBe(true);
+    // place names in German ("Wien", not "Vienna")
+    const all = parseCsv((await app.inject({ url: '/api/activities/export.csv?lang=de' })).body.slice(1), ';');
+    const places = all.slice(1).map((r) => r[all[0]!.indexOf('Ort')]!);
+    expect(places.some((p) => p.length > 0)).toBe(true);
+    expect(places.some((p) => p.includes('Vienna'))).toBe(false);
   });
 
   it('quotes text with separators and neutralizes formulas', async () => {

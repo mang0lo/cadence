@@ -2,6 +2,7 @@ import {
   M_PER_FT,
   M_PER_KM,
   M_PER_MI,
+  placeName,
   sportInfo,
   workoutTitle,
   type ActivitySort,
@@ -182,7 +183,11 @@ export function activitiesCsv(db: Db, athleteId: number, o: CsvOptions): string 
   for (const r of rows) {
     const w = toSummary(r);
     const local = new Date((w.startTs + w.tzMin * 60) * 1000);
-    const place = w.place ? (w.placeEnd ? `${w.place} → ${w.placeEnd}` : w.place) : '';
+    const place = w.place
+      ? w.placeEnd
+        ? `${placeName(w.place, o.lang)} → ${placeName(w.placeEnd, o.lang)}`
+        : placeName(w.place, o.lang)
+      : '';
     const moving = w.movingS ?? w.durationS;
     const hasDistance = (w.distanceM ?? 0) > 0;
     const cell: Record<Column, string> = {
