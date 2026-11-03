@@ -304,13 +304,21 @@ function ListTable({
                 </div>
                 <div className="mt-0.5 flex min-w-0 items-center gap-1.5 overflow-hidden pl-7.5 text-xs text-fg-3">
                   <span className="shrink-0">{sportLabel(w.sport, lang)}</span>
-                  {w.place && <PlaceText w={w} size={11} className="max-w-48" />}
-                  {w.medals[0] && (
-                    <MedalBadge rank={w.medals[0].rank} effort={w.medals[0].effort} sport={w.sport} elapsedS={w.medals[0].elapsedS} />
+                  {w.place && (
+                    <>
+                      <span aria-hidden>·</span>
+                      <PlaceText w={w} size={11} />
+                    </>
                   )}
-                  {w.medals.length > 1 && <Badge>{t('activities.medal.more', { count: w.medals.length - 1 })}</Badge>}
-                  {w.hidden && <Badge icon={EyeOff}>{t('activities.list.hiddenBadge')}</Badge>}
+                  {w.hidden && <Badge icon={EyeOff} className="shrink-0">{t('activities.list.hiddenBadge')}</Badge>}
                 </div>
+                {/* medals in their own line, so the place is never squeezed to its icon */}
+                {w.medals[0] && (
+                  <div className="mt-1 flex min-w-0 items-center gap-1.5 overflow-hidden pl-7.5">
+                    <MedalBadge rank={w.medals[0].rank} effort={w.medals[0].effort} sport={w.sport} elapsedS={w.medals[0].elapsedS} />
+                    {w.medals.length > 1 && <Badge>{t('activities.medal.more', { count: w.medals.length - 1 })}</Badge>}
+                  </div>
+                )}
               </TD>
               <TD numeric className="whitespace-nowrap">
                 {distanceText(w, fmt)}

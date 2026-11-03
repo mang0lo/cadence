@@ -53,10 +53,10 @@ export function FeedCard({ w }: { w: ActivityListItem }) {
               <span>{sportLabel(w.sport, lang)}</span>
               {w.indoor && <MapPinOff size={12} aria-label={t('activities.feed.indoor')} />}
               {w.place && (
-                <>
+                <span className="inline-flex min-w-0 items-center gap-x-1.5">
                   <span aria-hidden>·</span>
                   <PlaceText w={w} />
-                </>
+                </span>
               )}
               {w.sourceName && (
                 <>

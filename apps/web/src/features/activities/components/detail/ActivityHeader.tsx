@@ -203,10 +203,11 @@ export function ActivityHeader({ w, nav }: { w: WorkoutDetail; nav: ActivityNav 
             <time dateTime={new Date(w.startTs * 1000).toISOString()}>{fmt.date(w.startTs, w.tzMin, 'weekday')}, {fmt.time(w.startTs, w.tzMin)}</time>
             <span className="text-xs">{zone}</span>
             {w.place && (
-              <>
+              // separator and place wrap together
+              <span className="inline-flex min-w-0 items-center gap-x-2">
                 <span aria-hidden>·</span>
                 <PlaceText w={w} size={14} />
-              </>
+              </span>
             )}
             {w.indoor && (
               <Badge icon={MapPinOff}>{t('activities.detail.indoor')}</Badge>
