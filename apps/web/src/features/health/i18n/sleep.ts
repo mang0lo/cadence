@@ -80,7 +80,8 @@ export const sleep: Dictionary = {
     },
     physiology: {
       title: 'During this night',
-      subtitle: 'Measured by your Apple Watch while you slept',
+      subtitle: 'Measured by your watch while you slept',
+      by: 'Measured by {source} while you slept',
       hr: 'Heart rate',
       hrLowest: 'Lowest heart rate',
       hrAvg: 'Avg. heart rate',
@@ -107,6 +108,7 @@ export const sleep: Dictionary = {
         'COROS doesn’t share sleep through its web interface, so it can’t be synced directly yet. If the COROS app writes sleep to Apple Health (COROS app → Settings → Apple Health), import an Apple Health export and your COROS nights show up here.',
     },
     noTrackedNights: 'No nights with sleep tracking in this time range.',
+    stageTotals: 'Sleep stages',
     untimed: 'COROS reports how long and how deeply you slept, but not when you went to bed or woke up.',
   },
   de: {
@@ -188,7 +190,8 @@ export const sleep: Dictionary = {
     },
     physiology: {
       title: 'Während dieser Nacht',
-      subtitle: 'Von deiner Apple Watch im Schlaf gemessen',
+      subtitle: 'Von deiner Uhr im Schlaf gemessen',
+      by: 'Im Schlaf gemessen von {source}',
       hr: 'Herzfrequenz',
       hrLowest: 'Niedrigste Herzfrequenz',
       hrAvg: 'Ø Herzfrequenz',
@@ -215,6 +218,7 @@ export const sleep: Dictionary = {
         'COROS gibt Schlafdaten nicht über seine Web-Schnittstelle heraus, deshalb lassen sie sich noch nicht direkt synchronisieren. Wenn die COROS-App den Schlaf in Apple Health schreibt (COROS-App → Einstellungen → Apple Health), importiere einen Apple-Health-Export – dann erscheinen deine COROS-Nächte hier.',
     },
     noTrackedNights: 'In diesem Zeitraum gibt es keine Nächte mit Schlaftracking.',
+    stageTotals: 'Schlafphasen',
     untimed: 'COROS liefert, wie lange und wie tief du geschlafen hast, aber nicht, wann du ins Bett gegangen oder aufgewacht bist.',
   },
 };

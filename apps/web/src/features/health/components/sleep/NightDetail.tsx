@@ -4,7 +4,16 @@ import { Activity, Droplets, HeartPulse, Moon, Thermometer, Wind, type LucideIco
 import type { DailyMetric, SleepNight, SleepNightDetail, SleepStage, TimedValue } from '@cadence/shared';
 import { ChartCard } from '@/components/charts/ChartCard';
 import { EChart } from '@/components/charts/EChart';
-import { categoryAxis, grid, itemTooltip, axisTooltip, lineSeries, timeAxis, tooltipHtml, valueAxis } from '@/components/charts/options';
+import {
+  categoryAxis,
+  grid,
+  itemTooltip,
+  axisTooltip,
+  lineSeries,
+  timeAxis,
+  tooltipHtml,
+  valueAxis,
+} from '@/components/charts/options';
 import { useChartTheme } from '@/components/charts/theme';
 import { Card, CardHeader, ErrorState, Skeleton, Stat, StatRow } from '@/components/ui';
 import { useApi } from '@/lib/api';
@@ -57,7 +66,13 @@ function Hypnogram({ night }: { night: SleepNightDetail }) {
         const h = Math.min(band * 0.62, 26);
         return {
           type: 'rect',
-          shape: { x: start[0]!, y: start[1]! - h / 2, width: Math.max(end[0]! - start[0]!, 1.5), height: h, r: 3 },
+          shape: {
+            x: start[0]!,
+            y: start[1]! - h / 2,
+            width: Math.max(end[0]! - start[0]!, 1.5),
+            height: h,
+            r: 3,
+          },
           style: { fill: api.visual('color') as string },
         };
       },
@@ -71,14 +86,25 @@ function Hypnogram({ night }: { night: SleepNightDetail }) {
         if (!d) return '';
         return tooltipHtml(
           `${fmt.time(d.seg.startTs, night.tzBedMin)} – ${fmt.time(d.seg.endTs, night.tzBedMin)}`,
-          [{ color: stageColor(theme, d.stage), label: stageLabel(d.stage), value: fmt.durationShort(d.seg.endTs - d.seg.startTs) }],
+          [
+            {
+              color: stageColor(theme, d.stage),
+              label: stageLabel(d.stage),
+              value: fmt.durationShort(d.seg.endTs - d.seg.startTs),
+            },
+          ],
           theme,
         );
       }),
       xAxis: timeAxis(theme, {
         min: (night.bedTs + off) * 1000,
         max: (night.wakeTs + off) * 1000,
-        axisLabel: { color: theme.muted, fontSize: 11, hideOverlap: true, formatter: (v: number) => fmt.time(v / 1000, 0) },
+        axisLabel: {
+          color: theme.muted,
+          fontSize: 11,
+          hideOverlap: true,
+          formatter: (v: number) => fmt.time(v / 1000, 0),
+        },
       }),
       yAxis: categoryAxis(
         theme,
@@ -122,7 +148,11 @@ function Hypnogram({ night }: { night: SleepNightDetail }) {
         <div className="flex flex-wrap gap-x-5 gap-y-1.5">
           {legendStages.map((s) => (
             <span key={s} className="inline-flex items-center gap-1.5 text-xs text-fg-2">
-              <span className="inline-block size-2.5 rounded-[3px]" style={{ background: stageColor(theme, s) }} aria-hidden />
+              <span
+                className="inline-block size-2.5 rounded-[3px]"
+                style={{ background: stageColor(theme, s) }}
+                aria-hidden
+              />
               {stageLabel(s)}
               <span className="font-medium text-fg tabular">{fmt.durationShort(stageSeconds(night, s))}</span>
             </span>
@@ -170,12 +200,21 @@ function NightSeriesChart({
         const p = (params as { dataIndex: number }[])[0];
         const pt = p ? points[p.dataIndex] : undefined;
         if (!pt) return '';
-        return tooltipHtml(fmt.time(pt.ts, night.tzBedMin), [{ color, label: title, value: m.value(metric, pt.value) }], theme);
+        return tooltipHtml(
+          fmt.time(pt.ts, night.tzBedMin),
+          [{ color, label: title, value: m.value(metric, pt.value) }],
+          theme,
+        );
       }),
       xAxis: timeAxis(theme, {
         min: (night.bedTs + off) * 1000,
         max: (night.wakeTs + off) * 1000,
-        axisLabel: { color: theme.muted, fontSize: 11, hideOverlap: true, formatter: (v: number) => fmt.time(v / 1000, 0) },
+        axisLabel: {
+          color: theme.muted,
+          fontSize: 11,
+          hideOverlap: true,
+          formatter: (v: number) => fmt.time(v / 1000, 0),
+        },
       }),
       yAxis: valueAxis(theme, { scale: true, axisLabel: { color: theme.muted, fontSize: 11 } }),
       series: [s],
@@ -204,6 +243,51 @@ function NightSeriesChart({
   );
 }
 
+/** Nights a watch cloud reports as totals (COROS): share of each stage instead of a timeline. */
+function StageTotals({ night }: { night: SleepNightDetail }) {
+  const t = useT();
+  const fmt = useFormat();
+  const theme = useChartTheme();
+  const stageLabel = useStageLabel();
+  const parts = (
+    [
+      ['deep', night.deepS],
+      ['core', night.coreS],
+      ['rem', night.remS],
+      ['asleep', night.unspecS],
+      ['awake', night.awakeS],
+    ] as [SleepStage, number][]
+  ).filter(([, s]) => s > 0);
+  const total = parts.reduce((a, [, s]) => a + s, 0) || 1;
+  return (
+    <Card>
+      <CardHeader title={t('health.sleep.stageTotals')} subtitle={t('health.sleep.untimed')} icon={Moon} />
+      <div
+        className="flex h-6 w-full overflow-hidden rounded-control"
+        role="img"
+        aria-label={t('health.sleep.stageTotals')}
+      >
+        {parts.map(([stage, s]) => (
+          <div
+            key={stage}
+            style={{ width: `${(s / total) * 100}%`, background: stageColor(theme, stage) }}
+            title={`${stageLabel(stage)} ${fmt.durationShort(s)}`}
+          />
+        ))}
+      </div>
+      <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-sm">
+        {parts.map(([stage, s]) => (
+          <span key={stage} className="inline-flex items-center gap-1.5 text-fg-2">
+            <span className="size-2.5 rounded-sm" style={{ background: stageColor(theme, stage) }} />
+            {stageLabel(stage)} <span className="font-semibold text-fg">{fmt.durationShort(s)}</span>
+            <span className="text-fg-3">{fmt.pct(s / total)}</span>
+          </span>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
 function PhysiologyPanel({ night }: { night: SleepNightDetail }) {
   const t = useT();
   const m = useMetricFormat();
@@ -216,37 +300,104 @@ function PhysiologyPanel({ night }: { night: SleepNightDetail }) {
   return (
     <div className="space-y-4">
       <Card>
-        <CardHeader title={t('health.sleep.physiology.title')} subtitle={t('health.sleep.physiology.subtitle')} icon={HeartPulse} />
+        <CardHeader
+          title={t('health.sleep.physiology.title')}
+          subtitle={
+            night.source
+              ? t('health.sleep.physiology.by', { source: night.source })
+              : t('health.sleep.physiology.subtitle')
+          }
+          icon={HeartPulse}
+        />
         <StatRow>
           <Stat
             label={t('health.sleep.physiology.hrLowest')}
             value={m.parts(HR, p.hrMin).value}
             unit={m.parts(HR, p.hrMin).unit}
-            hint={p.hrAvg !== null ? t('health.sleep.physiology.avg', { value: m.value(HR, p.hrAvg) }) : undefined}
-          />
-          <Stat label={t('health.sleep.physiology.hrv')} value={m.parts(HRV, p.hrvAvg).value} unit={m.parts(HRV, p.hrvAvg).unit} />
-          <Stat label={t('health.sleep.physiology.resp')} value={m.parts(RESP, p.respAvg).value} unit={m.parts(RESP, p.respAvg).unit} />
-          <Stat label={t('health.sleep.physiology.spo2')} value={m.parts(SPO2, p.spo2Avg).value} unit={m.parts(SPO2, p.spo2Avg).unit} />
-          <Stat
-            label={t('health.sleep.physiology.wrist')}
-            value={p.wristTemp ? m.parts(WRIST, p.wristTemp.value).value : '–'}
-            unit={p.wristTemp ? m.parts(WRIST, p.wristTemp.value).unit : ''}
-            delta={wristDelta ? <TrendDelta value={wristDelta.value} text={wristDelta.text} good={null} /> : undefined}
             hint={
-              p.wristTemp?.baseline !== null && p.wristTemp?.baseline !== undefined
-                ? t('health.sleep.physiology.vsBaseline', { days: 30 })
-                : undefined
+              p.hrAvg !== null ? t('health.sleep.physiology.avg', { value: m.value(HR, p.hrAvg) }) : undefined
             }
-            trend={wristSpark.length > 1 ? <Spark data={wristSpark} height={24} ariaLabel={t('health.sleep.physiology.last30')} /> : undefined}
           />
+          <Stat
+            label={t('health.sleep.physiology.hrv')}
+            value={m.parts(HRV, p.hrvAvg).value}
+            unit={m.parts(HRV, p.hrvAvg).unit}
+          />
+          {night.timed && (
+            <Stat
+              label={t('health.sleep.physiology.resp')}
+              value={m.parts(RESP, p.respAvg).value}
+              unit={m.parts(RESP, p.respAvg).unit}
+            />
+          )}
+          {night.timed && (
+            <Stat
+              label={t('health.sleep.physiology.spo2')}
+              value={m.parts(SPO2, p.spo2Avg).value}
+              unit={m.parts(SPO2, p.spo2Avg).unit}
+            />
+          )}
+          {night.timed && (
+            <Stat
+              label={t('health.sleep.physiology.wrist')}
+              value={p.wristTemp ? m.parts(WRIST, p.wristTemp.value).value : '–'}
+              unit={p.wristTemp ? m.parts(WRIST, p.wristTemp.value).unit : ''}
+              delta={
+                wristDelta ? (
+                  <TrendDelta value={wristDelta.value} text={wristDelta.text} good={null} />
+                ) : undefined
+              }
+              hint={
+                p.wristTemp?.baseline !== null && p.wristTemp?.baseline !== undefined
+                  ? t('health.sleep.physiology.vsBaseline', { days: 30 })
+                  : undefined
+              }
+              trend={
+                wristSpark.length > 1 ? (
+                  <Spark data={wristSpark} height={24} ariaLabel={t('health.sleep.physiology.last30')} />
+                ) : undefined
+              }
+            />
+          )}
         </StatRow>
       </Card>
-      <div className="grid grid-cols-[minmax(0,1fr)] gap-4 xl:grid-cols-2">
-        <NightSeriesChart title={t('health.sleep.physiology.hr')} icon={HeartPulse} metric={HR} measure="heartRate" points={p.hr} night={night} />
-        <NightSeriesChart title={t('health.sleep.physiology.hrv')} icon={Activity} metric={HRV} measure="hrv" points={p.hrv} night={night} />
-        <NightSeriesChart title={t('health.sleep.physiology.resp')} icon={Wind} metric={RESP} measure="respiratory" points={p.resp} night={night} />
-        <NightSeriesChart title={t('health.sleep.physiology.spo2')} icon={Droplets} metric={SPO2} measure="spo2" points={p.spo2} night={night} />
-      </div>
+      {/* nights reported as totals (COROS) have no samples to draw */}
+      {night.timed && (
+        <div className="grid grid-cols-[minmax(0,1fr)] gap-4 xl:grid-cols-2">
+          <NightSeriesChart
+            title={t('health.sleep.physiology.hr')}
+            icon={HeartPulse}
+            metric={HR}
+            measure="heartRate"
+            points={p.hr}
+            night={night}
+          />
+          <NightSeriesChart
+            title={t('health.sleep.physiology.hrv')}
+            icon={Activity}
+            metric={HRV}
+            measure="hrv"
+            points={p.hrv}
+            night={night}
+          />
+          <NightSeriesChart
+            title={t('health.sleep.physiology.resp')}
+            icon={Wind}
+            metric={RESP}
+            measure="respiratory"
+            points={p.resp}
+            night={night}
+          />
+          <NightSeriesChart
+            title={t('health.sleep.physiology.spo2')}
+            icon={Droplets}
+            metric={SPO2}
+            measure="spo2"
+            points={p.spo2}
+            night={night}
+          />
+        </div>
+      )}
     </div>
   );
 }
@@ -305,17 +456,32 @@ export function NightDetail({
           </div>
         ) : (
           <StatRow>
-            <Stat label={t('health.sleep.night.bedtime')} value={n.timed ? fmt.time(n.bedTs, n.tzBedMin) : '–'} />
-            <Stat label={t('health.sleep.night.wake')} value={n.timed ? fmt.time(n.wakeTs, n.tzWakeMin) : '–'} />
+            <Stat
+              label={t('health.sleep.night.bedtime')}
+              value={n.timed ? fmt.time(n.bedTs, n.tzBedMin) : '–'}
+            />
+            <Stat
+              label={t('health.sleep.night.wake')}
+              value={n.timed ? fmt.time(n.wakeTs, n.tzWakeMin) : '–'}
+            />
             <Stat label={t('health.sleep.night.inBed')} value={fmt.durationShort(n.inBedS)} />
-            <Stat label={t('health.sleep.night.asleep')} value={n.asleepS > 0 ? fmt.durationShort(n.asleepS) : '–'} />
-            <Stat label={t('health.sleep.night.efficiency')} value={n.efficiency !== null && n.asleepS > 0 ? fmt.pct(n.efficiency) : '–'} />
-            <Stat label={t('health.sleep.night.awakenings')} value={fmt.int(n.awakenings)} />
-            <Stat label={t('health.sleep.night.latency')} value={n.latencyS !== null ? fmt.durationShort(n.latencyS) : '–'} />
+            <Stat
+              label={t('health.sleep.night.asleep')}
+              value={n.asleepS > 0 ? fmt.durationShort(n.asleepS) : '–'}
+            />
+            <Stat
+              label={t('health.sleep.night.efficiency')}
+              value={n.efficiency !== null && n.asleepS > 0 ? fmt.pct(n.efficiency) : '–'}
+            />
+            <Stat label={t('health.sleep.night.awakenings')} value={n.timed ? fmt.int(n.awakenings) : '–'} />
+            <Stat
+              label={t('health.sleep.night.latency')}
+              value={n.latencyS !== null ? fmt.durationShort(n.latencyS) : '–'}
+            />
           </StatRow>
         )}
       </Card>
-      {n && <Hypnogram night={n} />}
+      {n && (n.timed ? <Hypnogram night={n} /> : <StageTotals night={n} />)}
       {n && <PhysiologyPanel night={n} />}
     </section>
   );
