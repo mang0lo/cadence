@@ -235,6 +235,12 @@ async function createWindow(): Promise<void> {
       app.quit();
     }
   } catch (e) {
+    if (smoke) {
+      // no dialog in tests: it would wait forever
+      console.error(`CADENCE_SMOKE_FAILED ${(e as Error).message}`);
+      app.exit(1);
+      return;
+    }
     dialog.showErrorBox(APP_NAME, (e as Error).message);
     app.quit();
   }

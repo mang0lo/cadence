@@ -85,6 +85,10 @@ npm run desktop:win      # Windows: installer + portable .exe (on Linux this nee
 
 Data lives in `~/.config/Cadence` (Linux) or `%APPDATA%\Cadence` (Windows), the server log in its `logs` folder.
 
+On Linux, `./install.sh` installs the built AppImage for your user (app, `cadence` command, launcher entry and icon; it
+shows up in Noctalia, GNOME, KDE, rofi … right away). `./install.sh --build` builds it first, `./install.sh
+path/to/Cadence.AppImage` installs a downloaded one, `./install.sh --uninstall` removes it.
+
 ## Import your Apple Health data
 
 1. iPhone → **Health** app → tap your profile picture → **Export All Health Data**.

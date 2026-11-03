@@ -18,7 +18,7 @@
     "dev": "concurrently -k -n server,web -c blue,magenta \"npm:dev:server\" \"npm:dev:web\"",
     "dev:server": "npm run dev -w @cadence/server",
     "dev:web": "npm run dev -w @cadence/web",
-    "build": "npm run build -w @cadence/web && npm run build -w @cadence/server && npm run build -w @cadence/desktop",
+    "build": "npm run build -w @cadence/web && npm run build -w @cadence/server",
     "start": "node apps/server/dist/index.js",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",

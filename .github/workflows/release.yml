@@ -33,7 +33,7 @@ jobs:
             exit 1
           fi
 
-  # The release page (tag + notes) does not wait for a macOS runner; mac-app attaches the DMG to it.
+  # The release page (tag + notes) does not wait for the app builds; mac-app and desktop attach their files to it.
   github-release:
     needs: check-version
     runs-on: ubuntu-latest
@@ -72,6 +72,35 @@ jobs:
         with:
           tag_name: ${{ env.TAG }}
           files: build/Cadence-*.dmg
+
+  # Linux (AppImage + .deb) and Windows (installer + portable .exe) desktop apps, attached to the release
+  desktop:
+    needs: github-release
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            dist: desktop:dist
+            files: |
+              build/desktop/*.AppImage
+              build/desktop/*.deb
+          - os: windows-latest
+            dist: desktop:win
+            files: build/desktop/*.exe
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npm run ${{ matrix.dist }}
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG }}
+          files: ${{ matrix.files }}
 
   docker-image:
     needs: check-version
