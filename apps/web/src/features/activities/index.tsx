@@ -10,6 +10,10 @@ const feature: FeatureModule = {
     { index: true, lazy: () => import('./pages/HomePage').then((m) => ({ Component: m.default })) },
     { path: 'activities', lazy: () => import('./pages/ActivitiesPage').then((m) => ({ Component: m.default })) },
     { path: 'activities/:id', lazy: () => import('./pages/ActivityPage').then((m) => ({ Component: m.default })) },
+    {
+      path: 'activities/:id/compare/:otherId',
+      lazy: () => import('./pages/ComparePage').then((m) => ({ Component: m.default })),
+    },
   ],
   nav: [
     { path: '/', labelKey: 'activities.nav.dashboard', icon: LayoutDashboard, group: 'training', order: 0, end: true },

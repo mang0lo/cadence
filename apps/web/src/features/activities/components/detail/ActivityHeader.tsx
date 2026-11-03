@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router';
 import {
   ArrowLeft,
@@ -8,6 +8,8 @@ import {
   Download,
   Eye,
   EyeOff,
+  GitCompareArrows,
+  ImageDown,
   MapPinOff,
   NotebookPen,
   Pencil,
@@ -22,7 +24,10 @@ import { useI18n } from '@/lib/i18n';
 import { SportIcon, sportColorVar, sportLabel } from '@/lib/sports';
 import { usePatchWorkout } from '../../api';
 import { tzLabel } from '../../lib/display';
+import { CompareDialog } from '../compare/CompareDialog';
 import { SportDialog } from '../SportDialog';
+
+const ShareDialog = lazy(() => import('../share/ShareDialog'));
 
 function InlineTitle({ w }: { w: WorkoutDetail }) {
   const { t, lang } = useI18n();
@@ -168,6 +173,7 @@ export function ActivityHeader({ w, nav }: { w: WorkoutDetail; nav: ActivityNav 
   const fmt = useFormat();
   const patch = usePatchWorkout();
   const [sportOpen, setSportOpen] = useState(false);
+  const [dialog, setDialog] = useState<'compare' | 'share' | null>(null);
   const neighbor = (n: ActivityNav['prev']) =>
     n ? `${workoutTitle(n, lang)} · ${fmt.date(n.startTs, n.tzMin, 'day')}` : undefined;
   const zone = w.timezone ? `${w.timezone} (${tzLabel(w.tzMin)})` : tzLabel(w.tzMin);
@@ -220,6 +226,12 @@ export function ActivityHeader({ w, nav }: { w: WorkoutDetail; nav: ActivityNav 
           )}
         </div>
         <div className="flex flex-wrap items-center gap-2 max-xl:basis-full max-xl:pl-14">
+          <Button size="sm" icon={GitCompareArrows} onClick={() => setDialog('compare')} title={t('activities.compare.actionHint')}>
+            {t('activities.compare.action')}
+          </Button>
+          <Button size="sm" icon={ImageDown} onClick={() => setDialog('share')}>
+            {t('activities.share.action')}
+          </Button>
           <Button size="sm" icon={Shapes} onClick={() => setSportOpen(true)}>
             {t('activities.detail.changeSport')}
           </Button>
@@ -270,6 +282,12 @@ export function ActivityHeader({ w, nav }: { w: WorkoutDetail; nav: ActivityNav 
         workout={sportOpen ? { id: w.id, sport: w.sport, title: workoutTitle(w, lang) } : null}
         onClose={() => setSportOpen(false)}
       />
+      {dialog === 'compare' && <CompareDialog w={w} onClose={() => setDialog(null)} />}
+      {dialog === 'share' && (
+        <Suspense fallback={null}>
+          <ShareDialog w={w} onClose={() => setDialog(null)} />
+        </Suspense>
+      )}
     </header>
   );
 }
