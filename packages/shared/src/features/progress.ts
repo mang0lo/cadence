@@ -425,3 +425,118 @@ export interface ProgressPreferences {
   /** Last heart-rate band picked per sport for "pace at heart rate". */
   hrBands: Record<string, ProgressHrBand>;
 }
+
+// ---------------------------------------------------------------------------
+// Power curve & FTP estimate
+// ---------------------------------------------------------------------------
+
+/**
+ * Durations (s) of the power curve. Every workout with a power stream stores its best average power for each of
+ * these durations that fits into one part of the workout, so the curve of a period is a maximum per duration.
+ */
+export const PROGRESS_POWER_DURATIONS: readonly number[] = [
+  1, 2, 3, 5, 8, 10, 15, 20, 30, 45, 60, 90, 120, 180, 240, 300, 360, 480, 600, 720, 900, 1200, 1500, 1800, 2700,
+  3600, 4500, 5400, 7200, 9000, 10800, 14400, 18000,
+];
+
+/** 42d / 90d / 12m end today; 'year' = a calendar year; 'all' = from the first power data; 'custom' = fromDay…toDay. */
+export type ProgressPowerPeriod = '42d' | '90d' | '12m' | 'year' | 'all' | 'custom';
+export const PROGRESS_POWER_PERIODS: ProgressPowerPeriod[] = ['42d', '90d', '12m', 'year', 'all', 'custom'];
+
+/** Comparison curve: the all-time bests, the period of the same length right before, or none. */
+export type ProgressPowerCompare = 'allTime' | 'previous' | 'none';
+export const PROGRESS_POWER_COMPARES: ProgressPowerCompare[] = ['allTime', 'previous', 'none'];
+
+/** The workout effort that set a best average power. */
+export interface ProgressPowerEffort {
+  durationS: number;
+  /** Best average power over `durationS` (W). */
+  watts: number;
+  /** watts / body mass of the curve or estimate; null without a known body mass. */
+  wkg: number | null;
+  workoutId: number;
+  name: string;
+  sport: string;
+  startTs: number;
+  tzMin: number;
+  /** Start of the effort in seconds after the workout start. */
+  offsetS: number;
+}
+
+/** Body mass (kg) from Apple Health: the latest daily value on or before a day. */
+export interface ProgressBodyMass {
+  kg: number;
+  day: string;
+}
+
+export interface ProgressPowerCurve extends ProgressDayRange {
+  /** Best effort per duration, shortest first; durations no workout of the range covers are left out. */
+  points: ProgressPowerEffort[];
+  /** Visible workouts with power data in the range. */
+  workouts: number;
+  /** Latest body mass on or before `toDay`, the basis of W/kg. */
+  bodyMass: ProgressBodyMass | null;
+}
+
+/** GET /api/progress/power/curve?sport=&period=&year=&fromDay=&toDay=&compare=&today= */
+export interface ProgressPowerCurveResponse {
+  /** Sport of the curve (default: ride when it has power data, else the sport with the most power workouts). */
+  sport: string;
+  /** Sports with power data (visible workouts with a power stream), most workouts first. */
+  sports: { sport: string; workouts: number }[];
+  /** Calendar years with power data of `sport`, newest first. */
+  years: number[];
+  period: ProgressPowerPeriod;
+  compare: ProgressPowerCompare;
+  current: ProgressPowerCurve;
+  /** null for compare 'none', and for 'previous' / 'allTime' when the period is already all time. */
+  comparison: ProgressPowerCurve | null;
+}
+
+/** Critical power model P(t) = CP + W′ / t, fitted as work = CP · t + W′ over the 3–20 minute bests. */
+export interface ProgressCriticalPower {
+  /** Critical power (W). */
+  cpW: number;
+  /** W′: work capacity above critical power (J). */
+  wPrimeJ: number;
+  /** Coefficient of determination of the work-vs-time fit. */
+  r2: number;
+  /** Largest relative deviation of a best from the model's power (0.03 = 3 %). */
+  maxError: number;
+  /** Durations (s) of the bests used for the fit. */
+  durations: number[];
+  cpWkg: number | null;
+}
+
+export interface ProgressFtpHistoryPoint extends ProgressDayRange {
+  /** 'YYYY-MM' (month) or 'YYYY-Qn' (quarter). */
+  key: string;
+  /** factor × the best 20-minute power of the bucket; null without a 20-minute effort. */
+  ftp: number | null;
+  /** ftp / the latest body mass at the end of the bucket. */
+  ftpWkg: number | null;
+  /** The 20-minute effort. */
+  source: ProgressPowerEffort | null;
+}
+
+/** GET /api/progress/power/ftp?sport=&today= */
+export interface ProgressFtpResponse {
+  sport: string;
+  today: string;
+  /** FTP = factor × best 20-minute power (0.95). */
+  factor: number;
+  /** Days searched for the 20-minute best: 42, or 90 when the last 42 days had none; null without an estimate. */
+  windowDays: number | null;
+  /** Estimated FTP (W, one decimal); null without a 20-minute effort in the last 90 days. */
+  ftp: number | null;
+  ftpWkg: number | null;
+  /** The 20-minute effort the estimate is based on. */
+  source: ProgressPowerEffort | null;
+  /** From the bests of the same window; null when there are too few or they do not fit the model. */
+  criticalPower: ProgressCriticalPower | null;
+  criticalPowerIssue: 'tooFew' | 'poorFit' | null;
+  /** Latest body mass on or before today. */
+  bodyMass: ProgressBodyMass | null;
+  /** The estimate per month (per quarter for more than three years), from the first power data up to today. */
+  history: { bucket: 'month' | 'quarter'; points: ProgressFtpHistoryPoint[] };
+}

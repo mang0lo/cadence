@@ -37,7 +37,7 @@ const routeId = (part: number) => (part ? `${SRC.route}-p${part}` : SRC.route);
 const FIT_PADDING = { top: 64, bottom: 40, left: 40, right: 48 };
 
 /** Style preference of the basemap currently shown (the BaseMap switcher may differ from the setting). */
-function currentPref(map: Map): MapStylePref {
+export function currentPref(map: Map): MapStylePref {
   const style = map.getStyle();
   if (style?.sources && 'imagery' in style.sources) return 'satellite';
   const name = (style?.name ?? '').toLowerCase();
@@ -46,7 +46,7 @@ function currentPref(map: Map): MapStylePref {
   return 'streets';
 }
 
-function markerEl(style: Partial<CSSStyleDeclaration>, html = '', title?: string): HTMLDivElement {
+export function markerEl(style: Partial<CSSStyleDeclaration>, html = '', title?: string): HTMLDivElement {
   const el = document.createElement('div');
   Object.assign(el.style, style);
   el.innerHTML = html;
@@ -58,7 +58,7 @@ function markerEl(style: Partial<CSSStyleDeclaration>, html = '', title?: string
   return el;
 }
 
-const DOT: Partial<CSSStyleDeclaration> = {
+export const DOT: Partial<CSSStyleDeclaration> = {
   width: '16px',
   height: '16px',
   borderRadius: '50%',
@@ -68,7 +68,7 @@ const DOT: Partial<CSSStyleDeclaration> = {
 };
 
 /** Start: green with a play triangle; finish: checkered flag pattern (shape, not only color). */
-const START_HTML =
+export const START_HTML =
   '<svg width="11" height="11" viewBox="0 0 10 10" style="display:block;margin:0 auto" aria-hidden="true"><path d="M3 2 L8 5 L3 8 Z" fill="#fff"/></svg>';
 
 function kmEl(label: string): HTMLDivElement {

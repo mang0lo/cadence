@@ -6,10 +6,14 @@ import type {
   ProgressCompareResponse,
   ProgressEffortHistory,
   ProgressFitnessResponse,
+  ProgressFtpResponse,
   ProgressHrBand,
   ProgressIntensityResponse,
   ProgressOverview,
   ProgressPhysiology,
+  ProgressPowerCompare,
+  ProgressPowerCurveResponse,
+  ProgressPowerPeriod,
   ProgressPredictions,
   ProgressPreferences,
   ProgressRecordsResponse,
@@ -104,6 +108,38 @@ export const usePhysiology = (range: RangeParams | null) =>
 
 export const useSnapshot = () =>
   useApi<ProgressWeeklySnapshot>(key('snapshot'), '/progress/snapshot', { today: todayKey() });
+
+export interface PowerCurveParams {
+  /** null = the server's default (ride when it has power data). */
+  sport: string | null;
+  period: ProgressPowerPeriod;
+  year?: number;
+  fromDay?: string;
+  toDay?: string;
+  compare: ProgressPowerCompare;
+}
+
+/** Power curve of a period + comparison (null = do not fetch, e.g. while a custom range is incomplete). */
+export const usePowerCurve = (p: PowerCurveParams | null) =>
+  useApi<ProgressPowerCurveResponse>(
+    key('power-curve'),
+    p ? '/progress/power/curve' : null,
+    p
+      ? {
+          sport: sportParam(p.sport),
+          period: p.period,
+          year: p.period === 'year' ? p.year : undefined,
+          fromDay: p.period === 'custom' ? p.fromDay : undefined,
+          toDay: p.period === 'custom' ? p.toDay : undefined,
+          compare: p.compare,
+          today: todayKey(),
+        }
+      : undefined,
+  );
+
+/** FTP estimate, critical power and the estimate per month for a sport (null = the server's default). */
+export const useFtpEstimate = (sport: string | null) =>
+  useApi<ProgressFtpResponse>(key('power-ftp'), '/progress/power/ftp', { sport: sportParam(sport), today: todayKey() });
 
 /** Remember the heart-rate band of a sport (server-side preference, shared by all devices). */
 export function useSaveHrBand() {

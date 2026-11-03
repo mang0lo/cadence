@@ -13,6 +13,9 @@ export interface PlaybackState {
   started: boolean;
 }
 
+/** What the clock needs to know: its length and the intervals to skip (an activity, or two on a common clock). */
+export type PlaybackTrack = Pick<Prepared, 'duration' | 'pauses'>;
+
 /**
  * Animation clock for the activity replay. `time` (seconds since start) changes every animation frame and is
  * consumed imperatively (map, chart playheads); `state` changes rarely and drives React controls.
@@ -24,7 +27,7 @@ export class Playback {
   private raf: number | null = null;
   private last = 0;
 
-  constructor(private readonly P: Prepared) {}
+  constructor(private readonly P: PlaybackTrack) {}
 
   get duration(): number {
     return this.P.duration;
