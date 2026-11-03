@@ -7,7 +7,7 @@ import { cn } from '@/components/ui';
 import { useT } from '@/lib/i18n';
 import { useSettings } from '@/lib/settings';
 import { useResolvedTheme } from '@/lib/theme';
-import { MAP_STYLE_KEYS, mapStyleFor, TERRAIN_SOURCE, TERRAIN_SOURCE_ID } from './styles';
+import { FALLBACK_STYLE, MAP_STYLE_KEYS, mapStyleFor, TERRAIN_SOURCE, TERRAIN_SOURCE_ID } from './styles';
 
 // MapLibre 6 resolves its worker relative to its own module, which bundlers relocate — point it at
 // the Vite-bundled worker instead.
@@ -113,7 +113,12 @@ export function BaseMap({
       applyTerrain(map, terrainRef.current);
       styleLoadRef.current?.(map);
     });
-    map.on('error', (e) => console.warn('[map]', e.error?.message ?? e));
+    map.on('error', (e) => {
+      // a style that cannot be loaded (e.g. renamed upstream) falls back to the light map instead of a blank one
+      const url = (e.error as { url?: string } | undefined)?.url;
+      if (url && url !== FALLBACK_STYLE && /\/styles?\//.test(url) && !map.isStyleLoaded()) map.setStyle(FALLBACK_STYLE);
+      console.warn('[map]', e.error?.message ?? e);
+    });
     if (import.meta.env.DEV) (window as unknown as { __map: Map }).__map = map;
     onReady?.(map);
     const ro = new ResizeObserver(() => map.resize());

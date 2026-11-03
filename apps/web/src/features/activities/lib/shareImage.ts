@@ -3,7 +3,15 @@
  * the sport color with a white casing, start/finish, title, date, place, key stats, the wordmark and the map
  * attribution. Layout, privacy cut and colors come from share.ts.
  */
-import { TILE_ATTRIBUTION, TILE_IMAGE_PX, fitTracks, tileUrl, type ThumbnailBasemap } from '@/components/map/tiles';
+import { mapSnapshot } from '@/components/map/snapshot';
+import {
+  TILE_ATTRIBUTION,
+  TILE_IMAGE_PX,
+  fitTracks,
+  isRasterBasemap,
+  tileUrl,
+  type ThumbnailBasemap,
+} from '@/components/map/tiles';
 import {
   SHARE_PALETTE,
   shareLayout,
@@ -339,11 +347,24 @@ export async function renderShareImage(c: ShareContent, o: ShareOptions): Promis
   let mapFailed = false;
   if (o.background === 'map' && fit) {
     try {
-      if (!fit.tiles.length) throw new Error('no tiles');
-      const imgs = await Promise.all(fit.tiles.map((tl) => loadTile(tileUrl(o.basemap, tl.z, tl.x, tl.y))));
       ctx.fillStyle = pal.bg;
       ctx.fillRect(0, 0, l.width, l.height);
-      fit.tiles.forEach((tl, i) => ctx.drawImage(imgs[i]!, tl.left, tl.top, tl.size + 0.5, tl.size + 0.5));
+      if (isRasterBasemap(o.basemap) || o.basemap === 'satellite') {
+        if (!fit.tiles.length) throw new Error('no tiles');
+        const imgs = await Promise.all(fit.tiles.map((tl) => loadTile(tileUrl(o.basemap, tl.z, tl.x, tl.y))));
+        fit.tiles.forEach((tl, i) => ctx.drawImage(imgs[i]!, tl.left, tl.top, tl.size + 0.5, tl.size + 0.5));
+      } else {
+        // the vector map rendered for exactly this canvas (half the size in CSS px at a pixel ratio of 2)
+        const url = await mapSnapshot({
+          base: o.basemap,
+          width: l.width / 2,
+          height: l.height / 2,
+          pixelRatio: 2,
+          view: { cx: fit.view.cx, cy: fit.view.cy, scale: fit.view.scale / 2 },
+        });
+        if (!url) throw new Error('map unavailable');
+        ctx.drawImage(await loadTile(url, 30_000), 0, 0, l.width, l.height);
+      }
       ctx.getImageData(0, 0, 1, 1); // throws when a tile tainted the canvas
       map = true;
     } catch {

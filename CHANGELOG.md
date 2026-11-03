@@ -3,6 +3,24 @@
 All notable changes to Cadence. Versions follow [semantic versioning](https://semver.org); every `v*` tag builds a
 release (see `.github/workflows/release.yml`), whose notes are taken from the matching section below.
 
+## [0.2.1] – 2026-11-03
+
+> 🇩🇪 **Karten in den Vorschauen ohne API-Key:** CARTO verlangt inzwischen einen API-Key und zeigte nur noch
+> „API KEY REQUIRED“. Vorschauen, Teilen-Bild und die dunkle Karte nutzen jetzt OpenFreeMap – kostenlos, ohne
+> Anmeldung. Jede Vorschau wird einmal gerendert und als Bild gespeichert.
+
+### Install
+
+- **Mac app**: download `Cadence-0.2.1.dmg` below and drag Cadence into Applications (your data is kept).
+- **Server**: `ghcr.io/mang0lo/cadence:v0.2.1` (also `:latest`).
+
+### Fixed
+
+- **Map backgrounds of route previews and share images** showed "API KEY REQUIRED" tiles: CARTO's basemaps need an
+  API key now. Previews and share images are rendered from the free OpenFreeMap vector maps instead (the same as the
+  interactive maps) — once per preview, then kept as an image in the browser. Satellite previews keep Esri imagery.
+- **Dark map style** uses OpenFreeMap as well (falls back to the light map if a style cannot be loaded).
+
 ## [0.2.0] – 2026-11-03
 
 Compare activities, share them as an image, a power curve with FTP estimate, a daily readiness score and a summary
