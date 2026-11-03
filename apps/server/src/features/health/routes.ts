@@ -7,6 +7,7 @@ import { registerBodyRoutes } from './body-routes';
 import { registerEcgRoutes } from './ecg-routes';
 import { registerHeartRoutes } from './heart-routes';
 import { registerMetricRoutes } from './metric-routes';
+import { registerReadinessRoutes } from './readiness-routes';
 import { registerSleepRoutes } from './sleep-routes';
 import { checkDayOrder, dayParam, getHealthSettings, putHealthSettings } from './util';
 
@@ -47,4 +48,5 @@ export default async function healthRoutes(app: FastifyInstance) {
   registerBodyRoutes(app);
   registerMetricRoutes(app);
   registerEcgRoutes(app);
+  registerReadinessRoutes(app);
 }
