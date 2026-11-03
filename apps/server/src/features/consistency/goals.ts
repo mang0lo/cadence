@@ -3,6 +3,7 @@
  * periods, suggestions from recent averages and the defaults used when an athlete has no goals.
  */
 import {
+  LONGEST_PRESETS,
   sportInfo,
   type GoalInput,
   type GoalMetric,
@@ -23,6 +24,8 @@ export interface DailyRow {
   elevationM: number;
   effort: number;
   energyKcal: number;
+  /** Longest single activity of that sport on that day (m). */
+  longestM?: number;
 }
 
 export const PERIOD_DAYS_MAX: Record<GoalPeriod, number> = { week: 7, month: 31, year: 366 };
@@ -39,6 +42,9 @@ export function goalValue(rows: Iterable<DailyRow>, metric: GoalMetric, sport: s
     switch (metric) {
       case 'distance':
         v += r.distanceM;
+        break;
+      case 'longest':
+        v = Math.max(v, r.longestM ?? 0);
         break;
       case 'time':
         v += r.durationS;
@@ -72,6 +78,8 @@ export function goalProjection(o: {
   start: string;
   end: string;
   asOf: string;
+  /** A single-activity goal (`longest`): reached or still open, there is no pace to project. */
+  single?: boolean;
 }): GoalPeriodProgress {
   const totalDays = daysBetween(o.start, o.end) + 1;
   const elapsedDays = Math.max(0, Math.min(totalDays, daysBetween(o.start, o.asOf)));
@@ -80,7 +88,7 @@ export function goalProjection(o: {
   const expected = totalDays ? (target * elapsedDays) / totalDays : target;
   const projected = (o.value * totalDays) / Math.max(1, Math.min(totalDays, elapsedDays + 1));
   const remaining = Math.max(0, target - o.value);
-  const status = o.value >= target ? 'done' : o.value + 1e-9 >= expected ? 'on_track' : 'behind';
+  const status = o.value >= target ? 'done' : o.single ? 'open' : o.value + 1e-9 >= expected ? 'on_track' : 'behind';
   return {
     start: o.start,
     end: o.end,
@@ -89,13 +97,20 @@ export function goalProjection(o: {
     fraction: target > 0 ? o.value / target : 1,
     elapsedDays,
     totalDays,
-    expected,
-    projected,
+    expected: o.single ? 0 : expected,
+    projected: o.single ? o.value : projected,
     status,
     remaining,
     remainingDays,
-    perDayNeeded: remaining > 0 && remainingDays > 0 ? remaining / remainingDays : null,
+    perDayNeeded: !o.single && remaining > 0 && remainingDays > 0 ? remaining / remainingDays : null,
   };
+}
+
+/** The classic distance just above `longestM` for a sport (half marathon after 15 km …), or null. */
+export function nextMilestone(sport: string | null, longestM: number): number | null {
+  const ladder = LONGEST_PRESETS[(sport ?? '') as keyof typeof LONGEST_PRESETS];
+  if (!ladder) return null;
+  return ladder.find((p) => p.distanceM > longestM * 1.02)?.distanceM ?? null;
 }
 
 /** Bucket rows by the start day of their period. */
@@ -157,6 +172,9 @@ export function niceTarget(metric: GoalMetric, period: GoalPeriod, average: numb
       return v >= 7200 ? roundNice(v / 3600) * 3600 : roundNice(v / 60) * 60;
     case 'distance':
       return Math.max(1000, roundNice(v));
+    case 'longest':
+      // whole kilometres from 10 km on, else half kilometres
+      return v >= 10_000 ? Math.round(v / 1000) * 1000 : Math.max(500, Math.round(v / 500) * 500);
     case 'elevation':
       return Math.max(100, roundNice(v));
   }
@@ -235,7 +253,18 @@ export function suggestGoals(
   const weekB = bucketByPeriod(rows, 'week', weekStart);
   const monthB = bucketByPeriod(rows, 'month', weekStart);
   const out: GoalSuggestion[] = [];
+  // a bigger single effort early in the list: the next classic distance above the longest of the last year
+  // (10K → half → marathon …)
+  const longC = { period: 'year', metric: 'longest', sport: top } as const;
+  let longSuggestion: GoalSuggestion | null = null;
+  if (top && !existing.some((e) => sameGoal(e, longC))) {
+    const longest = goalValue(rowsIn(rows, plusDays(asOf, -364), asOf), 'longest', top);
+    const next = nextMilestone(top, longest);
+    if (longest > 0 && next) longSuggestion = { ...longC, target: next, average: longest, periods: 1 };
+  }
   for (const c of candidates) {
+    if (longSuggestion && out.length === 1) out.push(longSuggestion);
+    if (out.length >= max) break;
     if (existing.some((e) => sameGoal(e, c))) continue;
     let avg: AverageResult;
     if (c.period === 'year') {
@@ -252,6 +281,7 @@ export function suggestGoals(
     out.push({ ...c, target: niceTarget(c.metric, c.period, avg.average), average: avg.average, periods: avg.periods });
     if (out.length >= max) break;
   }
+  if (longSuggestion && !out.includes(longSuggestion) && out.length < max) out.push(longSuggestion);
   return out;
 }
 

@@ -1,24 +1,5 @@
 import { useId } from 'react';
-import {
-  Activity,
-  CalendarCheck,
-  CalendarRange,
-  ChevronsUp,
-  Flag,
-  Flame,
-  Lock,
-  Medal,
-  Moon,
-  Mountain,
-  PersonStanding,
-  Shapes,
-  Sparkles,
-  Sunrise,
-  Target,
-  Timer,
-  Trophy,
-  type LucideIcon,
-} from 'lucide-react';
+import { Award, Activity, CalendarCheck, CalendarRange, ChevronsUp, Flag, Flame, Lock, Medal, Moon, Mountain, PersonStanding, Shapes, Sparkles, Sunrise, Target, Timer, Trophy, type LucideIcon } from 'lucide-react';
 import type { Achievement, AchievementKind, AchievementTier } from '@cadence/shared';
 import { sportIcon } from '@/lib/sports';
 
@@ -49,6 +30,7 @@ const KIND_ICONS: Record<AchievementKind, LucideIcon> = {
   perfect_week: Sparkles,
   double_move: ChevronsUp,
   challenges: Trophy,
+  triathlon: Award,
 };
 
 export function achievementIcon(a: Pick<Achievement, 'kind' | 'sport'>): LucideIcon {

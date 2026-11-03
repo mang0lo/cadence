@@ -3,7 +3,13 @@
  * ladders only for sports they do) and on whether activity ring data exists. Evaluation replays the
  * whole history in order, so earned dates and activities are deterministic.
  */
-import { sportInfo, type AchievementGroup, type AchievementKind, type AchievementTier } from '@cadence/shared';
+import {
+  TRIATHLON_DISTANCES,
+  sportInfo,
+  type AchievementGroup,
+  type AchievementKind,
+  type AchievementTier,
+} from '@cadence/shared';
 import { DISTANCE_TOLERANCE } from './challenges';
 import { epoch, fromEpoch, plusDays, weekStartEpoch } from './days';
 import { dayRuns, firstDayReaching, weekRuns } from './streaks';
@@ -19,7 +25,7 @@ export interface AchievementDef {
 }
 
 /** Bump when rules or the catalog change: stored results are then recomputed on the next read. */
-export const ACHIEVEMENTS_VERSION = 1;
+export const ACHIEVEMENTS_VERSION = 2;
 
 type Step = [threshold: number, tier: AchievementTier, name?: string];
 
@@ -27,16 +33,53 @@ const b = 'bronze';
 const s = 'silver';
 const g = 'gold';
 
-const ACTIVITY_COUNTS: Step[] = [[1, b, 'firstActivity'], [10, b], [25, b], [50, s], [100, s], [250, s], [500, g], [1000, g]];
+const ACTIVITY_COUNTS: Step[] = [
+  [1, b, 'firstActivity'],
+  [10, b],
+  [25, b],
+  [50, s],
+  [100, s],
+  [250, s],
+  [500, g],
+  [1000, g],
+  [2000, g],
+  [5000, g],
+];
 const KM = 1000;
 const SPORT_DISTANCE: Record<string, Step[]> = {
-  default: [[100 * KM, b], [500 * KM, b], [1000 * KM, s], [5000 * KM, g], [10000 * KM, g]],
-  swim: [[10 * KM, b], [50 * KM, b], [100 * KM, s], [250 * KM, g], [500 * KM, g]],
+  default: [[100 * KM, b], [500 * KM, b], [1000 * KM, s], [5000 * KM, g], [10000 * KM, g], [25000 * KM, g], [50000 * KM, g]],
+  swim: [[10 * KM, b], [50 * KM, b], [100 * KM, s], [250 * KM, g], [500 * KM, g], [1000 * KM, g]],
 };
 const LONGEST: Record<string, Step[]> = {
-  run: [[5000, b, 'first5k'], [10000, b, 'first10k'], [21097.5, s, 'half'], [30000, s], [42195, g, 'marathon'], [50000, g, 'ultra']],
-  ride: [[25000, b], [50000, b], [100000, s, 'century'], [160934.4, g, 'imperialCentury'], [200000, g]],
-  swim: [[1000, b], [2000, b], [3800, s, 'ironmanSwim'], [5000, g]],
+  run: [
+    [5000, b, 'first5k'],
+    [10000, b, 'first10k'],
+    [21097.5, s, 'half'],
+    [30000, s],
+    [42195, g, 'marathon'],
+    [50000, g, 'ultra'],
+    [100000, g, 'ultra100'],
+  ],
+  ride: [
+    [25000, b],
+    [40000, b, 'olympicBike'],
+    [50000, b],
+    [90000, s, 'halfIronmanBike'],
+    [100000, s, 'century'],
+    [160934.4, g, 'imperialCentury'],
+    [180246, g, 'ironmanBike'],
+    [200000, g],
+    [300000, g],
+  ],
+  swim: [
+    [1000, b],
+    [1500, b, 'olympicSwim'],
+    [1900, s, 'halfIronmanSwim'],
+    [2000, s],
+    [3800, g, 'ironmanSwim'],
+    [5000, g],
+    [10000, g],
+  ],
 };
 const ELEVATION: Step[] = [
   [1000, b],
@@ -46,13 +89,17 @@ const ELEVATION: Step[] = [
   [25000, g],
   [50000, g],
   [100000, g, 'karman'],
+  [250000, g],
+  [500000, g],
 ];
-const DAY_STREAKS: Step[] = [[7, b], [30, s], [100, g], [365, g]];
-const WEEK_STREAKS: Step[] = [[4, b], [12, s], [26, g], [52, g]];
+/** Swim + bike + run of a triathlon distance on one day; threshold = the total distance. */
+const TRIATHLON: Step[] = TRIATHLON_DISTANCES.map((d, i): Step => [d.swim + d.ride + d.run, i === 0 ? b : i === 1 ? s : g, d.key]);
+const DAY_STREAKS: Step[] = [[7, b], [30, s], [100, g], [365, g], [500, g], [1000, g]];
+const WEEK_STREAKS: Step[] = [[4, b], [12, s], [26, g], [52, g], [104, g], [260, g]];
 const HABIT_COUNTS: Step[] = [[1, b], [10, s], [50, g]];
 const WEEKENDS: Step[] = [[4, b], [12, s], [26, g]];
 const VARIETY: Step[] = [[3, b], [5, s], [8, g]];
-const RING_STREAKS: Step[] = [[7, b], [30, s], [100, g], [365, g]];
+const RING_STREAKS: Step[] = [[7, b], [30, s], [100, g], [365, g], [500, g], [1000, g]];
 const PERFECT_WEEKS: Step[] = [[1, b], [10, s], [52, g]];
 const DOUBLE_MOVE: Step[] = [[1, b], [25, s], [100, g]];
 const CHALLENGE_COUNTS: Step[] = [[1, b], [10, s], [25, g], [50, g]];
@@ -78,8 +125,12 @@ export function buildCatalog(o: { sports: string[]; hasRings: boolean }): Achiev
     ...ladder('habits', 'variety', VARIETY),
     ...distanceSports.flatMap((sp) => ladder('distance', 'sport_distance', SPORT_DISTANCE[sp] ?? SPORT_DISTANCE.default!, sp)),
     ...Object.keys(LONGEST)
-      .filter((sp) => sports.includes(sp))
+      .filter((sp) => sports.includes(sp) || sports.includes('multisport'))
       .flatMap((sp) => ladder('longest', 'longest', LONGEST[sp]!, sp)),
+    // triathlons only for athletes who swim, ride and run (or record multisport)
+    ...(['swim', 'ride', 'run'].every((sp) => sports.includes(sp)) || sports.includes('multisport')
+      ? ladder('longest', 'triathlon', TRIATHLON)
+      : []),
     ...ladder('climbing', 'elevation', ELEVATION),
     ...ladder('streaks', 'daily_streak', DAY_STREAKS),
     ...ladder('streaks', 'weekly_streak', WEEK_STREAKS),
@@ -122,6 +173,11 @@ export interface EvalRingDay {
 export interface EvalInput {
   /** Visible workouts sorted by start. */
   workouts: EvalWorkout[];
+  /**
+   * Legs of multisport workouts (swim / bike / run of a triathlon) with the id of their workout: they count for the
+   * single-activity distances and triathlons, never as activities of their own.
+   */
+  legs?: EvalWorkout[];
   rings: EvalRingDay[];
   weekStart: 0 | 1;
   /** Days on which monthly challenges were completed (any order). */
@@ -226,7 +282,7 @@ export function evaluateAchievements(defs: AchievementDef[], input: EvalInput): 
     .sort()
     .map((day, i) => ({ value: i + 1, day, workoutId: null }));
 
-  // per-sport sequences (cumulative distance, best single distance)
+  // per-sport sequences (cumulative distance, best single distance); multisport legs count as single efforts
   const sportCum = new Map<string, Point[]>();
   const sportBest = new Map<string, Point[]>();
   for (const w of ws) {
@@ -234,10 +290,36 @@ export function evaluateAchievements(defs: AchievementDef[], input: EvalInput): 
     const cum = sportCum.get(w.sport) ?? [];
     cum.push({ value: (cum[cum.length - 1]?.value ?? 0) + w.distanceM, day: w.day, workoutId: w.id });
     sportCum.set(w.sport, cum);
+  }
+  const singles = [...ws, ...(input.legs ?? [])].sort((a, b) => a.startTs - b.startTs || a.id - b.id);
+  for (const w of singles) {
+    if (!(w.distanceM > 0)) continue;
     const best = sportBest.get(w.sport) ?? [];
     if (w.distanceM > (best[best.length - 1]?.value ?? 0)) best.push({ value: w.distanceM, day: w.day, workoutId: w.id });
     sportBest.set(w.sport, best);
   }
+  // triathlon days: the longest swim, ride and run of every local day
+  const triDays = new Map<string, { swim: number; ride: number; run: number; workoutId: number }>();
+  for (const w of singles) {
+    if (w.sport !== 'swim' && w.sport !== 'ride' && w.sport !== 'run') continue;
+    const d = triDays.get(w.day) ?? { swim: 0, ride: 0, run: 0, workoutId: w.id };
+    d[w.sport] = Math.max(d[w.sport], w.distanceM);
+    triDays.set(w.day, d);
+  }
+  /** Distance of a triathlon covered on the best day: every leg counts up to its full distance. */
+  const triathlonPoints = (key: string): { best: number; earned: Point | null } => {
+    const t = TRIATHLON_DISTANCES.find((x) => x.key === key)!;
+    let best = 0;
+    let earned: Point | null = null;
+    for (const [day, d] of [...triDays].sort((a, b) => (a[0] < b[0] ? -1 : 1))) {
+      const tol = DISTANCE_TOLERANCE;
+      const v = Math.min(d.swim, t.swim) + Math.min(d.ride, t.ride) + Math.min(d.run, t.run);
+      best = Math.max(best, v);
+      if (!earned && d.swim >= t.swim * tol && d.ride >= t.ride * tol && d.run >= t.run * tol)
+        earned = { value: t.swim + t.ride + t.run, day, workoutId: d.workoutId };
+    }
+    return { best: earned ? t.swim + t.ride + t.run : best, earned };
+  };
 
   const result = (d: AchievementDef, progress: number, p: Point | null): EvalResult => ({
     key: d.key,
@@ -311,6 +393,10 @@ export function evaluateAchievements(defs: AchievementDef[], input: EvalInput): 
         return result(d, maxOf(doubleMove), crossing(doubleMove, d.threshold));
       case 'challenges':
         return result(d, maxOf(challenges), crossing(challenges, d.threshold));
+      case 'triathlon': {
+        const p = triathlonPoints(d.name!);
+        return result(d, p.best, p.earned);
+      }
     }
   });
 }

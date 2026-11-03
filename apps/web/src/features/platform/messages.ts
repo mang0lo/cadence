@@ -3,6 +3,22 @@ import type { Dictionary } from '@/lib/i18n';
 export const messages: Dictionary = {
   en: {
     nav: { import: 'Import', settings: 'Settings' },
+    whatsNew: {
+      title: "What's new",
+      subtitle: 'Import of {date}',
+      activities: { one: '1 new activity', other: '{n} new activities' },
+      initial: { one: '1 activity imported', other: '{n} activities imported' },
+      healthRecords: '{count} new health records',
+      nothing: 'No new activities — everything in this export was already here.',
+      bySport: 'New activities by sport',
+      latest: 'Newest',
+      noHighlights: 'No new records or trophies this time.',
+      done: 'Import finished',
+      records: { one: '{count} record', other: '{count} records' },
+      trophies: { one: '{count} trophy', other: '{count} trophies' },
+      show: "Show what's new",
+      dismiss: 'Dismiss',
+    },
     import: {
       title: 'Import Apple Health data',
       subtitle: 'Your complete export: workouts, routes, heart rate, sleep and every other metric.',
@@ -71,6 +87,9 @@ export const messages: Dictionary = {
       monday: 'Monday',
       sunday: 'Sunday',
       mapStyle: 'Default map',
+      thumbnailMaps: 'Map background in route previews',
+      thumbnailMapsHint:
+        'Feeds and lists show the route on a small map (tiles from the map provider, cached by the browser). Off: the route shape only, without network requests.',
       heart: 'Heart rate & zones',
       heartHint: 'Used for zones, relative effort and fitness. Leave empty to derive from your data.',
       maxHr: 'Max heart rate',
@@ -115,6 +134,22 @@ export const messages: Dictionary = {
   },
   de: {
     nav: { import: 'Import', settings: 'Einstellungen' },
+    whatsNew: {
+      title: 'Was ist neu',
+      subtitle: 'Import vom {date}',
+      activities: { one: '1 neue Aktivität', other: '{n} neue Aktivitäten' },
+      initial: { one: '1 Aktivität importiert', other: '{n} Aktivitäten importiert' },
+      healthRecords: '{count} neue Gesundheitswerte',
+      nothing: 'Keine neuen Aktivitäten – alles aus diesem Export war schon da.',
+      bySport: 'Neue Aktivitäten nach Sportart',
+      latest: 'Die neuesten',
+      noHighlights: 'Diesmal keine neuen Bestleistungen oder Trophäen.',
+      done: 'Import abgeschlossen',
+      records: { one: '{count} Bestleistung', other: '{count} Bestleistungen' },
+      trophies: { one: '{count} Trophäe', other: '{count} Trophäen' },
+      show: 'Neuigkeiten ansehen',
+      dismiss: 'Ausblenden',
+    },
     import: {
       title: 'Apple-Health-Daten importieren',
       subtitle: 'Dein vollständiger Export: Trainings, Routen, Herzfrequenz, Schlaf und alle anderen Werte.',
@@ -183,6 +218,9 @@ export const messages: Dictionary = {
       monday: 'Montag',
       sunday: 'Sonntag',
       mapStyle: 'Standardkarte',
+      thumbnailMaps: 'Kartenhintergrund in Streckenvorschauen',
+      thumbnailMapsHint:
+        'Feed und Listen zeigen die Strecke auf einer kleinen Karte (Kacheln vom Kartenanbieter, vom Browser zwischengespeichert). Aus: nur die Form der Strecke, ohne Netzwerkanfragen.',
       heart: 'Herzfrequenz & Zonen',
       heartHint: 'Für Zonen, relative Anstrengung und Fitness. Leer lassen, um sie aus deinen Daten abzuleiten.',
       maxHr: 'Maximale Herzfrequenz',

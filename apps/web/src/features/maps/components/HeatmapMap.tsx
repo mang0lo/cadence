@@ -32,8 +32,8 @@ import {
 export interface HeatmapLapse {
   /** Number of finished activities (chronological). */
   done: number;
-  /** The activity being drawn right now (partial polyline, lon/lat). */
-  head: [number, number][] | null;
+  /** The activity being drawn right now: its part(s) drawn so far (lon/lat). */
+  head: [number, number][][] | null;
 }
 
 export interface HeatmapMapProps {

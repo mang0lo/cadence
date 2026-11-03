@@ -57,7 +57,7 @@ const goalFields = z.object({
     .string()
     .refine((s) => s in SPORTS, 'Unknown sport')
     .nullable(),
-  metric: z.enum(['distance', 'time', 'elevation', 'activities', 'active_days']),
+  metric: z.enum(['distance', 'longest', 'time', 'elevation', 'activities', 'active_days']),
   target: z.number().positive().max(1e9),
 });
 const feasible = {

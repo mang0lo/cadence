@@ -20,11 +20,13 @@
 - **Imports everything** in Apple Health's export: every record type, workouts (incl. iOS 16+ multi-sport
   activities and events), GPS routes, ECGs, activity rings, blood-pressure correlations, audiograms and clinical
   records — lossless, streamed (multi-GB exports in seconds) and idempotent: re-importing a newer export only adds
-  what is new.
+  what is new. After every import a **what's new** summary lists the new activities, records, trophies, explorer
+  tiles, route best times and segment PRs.
 - **Dashboard**: activity feed with route thumbnails, PR medals and sport-specific stats; athlete card with this
   week and all-time totals; widgets for this week, fitness & form, streaks, goals, the last 18 weeks, a health
   snapshot and explorer tiles.
-- **Activities**: filterable, sortable list (sport, period, search, GPS) with quick actions. The activity page has a
+- **Activities**: filterable, sortable list (sport, period, search, GPS) with quick actions and **CSV export**; every
+  activity shows where it took place (offline place names, "Rostock → Berlin" for one-way trips). The activity page has a
   **map replay** (1×–300×, follow camera, 3D flyover, route colored by pace, heart rate, grade or HR zones), synced
   elevation / pace / heart-rate / cadence / power charts with section selection, splits, laps, HR zones, best efforts
   with medals, aerobic decoupling, efficiency factor, grade-adjusted pace, power (NP, IF, TSS, peaks), climbs,
@@ -50,7 +52,7 @@
 ## Install the Mac app
 
 **Download**: get `Cadence-<version>.dmg` from the
-[latest release](https://github.com/Devine-Coder/cadence/releases/latest) (macOS 14+, Apple silicon) and drag Cadence
+[latest release](https://github.com/mang0lo/cadence/releases/latest) (macOS 14+, Apple silicon) and drag Cadence
 into Applications. The app is not notarized yet, so macOS blocks the first launch: open **System Settings → Privacy &
 Security** and click **Open Anyway**. Release notes: [CHANGELOG.md](CHANGELOG.md).
 
@@ -58,7 +60,7 @@ Security** and click **Open Anyway**. Release notes: [CHANGELOG.md](CHANGELOG.md
 (`xcode-select --install`):
 
 ```bash
-git clone https://github.com/Devine-Coder/cadence.git && cd cadence
+git clone https://github.com/mang0lo/cadence.git && cd cadence
 npm install
 npm run mac -- --install      # builds build/Cadence.app and copies it to /Applications
 ```
@@ -90,7 +92,7 @@ CADENCE_PASSWORD=choose-something docker compose up -d     # → http://<server>
   the server (keeps renamed activities, goals and segments).
 - Point the Mac app at the server via **Cadence → Connect to Server…**.
 - Releases: push a `v*` tag or run the **Release** workflow from the Actions tab (with the version from
-  `package.json`); it builds the DMG and pushes `ghcr.io/devine-coder/cadence` (see `.github/workflows/release.yml`).
+  `package.json`); it builds the DMG and pushes `ghcr.io/mang0lo/cadence` (see `.github/workflows/release.yml`).
 
 Configuration is done with environment variables (`PORT`, `HOST`, `CADENCE_DATA_DIR`, `CADENCE_PASSWORD`,
 `CADENCE_IMPORT_DIR`, …) — see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#runtime-modes--configuration).
@@ -126,4 +128,5 @@ Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (conventions, feature modules,
 ## License
 
 [MIT](LICENSE). Map data © OpenStreetMap contributors, OpenFreeMap, CARTO; imagery © Esri; terrain © Mapzen/AWS.
+Place names: [GeoNames](https://www.geonames.org) (CC BY 4.0), bundled offline — positions are never sent anywhere.
 Not affiliated with Strava or Apple.

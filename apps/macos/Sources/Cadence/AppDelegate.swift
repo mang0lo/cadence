@@ -90,7 +90,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     @objc private func zoomOut(_ sender: Any?) { web.webView.pageZoom = max(0.5, web.webView.pageZoom - 0.1) }
     @objc private func zoomReset(_ sender: Any?) { web.webView.pageZoom = 1 }
     @objc private func openGitHub(_ sender: Any?) {
-        NSWorkspace.shared.open(URL(string: "https://github.com/Devine-Coder/cadence")!)
+        NSWorkspace.shared.open(URL(string: "https://github.com/mang0lo/cadence")!)
     }
 
     @objc private func connectToServer(_ sender: Any?) {

@@ -13,6 +13,7 @@ const settingsPatch = z
     language: z.enum(['auto', 'de', 'en']),
     theme: z.enum(['system', 'light', 'dark']),
     mapStyle: z.enum(['streets', 'outdoor', 'satellite', 'dark']),
+    thumbnailMaps: z.boolean(),
     weekStart: z.union([z.literal(0), z.literal(1)]),
     maxHr: z.number().int().min(100).max(240).nullable(),
     restingHr: z.number().int().min(25).max(120).nullable(),

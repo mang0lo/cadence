@@ -43,6 +43,11 @@ export function formatGoalValue(fmt: Formatter, t: TFunction, metric: GoalMetric
   switch (metric) {
     case 'distance':
       return fmt.distance(v, v > 0 && v < 10_000 ? 1 : 0);
+    case 'longest': {
+      // classic distances keep their decimal: 21.1 km, 42.2 km, 180.2 km
+      const shown = Math.round(fmt.distanceValue(v) * 10) / 10;
+      return fmt.distance(v, Number.isInteger(shown) ? 0 : 1);
+    }
     case 'time':
       return v < 60 ? (fmt.lang === 'de' ? '0 Min.' : '0m') : fmt.durationShort(v);
     case 'elevation':
@@ -58,6 +63,7 @@ export function formatGoalValue(fmt: Formatter, t: TFunction, metric: GoalMetric
 export function targetUnit(fmt: Formatter, t: TFunction, metric: GoalMetric): string {
   switch (metric) {
     case 'distance':
+    case 'longest':
       return fmt.distanceUnit;
     case 'time':
       return 'h';
@@ -76,7 +82,8 @@ export function toInputValue(fmt: Formatter, metric: GoalMetric, v: number): num
   const round = (x: number, d: number) => Math.round(x * 10 ** d) / 10 ** d;
   switch (metric) {
     case 'distance':
-      return round(v / (imperial ? M_PER_MI : M_PER_KM), 1);
+    case 'longest':
+      return round(v / (imperial ? M_PER_MI : M_PER_KM), metric === 'longest' ? 3 : 1);
     case 'time':
       return round(v / 3600, 2);
     case 'elevation':
@@ -91,6 +98,7 @@ export function fromInputValue(fmt: Formatter, metric: GoalMetric, v: number): n
   const imperial = fmt.units === 'imperial';
   switch (metric) {
     case 'distance':
+    case 'longest':
       return v * (imperial ? M_PER_MI : M_PER_KM);
     case 'time':
       return v * 3600;
@@ -109,7 +117,9 @@ export function goalTitle(t: TFunction, lang: Lang, g: Pick<GoalInput, 'metric' 
 
 /** "120 km per month" */
 export function goalTargetText(fmt: Formatter, t: TFunction, g: Pick<GoalInput, 'metric' | 'target' | 'period'>): string {
-  return t(`consistency.goals.per.${g.period}`, { value: formatGoalValue(fmt, t, g.metric, g.target) });
+  // a single activity: "42.2 km in one go, this year"
+  const key = g.metric === 'longest' ? 'consistency.goals.once' : 'consistency.goals.per';
+  return t(`${key}.${g.period}`, { value: formatGoalValue(fmt, t, g.metric, g.target) });
 }
 
 /** "2 – 8 Nov" style label of a period. */

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Marker, type GeoJSONSource, type LngLatBoundsLike, type Map, type MapMouseEvent } from 'maplibre-gl';
-import { Camera, Palette } from 'lucide-react';
+import { Camera, Palette, Split } from 'lucide-react';
 import { M_PER_KM, M_PER_MI, type MapStylePref } from '@cadence/shared';
 import { useChartTheme } from '@/components/charts/theme';
 import { BaseMap } from '@/components/map/BaseMap';
@@ -15,6 +15,9 @@ import { isPaceSport } from '../../lib/display';
 import type { Playback } from '../../lib/playback';
 import {
   availableModes,
+  coordsByPart,
+  partOfVertex,
+  partStops,
   routeChunks,
   routeColoring,
   vertexAfter,
@@ -28,6 +31,8 @@ import { headingAt, indexAtDist, indexAtTime, lerpAngle, lngLatAt, valueAt, type
 export type CameraMode = 'overview' | 'follow' | 'flyover';
 
 const SRC = { route: 'act-route', done: 'act-done', head: 'act-head', sel: 'act-sel' } as const;
+/** Source/layer id of a track part's route line (part 0 keeps the plain id). */
+const routeId = (part: number) => (part ? `${SRC.route}-p${part}` : SRC.route);
 /** Room for the legend (top) and the map controls (bottom). */
 const FIT_PADDING = { top: 64, bottom: 40, left: 40, right: 48 };
 
@@ -242,6 +247,27 @@ export function ActivityMap({ P, geo, sport, playback, hover, selection, zoneBou
   cameraRef.current = camera;
   const coloringRef = useRef(coloring);
   coloringRef.current = coloring;
+  /** Track part shown by the overview camera (several parts: workout continued elsewhere). */
+  const shownPart = useRef(0);
+  const [activePart, setActivePart] = useState(0);
+  /** Parts worth a chip and a camera move: at least 200 m and 2 % of the activity (not a few fixes between jumps). */
+  const bigParts = useMemo(() => {
+    const min = Math.max(200, 0.02 * P.totalDist);
+    const out = geo.parts
+      .map((p, i) => ({ i, p, m: P.dist ? P.dist[geo.idx[p.v1]!]! - P.dist[geo.idx[p.v0]!]! : null }))
+      .filter((x) => x.m === null || x.m >= min);
+    return out.length > 1 ? out : [];
+  }, [geo, P]);
+  const bigPartsRef = useRef(bigParts);
+  bigPartsRef.current = bigParts;
+  /** First view: the first big part; with one big part (plus stray fixes elsewhere) the longest part; else all. */
+  const homeBounds = useMemo(() => {
+    if (bigParts.length) return bigParts[0]!.p.bounds;
+    if (geo.parts.length < 2) return geo.bounds;
+    return geo.parts.reduce((a, b) => (b.v1 - b.v0 > a.v1 - a.v0 ? b : a)).bounds;
+  }, [bigParts, geo]);
+  const homeBoundsRef = useRef(homeBounds);
+  homeBoundsRef.current = homeBounds;
   const chunksRef = useRef(chunks);
   chunksRef.current = chunks;
   const selectionRef = useRef(selection);
@@ -267,8 +293,11 @@ export function ActivityMap({ P, geo, sport, playback, hover, selection, zoneBou
       const active = st.started && fi > 0.01;
       if (active !== dimmed.current) {
         dimmed.current = active;
-        if (map.getLayer(SRC.route)) map.setPaintProperty(SRC.route, 'line-opacity', active ? 0.35 : 1);
-        if (map.getLayer(`${SRC.route}-casing`)) map.setPaintProperty(`${SRC.route}-casing`, 'line-opacity', active ? 0.5 : 1);
+        geo.parts.forEach((_, p) => {
+          const id = routeId(p);
+          if (map.getLayer(id)) map.setPaintProperty(id, 'line-opacity', active ? 0.35 : 1);
+          if (map.getLayer(`${id}-casing`)) map.setPaintProperty(`${id}-casing`, 'line-opacity', active ? 0.5 : 1);
+        });
       }
       const ch = chunksRef.current;
       if (active) {
@@ -278,12 +307,19 @@ export function ActivityMap({ P, geo, sport, playback, hover, selection, zoneBou
         if (c !== lastChunk.current) {
           const feats = [];
           for (let i = 0; i < c; i++)
-            feats.push(lineFeature(geo.coords.slice(i * ch.size, Math.min(geo.coords.length, (i + 1) * ch.size + 1)), { color: color(i) }));
+            for (const line of coordsByPart(geo, i * ch.size, Math.min(geo.coords.length - 1, (i + 1) * ch.size)))
+              feats.push(lineFeature(line, { color: color(i) }));
           done.setData(featureCollection(feats));
           lastChunk.current = c;
         }
         if (Math.abs(fi - lastHeadFi.current) > 0.01) {
-          head.setData(lineFeature([...geo.coords.slice(c * ch.size, k), pos], { color: color(c) }));
+          // the current part from the chunk start (or the part start) to the position; earlier parts of the chunk
+          // are separate lines
+          const part = geo.parts[partOfVertex(geo, k - 1)]!;
+          const from = Math.max(c * ch.size, part.v0);
+          const lines = coordsByPart(geo, c * ch.size, from - 1);
+          lines.push([...geo.coords.slice(from, k), pos]);
+          head.setData(featureCollection(lines.map((l) => lineFeature(l, { color: color(c) }))));
           lastHeadFi.current = fi;
         }
       } else if (lastChunk.current !== -1) {
@@ -298,6 +334,15 @@ export function ActivityMap({ P, geo, sport, playback, hover, selection, zoneBou
     const dt = Math.min(0.5, (now - (lastFrameAt.current || now)) / 1000);
     lastFrameAt.current = now;
     const cam = cameraRef.current;
+    if (cam === 'overview' && bigPartsRef.current.length > 1 && !dragging.current && !easing.current) {
+      // a workout in several parts (continued elsewhere): the overview shows the part being replayed
+      const p = partOfVertex(geo, Math.max(0, vertexAfter(geo, fi) - 1));
+      if (p !== shownPart.current && bigPartsRef.current.some((x) => x.i === p)) {
+        shownPart.current = p;
+        setActivePart(p);
+        map.fitBounds(geo.parts[p]!.bounds as LngLatBoundsLike, { padding: FIT_PADDING, maxZoom: 16, duration: 800 });
+      }
+    }
     if (!dragging.current && !easing.current) {
       if (cam === 'follow') map.jumpTo({ center: pos });
       else if (cam === 'flyover') {
@@ -352,21 +397,24 @@ export function ActivityMap({ P, geo, sport, playback, hover, selection, zoneBou
   const applyRoute = useCallback(
     (map: Map) => {
       const colors = overlayColors(currentPref(map), themeRef.current.resolved);
-      for (const id of [SRC.route, `${SRC.route}-casing`]) if (map.getLayer(id)) map.removeLayer(id);
       const c = coloringRef.current;
-      addRouteLayers(map, SRC.route, {
-        color: colors.route,
-        casing: colors.casing,
-        width: 4,
-        gradient: c ? gradientExpression(c.stops) : undefined,
-        beforeId: map.getLayer(`${SRC.done}-casing`) ? `${SRC.done}-casing` : undefined,
+      geo.parts.forEach((_, p) => {
+        const id = routeId(p);
+        for (const l of [id, `${id}-casing`]) if (map.getLayer(l)) map.removeLayer(l);
+        addRouteLayers(map, id, {
+          color: colors.route,
+          casing: colors.casing,
+          width: 4,
+          gradient: c ? gradientExpression(partStops(geo, c.stops, p)) : undefined,
+          beforeId: map.getLayer(`${SRC.done}-casing`) ? `${SRC.done}-casing` : undefined,
+        });
       });
       plainColor.current = colors.route;
       dimmed.current = false;
       lastChunk.current = -2;
       lastHeadFi.current = -1;
     },
-    [],
+    [geo],
   );
 
   const applySelection = useCallback(
@@ -380,10 +428,23 @@ export function ActivityMap({ P, geo, sport, playback, hover, selection, zoneBou
       }
       const [a, b] = [Math.floor(Math.min(...s)), Math.ceil(Math.max(...s))];
       const step = Math.max(1, Math.ceil((b - a) / 2000));
-      const coords: [number, number][] = [];
-      for (let i = a; i <= b; i += step) coords.push([P.lon[i]!, P.lat[i]!]);
-      coords.push([P.lon[b]!, P.lat[b]!]);
-      src.setData(lineFeature(coords));
+      // one line per track part: never draw the jump between parts
+      const lines: [number, number][][] = [];
+      let cur: [number, number][] = [];
+      let nb = 0;
+      while (nb < P.breaks.length && P.breaks[nb]! <= a) nb++;
+      const add = (i: number) => {
+        while (nb < P.breaks.length && P.breaks[nb]! <= i) {
+          if (cur.length > 1) lines.push(cur);
+          cur = [];
+          nb++;
+        }
+        cur.push([P.lon![i]!, P.lat![i]!]);
+      };
+      for (let i = a; i <= b; i += step) add(i);
+      add(b);
+      if (cur.length > 1) lines.push(cur);
+      src.setData(featureCollection(lines.map((l) => lineFeature(l))));
     },
     [P],
   );
@@ -391,7 +452,7 @@ export function ActivityMap({ P, geo, sport, playback, hover, selection, zoneBou
   const onStyleLoad = useCallback(
     (map: Map) => {
       const colors = overlayColors(currentPref(map), themeRef.current.resolved);
-      setGeoJSON(map, SRC.route, lineFeature(geo.coords), true);
+      geo.parts.forEach((p, i) => setGeoJSON(map, routeId(i), lineFeature(geo.coords.slice(p.v0, p.v1 + 1)), true));
       setGeoJSON(map, SRC.done, featureCollection([]));
       setGeoJSON(map, SRC.head, featureCollection([]));
       setGeoJSON(map, SRC.sel, featureCollection([]));
@@ -438,7 +499,7 @@ export function ActivityMap({ P, geo, sport, playback, hover, selection, zoneBou
     (map: Map) => {
       mapRef.current = map;
       map.resize();
-      map.fitBounds(geo.bounds as LngLatBoundsLike, { padding: FIT_PADDING, maxZoom: 16, animate: false });
+      map.fitBounds(homeBoundsRef.current as LngLatBoundsLike, { padding: FIT_PADDING, maxZoom: 16, animate: false });
       const start = new Marker({
         element: markerEl({ ...DOT, background: 'var(--good)', display: 'grid', placeItems: 'center' }, START_HTML, t('activities.map.start')),
       })
@@ -556,7 +617,16 @@ export function ActivityMap({ P, geo, sport, playback, hover, selection, zoneBou
       request();
     });
     if (camera === 'overview') {
-      map.fitBounds(geo.bounds as LngLatBoundsLike, { padding: FIT_PADDING, pitch: 0, bearing: 0, maxZoom: 16, duration: 900 });
+      const p = partOfVertex(geo, Math.max(0, vertexAfter(geo, fi) - 1));
+      const big = bigPartsRef.current.find((x) => x.i === p);
+      shownPart.current = big ? p : shownPart.current;
+      map.fitBounds((big?.p.bounds ?? homeBoundsRef.current) as LngLatBoundsLike, {
+        padding: FIT_PADDING,
+        pitch: 0,
+        bearing: 0,
+        maxZoom: 16,
+        duration: 900,
+      });
     } else if (camera === 'follow' && pos) {
       map.easeTo({ center: pos, zoom: Math.max(map.getZoom(), 15), pitch: 0, bearing: 0, duration: 900 });
     } else if (camera === 'flyover' && pos) {
@@ -589,9 +659,43 @@ export function ActivityMap({ P, geo, sport, playback, hover, selection, zoneBou
           />
         </div>
       </div>
+      {bigParts.length > 1 && (
+        <div className="flex flex-wrap items-center gap-1.5 text-xs" role="group" aria-label={t('activities.map.parts.label')}>
+          <Split size={15} className="shrink-0 text-fg-3" aria-hidden />
+          {bigParts.map(({ i, p, m: km }, n) => {
+            const from = geo.idx[p.v0]!;
+            return (
+              <button
+                key={i}
+                type="button"
+                aria-pressed={activePart === i}
+                onClick={() => {
+                  // jump the replay to the part's start; the overview camera then shows that part
+                  setActivePart(i);
+                  if (cameraRef.current !== 'overview') onCamera('overview');
+                  playback.seek(P.t[from]!);
+                  const map = mapRef.current;
+                  if (map) {
+                    shownPart.current = i;
+                    map.fitBounds(p.bounds as LngLatBoundsLike, { padding: FIT_PADDING, maxZoom: 16, duration: 800 });
+                  }
+                }}
+                className={cn(
+                  'rounded-full border px-2.5 py-1 font-medium transition-colors',
+                  activePart === i ? 'border-accent bg-accent-soft text-accent-fg' : 'border-border text-fg-2 hover:bg-surface-2',
+                )}
+              >
+                {t('activities.map.parts.part', { n: n + 1 })}
+                {km !== null && <span className="ml-1 font-normal text-fg-3">{fmt.distance(km)}</span>}
+              </button>
+            );
+          })}
+          <span className="text-fg-3">{t('activities.map.parts.hint')}</span>
+        </div>
+      )}
       <BaseMap
         className="h-[min(62vh,520px)] min-h-72"
-        bounds={geo.bounds}
+        bounds={homeBounds}
         terrain={camera === 'flyover'}
         onReady={onReady}
         onStyleLoad={onStyleLoad}

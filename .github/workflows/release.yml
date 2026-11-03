@@ -33,17 +33,12 @@ jobs:
             exit 1
           fi
 
-  mac-app:
+  # The release page (tag + notes) does not wait for a macOS runner; mac-app attaches the DMG to it.
+  github-release:
     needs: check-version
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 26
-          cache: npm
-      - run: npm ci --no-audit --no-fund
-      - run: npm run mac -- --dmg
       # release notes = the "## [x.y.z]" section of CHANGELOG.md for this tag
       - name: Release notes
         run: |
@@ -59,6 +54,23 @@ jobs:
           target_commitish: ${{ github.sha }}
           name: Cadence ${{ env.TAG }}
           body_path: release-notes.md
+
+  mac-app:
+    needs: github-release
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npm run mac -- --dmg
+      # attach the DMG to the release created above (keeps its name and notes)
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG }}
           files: build/Cadence-*.dmg
 
   docker-image:
@@ -66,7 +78,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # image names must be lowercase (the owner is "Devine-Coder")
+      # image names must be lowercase (GitHub owners may contain capitals)
       - name: Image name
         run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/cadence" >> "$GITHUB_ENV"
       - uses: docker/setup-buildx-action@v3

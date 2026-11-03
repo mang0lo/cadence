@@ -1,4 +1,5 @@
 import type { FastifyPluginAsync } from 'fastify';
+import type { ImportHighlight } from '@cadence/shared';
 import type { Db } from '../db/db';
 import type { Migration } from '../db/migrate';
 
@@ -46,4 +47,20 @@ export interface Feature {
    * deleted workouts (workout ids are reused by the next import).
    */
   onReset?: (db: Db, athleteId: number) => void;
+  /**
+   * "What's new" after an import (shown on the import screen): highlights of the new workouts, e.g. records or
+   * trophies. Runs in the import worker after all derive steps; must be fast and must not write.
+   */
+  whatsNew?: (input: WhatsNewInput) => ImportHighlight[];
+}
+
+export interface WhatsNewInput {
+  db: Db;
+  athleteId: number;
+  /** New visible workouts of this import (not hidden, no duplicates), oldest first. */
+  workoutIds: number[];
+  /** Unix seconds before the derive started: rows a derive step created for this import are newer. */
+  since: number;
+  /** First import: everything is new, so "new" records, tiles … would only repeat the totals. */
+  initial: boolean;
 }

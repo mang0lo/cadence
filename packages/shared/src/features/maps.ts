@@ -154,8 +154,10 @@ export interface MapsRouteSummary {
   id: number;
   sport: string;
   kind: MapsRouteKind;
-  /** City of the start (from the activity's time zone); null when unknown. */
+  /** Town, village or city district of the start (offline GeoNames gazetteer); null when none is near. */
   area: string | null;
+  /** Point-to-point routes: the place of the end when it differs from the start. */
+  areaEnd: string | null;
   /** The user's own name; null = show the generated name (area + kind + distance). */
   customName: string | null;
   /** Median length of the efforts. */
@@ -407,6 +409,11 @@ export interface MapsSegmentSource {
   totalM: number;
   /** Index-aligned arrays (≤ 1200 points, increasing distance). `t` = seconds since the workout start. */
   points: { lat: number[]; lon: number[]; dist: number[]; ele: (number | null)[]; t: number[] };
+  /**
+   * Distances (m) where a new part of the track starts (paused and continued elsewhere, see WorkoutStreams.breaks).
+   * A segment cannot span one.
+   */
+  breaksM: number[];
   /** Segments that already cover (part of) this route, for a hint. */
   existing: { id: number; name: string }[];
 }
@@ -417,6 +424,7 @@ export interface MapsWorkoutLinks {
     id: number;
     customName: string | null;
     area: string | null;
+    areaEnd: string | null;
     kind: MapsRouteKind;
     distanceM: number;
     /** Visible workouts on this route. */

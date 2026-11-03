@@ -1,11 +1,11 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { MapsRouteDetail, MapsRouteSummary, MapsRoutesResponse } from '@cadence/shared';
 import { destination, haversine, type LatLon } from '../src/lib/geo';
+import { nearestPlace } from '../src/lib/places';
 import {
   LENGTH_TOLERANCE,
   MIN_ROUTE_M,
   SIG_POINTS,
-  areaFromTimezone,
   assignRoutes,
   compareSignatures,
   makeSignature,
@@ -212,13 +212,20 @@ describe('matchOldRoutes', () => {
   });
 });
 
-describe('areaFromTimezone', () => {
-  it('uses the city of the IANA zone', () => {
-    expect(areaFromTimezone('Europe/Vienna')).toBe('Vienna');
-    expect(areaFromTimezone('America/New_York')).toBe('New York');
-    expect(areaFromTimezone('America/Argentina/Buenos_Aires')).toBe('Buenos Aires');
-    expect(areaFromTimezone('Etc/GMT+1')).toBeNull();
-    expect(areaFromTimezone(null)).toBeNull();
+describe('nearestPlace (offline gazetteer)', () => {
+  it('names positions after the nearest town, village or district', () => {
+    // every route in Germany used to be named "Berlin" after the Europe/Berlin time zone
+    expect(nearestPlace(54.0887, 12.1405)?.name).toBe('Rostock');
+    expect(nearestPlace(54.1795, 12.0832)?.name).toBe('Warnemünde');
+    expect(nearestPlace(54.11, 12.2)?.name).toBe('Bentwisch');
+    expect(nearestPlace(48.33, 16.05)?.name).toBe('Tulln');
+    expect(nearestPlace(48.216, 16.3967)).toMatchObject({ name: 'Vienna', country: 'AT', section: false });
+    expect(nearestPlace(52.497, 13.403)).toMatchObject({ name: 'Kreuzberg', section: true });
+  });
+
+  it('finds nothing far from any place', () => {
+    expect(nearestPlace(55, 5)).toBeNull(); // North Sea
+    expect(nearestPlace(Number.NaN, 0)).toBeNull();
   });
 });
 

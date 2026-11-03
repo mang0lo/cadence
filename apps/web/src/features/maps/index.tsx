@@ -1,3 +1,4 @@
+import { lazy } from 'react';
 import { Flame, Grid3x3, Route, Waypoints } from 'lucide-react';
 import type { FeatureModule } from '../types';
 import { messages } from './messages';
@@ -39,6 +40,7 @@ const feature: FeatureModule = {
     { path: '/maps/routes', labelKey: 'maps.nav.routes', icon: Route, group: 'explore', order: 20 },
     { path: '/maps/segments', labelKey: 'maps.nav.segments', icon: Waypoints, group: 'explore', order: 30 },
   ],
+  whatsNew: lazy(() => import('./components/WhatsNewMaps')),
 };
 
 export default feature;

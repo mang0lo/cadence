@@ -1,5 +1,20 @@
-/** Google encoded polyline (precision 5) → [lat, lon][] */
+import { POLYLINE_PART_SEPARATOR, polylineParts } from '@cadence/shared';
+
+/**
+ * Google encoded polyline (precision 5) → [lat, lon][]. A multi-part polyline (a workout paused and continued
+ * elsewhere, see POLYLINE_PART_SEPARATOR) yields all points; draw such routes with decodePolylineParts.
+ */
 export function decodePolyline(encoded: string, precision = 5): [number, number][] {
+  if (encoded.includes(POLYLINE_PART_SEPARATOR)) return decodePolylineParts(encoded, precision).flat();
+  return decodeOne(encoded, precision);
+}
+
+/** The parts of a (possibly multi-part) encoded polyline, each as [lat, lon][]. */
+export function decodePolylineParts(encoded: string, precision = 5): [number, number][][] {
+  return polylineParts(encoded).map((p) => decodeOne(p, precision));
+}
+
+function decodeOne(encoded: string, precision: number): [number, number][] {
   const factor = 10 ** precision;
   const out: [number, number][] = [];
   let index = 0;

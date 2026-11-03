@@ -3,6 +3,9 @@ import type { Dictionary } from '@/lib/i18n';
 /** i18n namespace 'activities' → t('activities.…'). Always provide en + de. */
 export const messages: Dictionary = {
   en: {
+    whatsNew: {
+      records: 'Records',
+    },
     nav: {
       dashboard: 'Dashboard',
       activities: 'Activities',
@@ -69,6 +72,8 @@ export const messages: Dictionary = {
       from: 'From',
       to: 'To',
       clear: 'Reset filters',
+      exportCsv: 'Export CSV',
+      exportCsvHint: 'All activities matching the filters as a spreadsheet (Excel, Numbers), in your units',
       totals: 'Totals for this filter',
       columns: {
         date: 'Date',
@@ -178,6 +183,11 @@ export const messages: Dictionary = {
       start: 'Start',
       finish: 'Finish',
       legend: 'Route colors',
+      parts: {
+        label: 'Parts of the activity',
+        part: 'Part {n}',
+        hint: 'Paused and continued elsewhere – the way in between does not count.',
+      },
     },
     playback: {
       play: 'Play',
@@ -357,6 +367,9 @@ export const messages: Dictionary = {
     },
   },
   de: {
+    whatsNew: {
+      records: 'Bestleistungen',
+    },
     nav: {
       dashboard: 'Dashboard',
       activities: 'Aktivitäten',
@@ -426,6 +439,8 @@ export const messages: Dictionary = {
       from: 'Von',
       to: 'Bis',
       clear: 'Filter zurücksetzen',
+      exportCsv: 'CSV exportieren',
+      exportCsvHint: 'Alle Aktivitäten der aktuellen Auswahl als Tabelle (Excel, Numbers), in deinen Einheiten',
       totals: 'Summen für diesen Filter',
       columns: {
         date: 'Datum',
@@ -535,6 +550,11 @@ export const messages: Dictionary = {
       start: 'Start',
       finish: 'Ziel',
       legend: 'Farben der Strecke',
+      parts: {
+        label: 'Teile der Aktivität',
+        part: 'Teil {n}',
+        hint: 'Pausiert und an einem anderen Ort fortgesetzt – der Weg dazwischen zählt nicht.',
+      },
     },
     playback: {
       play: 'Abspielen',

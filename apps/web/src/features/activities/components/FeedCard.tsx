@@ -1,6 +1,7 @@
 import { Link, useNavigate } from 'react-router';
 import { EyeOff, MapPinOff } from 'lucide-react';
 import { workoutTitle, type ActivityListItem } from '@cadence/shared';
+import { PlaceText } from '@/components/map/PlaceText';
 import { RouteThumbnail } from '@/components/map/RouteThumbnail';
 import { Badge, Card, Skeleton } from '@/components/ui';
 import { useFormat } from '@/lib/format';
@@ -51,6 +52,12 @@ export function FeedCard({ w }: { w: ActivityListItem }) {
             <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs text-fg-3">
               <span>{sportLabel(w.sport, lang)}</span>
               {w.indoor && <MapPinOff size={12} aria-label={t('activities.feed.indoor')} />}
+              {w.place && (
+                <span className="inline-flex min-w-0 items-center gap-x-1.5">
+                  <span aria-hidden>·</span>
+                  <PlaceText w={w} />
+                </span>
+              )}
               {w.sourceName && (
                 <>
                   <span aria-hidden>·</span>

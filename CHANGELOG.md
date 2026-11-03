@@ -3,6 +3,40 @@
 All notable changes to Cadence. Versions follow [semantic versioning](https://semver.org); every `v*` tag builds a
 release (see `.github/workflows/release.yml`), whose notes are taken from the matching section below.
 
+## [Unreleased]
+
+### Fixed
+
+- **Workouts paused and continued elsewhere** (e.g. a train ride while the workout was paused) no longer draw a line
+  across the map or count the jump as distance, climbing, explorer tiles, splits or best efforts. The parts are shown
+  separately: activity map with part chips, gaps in the charts, heatmap and time-lapse, previews, one GPX segment per
+  part; segments cannot span the jump.
+- **Route names** come from the real place of the start (offline GeoNames gazetteer, nothing leaves your machine)
+  instead of the time-zone city — before, every route in Germany was called "Berlin". Routes from A to B are named
+  "A → B"; German names for big cities (Wien, München …).
+
+### Added
+
+- **What's new after an import**: the import screen and a note in the sidebar show the new activities by sport, the
+  newest ones, new personal records and podiums, trophies, explorer tiles, recurring routes, route best times and
+  segment PRs.
+- **Place of every activity** in the feed, the activity list and the activity page ("Warnemünde", "Rostock → Berlin"
+  for one-way activities), from the offline gazetteer.
+- **CSV export** of the activity list (current filters, your units and language; German files open directly in Excel).
+- **Map background in route previews** (feed, lists, routes, segments, records), following your map style and theme;
+  can be turned off in the settings (no tile requests).
+- **Goals for a single activity** ("longest activity"): run a marathon this year, swim 3.8 km, ride 180 km … with quick
+  picks for 5K to 100 km and the Olympic / 70.3 / Ironman distances; **bigger goals** presets per metric and period;
+  a suggestion for your next classic distance.
+- **More trophies**: Ironman bike, 70.3 and Olympic legs, triathlon days (all three legs on one day, also from
+  multisport workouts), 100 km ultra, 300 km ride, 10 km swim and higher tiers for activities, distance, climbing,
+  streaks and rings.
+
+### Changed
+
+- After an update Cadence rebuilds the analysis once in the background (see the Import page for progress).
+- Releases can be started from the Actions tab; the release page no longer waits for the macOS build.
+
 ## [0.1.0] – 2026-11-02
 
 First release: a self-hosted, Strava-style training log for your complete Apple Health export.

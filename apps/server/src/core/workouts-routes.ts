@@ -241,10 +241,13 @@ export default async function workoutRoutes(app: FastifyInstance) {
       ` <metadata><name>${xmlEscape(title)}</name><time>${formatIsoUtc(w.start_ts)}</time></metadata>`,
       ` <trk><name>${xmlEscape(title)}</name><type>${GPX_TYPE[w.sport] ?? w.sport}</type><trkseg>`,
     ];
+    // every part of the track (see WorkoutStreams.breaks) is its own <trkseg>
+    const breaks = new Set(s.breaks ?? []);
     for (let i = 0; i < s.t.length; i++) {
       const lat = s.lat[i];
       const lon = s.lon[i];
       if (lat === undefined || lon === undefined) continue;
+      if (breaks.has(i)) out.push(' </trkseg><trkseg>');
       const ele = s.ele?.[i];
       const hr = s.hr?.[i];
       const cadRaw = s.cadence?.[i];

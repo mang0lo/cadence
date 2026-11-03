@@ -4,6 +4,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { migrateAll } from '../src/app';
 import { get, openDb, run, type Db } from '../src/db/db';
+import { DERIVE_VERSION } from '../src/derive/context';
 import { JobManager } from '../src/import/jobs';
 import { startImportWatcher } from '../src/import/watch';
 
@@ -22,6 +23,34 @@ afterEach(() => {
 });
 
 describe('job manager', () => {
+  it('rebuilds the analysis once after an update of the derivation', async () => {
+    const insert = (key: string, version: number) =>
+      run(
+        db,
+        `INSERT INTO workouts (athlete_id, ext_key, activity_type, sport, start_ts, end_ts, tz_min, duration_s, derived_version)
+         VALUES (1, ?, 'HKWorkoutActivityTypeRunning', 'run', 1750000000, 1750003600, 120, 3600, ?)`,
+        [key, version],
+      );
+    insert('current', DERIVE_VERSION);
+    const cfg = { dbPath: path.join(dir, 'cadence.db'), uploadsDir: path.join(dir, 'uploads') };
+    // everything up to date: no job
+    let jobs = new JobManager(db, cfg, 'inline');
+    jobs.start();
+    expect(jobs.busy(1)).toBe(false);
+    await jobs.close();
+    // a workout analysed by an older version: one background rebuild of the analysis
+    insert('old', DERIVE_VERSION - 1);
+    jobs = new JobManager(db, cfg, 'inline');
+    jobs.start();
+    const rows = db.prepare("SELECT kind, options FROM import_jobs WHERE kind = 'rederive'").all() as {
+      kind: string;
+      options: string;
+    }[];
+    expect(rows).toHaveLength(1);
+    expect(JSON.parse(rows[0]!.options)).toMatchObject({ origin: 'upgrade', workoutIds: 'all' });
+    await jobs.close();
+  });
+
   it('marks jobs that were running when the server stopped as failed', async () => {
     run(
       db,

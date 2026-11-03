@@ -157,3 +157,53 @@ describe('monthly challenges', () => {
     expect(monthsBetween('2026-02', '2026-01')).toEqual([]);
   });
 });
+
+describe('triathlon distances and multisport legs', () => {
+  it('offers the Ironman legs and triathlon days to triathletes', () => {
+    const keys = buildCatalog({ sports: ['run', 'ride', 'swim'], hasRings: false }).map((d) => d.key);
+    expect(keys).toContain('longest.ride.180246');
+    expect(keys).toContain('longest.swim.3800');
+    expect(keys).toContain('longest.run.100000');
+    expect(keys.filter((k) => k.startsWith('triathlon.'))).toHaveLength(3);
+    expect(buildCatalog({ sports: ['run'], hasRings: false }).some((d) => d.kind === 'triathlon')).toBe(false);
+    expect(new Set(keys).size).toBe(keys.length);
+  });
+
+  it('awards an Olympic triathlon day from separate activities, with progress before', () => {
+    const almost = evaluate([
+      workout('2026-06-07', 'swim', { distanceM: 1500, hour: 8 }),
+      workout('2026-06-07', 'ride', { distanceM: 40_000, hour: 9 }),
+      workout('2026-06-07', 'run', { distanceM: 6000, hour: 11 }),
+    ]);
+    const tri = almost.get('triathlon.51500')!;
+    expect(tri.earnedDay).toBeNull();
+    expect(tri.progress).toBe(1500 + 40_000 + 6000);
+    const done = evaluate([
+      workout('2026-06-07', 'swim', { distanceM: 1500, hour: 8 }),
+      workout('2026-06-07', 'ride', { distanceM: 40_200, hour: 9 }),
+      workout('2026-06-07', 'run', { distanceM: 9980, hour: 11 }), // GPS a hair short: within the tolerance
+    ]);
+    expect(done.get('triathlon.51500')).toMatchObject({ earnedDay: '2026-06-07', progress: 51_500 });
+    // legs on different days are no triathlon
+    const split = evaluate([
+      workout('2026-06-07', 'swim', { distanceM: 1500 }),
+      workout('2026-06-08', 'ride', { distanceM: 40_000 }),
+      workout('2026-06-08', 'run', { distanceM: 10_000 }),
+    ]);
+    expect(split.get('triathlon.51500')!.earnedDay).toBeNull();
+  });
+
+  it('counts multisport legs for triathlons and single distances, not as activities', () => {
+    const multi = workout('2026-07-05', 'multisport', { distanceM: 226_000, hour: 7 });
+    const legs = [
+      { ...multi, sport: 'swim', distanceM: 3800 },
+      { ...multi, sport: 'ride', distanceM: 180_300 },
+      { ...multi, sport: 'run', distanceM: 42_200 },
+    ];
+    const r = evaluate([multi], { legs });
+    expect(r.get('triathlon.226241')).toMatchObject({ earnedDay: '2026-07-05', workoutId: multi.id });
+    expect(r.get('longest.ride.180246')).toMatchObject({ earnedDay: '2026-07-05', workoutId: multi.id });
+    expect(r.get('longest.swim.3800')!.earnedDay).toBe('2026-07-05');
+    expect(r.get('activities.10')!.progress).toBe(1);
+  });
+});

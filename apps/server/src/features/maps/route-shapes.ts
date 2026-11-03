@@ -225,9 +225,3 @@ export function matchOldRoutes(
   return out;
 }
 
-/** City / region of an IANA time zone id ('Europe/Vienna' → 'Vienna'); null for zones that are no places. */
-export function areaFromTimezone(tz: string | null | undefined): string | null {
-  if (!tz || /^(Etc|UTC|GMT)/i.test(tz)) return null;
-  const last = tz.split('/').pop();
-  return last ? last.replace(/_/g, ' ') : null;
-}

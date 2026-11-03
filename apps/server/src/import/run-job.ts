@@ -2,13 +2,14 @@ import type { ImportPhase, ImportStats } from '@cadence/shared';
 import type { Db } from '../db/db';
 import { runDerive } from '../derive/run';
 import { runImport } from './importer';
+import { importSummary } from './summary';
 import { emptyStats } from './writer';
 
 /** Options persisted with a job (import_jobs.options). */
 export interface JobOptions {
   /** Delete the source file after a successful import (uploads). */
   deleteAfter?: boolean;
-  origin?: 'upload' | 'local' | 'watch' | 'api' | 'cli' | 'reset' | 'settings' | 'workout';
+  origin?: 'upload' | 'local' | 'watch' | 'api' | 'cli' | 'reset' | 'settings' | 'workout' | 'upgrade';
   /** Rederive scope (default: everything). */
   workoutIds?: number[] | 'all';
   sinceDay?: string | null;
@@ -100,6 +101,8 @@ export async function executeJob(
     Object.assign(stats, res.stats);
     enterPhase('derive');
     const ids = res.changedWorkoutIds;
+    // rows that derive steps create for this import (e.g. trophies) are stamped after this moment
+    const deriveStart = Math.floor(Date.now() / 1000);
     hooks.progress({ phase: 'derive', progress: IMPORT_SHARE, message: 'Deriving', step: null, stats });
     const d = await runDerive({
       db,
@@ -114,6 +117,8 @@ export async function executeJob(
     });
     stats.workoutsDerived = d.workoutIds === 'all' ? stats.workoutsSeen : ids.length;
     stats.warnings.push(...d.warnings);
+    hooks.checkCancelled();
+    stats.summary = importSummary(db, spec.athleteId, res.newWorkoutIds, deriveStart, hooks.log);
   } else {
     enterPhase('derive');
     const scope = spec.options.workoutIds ?? 'all';

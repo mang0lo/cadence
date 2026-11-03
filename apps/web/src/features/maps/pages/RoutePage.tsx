@@ -98,9 +98,10 @@ function RouteSkeleton() {
 function RouteBody({ detail }: { detail: MapsRouteDetail }) {
   const t = useT();
   const fmt = useFormat();
+  const { lang } = useI18n();
   const { route, efforts } = detail;
   const qc = useQueryClient();
-  const title = routeTitle(route, t, fmt);
+  const title = routeTitle(route, t, fmt, lang);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
   const [saving, setSaving] = useState(false);
@@ -143,7 +144,7 @@ function RouteBody({ detail }: { detail: MapsRouteDetail }) {
                 value={draft}
                 maxLength={120}
                 aria-label={t('maps.routes.name')}
-                placeholder={routeTitle({ ...route, customName: null }, t, fmt)}
+                placeholder={routeTitle({ ...route, customName: null }, t, fmt, lang)}
                 onChange={(e) => setDraft(e.target.value)}
                 className="h-10 w-72 max-w-full text-lg font-semibold"
               />

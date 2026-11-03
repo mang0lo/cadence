@@ -1,4 +1,4 @@
-import { Check, CircleCheck, Pencil, Target, Trash2, TrendingDown, TrendingUp } from 'lucide-react';
+import { Check, CircleCheck, Flag, Pencil, Target, Trash2, TrendingDown, TrendingUp } from 'lucide-react';
 import type { GoalPeriodProgress, GoalPeriodResult, GoalStatus, GoalWithProgress } from '@cadence/shared';
 import { Badge, Card, Hint, IconButton, ProgressBar, cn } from '@/components/ui';
 import { useFormat, type Formatter } from '@/lib/format';
@@ -9,9 +9,10 @@ import { formatGoalValue, goalTargetText, goalTitle, periodLabel } from '../lib'
 /** Status with icon + label (status colors are never used alone). */
 export function GoalStatusBadge({ status }: { status: GoalStatus }) {
   const { t } = useI18n();
-  const icon = status === 'done' ? CircleCheck : status === 'on_track' ? TrendingUp : TrendingDown;
+  const icon =
+    status === 'done' ? CircleCheck : status === 'on_track' ? TrendingUp : status === 'open' ? Flag : TrendingDown;
   return (
-    <Badge tone={status === 'behind' ? 'warning' : 'good'} icon={icon}>
+    <Badge tone={status === 'behind' ? 'warning' : status === 'open' ? 'neutral' : 'good'} icon={icon}>
       {t(`consistency.goals.status.${status}`)}
     </Badge>
   );
@@ -86,6 +87,11 @@ export function goalOutlook(
   const c = g.current;
   const v = (x: number) => formatGoalValue(fmt, t, g.metric, x);
   if (c.status === 'done') return t('consistency.goals.doneText', { pct: fmt.pct(c.fraction) });
+  // a single effort: the longest so far and what is still missing to the target
+  if (g.metric === 'longest')
+    return c.value > 0
+      ? t('consistency.goals.longestSoFar', { value: v(c.value), remaining: v(c.remaining), days: t('common.days', { count: c.remainingDays }) })
+      : t('consistency.goals.longestNone', { days: t('common.days', { count: c.remainingDays }) });
   if (g.metric === 'active_days' && c.remaining > c.remainingDays) return t(`consistency.goals.outOfReach.${g.period}`);
   // a projection needs a pace: nothing done on the first day(s) would project 0
   const parts = c.value > 0 && c.elapsedDays > 0 ? [t(`consistency.goals.projected.${g.period}`, { value: v(c.projected) })] : [];

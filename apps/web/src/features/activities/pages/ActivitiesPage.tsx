@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
-import { ChevronLeft, ChevronRight, Eye, EyeOff, ListChecks, MapPin, RotateCcw, Search, Shapes, Upload } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Download, Eye, EyeOff, ListChecks, MapPin, RotateCcw, Search, Shapes, Upload } from 'lucide-react';
 import {
   sportInfo,
   workoutTitle,
@@ -28,6 +28,7 @@ import {
   TH,
   cn,
 } from '@/components/ui';
+import { PlaceText } from '@/components/map/PlaceText';
 import { useFormat } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
 import { useSettings } from '@/lib/settings';
@@ -303,12 +304,21 @@ function ListTable({
                 </div>
                 <div className="mt-0.5 flex min-w-0 items-center gap-1.5 overflow-hidden pl-7.5 text-xs text-fg-3">
                   <span className="shrink-0">{sportLabel(w.sport, lang)}</span>
-                  {w.medals[0] && (
-                    <MedalBadge rank={w.medals[0].rank} effort={w.medals[0].effort} sport={w.sport} elapsedS={w.medals[0].elapsedS} />
+                  {w.place && (
+                    <>
+                      <span aria-hidden>·</span>
+                      <PlaceText w={w} size={11} />
+                    </>
                   )}
-                  {w.medals.length > 1 && <Badge>{t('activities.medal.more', { count: w.medals.length - 1 })}</Badge>}
-                  {w.hidden && <Badge icon={EyeOff}>{t('activities.list.hiddenBadge')}</Badge>}
+                  {w.hidden && <Badge icon={EyeOff} className="shrink-0">{t('activities.list.hiddenBadge')}</Badge>}
                 </div>
+                {/* medals in their own line, so the place is never squeezed to its icon */}
+                {w.medals[0] && (
+                  <div className="mt-1 flex min-w-0 items-center gap-1.5 overflow-hidden pl-7.5">
+                    <MedalBadge rank={w.medals[0].rank} effort={w.medals[0].effort} sport={w.sport} elapsedS={w.medals[0].elapsedS} />
+                    {w.medals.length > 1 && <Badge>{t('activities.medal.more', { count: w.medals.length - 1 })}</Badge>}
+                  </div>
+                )}
               </TD>
               <TD numeric className="whitespace-nowrap">
                 {distanceText(w, fmt)}
@@ -365,8 +375,16 @@ function ListCards({ items, actions }: { items: ActivityListItem[]; actions: Row
               <Link to={`/activities/${w.id}`} className="block truncate font-semibold text-fg hover:text-accent-fg">
                 {workoutTitle(w, lang)}
               </Link>
-              <div className="text-xs text-fg-3">
-                {fmt.date(w.startTs, w.tzMin, 'dateTime')} · {sportLabel(w.sport, lang)}
+              <div className="flex min-w-0 items-center gap-x-1 text-xs text-fg-3">
+                <span className="shrink-0">
+                  {fmt.date(w.startTs, w.tzMin, 'dateTime')} · {sportLabel(w.sport, lang)}
+                </span>
+                {w.place && (
+                  <>
+                    <span aria-hidden>·</span>
+                    <PlaceText w={w} size={11} />
+                  </>
+                )}
               </div>
             </div>
             <Actions w={w} a={actions} />
@@ -450,6 +468,14 @@ export default function ActivitiesPage() {
   }, [s.sports, s.range, s.fromDay, s.toDay, s.q, s.gps, s.hidden, s.sort, s.order, s.size, s.page, settings.weekStart]);
   const list = useActivityList(query);
   const data = list.data;
+  // the same selection as a spreadsheet (all pages)
+  const csvHref = useMemo(() => {
+    const p = new URLSearchParams();
+    const { limit: _limit, offset: _offset, ...filter } = query;
+    for (const [k, v] of Object.entries({ ...filter, lang, units: settings.units }))
+      if (v !== undefined && v !== null && v !== '') p.set(k, String(v));
+    return `/api/activities/export.csv?${p.toString()}`;
+  }, [query, lang, settings.units]);
   const stale = list.isPlaceholderData;
 
   // a deep link past the last page (e.g. after hiding) snaps back to the last page
@@ -479,7 +505,24 @@ export default function ActivitiesPage() {
 
   return (
     <Page wide>
-      <PageHeader title={t('activities.titles.ActivitiesPage')} subtitle={t('activities.list.subtitle')} icon={ListChecks}>
+      <PageHeader
+        title={t('activities.titles.ActivitiesPage')}
+        subtitle={t('activities.list.subtitle')}
+        icon={ListChecks}
+        actions={
+          data && data.total > 0 ? (
+            <a
+              href={csvHref}
+              download
+              title={t('activities.list.exportCsvHint')}
+              className="inline-flex h-8 items-center gap-1.5 rounded-control border border-border-strong bg-surface px-2.5 text-xs font-medium text-fg hover:bg-surface-2"
+            >
+              <Download size={14} aria-hidden />
+              {t('activities.list.exportCsv')}
+            </a>
+          ) : undefined
+        }
+      >
         <div className="grid gap-3">
           <SportChips selected={s.sports} onChange={(sp) => update({ sport: sp.join(',') || null })} />
           <FilterBar>

@@ -7,7 +7,7 @@ services:
     build:
       context: ..
       dockerfile: deploy/Dockerfile
-    image: ghcr.io/devine-coder/cadence:latest
+    image: ghcr.io/mang0lo/cadence:latest
     container_name: cadence
     ports:
       - "8787:8787"

@@ -5,6 +5,7 @@ export const shared: Dictionary = {
   en: {
     nav: {
       overview: 'Health',
+      readiness: 'Readiness',
       sleep: 'Sleep',
       heart: 'Heart',
       body: 'Body',
@@ -13,6 +14,7 @@ export const shared: Dictionary = {
     },
     titles: {
       HealthPage: 'Health',
+      ReadinessPage: 'Readiness',
       SleepPage: 'Sleep',
       HeartPage: 'Heart',
       BodyPage: 'Body',
@@ -72,6 +74,7 @@ export const shared: Dictionary = {
   de: {
     nav: {
       overview: 'Gesundheit',
+      readiness: 'Erholung',
       sleep: 'Schlaf',
       heart: 'Herz',
       body: 'Körper',
@@ -80,6 +83,7 @@ export const shared: Dictionary = {
     },
     titles: {
       HealthPage: 'Gesundheit',
+      ReadinessPage: 'Erholung',
       SleepPage: 'Schlaf',
       HeartPage: 'Herz',
       BodyPage: 'Körper',

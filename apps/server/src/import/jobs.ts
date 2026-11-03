@@ -6,7 +6,7 @@ import type { ImportJob, ImportPhase, ImportStats, ImportStatus } from '@cadence
 import type { Config } from '../config';
 import { invalidateStatusCounts } from '../core/routes';
 import { all, get, json, run, type Db } from '../db/db';
-import { CancelledError } from '../derive/context';
+import { CancelledError, DERIVE_VERSION } from '../derive/context';
 import { executeJob, type JobOptions, type JobSpec } from './run-job';
 import type { JobWorkerData, WorkerMessage } from './worker';
 import { emptyStats } from './writer';
@@ -112,6 +112,15 @@ export class JobManager {
         );
     }
     this.cleanupUploads();
+    // After an app update that changed the derivation (DERIVE_VERSION), rebuild the analysis in the background
+    // so existing data picks up the fixes without the user pressing "Rebuild analysis".
+    for (const r of all<{ athlete_id: number }>(
+      this.db,
+      'SELECT DISTINCT athlete_id FROM workouts WHERE derived_version < ?',
+      [DERIVE_VERSION],
+    )) {
+      if (!this.busy(r.athlete_id)) this.enqueueDerive(r.athlete_id, { origin: 'upgrade' });
+    }
     queueMicrotask(() => this.pump());
   }
 

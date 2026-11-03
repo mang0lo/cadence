@@ -43,12 +43,19 @@ export const weekStartOfAthlete = (db: Db, athleteId: number): 0 | 1 => getSetti
 
 /** Workout totals per day & sport (daily_activity), optionally limited to [from, to]. */
 export function loadDaily(db: Db, athleteId: number, from = '0000-01-01', to = '9999-12-31'): DailyRow[] {
+  // + the longest single activity of each day and sport (single-activity goals such as "a marathon this year")
   return all<DailyRow>(
     db,
-    `SELECT day, sport, count, duration_s AS durationS, distance_m AS distanceM, elevation_m AS elevationM,
-            effort, energy_kcal AS energyKcal
-     FROM daily_activity WHERE athlete_id = ? AND day >= ? AND day <= ? ORDER BY day, sport`,
-    [athleteId, from, to],
+    `SELECT d.day, d.sport, d.count, d.duration_s AS durationS, d.distance_m AS distanceM, d.elevation_m AS elevationM,
+            d.effort, d.energy_kcal AS energyKcal, COALESCE(l.longest, 0) AS longestM
+     FROM daily_activity d
+     LEFT JOIN (
+       SELECT date(start_ts + tz_min * 60, 'unixepoch') AS day, sport, MAX(COALESCE(distance_m, 0)) AS longest
+       FROM workouts WHERE athlete_id = ? AND hidden = 0 AND duplicate_of IS NULL
+       GROUP BY 1, 2
+     ) l ON l.day = d.day AND l.sport = d.sport
+     WHERE d.athlete_id = ? AND d.day >= ? AND d.day <= ? ORDER BY d.day, d.sport`,
+    [athleteId, athleteId, from, to],
   );
 }
 

@@ -26,6 +26,8 @@ import { useT } from '@/lib/i18n';
 import { isNativeShell, NATIVE_IMPORT_EVENT, postNative } from '@/lib/native';
 import { useSettings } from '@/lib/settings';
 import { isActive, useImportJobs } from './useImportJobs';
+import { WhatsNewCard } from './WhatsNew';
+import { latestSummaryJob } from './whatsNewState';
 
 /** multipart upload with progress (fetch has no upload progress events). */
 function uploadFile(file: File, onProgress: (f: number) => void): Promise<ImportJob> {
@@ -197,6 +199,7 @@ export default function ImportPage() {
 
   const busy = !!upload || !!active;
   const history = jobs.filter((j) => !isActive(j));
+  const summaryJob = active ? null : latestSummaryJob(history);
 
   return (
     <Page>
@@ -275,6 +278,7 @@ export default function ImportPage() {
             </Card>
           )}
           {(error || jobsError) && <ErrorState error={error ?? jobsError} />}
+          {summaryJob && <WhatsNewCard job={summaryJob} />}
 
           <Card padded={false}>
             <div className="px-5 pt-4">

@@ -16,7 +16,23 @@ export function elevationGainLoss(
   ele: Float64Array,
   thresholdM = 2,
   halfWindow = 5,
+  breaks?: ArrayLike<number>,
 ): { gain: number; loss: number } {
+  if (breaks?.length) {
+    // each part of the track on its own: the jump between parts is no climb
+    let gain = 0;
+    let loss = 0;
+    let a = 0;
+    for (const b of [...Array.from(breaks), ele.length]) {
+      if (b - a >= 2) {
+        const p = elevationGainLoss(ele.subarray(a, b), thresholdM, halfWindow);
+        gain += p.gain;
+        loss += p.loss;
+      }
+      a = Math.max(a, b);
+    }
+    return { gain, loss };
+  }
   if (ele.length < 2) return { gain: 0, loss: 0 };
   const s = smooth(ele, halfWindow);
   let ref = NaN;

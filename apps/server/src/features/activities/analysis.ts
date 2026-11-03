@@ -17,6 +17,7 @@ import {
   type ActivityLap,
   type ActivityPower,
   type WorkoutStreams,
+  stitchElevation,
 } from '@cadence/shared';
 import { smooth } from '../../derive/streams';
 
@@ -30,6 +31,8 @@ export interface Series {
   cadence: Float64Array | null;
   power: Float64Array | null;
   moving: Uint8Array;
+  /** Indices where a new part of the GPS track starts (WorkoutStreams.breaks). */
+  breaks: number[];
 }
 
 export interface AnalysisEvent {
@@ -90,6 +93,7 @@ export function toSeries(s: WorkoutStreams): Series {
     cadence: floatArray(s.cadence, n),
     power: floatArray(s.power, n),
     moving,
+    breaks: s.breaks ?? [],
   };
 }
 
@@ -699,7 +703,8 @@ export function analyzeActivity(inp: AnalysisInput): AnalysisResult {
   const movingS = movingSeconds(s);
   const totalDist = s.dist ? s.dist[s.n - 1]! : null;
   const avgSpeed = totalDist !== null && movingS > 0 ? totalDist / movingS : null;
-  const grid = s.dist && s.ele ? elevationGrid(s.dist, s.ele) : null;
+  // the height difference between track parts (travelled while paused) is no climb
+  const grid = s.dist && s.ele ? elevationGrid(s.dist, s.breaks.length ? stitchElevation(s.ele, s.breaks) : s.ele) : null;
   const footSport = (GAP_SPORTS as readonly string[]).includes(sport);
   const gapSpeed = footSport && grid ? gradeAdjustedSpeed(s, grid, sport) : null;
   const power = powerAnalysis(s);

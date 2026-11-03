@@ -52,6 +52,8 @@ export interface BuiltStreams {
   rawDistanceM: number | null;
   /** Factor applied to GPS distance to match Apple's distance (1 = none). */
   distanceScale: number;
+  /** Indices where a new part of the GPS track starts (see isTrackBreak); empty without breaks. */
+  breaks: number[];
 }
 
 /** Speed threshold (m/s) above which an athlete counts as moving. */
@@ -238,8 +240,30 @@ export function pausedIntervals(events: { type: string; ts: number }[], endTs: n
   return out;
 }
 
+/** Straight-line gaps shorter than this (m) never split a track. */
+const BREAK_MIN_M = 250;
+/** A gap this long splits the track even without a pause (the position was lost for a long way). */
+const BREAK_ALWAYS_M = 5000;
+
+/**
+ * Whether the step between two consecutive GPS fixes is a break between two parts of a track rather than
+ * distance covered: a jump across a pause (train, car, ferry while the workout was paused), a very long gap,
+ * or an implausibly fast jump that persisted (the glitch filter kept it). Distance and elevation are not
+ * counted across a break and maps draw the parts separately.
+ */
+export function isTrackBreak(distanceM: number, dtS: number, spansPause: boolean, maxSpeed: number): boolean {
+  if (!(distanceM >= BREAK_MIN_M)) return false;
+  return spansPause || distanceM >= BREAK_ALWAYS_M || (dtS > 0 && distanceM / dtS > maxSpeed);
+}
+
 /** Indices of usable GPS fixes: inside the workout window, accurate enough, no impossible jumps. */
-export function cleanTrackIndices(tr: Track, startTs: number, endTs: number, sport: string): number[] {
+export function cleanTrackIndices(
+  tr: Track,
+  startTs: number,
+  endTs: number,
+  sport: string,
+  pauses: [number, number][] = [],
+): number[] {
   const vmax = maxPlausibleSpeed(sport);
   const keep: number[] = [];
   let rejectedInRow = 0;
@@ -253,7 +277,8 @@ export function cleanTrackIndices(tr: Track, startTs: number, endTs: number, spo
       const dt = t - tr.t[p]!;
       if (dt <= 0) continue;
       const d = haversine(tr.lat[p]!, tr.lon[p]!, tr.lat[i]!, tr.lon[i]!);
-      if (d / dt > vmax && rejectedInRow < 8) {
+      // a fix after a pause may be far away (travelled while paused): a new part of the track, not a glitch
+      if (d / dt > vmax && rejectedInRow < 8 && !inPauses(pauses, tr.t[p]! + dt / 2)) {
         rejectedInRow++;
         continue;
       }
@@ -268,7 +293,7 @@ export function cleanTrackIndices(tr: Track, startTs: number, endTs: number, spo
 export function buildStreams(inp: StreamInput): BuiltStreams | null {
   const { startTs, endTs, sport } = inp;
   const thr = movingThreshold(sport);
-  const idx = inp.track ? cleanTrackIndices(inp.track, startTs, endTs, sport) : [];
+  const idx = inp.track ? cleanTrackIndices(inp.track, startTs, endTs, sport, inp.pauses) : [];
 
   if (idx.length >= 10) {
     const tr = inp.track!;
@@ -280,6 +305,8 @@ export function buildStreams(inp: StreamInput): BuiltStreams | null {
     const ele = tr.ele ? new Float64Array(n) : null;
     const dist = new Float64Array(n);
     const rawSpeed = new Float64Array(n);
+    const vmax = maxPlausibleSpeed(sport);
+    const breaks: number[] = [];
     for (let k = 0; k < n; k++) {
       const i = idx[k]!;
       abs[k] = tr.t[i]!;
@@ -289,9 +316,16 @@ export function buildStreams(inp: StreamInput): BuiltStreams | null {
       if (ele) ele[k] = tr.ele![i]!;
       if (k) {
         const d = haversine(lat[k - 1]!, lon[k - 1]!, lat[k]!, lon[k]!);
-        dist[k] = dist[k - 1]! + d;
         const dt = t[k]! - t[k - 1]!;
-        rawSpeed[k] = dt > 0 ? d / dt : NaN;
+        if (isTrackBreak(d, dt, inPauses(inp.pauses, abs[k - 1]! + dt / 2), vmax)) {
+          // travelled while paused (or the position was lost): not part of the workout's distance
+          breaks.push(k);
+          dist[k] = dist[k - 1]!;
+          rawSpeed[k] = NaN;
+        } else {
+          dist[k] = dist[k - 1]! + d;
+          rawSpeed[k] = dt > 0 ? d / dt : NaN;
+        }
       }
     }
     rawSpeed[0] = n > 1 ? rawSpeed[1]! : 0;
@@ -314,10 +348,13 @@ export function buildStreams(inp: StreamInput): BuiltStreams | null {
     }
     const speed = smooth(speed0, 2);
     const moving = new Uint8Array(n);
+    const isBreak = new Uint8Array(n);
+    for (const k of breaks) isBreak[k] = 1;
     for (let k = 1; k < n; k++) {
       const dt = t[k]! - t[k - 1]!;
       // a segment spanning a manual pause (no fixes while paused) has its midpoint inside the pause
       moving[k] =
+        !isBreak[k] &&
         speed[k]! >= thr &&
         dt <= 600 &&
         !inPauses(inp.pauses, abs[k]!) &&
@@ -352,6 +389,7 @@ export function buildStreams(inp: StreamInput): BuiltStreams | null {
       moving,
       rawDistanceM,
       distanceScale: scale,
+      breaks,
     };
   }
 
@@ -405,6 +443,7 @@ export function buildStreams(inp: StreamInput): BuiltStreams | null {
     moving,
     rawDistanceM: null,
     distanceScale: 1,
+    breaks: [],
   };
 }
 
@@ -441,5 +480,9 @@ export function toDto(b: BuiltStreams): WorkoutStreams {
   const pw = series(b.power);
   if (pw) out.power = pw;
   out.moving = Array.from(b.moving);
+  if (b.breaks.length) out.breaks = [...b.breaks];
   return out;
 }
+
+/** [start, end) index ranges of the parts of a track (re-exported from @cadence/shared). */
+export { trackParts } from '@cadence/shared';

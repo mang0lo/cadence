@@ -5,6 +5,7 @@ import { migrations } from './migrations';
 import { routesStep } from './route-derive';
 import { segmentsStep } from './segments';
 import { mapsRoutes } from './routes';
+import { mapsWhatsNew } from './whats-new';
 
 /**
  * "maps" feature module (server side).
@@ -22,6 +23,7 @@ const feature: Feature = {
   keepOnReset: ['maps_segments'],
   onReset: (db, athleteId) =>
     run(db, 'UPDATE maps_segments SET source_workout_id = NULL WHERE athlete_id = ?', [athleteId]),
+  whatsNew: mapsWhatsNew,
 };
 
 export default feature;

@@ -13,6 +13,8 @@ export { TILE_STRIDE, keyX, keyY, lonLatToTile, tileBounds, tileKey, tileToLonLa
 export interface CoverOptions {
   /** Gaps between two consecutive fixes longer than this are not bridged (e.g. a flight, a paused recording). */
   maxGapM?: number;
+  /** Indices where a new part of the track starts (WorkoutStreams.breaks): never bridged. */
+  breaks?: ArrayLike<number>;
 }
 
 /**
@@ -27,6 +29,7 @@ export function tileCover(
   opts: CoverOptions = {},
 ): Set<number> {
   const maxGapM = opts.maxGapM ?? 10_000;
+  const breaks = new Set(Array.from(opts.breaks ?? []));
   const out = new Set<number>();
   const n = Math.min(lat.length, lon.length);
   let pu = NaN;
@@ -41,7 +44,7 @@ export function tileCover(
     const cx = Math.floor(u);
     const cy = Math.floor(v);
     out.add(tileKey(cx, cy));
-    if (pu === pu && (Math.floor(pu) !== cx || Math.floor(pv) !== cy)) {
+    if (pu === pu && !breaks.has(i) && (Math.floor(pu) !== cx || Math.floor(pv) !== cy)) {
       if (haversine(pLat, pLon, la, lo) <= maxGapM) walk(out, pu, pv, u, v);
     }
     pu = u;

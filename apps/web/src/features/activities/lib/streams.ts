@@ -5,7 +5,7 @@
  * Convention (same as the server): t = seconds since start; sample i closes the segment (i−1 → i) and
  * moving[i] says whether that segment is moving time. NaN = missing value.
  */
-import { GAP_SPORTS, gradeCostFactor, type WorkoutStreams } from '@cadence/shared';
+import { GAP_SPORTS, gradeCostFactor, stitchElevation, type WorkoutStreams } from '@cadence/shared';
 
 const RAD = Math.PI / 180;
 const EARTH_R = 6371008.8;
@@ -54,6 +54,8 @@ export interface Prepared {
   course: Float64Array | null;
   /** Stopped / paused intervals [tStart, tEnd] of at least 10 s. */
   pauses: [number, number][];
+  /** Indices where a new part of the GPS track starts (travelled while paused, WorkoutStreams.breaks). */
+  breaks: number[];
   duration: number;
   totalDist: number;
   hasGps: boolean;
@@ -253,7 +255,9 @@ export function prepareStreams(s: WorkoutStreams): Prepared | null {
   if (dist) holdFill(dist);
   const ele = floats(s.ele, n);
   if (ele) holdFill(ele);
-  const grade = dist && ele ? grades(dist, ele) : null;
+  const breaks = (s.breaks ?? []).filter((k) => k > 0 && k < n);
+  // grades from the elevation without the jump between track parts (that is no climb)
+  const grade = dist && ele ? grades(dist, breaks.length ? stitchElevation(ele, breaks) : ele) : null;
   return {
     n,
     t,
@@ -270,6 +274,7 @@ export function prepareStreams(s: WorkoutStreams): Prepared | null {
     heading: hasGps && dist ? headings(dist, lat!, lon!, 15) : null,
     course: hasGps && dist ? headings(dist, lat!, lon!, 150) : null,
     pauses: pausesOf(t, moving),
+    breaks,
     duration: t[n - 1]!,
     totalDist: dist ? dist[n - 1]! : 0,
     hasGps,

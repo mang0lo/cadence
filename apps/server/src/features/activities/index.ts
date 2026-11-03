@@ -1,6 +1,7 @@
 import type { Feature } from '../types';
 import routes from './routes';
 import { deriveAnalyses } from './store';
+import { activitiesWhatsNew } from './whats-new';
 
 /**
  * "activities" feature module (server side): dashboard summary, activity feed/list with medals and totals,
@@ -41,6 +42,7 @@ const feature: Feature = {
     },
   ],
   routes,
+  whatsNew: activitiesWhatsNew,
 };
 
 export default feature;

@@ -189,10 +189,45 @@ export interface PunchcardResponse {
 // ---------------------------------------------------------------------------
 
 export type GoalPeriod = 'week' | 'month' | 'year';
-export type GoalMetric = 'distance' | 'time' | 'elevation' | 'activities' | 'active_days';
+/** `longest`: the longest single activity of the period (e.g. "run a marathon this year"). */
+export type GoalMetric = 'distance' | 'longest' | 'time' | 'elevation' | 'activities' | 'active_days';
 
 export const GOAL_PERIODS: readonly GoalPeriod[] = ['week', 'month', 'year'];
-export const GOAL_METRICS: readonly GoalMetric[] = ['distance', 'time', 'elevation', 'activities', 'active_days'];
+export const GOAL_METRICS: readonly GoalMetric[] = ['distance', 'longest', 'time', 'elevation', 'activities', 'active_days'];
+
+/** Classic single-activity distances (m) for `longest` goals and trophies, by sport. */
+export const LONGEST_PRESETS: Record<'run' | 'ride' | 'swim', { key: string; distanceM: number }[]> = {
+  run: [
+    { key: '5k', distanceM: 5000 },
+    { key: '10k', distanceM: 10000 },
+    { key: 'half', distanceM: 21097.5 },
+    { key: 'marathon', distanceM: 42195 },
+    { key: 'ultra50', distanceM: 50000 },
+    { key: 'ultra100', distanceM: 100000 },
+  ],
+  ride: [
+    { key: 'olympicBike', distanceM: 40000 },
+    { key: 'halfIronmanBike', distanceM: 90000 },
+    { key: 'century', distanceM: 100000 },
+    { key: 'imperialCentury', distanceM: 160934.4 },
+    { key: 'ironmanBike', distanceM: 180246 },
+    { key: 'ride200', distanceM: 200000 },
+  ],
+  swim: [
+    { key: 'olympicSwim', distanceM: 1500 },
+    { key: 'halfIronmanSwim', distanceM: 1900 },
+    { key: 'ironmanSwim', distanceM: 3800 },
+    { key: 'swim5k', distanceM: 5000 },
+    { key: 'swim10k', distanceM: 10000 },
+  ],
+};
+
+/** Triathlon distances (m) per leg: swim, bike, run. */
+export const TRIATHLON_DISTANCES: { key: 'olympicTri' | 'halfIronman' | 'ironman'; swim: number; ride: number; run: number }[] = [
+  { key: 'olympicTri', swim: 1500, ride: 40000, run: 10000 },
+  { key: 'halfIronman', swim: 1900, ride: 90000, run: 21097.5 },
+  { key: 'ironman', swim: 3800, ride: 180246, run: 42195 },
+];
 
 /** Target in canonical units: distance/elevation m, time s, activities/active days count. */
 export interface GoalInput {
@@ -209,7 +244,8 @@ export interface Goal extends GoalInput {
   createdAt: number;
 }
 
-export type GoalStatus = 'done' | 'on_track' | 'behind';
+/** `open`: a single-activity goal (`longest`) that is not reached yet — it has no linear pace to judge. */
+export type GoalStatus = 'done' | 'on_track' | 'behind' | 'open';
 
 export interface GoalPeriodProgress {
   start: string;
@@ -305,7 +341,9 @@ export type AchievementKind =
   | 'stand_streak'
   | 'perfect_week'
   | 'double_move'
-  | 'challenges';
+  | 'challenges'
+  /** Swim, bike and run legs of a triathlon distance on one day (threshold = total distance). */
+  | 'triathlon';
 
 export interface AchievementWorkout {
   id: number;

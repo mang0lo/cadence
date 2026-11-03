@@ -45,6 +45,7 @@ export function registerLinksRoutes(app: FastifyInstance): void {
           id: r.id,
           customName: r.customName,
           area: r.area,
+          areaEnd: r.areaEnd,
           kind: r.kind,
           distanceM: r.distanceM,
           count: r.count,

@@ -28,6 +28,8 @@ export interface AthleteSettings {
   language: Language;
   theme: ThemePref;
   mapStyle: MapStylePref;
+  /** Map tiles behind the route previews in feeds and lists (loaded from the map provider); off = the route only. */
+  thumbnailMaps: boolean;
   /** 1 = Monday (default), 0 = Sunday. */
   weekStart: 0 | 1;
   maxHr: number | null;
@@ -48,6 +50,7 @@ export const DEFAULT_SETTINGS: AthleteSettings = {
   language: 'auto',
   theme: 'system',
   mapStyle: 'streets',
+  thumbnailMaps: true,
   weekStart: 1,
   maxHr: null,
   restingHr: null,
@@ -133,6 +136,10 @@ export interface WorkoutSummary {
   polyline: string | null;
   sourceName: string | null;
   notes: string | null;
+  /** Town or city district of the start (offline GeoNames gazetteer, English/local name), null without GPS. */
+  place?: string | null;
+  /** Where a one-way activity ended, when that is another place (A → B); null for loops. */
+  placeEnd?: string | null;
   /** True when the user hid the workout (only returned with includeHidden). */
   hidden?: boolean;
   /** Id of the workout this one duplicates (only returned with includeDuplicates). */
@@ -235,7 +242,22 @@ export interface WorkoutStreams {
   power?: (number | null)[];
   /** 1 while moving, 0 while stopped/paused (basis of moving time). */
   moving?: number[];
+  /**
+   * Indices where a new part of the GPS track starts: the position jumped across a pause (e.g. a train ride
+   * while the workout was paused). Parts are drawn separately; distance and elevation are not counted across.
+   */
+  breaks?: number[];
 }
+
+/**
+ * Separates the parts of an encoded route polyline (`WorkoutSummary.polyline`) whose track has breaks
+ * (see `WorkoutStreams.breaks`). The polyline alphabet never contains a space.
+ */
+export const POLYLINE_PART_SEPARATOR = ' ';
+
+/** The encoded parts of a (possibly multi-part) route polyline. */
+export const polylineParts = (encoded: string): string[] =>
+  encoded.split(POLYLINE_PART_SEPARATOR).filter((p) => p.length > 0);
 
 export interface WorkoutListQuery {
   sport?: string; // comma separated list allowed
@@ -338,6 +360,49 @@ export interface ImportStats {
   workoutsDerived?: number;
   /** Seconds spent per phase, e.g. { parse: 12.3, routes: 2.1, derive: 8.4 }. */
   phaseSeconds?: Partial<Record<ImportPhase, number>>;
+  /** What the import brought (import jobs that finished, see ImportSummary). */
+  summary?: ImportSummary;
+}
+
+/** A new activity in an import summary (slim: summaries are kept with every job). */
+export interface ImportSummaryWorkout {
+  id: number;
+  name: string;
+  sport: string;
+  startTs: number;
+  tzMin: number;
+  distanceM: number | null;
+  movingS: number;
+  place: string | null;
+}
+
+/**
+ * Something a feature module found noteworthy in the new activities (a personal record, a trophy, new explorer
+ * tiles …). The web module of `feature` renders it; `data` holds values in canonical units.
+ */
+export interface ImportHighlight {
+  feature: string;
+  kind: string;
+  workoutId: number | null;
+  /** The activity behind workoutId (added by the summary, for titles and links). */
+  workout?: { id: number; name: string; sport: string; startTs: number; tzMin: number } | null;
+  data: Record<string, string | number | boolean | null>;
+}
+
+/** "What's new" after an import: the new visible activities and their highlights. */
+export interface ImportSummary {
+  /** Visible new activities (no duplicates, not hidden). */
+  count: number;
+  /** True for the first import (everything is new, so records and tiles are not listed). */
+  initial: boolean;
+  /** Per sport, most activities first. */
+  sports: { sport: string; count: number; distanceM: number; movingS: number }[];
+  /** Local days of the oldest and newest new activity. */
+  fromDay: string | null;
+  toDay: string | null;
+  /** The newest new activities (max 5). */
+  latest: ImportSummaryWorkout[];
+  highlights: ImportHighlight[];
 }
 
 export interface ImportJob {

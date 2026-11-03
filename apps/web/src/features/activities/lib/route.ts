@@ -9,35 +9,92 @@ import { haversine, quantile, rampColor, simplifyIndices, type Prepared } from '
 
 export type ColorMode = 'plain' | 'pace' | 'hr' | 'grade' | 'zones';
 
+type Bounds = [number, number, number, number];
+
 export interface RouteGeometry {
   /** Indices into the full-resolution streams of the kept vertices. */
   idx: number[];
   coords: [number, number][];
-  /** Fraction of the line length at each vertex (0..1). */
+  /** Fraction of the line length at each vertex (0..1; the jump between track parts adds nothing). */
   frac: Float64Array;
-  bounds: [number, number, number, number];
+  bounds: Bounds;
+  /**
+   * Parts of the track as inclusive vertex ranges [first, last] (one part unless the workout was paused and continued
+   * elsewhere, see Prepared.breaks), with their bounds. Parts are drawn as separate lines.
+   */
+  parts: { v0: number; v1: number; bounds: Bounds }[];
 }
 
-export function routeGeometry(P: Prepared, toleranceM = 2): RouteGeometry | null {
-  if (!P.lat || !P.lon) return null;
-  const idx = simplifyIndices(P.lat, P.lon, toleranceM);
-  const coords = idx.map((i) => [P.lon![i]!, P.lat![i]!] as [number, number]);
-  const frac = new Float64Array(idx.length);
-  for (let k = 1; k < idx.length; k++)
-    frac[k] = frac[k - 1]! + haversine(coords[k - 1]![1], coords[k - 1]![0], coords[k]![1], coords[k]![0]);
-  const total = frac[frac.length - 1] || 1;
-  for (let k = 0; k < frac.length; k++) frac[k] = frac[k]! / total;
+function boundsOfCoords(coords: [number, number][], a = 0, b = coords.length - 1): Bounds {
   let minLon = Infinity;
   let minLat = Infinity;
   let maxLon = -Infinity;
   let maxLat = -Infinity;
-  for (const [lo, la] of coords) {
+  for (let k = a; k <= b; k++) {
+    const [lo, la] = coords[k]!;
     minLon = Math.min(minLon, lo);
     maxLon = Math.max(maxLon, lo);
     minLat = Math.min(minLat, la);
     maxLat = Math.max(maxLat, la);
   }
-  return { idx, coords, frac, bounds: [minLon, minLat, maxLon, maxLat] };
+  return [minLon, minLat, maxLon, maxLat];
+}
+
+export function routeGeometry(P: Prepared, toleranceM = 2): RouteGeometry | null {
+  if (!P.lat || !P.lon) return null;
+  const idx: number[] = [];
+  const parts: RouteGeometry['parts'] = [];
+  // simplify every part on its own so a part boundary is always a vertex
+  const cuts = [0, ...P.breaks, P.n];
+  for (let p = 0; p + 1 < cuts.length; p++) {
+    const a = cuts[p]!;
+    const b = cuts[p + 1]!;
+    if (b - a < 1) continue;
+    const local = simplifyIndices(P.lat.subarray(a, b), P.lon.subarray(a, b), toleranceM);
+    const v0 = idx.length;
+    for (const i of local) idx.push(a + i);
+    parts.push({ v0, v1: idx.length - 1, bounds: [0, 0, 0, 0] });
+  }
+  const coords = idx.map((i) => [P.lon![i]!, P.lat![i]!] as [number, number]);
+  const frac = new Float64Array(idx.length);
+  const firstOfPart = new Set(parts.map((p) => p.v0));
+  for (let k = 1; k < idx.length; k++)
+    frac[k] =
+      frac[k - 1]! +
+      (firstOfPart.has(k) ? 0 : haversine(coords[k - 1]![1], coords[k - 1]![0], coords[k]![1], coords[k]![0]));
+  const total = frac[frac.length - 1] || 1;
+  for (let k = 0; k < frac.length; k++) frac[k] = frac[k]! / total;
+  for (const p of parts) p.bounds = boundsOfCoords(coords, p.v0, p.v1);
+  return { idx, coords, frac, bounds: boundsOfCoords(coords), parts };
+}
+
+/** Index of the part that contains vertex k. */
+export function partOfVertex(g: RouteGeometry, k: number): number {
+  for (let p = g.parts.length - 1; p > 0; p--) if (k >= g.parts[p]!.v0) return p;
+  return 0;
+}
+
+/** Coordinates of the vertices a..b (inclusive) as separate lines, one per track part they touch. */
+export function coordsByPart(g: RouteGeometry, a: number, b: number): [number, number][][] {
+  const out: [number, number][][] = [];
+  for (const p of g.parts) {
+    const s = Math.max(a, p.v0);
+    const e = Math.min(b, p.v1);
+    if (e > s) out.push(g.coords.slice(s, e + 1));
+  }
+  return out;
+}
+
+/** Gradient stops of one part, re-scaled from the fractions of the whole route to the part's own 0..1. */
+export function partStops(g: RouteGeometry, stops: [number, string][], part: number): [number, string][] {
+  const p = g.parts[part]!;
+  const f0 = g.frac[p.v0]!;
+  const f1 = g.frac[p.v1]!;
+  if (g.parts.length === 1 || !(f1 > f0)) return stops;
+  const out: [number, string][] = [[0, colorAtFrac(stops, f0)]];
+  for (const [f, c] of stops) if (f > f0 && f < f1) out.push([(f - f0) / (f1 - f0), c]);
+  out.push([1, colorAtFrac(stops, f1)]);
+  return out;
 }
 
 /** First vertex index whose stream index is greater than `fi` (binary search). */
