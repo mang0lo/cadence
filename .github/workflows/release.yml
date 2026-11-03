@@ -78,7 +78,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # image names must be lowercase (the owner is "Devine-Coder")
+      # image names must be lowercase (GitHub owners may contain capitals)
       - name: Image name
         run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/cadence" >> "$GITHUB_ENV"
       - uses: docker/setup-buildx-action@v3

@@ -52,7 +52,7 @@
 ## Install the Mac app
 
 **Download**: get `Cadence-<version>.dmg` from the
-[latest release](https://github.com/Devine-Coder/cadence/releases/latest) (macOS 14+, Apple silicon) and drag Cadence
+[latest release](https://github.com/mang0lo/cadence/releases/latest) (macOS 14+, Apple silicon) and drag Cadence
 into Applications. The app is not notarized yet, so macOS blocks the first launch: open **System Settings → Privacy &
 Security** and click **Open Anyway**. Release notes: [CHANGELOG.md](CHANGELOG.md).
 
@@ -60,7 +60,7 @@ Security** and click **Open Anyway**. Release notes: [CHANGELOG.md](CHANGELOG.md
 (`xcode-select --install`):
 
 ```bash
-git clone https://github.com/Devine-Coder/cadence.git && cd cadence
+git clone https://github.com/mang0lo/cadence.git && cd cadence
 npm install
 npm run mac -- --install      # builds build/Cadence.app and copies it to /Applications
 ```
@@ -92,7 +92,7 @@ CADENCE_PASSWORD=choose-something docker compose up -d     # → http://<server>
   the server (keeps renamed activities, goals and segments).
 - Point the Mac app at the server via **Cadence → Connect to Server…**.
 - Releases: push a `v*` tag or run the **Release** workflow from the Actions tab (with the version from
-  `package.json`); it builds the DMG and pushes `ghcr.io/devine-coder/cadence` (see `.github/workflows/release.yml`).
+  `package.json`); it builds the DMG and pushes `ghcr.io/mang0lo/cadence` (see `.github/workflows/release.yml`).
 
 Configuration is done with environment variables (`PORT`, `HOST`, `CADENCE_DATA_DIR`, `CADENCE_PASSWORD`,
 `CADENCE_IMPORT_DIR`, …) — see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#runtime-modes--configuration).
