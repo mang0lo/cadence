@@ -15,7 +15,10 @@ function PointsBar({ points }: { points: number }) {
       <span className="absolute inset-y-[-2px] left-1/2 w-px bg-border-strong" />
       {w > 0.5 && (
         <span
-          className={cn('absolute inset-y-0 rounded-full', points > 0 ? 'left-1/2 bg-good' : 'right-1/2 bg-critical')}
+          className={cn(
+            'absolute inset-y-0 rounded-full',
+            points > 0 ? 'left-1/2 bg-good' : 'right-1/2 bg-critical',
+          )}
           style={{ width: `${w}%` }}
         />
       )}
@@ -23,7 +26,17 @@ function PointsBar({ points }: { points: number }) {
   );
 }
 
-function FactorRow({ f, day, model, totalWeight }: { f: ReadinessFactor; day: string; model: ReadinessModelInfo; totalWeight: number }) {
+function FactorRow({
+  f,
+  day,
+  model,
+  totalWeight,
+}: {
+  f: ReadinessFactor;
+  day: string;
+  model: ReadinessModelInfo;
+  totalWeight: number;
+}) {
   const t = useT();
   const fmt = useFormat();
   const rf = useReadinessFormat();
@@ -46,7 +59,9 @@ function FactorRow({ f, day, model, totalWeight }: { f: ReadinessFactor; day: st
           <div className="flex flex-wrap items-baseline gap-x-1.5 text-sm font-medium text-fg">
             <span>{name}</span>
             <span className="text-xs font-normal text-fg-3">
-              {f.used ? t('health.readiness.factors.weight', { pct: fmt.pct(share) }) : t('health.readiness.factors.notUsed')}
+              {f.used
+                ? t('health.readiness.factors.weight', { pct: fmt.pct(share) })
+                : t('health.readiness.factors.notUsed')}
             </span>
           </div>
           {sub && <div className="text-xs text-fg-3">{sub}</div>}
@@ -73,7 +88,11 @@ function FactorRow({ f, day, model, totalWeight }: { f: ReadinessFactor; day: st
 /** Every signal of the day: value vs. personal baseline and normal range, its share and the points it adds or takes. */
 export function FactorList({ day, model }: { day: ReadinessDay; model: ReadinessModelInfo }) {
   const t = useT();
+  const rf = useReadinessFormat();
   const totalWeight = day.factors.filter((f) => f.used).reduce((s, f) => s + f.weight, 0);
+  // signals the athlete's watch never recorded (e.g. wrist temperature without an Apple Watch): one line, not rows
+  const shown = day.factors.filter((f) => f.used || f.missing !== 'never');
+  const never = day.factors.filter((f) => !f.used && f.missing === 'never');
   return (
     <div>
       <div className="hidden grid-cols-[minmax(0,1fr)_minmax(0,15rem)_5.5rem] gap-x-4 border-b border-border pb-1.5 text-[11px] font-medium uppercase tracking-wider text-fg-3 sm:grid">
@@ -82,10 +101,15 @@ export function FactorList({ day, model }: { day: ReadinessDay; model: Readiness
         <span className="text-right">{t('health.readiness.factors.points')}</span>
       </div>
       <ul className="divide-y divide-border" aria-label={t('health.readiness.factors.title')}>
-        {day.factors.map((f) => (
+        {shown.map((f) => (
           <FactorRow key={f.key} f={f} day={day.day} model={model} totalWeight={totalWeight} />
         ))}
       </ul>
+      {never.length > 0 && (
+        <p className="mt-2 text-xs text-fg-3">
+          {t('health.readiness.factors.notRecorded', { names: never.map((f) => rf.name(f.key)).join(', ') })}
+        </p>
+      )}
     </div>
   );
 }

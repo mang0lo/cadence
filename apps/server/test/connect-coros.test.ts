@@ -105,6 +105,10 @@ function fakeCoros(activities: FakeActivity[], health: FakeDay[] = []) {
               ...(t === 1 ? { calorie: 2_400_000 } : {}),
               ...(t === 2 ? { motionTime: 3600 } : {}),
               ...(t === 4 ? { heartRateData: { avgHeartRate: 70, minHeartRate: 45, maxHeartRate: 160 } } : {}),
+              // 18 of 30 active minutes (60 %), calorie goal reached (capped at 100 %)
+              ...(t === 12
+                ? { calendarData: { calorie: 450_000, calorieStandardRate: 100, motionTime: 1080, motionTimeStandardRate: 60 } }
+                : {}),
               ...(t === 5
                 ? {
                     sleepData: {
@@ -418,6 +422,14 @@ describe('COROS health sync', () => {
     );
     expect(hr).toEqual({ value: 70, min: 45, max: 160 });
     expect(heartMetric(db, 1, 'steps')).toBe('COROSSteps');
+    // the COROS app's daily goals as rings: active time 18 of 30 min, calories closed
+    expect(get(db, 'SELECT * FROM activity_summaries WHERE day = ?', [today])).toMatchObject({
+      active_energy_kcal: 450,
+      active_energy_goal_kcal: 450,
+      exercise_min: 18,
+      exercise_goal_min: 30,
+      stand_hours: null,
+    });
     // the next sync reuses the token
     await sync.start(1);
     expect(fake.state.mobileLogins).toBe(1);

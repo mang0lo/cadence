@@ -2,6 +2,11 @@ import type { ReactNode } from 'react';
 import {
   Activity,
   BatteryCharging,
+  BatteryLow,
+  Dumbbell,
+  Scale3d,
+  TrendingUp,
+  Zap,
   Brain,
   Database,
   Droplets,
@@ -27,6 +32,7 @@ import { useFormat } from '@/lib/format';
 import { useT } from '@/lib/i18n';
 import { MetricCard, MetricCardSkeleton } from '../components/MetricCard';
 import { useMetricFormat } from '../lib/metrics';
+import { hasBodyData, useDataSources } from '@/lib/sources';
 import { ReadinessCard } from '../widgets';
 
 interface CardDef {
@@ -56,13 +62,27 @@ const CARDS: Record<string, CardDef> = {
   exercise: { icon: Timer, to: explorer, catalogue: same },
   daylight: { icon: Sun, to: explorer, catalogue: same },
   mindful: { icon: Brain, to: explorer, catalogue: same },
+  corosBaseFitness: { icon: TrendingUp, to: explorer, catalogue: same },
+  corosAcuteLoad: { icon: Dumbbell, to: explorer, catalogue: same },
+  corosLoadRatio: { icon: Scale3d, to: explorer, catalogue: same },
+  corosFatigue: { icon: BatteryLow, to: explorer, catalogue: same },
+  corosStamina: { icon: Zap, to: explorer, catalogue: same },
+  corosCalories: { icon: Flame, to: explorer, catalogue: same },
+  corosActiveTime: { icon: Timer, to: explorer, catalogue: same },
 };
 
 const GROUPS: { key: string; keys: string[] }[] = [
   { key: 'heart', keys: ['restingHr', 'hrv', 'walkingHr', 'vo2max'] },
   { key: 'sleepVitals', keys: ['sleep', 'respiratoryRate', 'spo2', 'wristTemp'] },
   { key: 'body', keys: ['weight', 'bodyFat'] },
-  { key: 'activity', keys: ['steps', 'activeEnergy', 'exercise', 'daylight', 'mindful'] },
+  {
+    key: 'training',
+    keys: ['corosBaseFitness', 'corosAcuteLoad', 'corosLoadRatio', 'corosFatigue', 'corosStamina'],
+  },
+  {
+    key: 'activity',
+    keys: ['steps', 'activeEnergy', 'corosCalories', 'exercise', 'corosActiveTime', 'daylight', 'mindful'],
+  },
 ];
 
 const GRID = 'grid gap-4 grid-cols-[repeat(auto-fill,minmax(min(100%,220px),1fr))]';
@@ -83,21 +103,27 @@ export default function HealthPage() {
   const q = useApi<HealthOverview>(['health', 'overview'], '/health/overview');
   const byKey = new Map<string, HealthMetricCard>((q.data?.cards ?? []).map((c) => [c.key, c]));
 
-  const links: { to: string; label: string; icon: LucideIcon }[] = [
+  const sources = useDataSources().data;
+  const links: { to: string; label: string; icon: LucideIcon; show?: boolean }[] = [
     { to: '/health/readiness', label: t('health.nav.readiness'), icon: BatteryCharging },
     { to: '/health/sleep', label: t('health.nav.sleep'), icon: Moon },
     { to: '/health/heart', label: t('health.nav.heart'), icon: Heart },
-    { to: '/health/body', label: t('health.nav.body'), icon: Scale },
-    { to: '/health/ecg', label: t('health.nav.ecg'), icon: Activity },
+    // pages without any data for this athlete are not offered (same rules as the navigation)
+    { to: '/health/body', label: t('health.nav.body'), icon: Scale, show: !sources || hasBodyData(sources) },
+    { to: '/health/ecg', label: t('health.nav.ecg'), icon: Activity, show: !sources || sources.ecgCount > 0 },
     { to: '/health/explorer', label: t('health.nav.explorer'), icon: Database },
-  ];
+  ].filter((l) => l.show !== false);
 
   return (
     <Page>
       <PageHeader
         title={t('health.titles.HealthPage')}
         icon={HeartPulse}
-        subtitle={q.data?.asOf ? t('health.common.asOf', { date: fmt.day(q.data.asOf, 'day') }) : t('health.overview.subtitle')}
+        subtitle={
+          q.data?.asOf
+            ? t('health.common.asOf', { date: fmt.day(q.data.asOf, 'day') })
+            : t('health.overview.subtitle')
+        }
         actions={links.map((l) => (
           <Link key={l.to} to={l.to}>
             <Button size="sm" icon={l.icon}>

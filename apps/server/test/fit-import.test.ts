@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { WorkoutStreams } from '@cadence/shared';
 import { migrateAll } from '../src/app';
 import { updateSettings } from '../src/core/settings';
+import { dataSources } from '../src/core/sources';
 import { detectDuplicates } from '../src/derive/duplicates';
 import { all, get, openDb, run, type Db } from '../src/db/db';
 import { openFitSource } from '../src/import/fit/import';
@@ -166,6 +167,15 @@ describe('FIT import', () => {
     updateSettings(db, 1, { sources: { workouts: 'apple', heart: 'auto' } });
     detectDuplicates(db, 1, 'all');
     expect(rows()[0]!.duplicate_of).toBeNull();
+  });
+
+  it('reports which sources have data (GET /api/sources)', async () => {
+    expect(dataSources(db, 1)).toMatchObject({ watch: 'apple', fitWorkouts: 0, apple: { workouts: 0 }, ecgCount: 0 });
+    writeFit('a.fit', { start: START });
+    await importPath(path.join(dir, 'fit'));
+    const s = dataSources(db, 1);
+    expect(s).toMatchObject({ fitWorkouts: 1, apple: { records: 0, workouts: 0 }, rings: false, sleepNights: 0 });
+    expect(s.coros.connected).toBe(false);
   });
 
   it('leaves Apple Health exports to the Apple importer', async () => {

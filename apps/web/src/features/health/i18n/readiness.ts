@@ -32,6 +32,7 @@ export const readiness: Dictionary = {
       weight: 'Weight {pct}',
       points: 'Points',
       notUsed: 'not used',
+      notRecorded: 'Not recorded by your watch: {names}.',
       names: {
         hrv: 'Heart rate variability',
         restingHr: 'Resting heart rate',
@@ -169,6 +170,7 @@ export const readiness: Dictionary = {
       weight: 'Gewicht {pct}',
       points: 'Punkte',
       notUsed: 'nicht verwendet',
+      notRecorded: 'Von deiner Uhr nicht aufgezeichnet: {names}.',
       names: {
         hrv: 'Herzfrequenzvariabilität',
         restingHr: 'Ruhepuls',
