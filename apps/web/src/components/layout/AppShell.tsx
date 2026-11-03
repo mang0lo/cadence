@@ -6,6 +6,7 @@ import type { NavGroup, NavItem } from '@/features/types';
 import { useImportJobs } from '@/features/platform/useImportJobs';
 import { latestSummaryJob, markSummarySeen, summaryCounts, useSeenSummaryId } from '@/features/platform/whatsNewState';
 import { cn, ProgressBar } from '@/components/ui';
+import { useFormat } from '@/lib/format';
 import { useT } from '@/lib/i18n';
 import { useSettings } from '@/lib/settings';
 import { useResolvedTheme } from '@/lib/theme';
@@ -57,6 +58,7 @@ function NavEntry({ item, onNavigate }: { item: NavItem; onNavigate?: () => void
 /** Finished import with news the user has not looked at yet (from the last 3 days). */
 function WhatsNewNote() {
   const t = useT();
+  const fmt = useFormat();
   const { jobs } = useImportJobs();
   const seen = useSeenSummaryId();
   const job = latestSummaryJob(jobs);
@@ -65,7 +67,7 @@ function WhatsNewNote() {
   const s = job.stats.summary;
   const c = summaryCounts(s);
   const parts = [
-    t(s.initial ? 'platform.whatsNew.initial' : 'platform.whatsNew.activities', { count: s.count, n: s.count }),
+    t(s.initial ? 'platform.whatsNew.initial' : 'platform.whatsNew.activities', { count: s.count, n: fmt.int(s.count) }),
     c.records ? t('platform.whatsNew.records', { count: c.records }) : null,
     c.trophies ? t('platform.whatsNew.trophies', { count: c.trophies }) : null,
   ].filter(Boolean);
