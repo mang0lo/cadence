@@ -167,7 +167,12 @@ export function powerCurve(
   const sports = powerSports(db, athleteId);
   const sport = q.sport ?? defaultPowerSport(sports);
   const span = powerSpan(db, athleteId, sport);
-  const range = powerPeriodRange(q.period, q.today, { year: q.year, fromDay: q.fromDay, toDay: q.toDay, span });
+  const range = powerPeriodRange(q.period, q.today, {
+    year: q.year,
+    fromDay: q.fromDay,
+    toDay: q.toDay,
+    span,
+  });
   // all time compared with all time (or with nothing before it) says nothing
   const compare: ProgressPowerCompare = q.period === 'all' ? 'none' : q.compare;
   const cmpRange =
@@ -191,7 +196,11 @@ export function powerCurve(
  * FTP estimate (95 % of the best 20 minutes of the last 6 weeks, else of the last 90 days), the critical power
  * model from the bests of the same window, and the estimate per month (quarter) since the first power data.
  */
-export function ftpEstimate(db: Db, athleteId: number, q: { sport: string | null; today: string }): ProgressFtpResponse {
+export function ftpEstimate(
+  db: Db,
+  athleteId: number,
+  q: { sport: string | null; today: string },
+): ProgressFtpResponse {
   ensurePowerBests(db, athleteId);
   const sport = q.sport ?? defaultPowerSport(powerSports(db, athleteId));
   const bodyMass = bodyMassAt(db, athleteId, q.today);
@@ -257,7 +266,9 @@ function ftpHistory(db: Db, athleteId: number, sport: string, today: string): Pr
   const buckets: { key: string; fromDay: string; toDay: string; best: BestRow | null }[] = [];
   for (const m of months) {
     const row = byMonth.get(m.key) ?? null;
-    const key = quarterly ? `${m.key.slice(0, 4)}-Q${Math.floor((Number(m.key.slice(5, 7)) - 1) / 3) + 1}` : m.key;
+    const key = quarterly
+      ? `${m.key.slice(0, 4)}-Q${Math.floor((Number(m.key.slice(5, 7)) - 1) / 3) + 1}`
+      : m.key;
     const last = buckets.at(-1);
     if (last && last.key === key) {
       last.toDay = m.toDay;
@@ -266,7 +277,8 @@ function ftpHistory(db: Db, athleteId: number, sport: string, today: string): Pr
     } else buckets.push({ key, fromDay: m.fromDay, toDay: m.toDay, best: row });
   }
   const points = buckets.map((b): ProgressFtpHistoryPoint => {
-    if (!b.best) return { key: b.key, fromDay: b.fromDay, toDay: b.toDay, ftp: null, ftpWkg: null, source: null };
+    if (!b.best)
+      return { key: b.key, fromDay: b.fromDay, toDay: b.toDay, ftp: null, ftpWkg: null, source: null };
     const kg = bodyMassAt(db, athleteId, b.toDay)?.kg ?? null;
     const source = toEffort(b.best, kg);
     const ftp = r1(FTP_FACTOR * source.watts);

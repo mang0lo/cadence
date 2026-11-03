@@ -12,13 +12,30 @@ import {
 } from '@cadence/shared';
 import { ChartCard, type TableView } from '@/components/charts/ChartCard';
 import { EChart } from '@/components/charts/EChart';
-import { areaSeries, axisTooltip, categoryAxis, escapeHtml, grid, lineSeries, valueAxis } from '@/components/charts/options';
+import {
+  areaSeries,
+  axisTooltip,
+  categoryAxis,
+  escapeHtml,
+  grid,
+  lineSeries,
+  valueAxis,
+} from '@/components/charts/options';
 import { useChartTheme, type ChartTheme } from '@/components/charts/theme';
-import { Badge, Button, Card, CardHeader, Delta, EmptyState, ErrorState, Skeleton, Stat } from '@/components/ui';
+import {
+  Badge,
+  Button,
+  Card,
+  CardHeader,
+  Delta,
+  EmptyState,
+  ErrorState,
+  Skeleton,
+  Stat,
+} from '@/components/ui';
 import { useFormat, type Formatter } from '@/lib/format';
 import { useI18n, useT, type Lang, type TFunction } from '@/lib/i18n';
 import { useSettings } from '@/lib/settings';
-import { sportLabel } from '@/lib/sports';
 import { chartLegend, hitLayer } from '../chart';
 import { signedRounded } from '../format';
 import {
@@ -50,13 +67,26 @@ export interface CurveSeries {
 }
 
 /** The curves of a response in legend order: the period (slot 1), then the comparison (slot 2). */
-export function curveSeries(data: ProgressPowerCurveResponse, theme: ChartTheme, t: TFunction, fmt: Formatter): CurveSeries[] {
+export function curveSeries(
+  data: ProgressPowerCurveResponse,
+  theme: ChartTheme,
+  t: TFunction,
+  fmt: Formatter,
+): CurveSeries[] {
   const out: CurveSeries[] = [
-    { name: curveName(t, fmt, data.period, 'current', data.current), color: theme.series[0]!, curve: data.current },
+    {
+      name: curveName(t, fmt, data.period, 'current', data.current),
+      color: theme.series[0]!,
+      curve: data.current,
+    },
   ];
   if (data.comparison) {
     const kind = data.compare === 'allTime' ? 'allTime' : 'previous';
-    out.push({ name: curveName(t, fmt, data.period, kind, data.comparison), color: theme.series[1]!, curve: data.comparison });
+    out.push({
+      name: curveName(t, fmt, data.period, kind, data.comparison),
+      color: theme.series[1]!,
+      curve: data.comparison,
+    });
   }
   return out;
 }
@@ -90,8 +120,17 @@ function powerTipHtml(
   const body = entries
     .map((e) => {
       const v = powerValue(e.effort, o.unit);
-      const other = o.unit === 'wkg' ? formatPower(o.fmt, e.effort.watts, 'w') : e.effort.wkg !== null ? formatPower(o.fmt, e.effort.wkg, 'wkg') : null;
-      const detail = [other, workoutTitle(e.effort, o.lang), o.fmt.date(e.effort.startTs, e.effort.tzMin, 'day')]
+      const other =
+        o.unit === 'wkg'
+          ? formatPower(o.fmt, e.effort.watts, 'w')
+          : e.effort.wkg !== null
+            ? formatPower(o.fmt, e.effort.wkg, 'wkg')
+            : null;
+      const detail = [
+        other,
+        workoutTitle(e.effort, o.lang),
+        o.fmt.date(e.effort.startTs, e.effort.tzMin, 'day'),
+      ]
         .filter((x): x is string => !!x)
         .join(' · ');
       return (
@@ -103,7 +142,11 @@ function powerTipHtml(
       );
     })
     .join('');
-  return head + body + `<div style="margin-top:4px;color:${theme.muted};font-size:11px">${escapeHtml(o.footer)}</div>`;
+  return (
+    head +
+    body +
+    `<div style="margin-top:4px;color:${theme.muted};font-size:11px">${escapeHtml(o.footer)}</div>`
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -134,7 +177,12 @@ function BestTile({
       </div>
     );
   const v = powerValue(p, unit);
-  const other = unit === 'wkg' ? formatPower(fmt, p.watts, 'w') : p.wkg !== null ? formatPower(fmt, p.wkg, 'wkg') : undefined;
+  const other =
+    unit === 'wkg'
+      ? formatPower(fmt, p.watts, 'w')
+      : p.wkg !== null
+        ? formatPower(fmt, p.wkg, 'wkg')
+        : undefined;
   let delta: ReactNode = null;
   if (c && compare === 'allTime') {
     delta =
@@ -143,7 +191,9 @@ function BestTile({
           {t('progress.power.bests.best')}
         </Badge>
       ) : (
-        <span className="text-xs text-fg-3">{t('progress.power.bests.ofBest', { pct: fmt.pct(p.watts / c.watts) })}</span>
+        <span className="text-xs text-fg-3">
+          {t('progress.power.bests.ofBest', { pct: fmt.pct(p.watts / c.watts) })}
+        </span>
       );
   } else if (c && compare === 'previous') {
     const pct = (p.watts - c.watts) / c.watts;
@@ -163,8 +213,11 @@ function BestTile({
         delta={delta}
         hint={other}
       />
-      <div className="mt-1.5 truncate text-[11px] text-fg-3 group-hover:text-accent-fg">
-        {workoutTitle(p, lang)} · {fmt.date(p.startTs, p.tzMin, 'dayShort')}
+      <div
+        className="mt-1.5 truncate text-[11px] text-fg-3 group-hover:text-accent-fg"
+        title={workoutTitle(p, lang)}
+      >
+        {fmt.date(p.startTs, p.tzMin, 'dayShort')} · {workoutTitle(p, lang)}
       </div>
     </Link>
   );
@@ -223,7 +276,9 @@ function curveOption(
   o: { theme: ChartTheme; fmt: Formatter; t: TFunction; lang: Lang; unit: PowerUnit; clickHint: string },
 ): { option: EChartsOption; points: ClickPoint[] } {
   const { theme, fmt, t, lang, unit } = o;
-  const durations = [...new Set(series.flatMap((s) => s.curve.points.map((p) => p.durationS)))].sort((a, b) => a - b);
+  const durations = [...new Set(series.flatMap((s) => s.curve.points.map((p) => p.durationS)))].sort(
+    (a, b) => a - b,
+  );
   const maps = series.map((s) => new Map(s.curve.points.map((p) => [p.durationS, p])));
   const maxD = Math.max(durations.at(-1) ?? 60, 2);
   const ticks = POWER_TICKS.filter((d) => d <= maxD);
@@ -237,7 +292,9 @@ function curveOption(
       return [d, v];
     }) as never;
     const extra = { z: 3 - i, connectNulls: false };
-    return i === 0 ? areaSeries(theme, s.name, data, s.color, extra) : lineSeries(theme, s.name, data, s.color, extra);
+    return i === 0
+      ? areaSeries(theme, s.name, data, s.color, extra)
+      : lineSeries(theme, s.name, data, s.color, extra);
   });
   const option = {
     grid: grid({ top: 40, right: 18 }),
@@ -269,7 +326,11 @@ function curveOption(
       },
     }),
     tooltip: axisTooltip(theme, (params: unknown) => {
-      const ps = (Array.isArray(params) ? params : [params]) as { seriesIndex: number; dataIndex: number; axisValue?: unknown }[];
+      const ps = (Array.isArray(params) ? params : [params]) as {
+        seriesIndex: number;
+        dataIndex: number;
+        axisValue?: unknown;
+      }[];
       if (!ps.length) return '';
       const d = nearestDuration(durations, Number(ps[0]!.axisValue)) ?? durations[ps[0]!.dataIndex];
       if (d === undefined) return '';
@@ -286,7 +347,9 @@ function curveOption(
 }
 
 function curveTable(series: CurveSeries[], t: TFunction, fmt: Formatter): TableView {
-  const durations = [...new Set(series.flatMap((s) => s.curve.points.map((p) => p.durationS)))].sort((a, b) => a - b);
+  const durations = [...new Set(series.flatMap((s) => s.curve.points.map((p) => p.durationS)))].sort(
+    (a, b) => a - b,
+  );
   const maps = series.map((s) => new Map(s.curve.points.map((p) => [p.durationS, p])));
   const columns: TableView['columns'] = [{ key: 'duration', label: t('progress.power.curve.duration') }];
   series.forEach((s, i) => {
@@ -307,7 +370,15 @@ function curveTable(series: CurveSeries[], t: TFunction, fmt: Formatter): TableV
   return { columns, rows };
 }
 
-export function PowerCurveCard({ data, unit, loading }: { data: ProgressPowerCurveResponse; unit: PowerUnit; loading: boolean }) {
+export function PowerCurveCard({
+  data,
+  unit,
+  loading,
+}: {
+  data: ProgressPowerCurveResponse;
+  unit: PowerUnit;
+  loading: boolean;
+}) {
   const t = useT();
   const fmt = useFormat();
   const theme = useChartTheme();
@@ -316,7 +387,10 @@ export function PowerCurveCard({ data, unit, loading }: { data: ProgressPowerCur
   const series = useMemo(() => curveSeries(data, theme, t, fmt), [data, theme, t, fmt]);
   const any = series.some((s) => s.curve.points.length > 0);
   const built = useMemo(
-    () => (any ? curveOption(series, { theme, fmt, t, lang, unit, clickHint: t('progress.power.curve.click') }) : null),
+    () =>
+      any
+        ? curveOption(series, { theme, fmt, t, lang, unit, clickHint: t('progress.power.curve.click') })
+        : null,
     [any, series, theme, fmt, t, lang, unit],
   );
   const table = useMemo(() => (any ? curveTable(series, t, fmt) : undefined), [any, series, t, fmt]);
@@ -354,7 +428,11 @@ export function PowerCurveCard({ data, unit, loading }: { data: ProgressPowerCur
   const mass = data.current.bodyMass;
   const footer = (
     <div className="grid gap-1">
-      <p>{mass ? t('progress.power.curve.mass', { kg: fmt.weight(mass.kg), date: fmt.day(mass.day, 'day') }) : t('progress.power.curve.noMass')}</p>
+      <p>
+        {mass
+          ? t('progress.power.curve.mass', { kg: fmt.weight(mass.kg), date: fmt.day(mass.day, 'day') })
+          : t('progress.power.curve.noMass')}
+      </p>
       <p>{t('progress.power.curve.method')}</p>
     </div>
   );
@@ -413,14 +491,23 @@ function UseAsFtp({ ftp }: { ftp: number }) {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="text-xs text-fg-3">
           {t('progress.power.ftp.setting')}:{' '}
-          <span className="font-semibold text-fg">{current ? `${fmt.int(current)} W` : t('progress.power.ftp.notSet')}</span>
+          <span className="font-semibold text-fg">
+            {current ? `${fmt.int(current)} W` : t('progress.power.ftp.notSet')}
+          </span>
         </div>
         {current === target ? (
           <Badge tone="good" icon={CheckCircle2}>
             {t(state === 'saved' ? 'progress.power.ftp.saved' : 'progress.power.ftp.matches')}
           </Badge>
         ) : (
-          <Button size="sm" variant="primary" icon={Gauge} loading={state === 'saving'} disabled={!inRange} onClick={() => void save()}>
+          <Button
+            size="sm"
+            variant="primary"
+            icon={Gauge}
+            loading={state === 'saving'}
+            disabled={!inRange}
+            onClick={() => void save()}
+          >
             {t('progress.power.ftp.use', { value: `${fmt.int(target)} W` })}
           </Button>
         )}
@@ -449,10 +536,14 @@ function CriticalPowerBlock({ data }: { data: ProgressFtpResponse }) {
             />
             <Stat label={t('progress.power.cp.wPrime')} value={fmt.num(cp.wPrimeJ / 1000, 1)} unit="kJ" />
           </div>
-          <p className="mt-2 text-xs text-fg-3">{t('progress.power.cp.note', { count: cp.durations.length, r2: fmt.num(cp.r2, 3) })}</p>
+          <p className="mt-2 text-xs text-fg-3">
+            {t('progress.power.cp.note', { count: cp.durations.length, r2: fmt.num(cp.r2, 3) })}
+          </p>
         </>
       ) : (
-        <p className="mt-1 text-sm text-fg-2">{t(`progress.power.cp.${data.criticalPowerIssue ?? 'tooFew'}`)}</p>
+        <p className="mt-1 text-sm text-fg-2">
+          {t(`progress.power.cp.${data.criticalPowerIssue ?? 'tooFew'}`)}
+        </p>
       )}
     </div>
   );
@@ -481,7 +572,12 @@ export function FtpCard({ data, error }: { data: ProgressFtpResponse | undefined
           <Skeleton className="h-20 w-full" />
         </div>
       ) : data.ftp === null || !src ? (
-        <EmptyState icon={Gauge} title={t('progress.power.ftp.none')} description={t('progress.power.ftp.noneHint')} className="py-8" />
+        <EmptyState
+          icon={Gauge}
+          title={t('progress.power.ftp.none')}
+          description={t('progress.power.ftp.noneHint')}
+          className="py-8"
+        />
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-1">
           <div className="min-w-0">
@@ -496,14 +592,16 @@ export function FtpCard({ data, error }: { data: ProgressFtpResponse | undefined
               to={`/activities/${src.workoutId}`}
               className="mt-2 block text-xs text-fg-3 hover:text-accent-fg hover:underline"
             >
-              {t('progress.power.ftp.basis', { watts: formatPower(fmt, src.watts, 'w') })} · {workoutTitle(src, lang)} ·{' '}
-              {fmt.date(src.startTs, src.tzMin, 'day')}
+              {t('progress.power.ftp.basis', { watts: formatPower(fmt, src.watts, 'w') })} ·{' '}
+              {workoutTitle(src, lang)} · {fmt.date(src.startTs, src.tzMin, 'day')}
             </Link>
-            {data.windowDays === 90 && <p className="mt-1 text-xs text-fg-3">{t('progress.power.ftp.fallback')}</p>}
+            {data.windowDays === 90 && (
+              <p className="mt-1 text-xs text-fg-3">{t('progress.power.ftp.fallback')}</p>
+            )}
             {cycling ? (
               <UseAsFtp ftp={data.ftp} />
             ) : (
-              <p className="mt-3 text-xs text-fg-3">{t('progress.power.ftp.cyclingOnly', { sport: sportLabel(data.sport, lang) })}</p>
+              <p className="mt-3 text-xs text-fg-3">{t('progress.power.ftp.cyclingOnly')}</p>
             )}
           </div>
           <div className="min-w-0 border-t border-border pt-4 sm:border-l sm:border-t-0 sm:pl-4 sm:pt-0 xl:border-l-0 xl:border-t xl:pl-0 xl:pt-4">
@@ -519,6 +617,16 @@ export function FtpCard({ data, error }: { data: ProgressFtpResponse | undefined
 // FTP estimate per month / quarter
 // ---------------------------------------------------------------------------
 
+/** Axis bounds on a round step (1 / 2 / 2.5 / 5 × 10^k, about `ticks` intervals), so every bound gets a label. */
+function niceExtent(lo: number, hi: number, ticks = 4): { min: number; max: number; interval: number } {
+  const raw = Math.max(hi - lo, 1) / ticks;
+  const mag = 10 ** Math.floor(Math.log10(raw));
+  const interval = [1, 2, 2.5, 5, 10].map((f) => f * mag).find((s) => s >= raw - 1e-9)!;
+  const min = Math.max(0, Math.floor(lo / interval) * interval);
+  const max = Math.max(min + interval, Math.ceil(hi / interval) * interval);
+  return { min, max, interval };
+}
+
 function historyOption(
   data: ProgressFtpResponse,
   o: { theme: ChartTheme; fmt: Formatter; t: TFunction; lang: Lang; setting: number | null; name: string },
@@ -527,18 +635,18 @@ function historyOption(
   const pts = data.history.points;
   const labels = pts.map((p) => historyBucketLabel(t, fmt, p.key));
   const values = pts.map((p) => p.ftp);
+  // a level over time, not a magnitude: the axis hugs the estimates (and the FTP setting line)
   const shown = values.filter((v): v is number => v !== null);
   if (o.setting) shown.push(o.setting);
   const lo = Math.min(...shown);
   const hi = Math.max(...shown);
-  const pad = Math.max(10, (hi - lo) * 0.15);
+  const pad = Math.max(5, (hi - lo) * 0.08);
   const color = theme.series[0]!;
   return {
     grid: grid({ top: 24, right: 18 }),
     xAxis: categoryAxis(theme, labels),
     yAxis: valueAxis(theme, {
-      min: Math.max(0, Math.floor((lo - pad) / 10) * 10),
-      max: Math.ceil((hi + pad) / 10) * 10,
+      ...niceExtent(lo - pad, hi + pad),
       axisLabel: { color: theme.muted, fontSize: 11, formatter: (n: number) => fmt.int(n) },
     }),
     tooltip: axisTooltip(theme, (params: unknown) => {
@@ -547,7 +655,8 @@ function historyOption(
       if (i === undefined || !pts[i]) return '';
       const p = pts[i]!;
       const head = `<div style="color:${theme.muted};font-size:11px;margin-bottom:4px">${escapeHtml(labels[i]!)}</div>`;
-      if (p.ftp === null || !p.source) return `${head}<div style="color:${theme.fg2}">${escapeHtml(t('progress.power.history.noEffort'))}</div>`;
+      if (p.ftp === null || !p.source)
+        return `${head}<div style="color:${theme.fg2}">${escapeHtml(t('progress.power.history.noEffort'))}</div>`;
       const s = p.source;
       const main =
         `<div style="display:flex;align-items:center;gap:8px;line-height:18px">` +
@@ -595,7 +704,15 @@ function historyOption(
   } as EChartsOption;
 }
 
-export function FtpHistoryCard({ data, loading, error }: { data: ProgressFtpResponse | undefined; loading: boolean; error: unknown }) {
+export function FtpHistoryCard({
+  data,
+  loading,
+  error,
+}: {
+  data: ProgressFtpResponse | undefined;
+  loading: boolean;
+  error: unknown;
+}) {
   const t = useT();
   const fmt = useFormat();
   const theme = useChartTheme();
@@ -608,7 +725,10 @@ export function FtpHistoryCard({ data, loading, error }: { data: ProgressFtpResp
   const pts = data?.history.points;
   const any = !!pts?.some((p) => p.ftp !== null);
   const option = useMemo(
-    () => (data && any ? historyOption(data, { theme, fmt, t, lang, setting, name: t('progress.power.history.estimate') }) : null),
+    () =>
+      data && any
+        ? historyOption(data, { theme, fmt, t, lang, setting, name: t('progress.power.history.estimate') })
+        : null,
     [data, any, theme, fmt, t, lang, setting],
   );
   const onEvents = useMemo(
@@ -625,7 +745,14 @@ export function FtpHistoryCard({ data, loading, error }: { data: ProgressFtpResp
     if (!data || !any) return undefined;
     return {
       columns: [
-        { key: 'bucket', label: t(data.history.bucket === 'quarter' ? 'progress.power.history.quarter' : 'progress.power.history.month') },
+        {
+          key: 'bucket',
+          label: t(
+            data.history.bucket === 'quarter'
+              ? 'progress.power.history.quarter'
+              : 'progress.power.history.month',
+          ),
+        },
         { key: 'ftp', label: t('progress.power.history.estimate'), numeric: true },
         { key: 'wkg', label: 'W/kg', numeric: true },
         { key: 'best', label: t('progress.power.history.best20'), numeric: true },
@@ -654,7 +781,13 @@ export function FtpHistoryCard({ data, loading, error }: { data: ProgressFtpResp
       ) : !option ? (
         <EmptyState icon={TrendingUp} title={t('progress.power.history.empty')} className="h-[260px]" />
       ) : (
-        <EChart option={option} height={HISTORY_HEIGHT} loading={loading} onEvents={onEvents} ariaLabel={title} />
+        <EChart
+          option={option}
+          height={HISTORY_HEIGHT}
+          loading={loading}
+          onEvents={onEvents}
+          ariaLabel={title}
+        />
       )}
     </ChartCard>
   );
@@ -668,7 +801,11 @@ export function NoPowerCard() {
   const t = useT();
   return (
     <Card>
-      <EmptyState icon={Zap} title={t('progress.power.empty.title')} description={t('progress.power.empty.hint')} />
+      <EmptyState
+        icon={Zap}
+        title={t('progress.power.empty.title')}
+        description={t('progress.power.empty.hint')}
+      />
     </Card>
   );
 }

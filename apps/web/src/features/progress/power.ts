@@ -36,11 +36,14 @@ export function durationLabel(t: TFunction, fmt: Formatter, s: number): string {
   if (s < 3600) return t('progress.power.duration.min', { n: fmt.num(s / 60, s % 60 ? 1 : 0) });
   const h = Math.floor(s / 3600);
   const m = Math.round((s % 3600) / 60);
-  return m ? t('progress.power.duration.hMin', { h: fmt.int(h), m: fmt.int(m) }) : t('progress.power.duration.h', { n: fmt.int(h) });
+  return m
+    ? t('progress.power.duration.hMin', { h: fmt.int(h), m: fmt.int(m) })
+    : t('progress.power.duration.h', { n: fmt.int(h) });
 }
 
 /** Value of an effort in the chosen unit (null when W/kg is asked for but no body mass is known). */
-export const powerValue = (p: ProgressPowerEffort, unit: PowerUnit): number | null => (unit === 'wkg' ? p.wkg : p.watts);
+export const powerValue = (p: ProgressPowerEffort, unit: PowerUnit): number | null =>
+  unit === 'wkg' ? p.wkg : p.watts;
 
 /** "255 W" / "3.5 W/kg". */
 export function formatPower(fmt: Formatter, v: number, unit: PowerUnit, wkgDigits = 1): string {
@@ -65,8 +68,10 @@ export function curveName(
 ): string {
   if (kind === 'allTime') return t('progress.power.series.allTime');
   const days = PERIOD_DAYS[period];
-  if (days) return t(kind === 'current' ? 'progress.power.series.last' : 'progress.power.series.before', { days });
-  if (period === '12m') return t(kind === 'current' ? 'progress.power.series.last12m' : 'progress.power.series.before12m');
+  if (days)
+    return t(kind === 'current' ? 'progress.power.series.last' : 'progress.power.series.before', { days });
+  if (period === '12m')
+    return t(kind === 'current' ? 'progress.power.series.last12m' : 'progress.power.series.before12m');
   if (period === 'year') return r.fromDay.slice(0, 4);
   if (period === 'all') return t('progress.power.periods.all');
   return rangeLabel(fmt, r);

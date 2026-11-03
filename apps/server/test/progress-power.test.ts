@@ -32,7 +32,12 @@ import { gzipJson } from '../src/lib/gzip';
 import { addDays, parseDay } from '../src/lib/time';
 
 /** Stream with one sample every `step` seconds from 0 to `seconds` (inclusive). */
-function stream(watts: (t: number) => number | null, seconds: number, step = 1, extra: Partial<WorkoutStreams> = {}): WorkoutStreams {
+function stream(
+  watts: (t: number) => number | null,
+  seconds: number,
+  step = 1,
+  extra: Partial<WorkoutStreams> = {},
+): WorkoutStreams {
   const t: number[] = [];
   const power: (number | null)[] = [];
   for (let s = 0; s <= seconds + 1e-9; s += step) {
@@ -42,7 +47,8 @@ function stream(watts: (t: number) => number | null, seconds: number, step = 1, 
   return { t, power, moving: t.map(() => 1), ...extra };
 }
 
-const at = (curve: { durationS: number; watts: number }[], d: number) => curve.find((p) => p.durationS === d)?.watts;
+const at = (curve: { durationS: number; watts: number }[], d: number) =>
+  curve.find((p) => p.durationS === d)?.watts;
 
 describe('power resampling (1 Hz, gaps, breaks)', () => {
   it('keeps a 1 Hz stream as it is', () => {
@@ -56,9 +62,9 @@ describe('power resampling (1 Hz, gaps, breaks)', () => {
   it('interpolates short gaps and counts longer gaps as 0 W', () => {
     // samples 0…10 and 13…20 (3 s gap, interpolated), then nothing until 81 (60 s gap = 0 W)
     const st: WorkoutStreams = { t: [], power: [] };
-    for (let s = 0; s <= 10; s++) st.t.push(s), st.power!.push(100);
-    for (let s = 13; s <= 20; s++) st.t.push(s), st.power!.push(160);
-    for (let s = 81; s <= 100; s++) st.t.push(s), st.power!.push(300);
+    for (let s = 0; s <= 10; s++) (st.t.push(s), st.power!.push(100));
+    for (let s = 13; s <= 20; s++) (st.t.push(s), st.power!.push(160));
+    for (let s = 81; s <= 100; s++) (st.t.push(s), st.power!.push(300));
     const [p] = powerParts(st);
     expect(p!.watts[11]).toBeCloseTo(120, 9);
     expect(p!.watts[12]).toBeCloseTo(140, 9);
@@ -117,7 +123,8 @@ describe('best average power per duration', () => {
   });
 
   it('never lets a window span a break, even without a time gap', () => {
-    const flat = (breaks?: number[]) => bestAverages(powerParts(stream(() => 300, 1199, 1, { breaks })), PROGRESS_POWER_DURATIONS);
+    const flat = (breaks?: number[]) =>
+      bestAverages(powerParts(stream(() => 300, 1199, 1, { breaks })), PROGRESS_POWER_DURATIONS);
     expect(at(flat(), 1200)).toBe(300);
     const split = flat([600]);
     expect(at(split, 600)).toBe(300);
@@ -127,10 +134,16 @@ describe('best average power per duration', () => {
 
   it('counts a pause without samples as 0 W (never overestimates)', () => {
     // 10 min at 300 W, 60 s without samples, 10 min at 300 W
-    const b = bestAverages(powerParts(stream((t) => (t >= 600 && t < 660 ? null : 300), 1259)), PROGRESS_POWER_DURATIONS);
+    const b = bestAverages(
+      powerParts(stream((t) => (t >= 600 && t < 660 ? null : 300), 1259)),
+      PROGRESS_POWER_DURATIONS,
+    );
     const gappy: WorkoutStreams = stream(() => 300, 1259);
     const keep = gappy.t.map((t) => t < 600 || t >= 660);
-    const st: WorkoutStreams = { t: gappy.t.filter((_, i) => keep[i]), power: gappy.power!.filter((_, i) => keep[i]) };
+    const st: WorkoutStreams = {
+      t: gappy.t.filter((_, i) => keep[i]),
+      power: gappy.power!.filter((_, i) => keep[i]),
+    };
     const g = bestAverages(powerParts(st), PROGRESS_POWER_DURATIONS);
     for (const x of [b, g]) {
       expect(at(x, 600)).toBe(300);
@@ -160,7 +173,11 @@ describe('critical power', () => {
     ds.map((d) => ({ durationS: d, watts: cp + w / d }));
 
   it('recovers CP and W′ from bests on the model curve', () => {
-    const r = criticalPowerFit([{ durationS: 60, watts: 600 }, ...model(250, 20_000), { durationS: 3600, watts: 230 }]);
+    const r = criticalPowerFit([
+      { durationS: 60, watts: 600 },
+      ...model(250, 20_000),
+      { durationS: 3600, watts: 230 },
+    ]);
     expect(r.issue).toBeNull();
     expect(r.fit!.cpW).toBeCloseTo(250, 6);
     expect(r.fit!.wPrimeJ).toBeCloseTo(20_000, 3);
@@ -197,10 +214,16 @@ describe('power-curve periods', () => {
     expect(powerPeriodRange('42d', today, { span })).toEqual({ fromDay: '2026-09-23', toDay: today });
     expect(powerPeriodRange('90d', today, { span })).toEqual({ fromDay: '2026-08-06', toDay: today });
     expect(powerPeriodRange('12m', today, { span })).toEqual({ fromDay: '2025-11-04', toDay: today });
-    expect(powerPeriodRange('year', today, { span, year: 2025 })).toEqual({ fromDay: '2025-01-01', toDay: '2025-12-31' });
+    expect(powerPeriodRange('year', today, { span, year: 2025 })).toEqual({
+      fromDay: '2025-01-01',
+      toDay: '2025-12-31',
+    });
     expect(powerPeriodRange('year', today, { span })).toEqual({ fromDay: '2026-01-01', toDay: '2026-12-31' });
     expect(powerPeriodRange('all', today, { span })).toEqual({ fromDay: '2024-03-10', toDay: today });
-    expect(powerPeriodRange('all', today, { span: { firstDay: null, lastDay: null } })).toEqual({ fromDay: today, toDay: today });
+    expect(powerPeriodRange('all', today, { span: { firstDay: null, lastDay: null } })).toEqual({
+      fromDay: today,
+      toDay: today,
+    });
     expect(powerPeriodRange('custom', today, { span, fromDay: '2026-05-01', toDay: '2026-05-31' })).toEqual({
       fromDay: '2026-05-01',
       toDay: '2026-05-31',
@@ -210,8 +233,14 @@ describe('power-curve periods', () => {
   it('the previous period has the same length', () => {
     const r42 = powerPeriodRange('42d', today, { span });
     expect(previousPowerRange('42d', r42)).toEqual({ fromDay: '2026-08-12', toDay: '2026-09-22' });
-    expect(previousPowerRange('12m', powerPeriodRange('12m', today, { span }))).toEqual({ fromDay: '2024-11-04', toDay: '2025-11-03' });
-    expect(previousPowerRange('year', { fromDay: '2025-01-01', toDay: '2025-12-31' })).toEqual({ fromDay: '2024-01-01', toDay: '2024-12-31' });
+    expect(previousPowerRange('12m', powerPeriodRange('12m', today, { span }))).toEqual({
+      fromDay: '2024-11-04',
+      toDay: '2025-11-03',
+    });
+    expect(previousPowerRange('year', { fromDay: '2025-01-01', toDay: '2025-12-31' })).toEqual({
+      fromDay: '2024-01-01',
+      toDay: '2024-12-31',
+    });
     const custom = previousPowerRange('custom', { fromDay: '2026-05-01', toDay: '2026-05-31' })!;
     expect(custom).toEqual({ fromDay: '2026-03-31', toDay: '2026-04-30' });
     expect(parseDay(custom.toDay)! - parseDay(custom.fromDay)!).toBe(30);
@@ -287,30 +316,63 @@ describe('power curve API', () => {
 
   beforeAll(async () => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cadence-power-'));
-    const config = loadConfig({ CADENCE_DATA_DIR: path.join(dir, 'data'), CADENCE_MODE: 'dev', LOG_LEVEL: 'silent' });
+    const config = loadConfig({
+      CADENCE_DATA_DIR: path.join(dir, 'data'),
+      CADENCE_MODE: 'dev',
+      LOG_LEVEL: 'silent',
+    });
     db = openDb(config.dbPath);
     migrateAll(db);
     app = await buildApp(config, db, { jobRunner: 'inline' });
     await app.ready();
 
     // A: 30 min at 250 W with a 10 s sprint at 900 W, 10 days ago
-    ids.a = insertPowerWorkout({ sport: 'ride', day: addDays(TODAY, -10), name: 'Sprint ride', st: stream((t) => (t >= 300 && t < 310 ? 900 : 250), 1799) });
+    ids.a = insertPowerWorkout({
+      sport: 'ride',
+      day: addDays(TODAY, -10),
+      name: 'Sprint ride',
+      st: stream((t) => (t >= 300 && t < 310 ? 900 : 250), 1799),
+    });
     // B: 20 min at 280 W, 60 days ago (outside 42, inside 90 days)
-    ids.b = insertPowerWorkout({ sport: 'ride', day: addDays(TODAY, -60), name: 'Threshold', st: stream(() => 280, 1199) });
+    ids.b = insertPowerWorkout({
+      sport: 'ride',
+      day: addDays(TODAY, -60),
+      name: 'Threshold',
+      st: stream(() => 280, 1199),
+    });
     // F: 60 min at 230 W, 200 days ago — with a track break after 30 minutes
-    ids.f = insertPowerWorkout({ sport: 'ride', day: addDays(TODAY, -200), st: stream(() => 230, 3599, 1, { breaks: [1800] }) });
+    ids.f = insertPowerWorkout({
+      sport: 'ride',
+      day: addDays(TODAY, -200),
+      st: stream(() => 230, 3599, 1, { breaks: [1800] }),
+    });
     // hidden and duplicate rides with huge numbers must never show up
-    ids.hidden = insertPowerWorkout({ sport: 'ride', day: addDays(TODAY, -5), st: stream(() => 400, 1199), hidden: true });
-    ids.dup = insertPowerWorkout({ sport: 'ride', day: addDays(TODAY, -10), st: stream(() => 500, 1199), duplicateOf: ids.a });
+    ids.hidden = insertPowerWorkout({
+      sport: 'ride',
+      day: addDays(TODAY, -5),
+      st: stream(() => 400, 1199),
+      hidden: true,
+    });
+    ids.dup = insertPowerWorkout({
+      sport: 'ride',
+      day: addDays(TODAY, -10),
+      st: stream(() => 500, 1199),
+      duplicateOf: ids.a,
+    });
     // a run with Apple Watch running power on a 5 s grid
     ids.run = insertPowerWorkout({ sport: 'run', day: addDays(TODAY, -3), st: stream(() => 300, 1500, 5) });
     // a ride without power
-    ids.none = insertPowerWorkout({ sport: 'ride', day: addDays(TODAY, -2), st: { t: [0, 600], power: [null, null] } });
+    ids.none = insertPowerWorkout({
+      sport: 'ride',
+      day: addDays(TODAY, -2),
+      st: { t: [0, 600], power: [null, null] },
+    });
     // body mass: 70 kg long ago, 72 kg 20 days ago
-    run(db, `INSERT INTO daily_metrics (athlete_id, metric, day, value) VALUES (1, 'HKQuantityTypeIdentifierBodyMass', ?, 70), (1, 'HKQuantityTypeIdentifierBodyMass', ?, 72)`, [
-      addDays(TODAY, -300),
-      addDays(TODAY, -20),
-    ]);
+    run(
+      db,
+      `INSERT INTO daily_metrics (athlete_id, metric, day, value) VALUES (1, 'HKQuantityTypeIdentifierBodyMass', ?, 70), (1, 'HKQuantityTypeIdentifierBodyMass', ?, 72)`,
+      [addDays(TODAY, -300), addDays(TODAY, -20)],
+    );
     await powerCurveStep.run(ctx());
   }, 60_000);
 
@@ -330,7 +392,9 @@ describe('power curve API', () => {
     expect(by.get(ids.f!)!.max_d).toBe(1800); // the 60-minute ride is split by its break
     expect(by.get(ids.hidden!)).toBeDefined(); // stored, excluded at query time
     expect(by.get(ids.none!)).toBeUndefined();
-    const state = get<{ n: number }>(db, 'SELECT COUNT(*) AS n FROM progress_power_state WHERE version = ?', [POWER_CURVE_VERSION])!;
+    const state = get<{ n: number }>(db, 'SELECT COUNT(*) AS n FROM progress_power_state WHERE version = ?', [
+      POWER_CURVE_VERSION,
+    ])!;
     expect(state.n).toBe(Object.keys(ids).length);
     expect(powerWorkoutsToRefresh(db, 1, 'all')).toEqual([]);
     run(db, 'UPDATE workouts SET updated_at = updated_at + 1 WHERE id = ?', [ids.b!]);
@@ -339,7 +403,9 @@ describe('power curve API', () => {
   });
 
   it('answers the curve of a period with the efforts that set it', async () => {
-    const r = await getJson<ProgressPowerCurveResponse>(`/api/progress/power/curve?period=42d&compare=allTime&today=${TODAY}`);
+    const r = await getJson<ProgressPowerCurveResponse>(
+      `/api/progress/power/curve?period=42d&compare=allTime&today=${TODAY}`,
+    );
     expect(r.sport).toBe('ride');
     expect(r.sports).toEqual([
       { sport: 'ride', workouts: 3 },
@@ -354,27 +420,46 @@ describe('power curve API', () => {
     expect(p20.wkg).toBeCloseTo(p20.watts / 72, 2);
     expect(r.current.points.find((p) => p.durationS === 5)).toMatchObject({ watts: 900, offsetS: 300 });
     // all-time: B's 280 W beats A at 20 minutes; the hidden 400 W and duplicate 500 W rides do not count
-    expect(r.comparison!.points.find((p) => p.durationS === 1200)).toMatchObject({ watts: 280, workoutId: ids.b });
-    expect(r.comparison!.points.find((p) => p.durationS === 1)).toMatchObject({ watts: 900, workoutId: ids.a });
+    expect(r.comparison!.points.find((p) => p.durationS === 1200)).toMatchObject({
+      watts: 280,
+      workoutId: ids.b,
+    });
+    expect(r.comparison!.points.find((p) => p.durationS === 1)).toMatchObject({
+      watts: 900,
+      workoutId: ids.a,
+    });
     expect(Math.max(...r.comparison!.points.map((p) => p.watts))).toBe(900);
     expect(r.comparison!.points.at(-1)!.durationS).toBe(1800);
     expect(r.comparison!.workouts).toBe(3);
   });
 
   it('compares with the previous period of the same length', async () => {
-    const r = await getJson<ProgressPowerCurveResponse>(`/api/progress/power/curve?sport=ride&period=90d&compare=previous&today=${TODAY}`);
+    const r = await getJson<ProgressPowerCurveResponse>(
+      `/api/progress/power/curve?sport=ride&period=90d&compare=previous&today=${TODAY}`,
+    );
     expect(r.current.workouts).toBe(2);
     const prev = r.comparison!;
-    expect(prev).toMatchObject({ fromDay: addDays(TODAY, -179), toDay: addDays(TODAY, -90), workouts: 0, points: [] });
+    expect(prev).toMatchObject({
+      fromDay: addDays(TODAY, -179),
+      toDay: addDays(TODAY, -90),
+      workouts: 0,
+      points: [],
+    });
     expect(prev.bodyMass!.kg).toBe(70);
-    const y = await getJson<ProgressPowerCurveResponse>(`/api/progress/power/curve?period=year&year=2026&compare=previous&today=${TODAY}`);
+    const y = await getJson<ProgressPowerCurveResponse>(
+      `/api/progress/power/curve?period=year&year=2026&compare=previous&today=${TODAY}`,
+    );
     expect(y.current).toMatchObject({ fromDay: '2026-01-01', toDay: '2026-12-31', workouts: 3 });
     expect(y.comparison).toMatchObject({ fromDay: '2025-01-01', toDay: '2025-12-31', workouts: 0 });
-    const all_ = await getJson<ProgressPowerCurveResponse>(`/api/progress/power/curve?period=all&compare=previous&today=${TODAY}`);
+    const all_ = await getJson<ProgressPowerCurveResponse>(
+      `/api/progress/power/curve?period=all&compare=previous&today=${TODAY}`,
+    );
     expect(all_.compare).toBe('none');
     expect(all_.comparison).toBeNull();
     expect(all_.current.fromDay).toBe(addDays(TODAY, -200));
-    const none = await getJson<ProgressPowerCurveResponse>(`/api/progress/power/curve?period=12m&compare=none&today=${TODAY}`);
+    const none = await getJson<ProgressPowerCurveResponse>(
+      `/api/progress/power/curve?period=12m&compare=none&today=${TODAY}`,
+    );
     expect(none.comparison).toBeNull();
     const custom = await getJson<ProgressPowerCurveResponse>(
       `/api/progress/power/curve?period=custom&fromDay=${addDays(TODAY, -61)}&toDay=${addDays(TODAY, -59)}&today=${TODAY}`,
@@ -383,9 +468,14 @@ describe('power curve API', () => {
   });
 
   it('serves running power separately', async () => {
-    const r = await getJson<ProgressPowerCurveResponse>(`/api/progress/power/curve?sport=run&period=42d&today=${TODAY}`);
+    const r = await getJson<ProgressPowerCurveResponse>(
+      `/api/progress/power/curve?sport=run&period=42d&today=${TODAY}`,
+    );
     expect(r.sport).toBe('run');
-    expect(r.current.points.find((p) => p.durationS === 1200)).toMatchObject({ watts: 300, workoutId: ids.run });
+    expect(r.current.points.find((p) => p.durationS === 1200)).toMatchObject({
+      watts: 300,
+      workoutId: ids.run,
+    });
     expect(r.current.points.at(-1)!.durationS).toBe(1500);
   });
 
@@ -393,10 +483,15 @@ describe('power curve API', () => {
     const url = `/api/progress/power/curve?period=42d&compare=none&today=${TODAY}`;
     run(db, 'UPDATE workouts SET hidden = 0 WHERE id = ?', [ids.hidden!]);
     const shown = await getJson<ProgressPowerCurveResponse>(url);
-    expect(shown.current.points.find((p) => p.durationS === 1200)).toMatchObject({ watts: 400, workoutId: ids.hidden });
+    expect(shown.current.points.find((p) => p.durationS === 1200)).toMatchObject({
+      watts: 400,
+      workoutId: ids.hidden,
+    });
     run(db, 'UPDATE workouts SET hidden = 1 WHERE id = ?', [ids.hidden!]);
     const hidden = await getJson<ProgressPowerCurveResponse>(url);
-    expect(hidden.current.points.some((p) => p.workoutId === ids.hidden || p.workoutId === ids.dup)).toBe(false);
+    expect(hidden.current.points.some((p) => p.workoutId === ids.hidden || p.workoutId === ids.dup)).toBe(
+      false,
+    );
   });
 
   it('estimates FTP from the best 20 minutes of the last 6 weeks, else 90 days', async () => {
@@ -412,10 +507,14 @@ describe('power curve API', () => {
     expect(Math.abs(f.criticalPower!.wPrimeJ - 6500)).toBeLessThan(100);
     expect(f.criticalPower!.cpWkg).toBeCloseTo(f.criticalPower!.cpW / 72, 2);
     // 35 days later A is no longer within 6 weeks, but within 90 days
-    const later = await getJson<ProgressFtpResponse>(`/api/progress/power/ftp?sport=ride&today=${addDays(TODAY, 35)}`);
+    const later = await getJson<ProgressFtpResponse>(
+      `/api/progress/power/ftp?sport=ride&today=${addDays(TODAY, 35)}`,
+    );
     expect(later.windowDays).toBe(90);
     expect(later.source).toMatchObject({ workoutId: ids.a, watts: best20 });
-    const none = await getJson<ProgressFtpResponse>(`/api/progress/power/ftp?sport=ride&today=${addDays(TODAY, 100)}`);
+    const none = await getJson<ProgressFtpResponse>(
+      `/api/progress/power/ftp?sport=ride&today=${addDays(TODAY, 100)}`,
+    );
     expect(none).toMatchObject({ windowDays: null, ftp: null, source: null, criticalPower: null });
   });
 
@@ -423,7 +522,11 @@ describe('power curve API', () => {
     // one all-out effort per duration on the curve P = 260 W + 18 kJ / t, each followed by an easy 10 minutes
     const durations = [180, 240, 300, 360, 480, 600, 720, 900, 1200];
     for (const d of durations) {
-      insertPowerWorkout({ sport: 'handcycle', day: addDays(TODAY, -7), st: stream((t) => (t < d ? 260 + 18_000 / d : 100), d + 600) });
+      insertPowerWorkout({
+        sport: 'handcycle',
+        day: addDays(TODAY, -7),
+        st: stream((t) => (t < d ? 260 + 18_000 / d : 100), d + 600),
+      });
     }
     await powerCurveStep.run(ctx());
     const f = await getJson<ProgressFtpResponse>(`/api/progress/power/ftp?sport=handcycle&today=${TODAY}`);
@@ -445,16 +548,26 @@ describe('power curve API', () => {
     expect(monthOfB.source!.workoutId).toBe(ids.b);
     expect(monthOfB.ftpWkg).toBeCloseTo(266 / 70, 2);
     // the months of A, B and F (whose two 30-minute parts have 20-minute bests, too)
-    expect(f.history.points.filter((p) => p.ftp !== null).map((p) => p.source!.workoutId)).toEqual([ids.f, ids.b, ids.a]);
+    expect(f.history.points.filter((p) => p.ftp !== null).map((p) => p.source!.workoutId)).toEqual([
+      ids.f,
+      ids.b,
+      ids.a,
+    ]);
   });
 
   it('fills missing rows lazily on first use', async () => {
     run(db, 'DELETE FROM progress_power_state');
     run(db, 'DELETE FROM progress_power_bests');
-    const r = await getJson<ProgressPowerCurveResponse>(`/api/progress/power/curve?period=all&today=${TODAY}`);
+    const r = await getJson<ProgressPowerCurveResponse>(
+      `/api/progress/power/curve?period=all&today=${TODAY}`,
+    );
     expect(r.current.workouts).toBe(3);
     // hidden / duplicate workouts are not needed for an answer: the lazy fill skips them
-    const n = get<{ n: number }>(db, 'SELECT COUNT(*) AS n FROM progress_power_state WHERE workout_id IN (?, ?)', [ids.hidden!, ids.dup!])!.n;
+    const n = get<{ n: number }>(
+      db,
+      'SELECT COUNT(*) AS n FROM progress_power_state WHERE workout_id IN (?, ?)',
+      [ids.hidden!, ids.dup!],
+    )!.n;
     expect(n).toBe(0);
     expect(ensurePowerBests(db, 1)).toBe(0);
   });
@@ -472,7 +585,9 @@ describe('power curve API', () => {
   it('validates its input', async () => {
     expect(await status('/api/progress/power/curve?period=week')).toBe(400);
     expect(await status('/api/progress/power/curve?period=custom')).toBe(400);
-    expect(await status('/api/progress/power/curve?period=custom&fromDay=2026-05-02&toDay=2026-05-01')).toBe(400);
+    expect(await status('/api/progress/power/curve?period=custom&fromDay=2026-05-02&toDay=2026-05-01')).toBe(
+      400,
+    );
     expect(await status('/api/progress/power/curve?compare=best')).toBe(400);
     expect(await status('/api/progress/power/curve?sport=quidditch')).toBe(400);
     expect(await status('/api/progress/power/curve?period=year&year=12')).toBe(400);

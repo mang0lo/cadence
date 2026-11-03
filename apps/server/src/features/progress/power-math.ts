@@ -151,7 +151,8 @@ export function bestAverages(parts: readonly PowerPart[], durations: readonly nu
       }
       const watts = bs / d;
       const cur = best[k];
-      if (watts > 0 && (!cur || watts > cur.watts)) best[k] = { durationS: d, watts, offsetS: part.startT + bi };
+      if (watts > 0 && (!cur || watts > cur.watts))
+        best[k] = { durationS: d, watts, offsetS: part.startT + bi };
     }
   }
   return best.filter((b): b is BestAverage => !!b);
@@ -199,7 +200,8 @@ export function criticalPowerFit(points: readonly { durationS: number; watts: nu
 } {
   const pts = points.filter((p) => p.durationS >= CP_MIN_S && p.durationS <= CP_MAX_S && p.watts > 0);
   const ds = pts.map((p) => p.durationS);
-  if (pts.length < 3 || Math.min(...ds) > CP_SHORT_S || Math.max(...ds) < CP_LONG_S) return { fit: null, issue: 'tooFew' };
+  if (pts.length < 3 || Math.min(...ds) > CP_SHORT_S || Math.max(...ds) < CP_LONG_S)
+    return { fit: null, issue: 'tooFew' };
   const f = linearFit(
     ds,
     pts.map((p) => p.watts * p.durationS),
@@ -208,7 +210,8 @@ export function criticalPowerFit(points: readonly { durationS: number; watts: nu
   const cpW = f.slope;
   const wPrimeJ = f.intercept;
   let maxError = 0;
-  for (const p of pts) maxError = Math.max(maxError, Math.abs(cpW + wPrimeJ / p.durationS - p.watts) / p.watts);
+  for (const p of pts)
+    maxError = Math.max(maxError, Math.abs(cpW + wPrimeJ / p.durationS - p.watts) / p.watts);
   const ok =
     cpW > 0 &&
     wPrimeJ >= CP_WPRIME_J[0] &&
@@ -235,7 +238,12 @@ export interface DayRange {
 export function powerPeriodRange(
   period: ProgressPowerPeriod,
   today: string,
-  o: { year?: number; fromDay?: string; toDay?: string; span: { firstDay: string | null; lastDay: string | null } },
+  o: {
+    year?: number;
+    fromDay?: string;
+    toDay?: string;
+    span: { firstDay: string | null; lastDay: string | null };
+  },
 ): DayRange {
   switch (period) {
     case '42d':
@@ -269,7 +277,8 @@ export function previousPowerRange(period: ProgressPowerPeriod, r: DayRange): Da
     const y = Number(r.fromDay.slice(0, 4)) - 1;
     return { fromDay: `${y}-01-01`, toDay: `${y}-12-31` };
   }
-  if (period === '12m') return { fromDay: addDays(shiftYears(r.toDay, -2), 1), toDay: shiftYears(r.toDay, -1) };
+  if (period === '12m')
+    return { fromDay: addDays(shiftYears(r.toDay, -2), 1), toDay: shiftYears(r.toDay, -1) };
   const days = parseDay(r.toDay)! - parseDay(r.fromDay)! + 1;
   const toDay = addDays(r.fromDay, -1);
   return { fromDay: addDays(toDay, -(days - 1)), toDay };

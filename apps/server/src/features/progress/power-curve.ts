@@ -33,7 +33,9 @@ const NONE: WorkoutPowerBests = { bests: [], seconds: 0 };
 /** Best average power per standard duration of one workout (reads its streams). */
 export function computePowerBests(db: Db, w: Pick<PowerWorkoutRef, 'id' | 'power'>): WorkoutPowerBests {
   if (w.power === null) return NONE;
-  const blob = get<{ data: Uint8Array }>(db, 'SELECT data FROM workout_streams WHERE workout_id = ?', [w.id])?.data;
+  const blob = get<{ data: Uint8Array }>(db, 'SELECT data FROM workout_streams WHERE workout_id = ?', [
+    w.id,
+  ])?.data;
   if (!blob) return NONE;
   let st: WorkoutStreams;
   try {
@@ -83,7 +85,8 @@ export function storePowerBests(
         const r = results[k]!;
         del.run(w.id);
         const day = localDay(w.start_ts, w.tz_min);
-        for (const b of r.bests) ins.run(w.id, w.athlete_id, w.sport, day, b.durationS, r1(b.watts), r1(b.offsetS));
+        for (const b of r.bests)
+          ins.run(w.id, w.athlete_id, w.sport, day, b.durationS, r1(b.watts), r1(b.offsetS));
         state.run(w.id, w.athlete_id, POWER_CURVE_VERSION, w.updated_at, Math.round(r.seconds));
       });
     });
@@ -93,7 +96,8 @@ export function storePowerBests(
   return workouts.length;
 }
 
-const REF_COLS = 'w.id, w.athlete_id, w.sport, w.start_ts, w.tz_min, w.updated_at, COALESCE(w.avg_power, w.max_power) AS power';
+const REF_COLS =
+  'w.id, w.athlete_id, w.sport, w.start_ts, w.tz_min, w.updated_at, COALESCE(w.avg_power, w.max_power) AS power';
 
 /**
  * Derive scope: the changed workouts, or for a full rebuild every workout whose state row is missing, of an older

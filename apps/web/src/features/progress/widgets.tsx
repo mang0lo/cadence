@@ -172,17 +172,19 @@ export function FitnessWidget() {
 }
 
 /**
- * FTP (threshold) estimate and the 5 / 20 minute peak power of the last 6 weeks, for the default power sport.
- * Renders nothing for athletes without power data (no power meter, no Apple Watch running power).
+ * FTP (threshold) estimate and the 5 / 20 minute peak power of the same window (6 weeks, or 90 days when the
+ * estimate had to fall back), for the default power sport. Renders nothing without power data (no power meter,
+ * no Apple Watch running power).
  */
 export function PowerWidget() {
   const t = useT();
   const fmt = useFormat();
   const { lang } = useI18n();
-  const curve = usePowerCurve({ sport: null, period: '42d', compare: 'none' });
   const ftp = useFtpEstimate(null);
+  const period = ftp.data?.windowDays === 90 ? '90d' : '42d';
+  const curve = usePowerCurve(ftp.data ? { sport: ftp.data.sport, period, compare: 'none' } : null);
   const title = t('progress.widgets.power.title');
-  const error = curve.error ?? ftp.error;
+  const error = ftp.error ?? curve.error;
   if (error)
     return (
       <Card>
@@ -214,7 +216,7 @@ export function PowerWidget() {
         icon={Zap}
         actions={<DetailsLink to={`/progress/power?sport=${d.sport}`} label={t('progress.widgets.power.details')} />}
       />
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)] gap-3">
         <Stat
           size="sm"
           label={t(isCycling(d.sport) ? 'progress.widgets.power.ftp' : 'progress.widgets.power.threshold')}
@@ -225,7 +227,7 @@ export function PowerWidget() {
         {tile(300)}
         {tile(1200)}
       </div>
-      <p className="mt-3 text-[11px] text-fg-3">{t('progress.widgets.power.note')}</p>
+      <p className="mt-3 text-[11px] text-fg-3">{t(period === '90d' ? 'progress.widgets.power.note90' : 'progress.widgets.power.note')}</p>
     </Card>
   );
 }
