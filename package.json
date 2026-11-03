@@ -8,7 +8,8 @@
   "workspaces": [
     "packages/*",
     "apps/server",
-    "apps/web"
+    "apps/web",
+    "apps/desktop"
   ],
   "engines": {
     "node": ">=24"
@@ -17,14 +18,17 @@
     "dev": "concurrently -k -n server,web -c blue,magenta \"npm:dev:server\" \"npm:dev:web\"",
     "dev:server": "npm run dev -w @cadence/server",
     "dev:web": "npm run dev -w @cadence/web",
-    "build": "npm run build -w @cadence/web && npm run build -w @cadence/server",
+    "build": "npm run build -w @cadence/web && npm run build -w @cadence/server && npm run build -w @cadence/desktop",
     "start": "node apps/server/dist/index.js",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
     "sample": "npm run sample -w @cadence/server --",
     "import": "npm run import -w @cadence/server --",
     "format": "prettier --write .",
-    "mac": "bash scripts/build-macos.sh"
+    "mac": "bash scripts/build-macos.sh",
+    "desktop": "npm run build && npm run start -w @cadence/desktop",
+    "desktop:dist": "npm run build && npm run dist -w @cadence/desktop --",
+    "desktop:win": "npm run build && npm run dist:win -w @cadence/desktop --"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",
@@ -36,5 +40,9 @@
     "@fastify/static": {
       "glob": "^14.0.3"
     }
+  },
+  "allowScripts": {
+    "electron@45.2.1": true,
+    "electron-winstaller@5.4.0": true
   }
 }

@@ -81,7 +81,8 @@ export default async function backupRoutes(app: FastifyInstance) {
     }
     fs.renameSync(tmp, restorePath(app.config.dbPath));
     const restarting = app.config.mode !== 'dev';
-    if (restarting) setTimeout(() => process.kill(process.pid, 'SIGUSR2'), 300).unref();
+    // emit instead of kill: Windows has no SIGUSR2 signal, the handler in server.ts runs either way
+    if (restarting) setTimeout(() => process.emit('SIGUSR2'), 300).unref();
     return { ok: true, restarting };
   });
 }

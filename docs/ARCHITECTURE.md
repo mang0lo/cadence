@@ -25,6 +25,7 @@ from any browser.
 | `apps/server` | Fastify HTTP API + SQLite (`node:sqlite`, no native addons) + Apple Health importer (worker thread) + analytics. |
 | `apps/web` | React 19 + Vite + Tailwind 4 UI, MapLibre maps, ECharts charts. |
 | `apps/macos` | Native macOS shell (SwiftPM): starts the bundled server, shows the UI in a WKWebView, native import panel/menus. |
+| `apps/desktop` | Linux / Windows app (Electron): same design as the macOS shell — runs the server bundle on Electron's own Node (`ELECTRON_RUN_AS_NODE`), native open/save dialogs and menus via a preload bridge. |
 | `deploy` | Dockerfile + docker-compose for server deployments. |
 | `scripts` | Build scripts (e.g. `build-macos.sh`). |
 | `docs` | This file, Apple Health format notes. |
@@ -182,6 +183,21 @@ lucide-react icons. Path alias `@/` = `apps/web/src`.
   (use inline styles there). ECharts 6 shrinks grids whose labels touch the edge unless `containLabel` is set — use
   `outerBoundsMode: 'none'` on grids that need a fixed plot area (e.g. stacked, synced charts).
 - **Native shell**: `src/lib/native.ts` (`isNativeShell`, `postNative`).
+
+## Desktop app for Linux and Windows (apps/desktop)
+
+```bash
+npm run desktop          # build everything and open the app (data in ~/.config/Cadence or %APPDATA%\Cadence)
+npm run desktop:dist     # build/desktop/Cadence-<v>-linux-x86_64.AppImage + .deb
+npm run desktop:win      # build/desktop/Cadence-Setup-<v>-win-x64.exe + portable .exe (cross-builds need Wine)
+```
+
+`src/main.ts` spawns `process.execPath` with `ELECTRON_RUN_AS_NODE=1` on `resources/server/index.js` (PORT=0, reads
+`CADENCE_LISTENING`, restarts on exit code 75 after a backup restore) and loads the UI from it. The web app talks to it
+through `window.cadenceNative` (see `apps/web/src/lib/native.ts`: `pickImportFile`, `openDataFolder`, `saveFile`).
+`CADENCE_DATA_DIR` overrides the data folder, `CADENCE_DESKTOP_SMOKE=<file.png>` loads the app, captures the window
+and quits (smoke test), `CADENCE_DEV_URL` shows a running dev server. Electron's install script must be allowed
+(`allowScripts` in the root package.json; npm blocks install scripts by default).
 
 ## Development
 

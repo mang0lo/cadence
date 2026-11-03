@@ -1,0 +1,38 @@
+# npm run desktop:dist → Linux AppImage + .deb (and Windows installer + portable .exe with --win)
+appId: app.cadence.desktop
+productName: Cadence
+copyright: Cadence contributors
+directories:
+  output: ../../build/desktop
+  buildResources: resources
+files:
+  - dist/**
+  - resources/icon.png
+  - package.json
+# the server bundle and the web UI ship next to the app (process.resourcesPath)
+extraResources:
+  - from: ../server/dist/index.js
+    to: server/index.js
+  - from: ../web/dist
+    to: web
+asar: true
+linux:
+  executableName: cadence
+  syncDesktopName: true
+  target: [AppImage, deb]
+  category: Utility
+  icon: resources/icon.png
+  synopsis: Training log for Apple Health, COROS and FIT files
+  maintainer: Cadence
+win:
+  executableName: Cadence
+  target: [nsis, portable]
+  icon: resources/icon.png
+nsis:
+  artifactName: ${productName}-Setup-${version}-win-${arch}.${ext}
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+portable:
+  artifactName: ${productName}-${version}-win-${arch}-portable.${ext}
+artifactName: ${productName}-${version}-${os}-${arch}.${ext}
