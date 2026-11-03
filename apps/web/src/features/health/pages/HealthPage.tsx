@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import {
   Activity,
+  BatteryCharging,
   Brain,
   Database,
   Droplets,
@@ -26,6 +27,7 @@ import { useFormat } from '@/lib/format';
 import { useT } from '@/lib/i18n';
 import { MetricCard, MetricCardSkeleton } from '../components/MetricCard';
 import { useMetricFormat } from '../lib/metrics';
+import { ReadinessCard } from '../widgets';
 
 interface CardDef {
   icon: LucideIcon;
@@ -82,6 +84,7 @@ export default function HealthPage() {
   const byKey = new Map<string, HealthMetricCard>((q.data?.cards ?? []).map((c) => [c.key, c]));
 
   const links: { to: string; label: string; icon: LucideIcon }[] = [
+    { to: '/health/readiness', label: t('health.nav.readiness'), icon: BatteryCharging },
     { to: '/health/sleep', label: t('health.nav.sleep'), icon: Moon },
     { to: '/health/heart', label: t('health.nav.heart'), icon: Heart },
     { to: '/health/body', label: t('health.nav.body'), icon: Scale },
@@ -127,6 +130,12 @@ export default function HealthPage() {
             }
           />
         </Card>
+      )}
+
+      {q.data && q.data.cards.length > 0 && (
+        <section className="mb-7 empty:hidden">
+          <ReadinessCard variant="overview" />
+        </section>
       )}
 
       {q.data &&
