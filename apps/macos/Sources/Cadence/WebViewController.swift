@@ -208,8 +208,43 @@ final class WebViewController: NSViewController, WKNavigationDelegate, WKUIDeleg
         switch type {
         case "pickImportFile": pickImportFile()
         case "openDataFolder": NSWorkspace.shared.open(ServerProcess.dataDirectory)
+        case "saveFile": saveFile(body)
         default: break
         }
+    }
+
+    /// A file the web UI created itself (share images): blob downloads are unreliable in WKWebView, so the page
+    /// posts `{ filename, base64 }` and the image is written to ~/Downloads. Only PNG images are accepted.
+    private func saveFile(_ body: [String: Any]) {
+        guard let name = body["filename"] as? String,
+              let base64 = body["base64"] as? String,
+              let data = Data(base64Encoded: base64) else { return }
+        var filename = (name as NSString).lastPathComponent
+        if filename.hasPrefix(".") || (filename as NSString).pathExtension.lowercased() != "png" {
+            filename = "cadence.png"
+        }
+        let target = uniqueDownloadURL(for: filename)
+        do {
+            try data.write(to: target, options: .atomic)
+            NSSound(named: "Glass")?.play()
+            NSWorkspace.shared.activateFileViewerSelecting([target])
+        } catch {
+            NSSound.beep()
+        }
+    }
+
+    /// ~/Downloads/<name>, or "<name> 2", "<name> 3" … when that file exists.
+    private func uniqueDownloadURL(for filename: String) -> URL {
+        let downloads = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
+        var target = downloads.appendingPathComponent(filename)
+        let base = target.deletingPathExtension().lastPathComponent
+        let ext = target.pathExtension
+        var n = 2
+        while FileManager.default.fileExists(atPath: target.path) {
+            target = downloads.appendingPathComponent(ext.isEmpty ? "\(base) \(n)" : "\(base) \(n).\(ext)")
+            n += 1
+        }
+        return target
     }
 
     // MARK: - WKUIDelegate
@@ -306,16 +341,7 @@ final class WebViewController: NSViewController, WKNavigationDelegate, WKUIDeleg
 
     func download(_ download: WKDownload, decideDestinationUsing response: URLResponse,
                   suggestedFilename: String, completionHandler: @escaping @MainActor (URL?) -> Void) {
-        let downloads = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
-        var target = downloads.appendingPathComponent(suggestedFilename)
-        let base = target.deletingPathExtension().lastPathComponent
-        let ext = target.pathExtension
-        var n = 2
-        while FileManager.default.fileExists(atPath: target.path) {
-            target = downloads.appendingPathComponent(ext.isEmpty ? "\(base) \(n)" : "\(base) \(n).\(ext)")
-            n += 1
-        }
-        completionHandler(target)
+        completionHandler(uniqueDownloadURL(for: suggestedFilename))
     }
 
     func downloadDidFinish(_ download: WKDownload) {

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router';
+import { Link, useNavigate } from 'react-router';
 import { GitCompareArrows, Route, Trophy } from 'lucide-react';
 import { M_PER_KM, M_PER_MI, workoutTitle, type ActivitySimilar, type ActivitySimilarItem, type WorkoutDetail } from '@cadence/shared';
 import { ChartCard, type TableView } from '@/components/charts/ChartCard';
@@ -209,8 +209,19 @@ export function Similar({
       { key: 'pace', label: pace ? t('common.pace') : t('common.speed'), numeric: true },
       { key: 'hr', label: t('common.avgHr'), numeric: true },
       { key: 'effort', label: t('common.effort'), numeric: true },
+      { key: 'compare', label: t('activities.similar.compare') },
     ],
     rows: [...items].reverse().map((x) => ({
+      compare: x.current ? null : (
+        <Link
+          to={`/activities/${w.id}/compare/${x.id}`}
+          title={t('activities.similar.compareWith', { title: workoutTitle(x, lang) })}
+          className="inline-flex items-center gap-1 whitespace-nowrap text-xs font-medium text-accent-fg hover:underline"
+        >
+          <GitCompareArrows size={13} aria-hidden />
+          {t('activities.similar.compare')}
+        </Link>
+      ),
       date: fmt.date(x.startTs, x.tzMin, 'day'),
       title: x.current ? <strong>{workoutTitle(x, lang)}</strong> : workoutTitle(x, lang),
       distance: x.distanceM ? fmt.distance(x.distanceM) : '–',

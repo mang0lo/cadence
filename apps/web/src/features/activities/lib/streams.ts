@@ -282,7 +282,7 @@ export function prepareStreams(s: WorkoutStreams): Prepared | null {
 }
 
 /** Move a time out of a pause interval (to its end); returns the same time otherwise. */
-export function skipPause(P: Prepared, time: number): number {
+export function skipPause(P: Pick<Prepared, 'pauses'>, time: number): number {
   for (const [a, b] of P.pauses) {
     if (time >= a && time < b - 0.5) return b;
     if (a > time) break;

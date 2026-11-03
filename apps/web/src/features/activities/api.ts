@@ -6,6 +6,8 @@ import type {
   ActivityListQuery,
   ActivityNav,
   ActivitySimilar,
+  MapsRouteDetail,
+  MapsWorkoutLinks,
   SportCount,
   WorkoutDetail,
   WorkoutPatch,
@@ -72,6 +74,27 @@ export function useSimilar(id: number) {
 
 export function useNav(id: number) {
   return useApi<ActivityNav>(['activities', 'nav', id], `/activities/${id}/nav`, undefined, fresh);
+}
+
+/**
+ * The recurring route of a workout and the efforts on it, read from the maps feature's API (same query keys as the
+ * maps pages and the route card on the activity page, so the data is shared).
+ */
+export function useRouteLinks(id: number, enabled = true) {
+  return useApi<MapsWorkoutLinks>(['maps', 'workout', id], enabled ? `/maps/workouts/${id}` : null);
+}
+
+export function useRouteDetail(routeId: number | null) {
+  return useApi<MapsRouteDetail>(['maps', 'route', routeId], routeId ? `/maps/routes/${routeId}` : null);
+}
+
+/** Activities of one sport for the compare picker: newest first, or matching a search term. */
+export function useSportActivities(sport: string, q: string, enabled = true) {
+  return useApi<ActivityListPage>(['activities', 'compare-search'], enabled ? '/activities/list' : null, {
+    sport,
+    q: q.trim() || undefined,
+    limit: 20,
+  });
 }
 
 /**
