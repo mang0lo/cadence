@@ -10,9 +10,11 @@ import {
   type ProgressCompareResponse,
   type ProgressEffortHistory,
   type ProgressFitnessResponse,
+  type ProgressFtpResponse,
   type ProgressIntensityResponse,
   type ProgressOverview,
   type ProgressPhysiology,
+  type ProgressPowerCurveResponse,
   type ProgressPredictions,
   type ProgressRecordsResponse,
   type ProgressTrendsResponse,
@@ -231,6 +233,37 @@ describe('progress API with the sample export', () => {
     expect(trendsAfter.workouts.some((w) => w.id === run.id)).toBe(false);
     expect(trendsAfter.workouts.length).toBe(trendsBefore.workouts.length - 1);
     expect(await status(`/api/workouts/${run.id}`, 'PATCH', { hidden: false })).toBe(200);
+  });
+
+  it('power curve: the import derives the bests, the API answers and drops hidden workouts', async () => {
+    const stored = all<{ sport: string; n: number }>(
+      db,
+      'SELECT sport, COUNT(*) AS n FROM progress_power_bests WHERE duration_s = 1 GROUP BY sport',
+    );
+    expect(stored.find((r) => r.sport === 'run')?.n).toBeGreaterThan(5); // Apple Watch running power
+    const unprocessed = get<{ n: number }>(
+      db,
+      'SELECT COUNT(*) AS n FROM workouts w LEFT JOIN progress_power_state s ON s.workout_id = w.id WHERE s.workout_id IS NULL',
+    )!.n;
+    expect(unprocessed).toBe(0);
+    const url = `/api/progress/power/curve?sport=run&period=all&today=${TODAY}`;
+    const c = await getJson<ProgressPowerCurveResponse>(url);
+    expect(c.sports.map((s) => s.sport)).toContain('run');
+    expect(c.current.points.length).toBeGreaterThan(10);
+    expect(c.current.bodyMass?.kg).toBeGreaterThan(40);
+    for (const p of c.current.points) {
+      expect(p.watts).toBeGreaterThan(0);
+      expect(p.wkg).toBeCloseTo(p.watts / c.current.bodyMass!.kg, 1);
+    }
+    const best = c.current.points.find((p) => p.durationS === 60)!;
+    expect(await status(`/api/workouts/${best.workoutId}`, 'PATCH', { hidden: true })).toBe(200);
+    const after = await getJson<ProgressPowerCurveResponse>(url);
+    expect(after.current.points.some((p) => p.workoutId === best.workoutId)).toBe(false);
+    expect(after.current.workouts).toBe(c.current.workouts - 1);
+    expect(await status(`/api/workouts/${best.workoutId}`, 'PATCH', { hidden: false })).toBe(200);
+    const f = await getJson<ProgressFtpResponse>(`/api/progress/power/ftp?sport=run&today=${TODAY}`);
+    expect(f.history.points.length).toBeGreaterThan(1);
+    if (f.ftp !== null) expect(f.ftp).toBeCloseTo(0.95 * f.source!.watts, 0);
   });
 
   it('pace at heart rate per month, with a saved band', async () => {

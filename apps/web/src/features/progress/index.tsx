@@ -1,4 +1,4 @@
-import { TrendingUp, Medal, Gauge } from 'lucide-react';
+import { TrendingUp, Medal, Gauge, Zap } from 'lucide-react';
 import type { FeatureModule } from '../types';
 import { messages } from './messages';
 
@@ -9,11 +9,13 @@ const feature: FeatureModule = {
   routes: [
     { path: 'progress', lazy: () => import('./pages/ProgressPage').then((m) => ({ Component: m.default })) },
     { path: 'progress/records', lazy: () => import('./pages/RecordsPage').then((m) => ({ Component: m.default })) },
+    { path: 'progress/power', lazy: () => import('./pages/PowerPage').then((m) => ({ Component: m.default })) },
     { path: 'progress/fitness', lazy: () => import('./pages/FitnessPage').then((m) => ({ Component: m.default })) },
   ],
   nav: [
     { path: '/progress', labelKey: 'progress.nav.progress', icon: TrendingUp, group: 'training', order: 20 },
     { path: '/progress/records', labelKey: 'progress.nav.records', icon: Medal, group: 'training', order: 30 },
+    { path: '/progress/power', labelKey: 'progress.nav.power', icon: Zap, group: 'training', order: 35 },
     { path: '/progress/fitness', labelKey: 'progress.nav.fitness', icon: Gauge, group: 'training', order: 40 },
   ],
 };
