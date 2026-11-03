@@ -8,3 +8,4 @@ export * from './features/progress';
 export * from './features/consistency';
 export * from './features/maps';
 export * from './features/health';
+export * from './features/connect';

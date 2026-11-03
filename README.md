@@ -72,6 +72,23 @@ npm run mac -- --install      # builds build/Cadence.app and copies it to /Appli
 `npm run mac -- --dmg` also produces a disk image. The app bundles the official Node.js runtime, so the built app
 runs on Macs without Node. Data lives in `~/Library/Application Support/Cadence`, logs in `~/Library/Logs/Cadence`.
 
+### Linux and Windows
+
+The same app for Linux and Windows is built with Electron (requirements: [Node.js](https://nodejs.org) 24+):
+
+```bash
+npm install
+npm run desktop          # build and open it
+npm run desktop:dist     # Linux: build/desktop/Cadence-<version>-linux-x86_64.AppImage and .deb
+npm run desktop:win      # Windows: installer + portable .exe (on Linux this needs Wine)
+```
+
+Data lives in `~/.config/Cadence` (Linux) or `%APPDATA%\Cadence` (Windows), the server log in its `logs` folder.
+
+On Linux, `./install.sh` installs the built AppImage for your user (app, `cadence` command, launcher entry and icon; it
+shows up in Noctalia, GNOME, KDE, rofi … right away). `./install.sh --build` builds it first, `./install.sh
+path/to/Cadence.AppImage` installs a downloaded one, `./install.sh --uninstall` removes it.
+
 ## Import your Apple Health data
 
 1. iPhone → **Health** app → tap your profile picture → **Export All Health Data**.

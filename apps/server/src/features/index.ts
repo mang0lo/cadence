@@ -4,6 +4,7 @@ import progress from './progress';
 import consistency from './consistency';
 import maps from './maps';
 import health from './health';
+import connect from './connect';
 
 /** Order matters: migrations and derive steps run in this order (after core). */
-export const features: Feature[] = [activities, progress, consistency, maps, health];
+export const features: Feature[] = [activities, progress, consistency, maps, health, connect];

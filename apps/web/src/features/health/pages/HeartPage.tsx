@@ -16,11 +16,15 @@ import { useDaily, useRange } from '../lib/hooks';
 import { useMetricFormat } from '../lib/metrics';
 import { toPoints } from '../lib/series';
 
-const HR = 'HKQuantityTypeIdentifierHeartRate';
-const RHR = 'HKQuantityTypeIdentifierRestingHeartRate';
 const WHR = 'HKQuantityTypeIdentifierWalkingHeartRateAverage';
-const HRV = 'HKQuantityTypeIdentifierHeartRateVariabilitySDNN';
-const VO2 = 'HKQuantityTypeIdentifierVO2Max';
+/** Apple's identifiers; the server says whether to show COROS' instead (Settings → My watch). */
+const APPLE = {
+  restingHr: 'HKQuantityTypeIdentifierRestingHeartRate',
+  hrv: 'HKQuantityTypeIdentifierHeartRateVariabilitySDNN',
+  vo2max: 'HKQuantityTypeIdentifierVO2Max',
+  steps: 'HKQuantityTypeIdentifierStepCount',
+  heartRate: 'HKQuantityTypeIdentifierHeartRate',
+};
 const REC = 'HKQuantityTypeIdentifierHeartRateRecoveryOneMinute';
 
 const EVENT_ICON: Record<HeartEventType, LucideIcon> = {
@@ -85,7 +89,7 @@ function HeartEvents({ fromDay, toDay }: { fromDay?: string; toDay?: string }) {
                         {t(`health.heart.events.${e.type}`)}
                       </Badge>
                     </TD>
-                    <TD numeric>{e.threshold !== null ? m.value(HR, e.threshold) : '–'}</TD>
+                    <TD numeric>{e.threshold !== null ? m.value('HKQuantityTypeIdentifierHeartRate', e.threshold) : '–'}</TD>
                   </tr>
                 );
               })}
@@ -107,6 +111,11 @@ export default function HeartPage() {
   const theme = useChartTheme();
   const { range, setRange, fromDay, toDay, meta } = useRange('heart', '1y');
   const ready = !!meta.data?.asOf;
+  const metrics = meta.data?.metrics ?? APPLE;
+  const RHR = metrics.restingHr;
+  const HRV = metrics.hrv;
+  const VO2 = metrics.vo2max;
+  const HR = metrics.heartRate;
   // a week before the range warms up the 7-day averages at the left edge
   const warmFrom = fromDay ? shiftDay(fromDay, -7) : undefined;
   const daily = useDaily([RHR, HRV, WHR, HR, VO2, REC], warmFrom, toDay, ready);

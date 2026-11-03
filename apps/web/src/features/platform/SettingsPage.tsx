@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Heart, Info, MapPin, Palette, Settings as SettingsIcon, Trash2, User } from 'lucide-react';
+import { Link } from 'react-router';
+import { Heart, Info, MapPin, Palette, Settings as SettingsIcon, Trash2, User, Watch } from 'lucide-react';
 import type { Map } from 'maplibre-gl';
 import type { AthleteSettings, PrivacyZone } from '@cadence/shared';
 import { BaseMap } from '@/components/map/BaseMap';
@@ -174,6 +175,37 @@ export default function SettingsPage() {
               />
             </Field>
           </div>
+        </Section>
+
+        <Section title={t('platform.settings.watch.title')} icon={Watch} hint={t('platform.settings.watch.hint')}>
+          <Field group label={t('platform.settings.watch.label')}>
+            <SegmentedControl
+              value={settings.watch}
+              onChange={(v) => set({ watch: v })}
+              items={(['apple', 'coros', 'other'] as const).map((v) => ({ value: v, label: t(`platform.settings.watch.kinds.${v}`) }))}
+            />
+          </Field>
+          <p className="text-xs text-fg-3">{t(`platform.settings.watch.explain.${settings.watch}`)}</p>
+          <div className="grid gap-4 sm:grid-cols-2">
+            {(['workouts', 'heart'] as const).map((kind) => (
+              <Field key={kind} label={t(`platform.settings.watch.types.${kind}`)}>
+                <Select
+                  value={settings.sources[kind]}
+                  onChange={(v) => set({ sources: { ...settings.sources, [kind]: v } })}
+                  options={(['auto', 'apple', 'device'] as const).map((v) => ({
+                    value: v,
+                    label: t(`platform.settings.watch.prefs.${v}`),
+                  }))}
+                />
+              </Field>
+            ))}
+          </div>
+          <p className="text-xs text-fg-3">{t('platform.settings.watch.sleepNote')}</p>
+          {settings.watch === 'coros' && (
+            <Link to="/connect" className="text-sm text-accent-fg underline-offset-2 hover:underline">
+              {t('platform.settings.watch.toConnect')}
+            </Link>
+          )}
         </Section>
 
         <Section title={t('platform.settings.display')} icon={Palette}>

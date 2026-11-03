@@ -31,8 +31,81 @@ jobs:
           push: false
           tags: cadence:ci
 
-  macos-shell:
-    runs-on: macos-latest
+  # Linux and Windows desktop app (Electron): package it, start the packaged app once (smoke test: the bundled server
+  # must come up and the UI render), keep the installers as artifacts of the run.
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            dist: desktop:dist
+            app: build/desktop/linux-unpacked/cadence
+            files: |
+              build/desktop/*.AppImage
+              build/desktop/*.deb
+          - os: windows-latest
+            dist: desktop:win
+            app: build/desktop/win-unpacked/Cadence.exe
+            files: build/desktop/*.exe
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      - run: swift build -c release --package-path apps/macos
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npm run ${{ matrix.dist }}
+      - name: Smoke test (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          export CADENCE_DATA_DIR="$RUNNER_TEMP/cadence" CADENCE_DESKTOP_SMOKE="$RUNNER_TEMP/smoke.png"
+          xvfb-run -a ${{ matrix.app }} --no-sandbox | tee smoke.log
+          test -s "$CADENCE_DESKTOP_SMOKE" || { cat "$CADENCE_DATA_DIR/logs/server.log"; exit 1; }
+      - name: Smoke test (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $env:CADENCE_DATA_DIR = "$env:RUNNER_TEMP\cadence"
+          $env:CADENCE_DESKTOP_SMOKE = "$env:RUNNER_TEMP\smoke.png"
+          $p = Start-Process -FilePath "${{ matrix.app }}" -PassThru -Wait
+          # the app writes the screenshot only when the server started and the UI loaded
+          if (-not (Test-Path $env:CADENCE_DESKTOP_SMOKE)) {
+            Get-Content "$env:CADENCE_DATA_DIR\logs\server.log" -ErrorAction SilentlyContinue
+            exit 1
+          }
+          Write-Output "smoke test passed (exit code $($p.ExitCode))"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smoke-${{ runner.os }}
+          path: ${{ runner.temp }}/smoke.png
+          if-no-files-found: ignore
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cadence-${{ runner.os }}
+          path: ${{ matrix.files }}
+          if-no-files-found: error
+          retention-days: 14
+
+  # macOS app (Swift shell + bundled Node runtime) as a disk image
+  macos-app:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npm run mac -- --dmg
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cadence-macOS
+          path: build/Cadence-*.dmg
+          if-no-files-found: error
+          retention-days: 14

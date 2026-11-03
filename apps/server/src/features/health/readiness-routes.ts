@@ -1,13 +1,12 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { midnightOffsetMin, type DayValue, type ReadinessResponse } from '@cadence/shared';
+import { heartMetric } from '../../core/sources';
 import { all, get, type Db } from '../../db/db';
 import { addDays, parseDay } from '../../lib/time';
 import { BASELINE_DAYS, HRV_DAYS, createReadinessModel, readinessModelInfo, type ReadinessInput, type ReadinessNight } from './readiness';
 import { dataRange, dayParam, getHealthSettings, typeIdByIdentifier } from './util';
 
-const HRV = 'HKQuantityTypeIdentifierHeartRateVariabilitySDNN';
-const RHR = 'HKQuantityTypeIdentifierRestingHeartRate';
 const RESP = 'HKQuantityTypeIdentifierRespiratoryRate';
 const WRIST = 'HKQuantityTypeIdentifierAppleSleepingWristTemperature';
 const SPO2 = 'HKQuantityTypeIdentifierOxygenSaturation';
@@ -34,6 +33,7 @@ interface NightRow {
   asleep_s: number;
   in_bed_s: number;
   efficiency: number | null;
+  timed: number;
 }
 
 interface SampleRow {
@@ -79,10 +79,13 @@ export function nightMeans(samples: SampleRow[], nights: { bed_ts: number; wake_
 
 /** Everything the model needs to evaluate the days fromDay … toDay (baselines reach 60 + 7 days further back). */
 export function loadReadinessInput(db: Db, athleteId: number, fromDay: string, toDay: string): ReadinessInput {
+  // Apple or COROS values, as chosen in Settings → My watch (never mixed: they are different measurements)
+  const HRV = heartMetric(db, athleteId, 'hrv');
+  const RHR = heartMetric(db, athleteId, 'restingHr');
   const lo = addDays(fromDay, -(BASELINE_DAYS + HRV_DAYS + 1));
   const nightRows = all<NightRow>(
     db,
-    `SELECT day, bed_ts, wake_ts, tz_wake_min, asleep_s, in_bed_s, efficiency FROM health_sleep_nights
+    `SELECT day, bed_ts, wake_ts, tz_wake_min, asleep_s, in_bed_s, efficiency, timed FROM health_sleep_nights
      WHERE athlete_id = ? AND kind = 'night' AND asleep_s > 0 AND day >= ? AND day <= ? ORDER BY bed_ts`,
     [athleteId, lo, toDay],
   );
@@ -116,7 +119,8 @@ export function loadReadinessInput(db: Db, athleteId: number, fromDay: string, t
     asleepS: n.asleep_s,
     inBedS: n.in_bed_s,
     efficiency: n.efficiency,
-    midpointMin: midnightOffsetMin((n.bed_ts + n.wake_ts) / 2, n.tz_wake_min),
+    // nights without real times (COROS totals) say nothing about sleep timing
+    midpointMin: n.timed ? midnightOffsetMin((n.bed_ts + n.wake_ts) / 2, n.tz_wake_min) : null,
     respiratoryRate: resp[i]!,
     wristTemp: wrist[i]!,
     spo2: spo2[i]!,

@@ -10,13 +10,15 @@
     "typecheck": "tsc --noEmit -p .",
     "test": "vitest run",
     "sample": "tsx scripts/generate-sample.ts",
-    "import": "tsx scripts/import.ts"
+    "import": "tsx scripts/import.ts",
+    "coros-probe": "tsx scripts/coros-probe.ts"
   },
   "dependencies": {
     "@cadence/shared": "*",
     "@fastify/compress": "^9.3.0",
     "@fastify/multipart": "^10.1.6",
     "@fastify/static": "^10.1.8",
+    "@garmin/fitsdk": "^21.218.0",
     "fastify": "^5.12.7",
     "yauzl": "^3.4.0",
     "yazl": "^3.3.1",

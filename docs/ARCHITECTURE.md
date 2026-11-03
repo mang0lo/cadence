@@ -25,6 +25,7 @@ from any browser.
 | `apps/server` | Fastify HTTP API + SQLite (`node:sqlite`, no native addons) + Apple Health importer (worker thread) + analytics. |
 | `apps/web` | React 19 + Vite + Tailwind 4 UI, MapLibre maps, ECharts charts. |
 | `apps/macos` | Native macOS shell (SwiftPM): starts the bundled server, shows the UI in a WKWebView, native import panel/menus. |
+| `apps/desktop` | Linux / Windows app (Electron): same design as the macOS shell — runs the server bundle on Electron's own Node (`ELECTRON_RUN_AS_NODE`), native open/save dialogs and menus via a preload bridge. |
 | `deploy` | Dockerfile + docker-compose for server deployments. |
 | `scripts` | Build scripts (e.g. `build-macos.sh`). |
 | `docs` | This file, Apple Health format notes. |
@@ -87,6 +88,12 @@ Migrations are code (`Migration { id, up }`) applied in order: core, then each f
    `deriveSteps` run in registration order with a `DeriveContext` (changed workout ids / earliest changed day).
 4. Progress is polled by the UI via `GET /api/import/jobs/:id`.
 
+**FIT files** (other watches): the same job imports a `.fit` file, a folder of them or a zip without `export.xml`
+(`src/import/fit`, Garmin's `@garmin/fitsdk` decoder). Each file becomes a workout (`ext_key` `fit:<serial>:<start>`)
+with its GPS track (`workout_routes`, `linked_by = 'fit'`) and the device's own sensor samples in `workout_samples`
+(HR, power, cadence, distance). `core.workouts` prefers those samples over Apple Health records, and duplicate
+detection prefers the FIT copy when the vendor app also wrote the workout to Health.
+
 ## Feature modules
 
 Each product area is a vertical slice with three parts that a single owner can change without touching shared files:
@@ -102,7 +109,24 @@ Derive step ids are prefixed `<name>.`. "Delete all data" (`POST /api/import/res
 `athlete_id` column except `settings` and the tables a feature lists in `keepOnReset` (user-written data such as goals
 and segments); `onReset` lets a feature clear references from kept rows to deleted workouts.
 
-Current features: `activities`, `progress`, `consistency`, `maps`, `health` (+ `platform` in the web app for import/settings).
+Current features: `activities`, `progress`, `consistency`, `maps`, `health`, `connect` (+ `platform` in the web app for import/settings).
+
+`connect` pulls activities from vendor clouds. COROS uses the private Training Hub API (unofficial, see
+`features/connect/coros-client.ts`): the settings key `connect.coros` holds the token and the MD5 of the password (what
+COROS' login takes, never the plain password), `connect_activities` tracks fetched / failed activities, FIT files are
+cached in `DATA_DIR/connect/coros/` (with a `<file>.json` sidecar for name and device) and imported by a regular import
+job (`origin: 'connect'`, `options.files`). Auto sync runs 90 s after start and every 3 h.
+Each sync also fetches COROS' daily health values (`analyse/query`, ~30 days per call, walked back month by month on
+the first sync; VO₂max / stamina from `dashboard/detail/query`) into records of their own types — `COROSRestingHeartRate`,
+`COROSSleepHRV`, `COROSSleepHRVBaseline`, `COROSTrainingLoad`, `COROSAcuteLoad`, `COROSBaseFitness`, `COROSLoadRatio`,
+`COROSFatigue`, `COROSVO2Max`, `COROSStaminaLevel` (source `COROS`, one value per day) — and refreshes their
+`daily_metrics` directly (`features/connect/coros-health.ts`). They are never averaged with Apple's values.
+
+**Data sources** (Settings → My watch, `AthleteSettings.watch` + `sources.{workouts,heart}`): `core/sources.ts` decides
+which source wins. `heartMetric(db, athleteId, 'restingHr' | 'hrv' | 'vo2max')` returns the daily_metrics key to read
+(the preferred source if it has data, else the other) — use it instead of hard-coding the HealthKit identifier.
+Duplicate detection keeps the preferred copy of a workout (`fit:` = the watch's own file). Changing the workout
+preference queues a full rederive. Connecting COROS sets `watch: 'coros'` unless the athlete chose a watch before.
 
 ## API conventions
 
@@ -159,6 +183,21 @@ lucide-react icons. Path alias `@/` = `apps/web/src`.
   (use inline styles there). ECharts 6 shrinks grids whose labels touch the edge unless `containLabel` is set — use
   `outerBoundsMode: 'none'` on grids that need a fixed plot area (e.g. stacked, synced charts).
 - **Native shell**: `src/lib/native.ts` (`isNativeShell`, `postNative`).
+
+## Desktop app for Linux and Windows (apps/desktop)
+
+```bash
+npm run desktop          # build everything and open the app (data in ~/.config/Cadence or %APPDATA%\Cadence)
+npm run desktop:dist     # build/desktop/Cadence-<v>-linux-x86_64.AppImage + .deb
+npm run desktop:win      # build/desktop/Cadence-Setup-<v>-win-x64.exe + portable .exe (cross-builds need Wine)
+```
+
+`src/main.ts` spawns `process.execPath` with `ELECTRON_RUN_AS_NODE=1` on `resources/server/index.js` (PORT=0, reads
+`CADENCE_LISTENING`, restarts on exit code 75 after a backup restore) and loads the UI from it. The web app talks to it
+through `window.cadenceNative` (see `apps/web/src/lib/native.ts`: `pickImportFile`, `openDataFolder`, `saveFile`).
+`CADENCE_DATA_DIR` overrides the data folder, `CADENCE_DESKTOP_SMOKE=<file.png>` loads the app, captures the window
+and quits (smoke test), `CADENCE_DEV_URL` shows a running dev server. Electron's install script must be allowed
+(`allowScripts` in the root package.json; npm blocks install scripts by default).
 
 ## Development
 

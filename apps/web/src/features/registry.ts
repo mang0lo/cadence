@@ -6,9 +6,18 @@ import progress from './progress';
 import consistency from './consistency';
 import maps from './maps';
 import health from './health';
+import connect from './connect';
 import platform from './platform';
 
-export const featureModules: FeatureModule[] = [activities, progress, consistency, maps, health, platform];
+export const featureModules: FeatureModule[] = [
+  activities,
+  progress,
+  consistency,
+  maps,
+  health,
+  connect,
+  platform,
+];
 
 /** i18n namespaces: 'common' + one per feature. */
 export const namespaces: Record<string, Dictionary> = {

@@ -1,0 +1,21 @@
+{
+  "name": "@cadence/desktop",
+  "version": "0.2.1",
+  "private": true,
+  "description": "Cadence desktop app for Linux and Windows (Electron shell around the bundled server and web UI).",
+  "main": "dist/main.cjs",
+  "scripts": {
+    "build": "node build.mjs",
+    "typecheck": "tsc --noEmit -p .",
+    "start": "npm run build && electron .",
+    "dist": "npm run build && electron-builder --linux --publish never",
+    "dist:win": "npm run build && electron-builder --win --publish never"
+  },
+  "devDependencies": {
+    "electron": "45.2.1",
+    "electron-builder": "^26.18.0"
+  },
+  "author": "Cadence",
+  "homepage": "https://github.com/mang0lo/cadence",
+  "desktopName": "cadence.desktop"
+}

@@ -245,7 +245,7 @@ export default function ImportPage() {
                 <input
                   ref={fileInput}
                   type="file"
-                  accept=".zip,.xml,application/zip,text/xml"
+                  accept=".zip,.xml,.fit,application/zip,text/xml"
                   className="hidden"
                   onChange={(e) => {
                     const f = e.target.files?.[0];

@@ -1,3 +1,4 @@
+import { preferDeviceWorkouts } from '../core/sources';
 import { all, prepare, tx } from '../db/db';
 import type { DeriveStep } from '../features/types';
 
@@ -12,11 +13,16 @@ interface Row {
   distance_m: number | null;
   energy_kcal: number | null;
   duplicate_of: number | null;
+  from_device: number;
 }
 
-/** How much data a workout carries; the richer copy of a duplicate pair wins. */
-function score(r: Row): number {
+/**
+ * How much data a workout carries; the richer copy of a duplicate pair wins, unless Settings → My watch says which
+ * source to prefer (the watch's own FIT copy, or Apple Health's).
+ */
+function score(r: Row, preferDevice: boolean): number {
   return (
+    (!!r.from_device === preferDevice ? 100 : 0) +
     (r.has_route ? 8 : 0) +
     (r.has_hr ? 4 : 0) +
     (r.distance_m ? 2 : 0) +
@@ -26,7 +32,7 @@ function score(r: Row): number {
 }
 
 const COLS = `id, start_ts, end_ts, sport, source_name, has_route, (hr_hist IS NOT NULL OR avg_hr IS NOT NULL) AS has_hr,
-  distance_m, energy_kcal, duplicate_of`;
+  distance_m, energy_kcal, duplicate_of, (ext_key LIKE 'fit:%') AS from_device`;
 
 /**
  * Overlapping workouts of the same sport recorded by different sources (e.g. Strava wrote a copy of an
@@ -55,6 +61,7 @@ export function detectDuplicates(
     }
     rows = [...byId.values()].sort((a, b) => a.start_ts - b.start_ts);
   }
+  const preferDevice = preferDeviceWorkouts(db, athleteId);
   // union-find over overlapping same-sport pairs from different sources
   const parent = new Map<number, number>();
   const find = (x: number): number => {
@@ -88,7 +95,7 @@ export function detectDuplicates(
         if (list[0]!.duplicate_of !== null) upd.run(null, list[0]!.id);
         continue;
       }
-      const primary = [...list].sort((x, y) => score(y) - score(x) || x.id - y.id)[0]!;
+      const primary = [...list].sort((x, y) => score(y, preferDevice) - score(x, preferDevice) || x.id - y.id)[0]!;
       for (const r of list) {
         const want = r.id === primary.id ? null : primary.id;
         if (r.duplicate_of !== want) upd.run(want, r.id);

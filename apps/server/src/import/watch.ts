@@ -7,7 +7,7 @@ import type { JobManager } from './jobs';
 const SEEN_KEY = 'core.importWatch';
 
 /**
- * Polls `dir` (CADENCE_IMPORT_DIR) every `intervalMs` and imports new *.zip / *.xml files. A file is imported
+ * Polls `dir` (CADENCE_IMPORT_DIR) every `intervalMs` and imports new *.zip / *.xml / *.fit files. A file is imported
  * once its size and mtime are unchanged between two polls (i.e. it finished copying); processed files are
  * remembered by name + size + mtime in the athlete's settings, so restarts do not import them again.
  * Files in the watch folder are never modified or deleted.
@@ -30,7 +30,7 @@ export function startImportWatcher(
     const seen = getSetting<Record<string, string>>(db, athleteId, SEEN_KEY, {});
     let dirty = false;
     for (const name of names) {
-      if (name.startsWith('.') || !/\.(zip|xml)$/i.test(name) || /export_cda\.xml$/i.test(name)) continue;
+      if (name.startsWith('.') || !/\.(zip|xml|fit)$/i.test(name) || /export_cda\.xml$/i.test(name)) continue;
       const file = path.join(dir, name);
       let st: fs.Stats;
       try {

@@ -1,3 +1,4 @@
+import { heartMetric } from '../../core/sources';
 /** Consistency page data: streaks, active days, score, calendar, day detail and the weekday × hour punchcard. */
 import {
   DEFAULT_CONSISTENCY_PREFS,
@@ -213,7 +214,12 @@ export function dayDetail(db: Db, athleteId: number, day: string): DayDetail {
     [athleteId, utcMidnight(day) - TZ_MARGIN_S, utcMidnight(day) + 86400 + TZ_MARGIN_S],
   ).filter((w) => localDay(w.start_ts, w.tz_min) === day);
   const ring = loadRings(db, athleteId, day, day)[0];
-  const metrics = [...Object.values(DAY_METRICS), ...SLEEP_METRICS];
+  const dayMetrics = {
+    ...DAY_METRICS,
+    restingHr: heartMetric(db, athleteId, 'restingHr'),
+    steps: heartMetric(db, athleteId, 'steps'),
+  };
+  const metrics = [...Object.values(dayMetrics), ...SLEEP_METRICS];
   const values = new Map(
     all<{ metric: string; value: number }>(
       db,
@@ -222,7 +228,7 @@ export function dayDetail(db: Db, athleteId: number, day: string): DayDetail {
     ).map((r) => [r.metric, r.value]),
   );
   const health = Object.fromEntries(
-    Object.entries(DAY_METRICS).map(([k, metric]) => [k, values.get(metric) ?? null]),
+    Object.entries(dayMetrics).map(([k, metric]) => [k, values.get(metric) ?? null]),
   ) as unknown as DayHealth;
   const sleep = SLEEP_METRICS.reduce((s, m) => s + (values.get(m) ?? 0), 0);
   health.sleepMin = sleep > 0 ? sleep : null;

@@ -50,6 +50,7 @@ export function resetAthleteData(db: Db, athleteId: number): Record<string, numb
         'workout_splits',
         'workout_events',
         'workout_activities',
+        'workout_samples',
       ])
         if (tables.includes(t)) run(db, `DELETE FROM "${t}"`);
       for (const t of ['record_types', 'sources', 'devices'])

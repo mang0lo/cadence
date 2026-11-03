@@ -1,3 +1,4 @@
+import { heartMetric } from '../../core/sources';
 import type {
   ProgressDailySeries,
   ProgressDayValue,
@@ -109,9 +110,6 @@ export function fitness(
 // Physiology context: VO2max (+ fitness level), resting heart rate, HRV
 // ---------------------------------------------------------------------------
 
-const VO2_METRIC = 'HKQuantityTypeIdentifierVO2Max';
-const RHR_METRIC = 'HKQuantityTypeIdentifierRestingHeartRate';
-const HRV_METRIC = 'HKQuantityTypeIdentifierHeartRateVariabilitySDNN';
 
 function metricSeries(db: Db, athleteId: number, metric: string, fromDay: string, toDay: string, lo: number, hi: number) {
   return all<ProgressDayValue>(
@@ -171,8 +169,9 @@ export function physiology(db: Db, athleteId: number, q: { fromDay: string; toDa
   const birthDate = settings.birthDate ?? athlete?.birth_date ?? null;
   const sexRaw = settings.sex ?? athlete?.sex ?? null;
   const sex = sexRaw === 'male' || sexRaw === 'female' || sexRaw === 'other' ? sexRaw : null;
-  const vo2 = trailing(db, athleteId, VO2_METRIC, q.fromDay, q.toDay, 30, 10, 95, 'median');
-  const latest = latestOf(db, athleteId, VO2_METRIC, q.toDay, 10, 95);
+  const VO2 = heartMetric(db, athleteId, 'vo2max', settings);
+  const vo2 = trailing(db, athleteId, VO2, q.fromDay, q.toDay, 30, 10, 95, 'median');
+  const latest = latestOf(db, athleteId, VO2, q.toDay, 10, 95);
   const at = latest ? new Date(`${latest.day}T12:00:00Z`) : new Date();
   const age = ageFrom(birthDate, at);
   const levels = vo2Levels(age, sex);
@@ -186,7 +185,7 @@ export function physiology(db: Db, athleteId: number, q: { fromDay: string; toDa
       age,
       sex,
     },
-    restingHr: dailySeries(db, athleteId, RHR_METRIC, q.fromDay, q.toDay, 25, 140),
-    hrv: dailySeries(db, athleteId, HRV_METRIC, q.fromDay, q.toDay, 3, 300),
+    restingHr: dailySeries(db, athleteId, heartMetric(db, athleteId, 'restingHr'), q.fromDay, q.toDay, 25, 140),
+    hrv: dailySeries(db, athleteId, heartMetric(db, athleteId, 'hrv'), q.fromDay, q.toDay, 3, 300),
   };
 }

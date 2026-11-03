@@ -105,6 +105,20 @@ function c(id: string, en: string, de: string, category: HealthCategory, good: G
   DEFS.push({ identifier: C + id, en, de, category, kind: 'minutes', good });
 }
 
+/** Metrics synced from the COROS cloud (identifier as is, no HealthKit prefix): kept apart from Apple's. */
+function x(
+  id: string,
+  en: string,
+  de: string,
+  category: HealthCategory,
+  kind: DisplayKind,
+  good: GoodDirection = null,
+  digits?: number,
+  unit?: string,
+): void {
+  DEFS.push({ identifier: id, en, de, category, kind, good, digits, unit });
+}
+
 // ---- Activity ---------------------------------------------------------------------------------------------
 q('StepCount', 'Steps', 'Schritte', 'activity', 'count', 'up');
 q('DistanceWalkingRunning', 'Walking + running distance', 'Geh- und Laufdistanz', 'activity', 'distance', 'up');
@@ -127,6 +141,16 @@ c('AppleStandHour', 'Stand hours', 'Stehstunden', 'activity', 'up');
 q('PushCount', 'Wheelchair pushes', 'Rollstuhl-Schübe', 'activity', 'count', 'up');
 q('SwimmingStrokeCount', 'Swimming strokes', 'Schwimmzüge', 'activity', 'count', 'up');
 q('VO2Max', 'Cardio fitness (VO₂ max)', 'Cardio-Fitness (VO₂max)', 'activity', 'vo2', 'up', 1);
+x('COROSVO2Max', 'VO₂max (COROS)', 'VO₂max (COROS)', 'activity', 'vo2', 'up', 0);
+x('COROSSteps', 'Steps (COROS)', 'Schritte (COROS)', 'activity', 'count', 'up');
+x('COROSCalories', 'Calories (COROS)', 'Kalorien (COROS)', 'activity', 'energy', null);
+x('COROSActiveMinutes', 'Active time (COROS)', 'Aktive Zeit (COROS)', 'activity', 'minutes', 'up');
+x('COROSTrainingLoad', 'Training load (COROS)', 'Trainingslast (COROS)', 'activity', 'decimal', null, 0, '');
+x('COROSAcuteLoad', 'Acute training load (COROS)', 'Akute Trainingslast (COROS)', 'activity', 'decimal', null, 0, '');
+x('COROSBaseFitness', 'Base fitness (COROS)', 'Grundfitness (COROS)', 'activity', 'decimal', 'up', 0, '');
+x('COROSLoadRatio', 'Training load ratio (COROS)', 'Belastungsverhältnis (COROS)', 'activity', 'decimal', null, 2, '');
+x('COROSFatigue', 'Fatigue (COROS)', 'Ermüdung (COROS)', 'activity', 'decimal', 'down', 0, '');
+x('COROSStaminaLevel', 'Stamina level (COROS)', 'Ausdauerlevel (COROS)', 'activity', 'decimal', 'up', 0, '');
 q('CyclingSpeed', 'Cycling speed', 'Radgeschwindigkeit', 'activity', 'speed', 'up');
 q('CyclingPower', 'Cycling power', 'Radleistung', 'activity', 'power', 'up');
 q('CyclingCadence', 'Cycling cadence', 'Trittfrequenz', 'activity', 'perMin', null, 0, 'rpm');
@@ -149,8 +173,14 @@ q('WaterTemperature', 'Water temperature', 'Wassertemperatur', 'activity', 'temp
 // ---- Heart --------------------------------------------------------------------------------------------------
 q('HeartRate', 'Heart rate', 'Herzfrequenz', 'heart', 'bpm', null);
 q('RestingHeartRate', 'Resting heart rate', 'Ruheherzfrequenz', 'heart', 'bpm', 'down');
+x('COROSRestingHeartRate', 'Resting heart rate (COROS)', 'Ruheherzfrequenz (COROS)', 'heart', 'bpm', 'down');
+x('COROSHeartRate', 'Heart rate (COROS)', 'Herzfrequenz (COROS)', 'heart', 'bpm', null);
+x('COROSHeartRateMin', 'Lowest heart rate (COROS)', 'Niedrigste Herzfrequenz (COROS)', 'heart', 'bpm', null);
+x('COROSHeartRateMax', 'Highest heart rate (COROS)', 'Höchste Herzfrequenz (COROS)', 'heart', 'bpm', null);
 q('WalkingHeartRateAverage', 'Walking heart rate', 'Herzfrequenz beim Gehen', 'heart', 'bpm', 'down');
 q('HeartRateVariabilitySDNN', 'Heart rate variability', 'Herzfrequenzvariabilität', 'heart', 'ms', 'up');
+x('COROSSleepHRV', 'Overnight HRV (COROS)', 'Nächtliche HRV (COROS)', 'heart', 'ms', 'up');
+x('COROSSleepHRVBaseline', 'HRV baseline (COROS)', 'HRV-Basiswert (COROS)', 'heart', 'ms', 'up');
 q('HeartRateRecoveryOneMinute', 'Heart rate recovery', 'Herzfrequenzerholung', 'heart', 'bpm', 'up');
 q('AtrialFibrillationBurden', 'AFib burden', 'VHF-Anteil', 'heart', 'fraction', 'down', 1);
 q('PeripheralPerfusionIndex', 'Perfusion index', 'Perfusionsindex', 'heart', 'fraction', null, 1);

@@ -7,7 +7,9 @@ COPY package.json package-lock.json ./
 COPY packages/shared/package.json packages/shared/
 COPY apps/server/package.json apps/server/
 COPY apps/web/package.json apps/web/
-RUN npm ci --no-audit --no-fund
+COPY apps/desktop/package.json apps/desktop/
+# server + web only: the Electron desktop workspace is not needed for the image
+RUN npm ci --no-audit --no-fund --include-workspace-root -w @cadence/shared -w @cadence/server -w @cadence/web
 COPY . .
 RUN npm run build
 

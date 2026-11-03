@@ -308,4 +308,17 @@ export const coreMigrations: Migration[] = [
       CREATE INDEX ix_import_jobs_created ON import_jobs(athlete_id, created_at);
     `,
   },
+  {
+    id: 'core_002_workout_samples',
+    up: /* sql */ `
+      -- Sensor time series recorded by the device itself (FIT files from COROS, Garmin, …): heart rate, power,
+      -- cadence and distance per sample. When present, derive uses them instead of Apple Health records.
+      -- data = gzip(JSON SensorSamples, src/import/samples.ts)
+      CREATE TABLE workout_samples (
+        workout_id INTEGER PRIMARY KEY REFERENCES workouts(id) ON DELETE CASCADE,
+        points INTEGER NOT NULL,
+        data BLOB NOT NULL
+      );
+    `,
+  },
 ];

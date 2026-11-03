@@ -38,7 +38,8 @@ describe('health catalogue', () => {
     expect(ids.size).toBe(METRIC_DEFS.length);
     const cats = new Set(HEALTH_CATEGORIES.map((c) => c.key));
     for (const d of METRIC_DEFS) {
-      expect(d.identifier).toMatch(/^HK(Quantity|Category)TypeIdentifier[A-Za-z0-9]+$/);
+      // HealthKit types, plus the values synced from the COROS cloud (kept apart from Apple's)
+      expect(d.identifier).toMatch(/^(HK(Quantity|Category)TypeIdentifier|COROS)[A-Za-z0-9]+$/);
       expect(d.en.length).toBeGreaterThan(1);
       expect(d.de.length).toBeGreaterThan(1);
       expect(cats.has(d.category)).toBe(true);

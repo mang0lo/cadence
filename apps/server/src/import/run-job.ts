@@ -1,7 +1,8 @@
 import type { ImportPhase, ImportStats } from '@cadence/shared';
 import type { Db } from '../db/db';
 import { runDerive } from '../derive/run';
-import { runImport } from './importer';
+import { openFitSource, runFitImport } from './fit/import';
+import { runImport, type RunImportOptions } from './importer';
 import { importSummary } from './summary';
 import { emptyStats } from './writer';
 
@@ -9,7 +10,10 @@ import { emptyStats } from './writer';
 export interface JobOptions {
   /** Delete the source file after a successful import (uploads). */
   deleteAfter?: boolean;
-  origin?: 'upload' | 'local' | 'watch' | 'api' | 'cli' | 'reset' | 'settings' | 'workout' | 'upgrade';
+  origin?:
+    'upload' | 'local' | 'watch' | 'api' | 'cli' | 'reset' | 'settings' | 'workout' | 'upgrade' | 'connect';
+  /** FIT imports from a folder: only these files (absolute paths), e.g. what a device sync just downloaded. */
+  files?: string[];
   /** Rederive scope (default: everything). */
   workoutIds?: number[] | 'all';
   sinceDay?: string | null;
@@ -80,7 +84,9 @@ export async function executeJob(
 
   if (spec.kind === 'import') {
     if (!spec.sourcePath) throw new Error('Import job without a source path');
-    const res = await runImport({
+    // FIT files (COROS, Garmin … or a device sync) or an Apple Health export
+    const fit = await openFitSource(spec.sourcePath, spec.options.files);
+    const opts: RunImportOptions = {
       db,
       athleteId: spec.athleteId,
       path: spec.sourcePath,
@@ -97,7 +103,8 @@ export async function executeJob(
           stats,
         });
       },
-    });
+    };
+    const res = fit ? await runFitImport({ ...opts, source: fit }) : await runImport(opts);
     Object.assign(stats, res.stats);
     enterPhase('derive');
     const ids = res.changedWorkoutIds;

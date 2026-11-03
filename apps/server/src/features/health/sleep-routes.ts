@@ -108,10 +108,18 @@ export function sleepPhysiology(db: Db, athleteId: number, n: SleepNight): Sleep
   const reduce = (pts: TimedValue[]) => (pts.length > MAX_POINTS ? bucketMeans(pts, BUCKET_S) : pts);
   return {
     hr: reduce(hrRaw),
-    hrMin: hrAsleep.length ? hrAsleep.reduce((a, b) => (b < a ? b : a)) : null,
-    hrAvg: mean(hrAsleep),
+    // without samples (COROS nights): the device's own summary
+    hrMin: hrAsleep.length ? hrAsleep.reduce((a, b) => (b < a ? b : a)) : n.minHr,
+    hrAvg: hrAsleep.length ? mean(hrAsleep) : n.avgHr,
     hrv,
-    hrvAvg: mean(hrv.map((p) => p.value)),
+    // COROS measures one overnight HRV per night (no samples): that day's value
+    hrvAvg: hrv.length
+      ? mean(hrv.map((p) => p.value))
+      : (get<{ value: number }>(
+          db,
+          "SELECT value FROM daily_metrics WHERE athlete_id = ? AND metric = 'COROSSleepHRV' AND day = ?",
+          [athleteId, n.day],
+        )?.value ?? null),
     resp,
     respAvg: mean(resp.map((p) => p.value)),
     spo2,

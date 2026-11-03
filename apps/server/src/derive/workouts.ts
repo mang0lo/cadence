@@ -10,6 +10,7 @@ import type { DeriveStep } from '../features/types';
 import { bounds, encodePolylineParts, simplifyIndices, type LatLon } from '../lib/geo';
 import { gzipFloat32, gzipJson } from '../lib/gzip';
 import { DISTANCE_TYPE_BY_SPORT, parseQuantityString, summarizeStats } from '../import/hk';
+import { decodeSamples, distanceIntervals, seriesOf, type SensorSamples } from '../import/samples';
 import { decodeTrack, mergeTracks, type Track } from '../import/track';
 import { DERIVE_VERSION, STREAMS_VERSION } from './context';
 import {
@@ -111,6 +112,18 @@ function loadRecords(
   return rows.filter((r) => r.source_id === pick);
 }
 
+function loadSensorSamples(db: Db, workoutId: number): SensorSamples | null {
+  const row = get<{ data: Uint8Array }>(db, 'SELECT data FROM workout_samples WHERE workout_id = ?', [
+    workoutId,
+  ]);
+  if (!row) return null;
+  try {
+    return decodeSamples(row.data);
+  } catch {
+    return null; // corrupt blob: fall back to Health records
+  }
+}
+
 function toSamples(rows: RawSample[]): Samples | null {
   if (!rows.length) return null;
   return { t: Float64Array.from(rows, (r) => r.start_ts), v: Float64Array.from(rows, (r) => r.value) };
@@ -199,22 +212,21 @@ export function deriveWorkout(db: Db, cache: DeriveCache, id: number): void {
     [id],
   );
   const pauses = pausedIntervals(events, w.end_ts);
-  const hrRows = loadRecords(db, aid, cache.typeId(Q('HeartRate')), from, to, src);
+  // Sensor data recorded by the device itself (FIT files) beats Apple Health records of the same time span.
+  const device = loadSensorSamples(db, id);
   const isRide = w.sport === 'ride' || w.sport === 'handcycle';
-  const powerRows = loadRecords(
-    db,
-    aid,
-    cache.typeId(Q(isRide ? 'CyclingPower' : 'RunningPower')),
-    from,
-    to,
-    src,
-  );
-  const cadRows = isRide ? loadRecords(db, aid, cache.typeId(Q('CyclingCadence')), from, to, src) : [];
   const footSport = ['run', 'walk', 'hike', 'track_and_field'].includes(w.sport);
-  const stepRows = footSport ? loadRecords(db, aid, cache.typeId(Q('StepCount')), from - 60, to, src) : [];
   const distType = DISTANCE_TYPE_BY_SPORT[w.sport];
+  const hrRows = device ? [] : loadRecords(db, aid, cache.typeId(Q('HeartRate')), from, to, src);
+  const powerRows = device
+    ? []
+    : loadRecords(db, aid, cache.typeId(Q(isRide ? 'CyclingPower' : 'RunningPower')), from, to, src);
+  const cadRows =
+    isRide && !device ? loadRecords(db, aid, cache.typeId(Q('CyclingCadence')), from, to, src) : [];
+  const stepRows =
+    footSport && !device ? loadRecords(db, aid, cache.typeId(Q('StepCount')), from - 60, to, src) : [];
   const distRows =
-    distType && sportInfo(w.sport).distance
+    distType && sportInfo(w.sport).distance && !device
       ? loadRecords(db, aid, cache.typeId(distType), from - 60, to, src)
       : [];
 
@@ -223,11 +235,13 @@ export function deriveWorkout(db: Db, cache: DeriveCache, id: number): void {
     startTs: w.start_ts,
     endTs: w.end_ts,
     track,
-    hr: toSamples(hrRows),
-    power: toSamples(powerRows),
-    cadence: toSamples(cadRows),
+    hr: device ? seriesOf(device, 'hr') : toSamples(hrRows),
+    power: device ? seriesOf(device, 'power') : toSamples(powerRows),
+    cadence: device ? seriesOf(device, 'cadence') : toSamples(cadRows),
     steps: toIntervals(stepRows.filter((r) => r.end_ts > w.start_ts - 5 && r.start_ts < w.end_ts + 5)),
-    distance: toIntervals(distRows.filter((r) => r.end_ts > w.start_ts && r.start_ts < w.end_ts + 5)),
+    distance: device
+      ? distanceIntervals(device)
+      : toIntervals(distRows.filter((r) => r.end_ts > w.start_ts && r.start_ts < w.end_ts + 5)),
     appleDistanceM: summary.distanceM,
     pauses,
   });
