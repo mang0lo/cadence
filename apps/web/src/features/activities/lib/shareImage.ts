@@ -15,6 +15,7 @@ import {
 import {
   SHARE_PALETTE,
   shareLayout,
+  type ChartSeries,
   type LatLon,
   type Rect,
   type ShareBackground,
@@ -29,6 +30,15 @@ export interface ShareStat {
   unit?: string;
 }
 
+/** A mini chart below the route: label ("Elevation"), a value ("↗ 420 m") and the normalized line. */
+export interface ShareChart {
+  label: string;
+  value: string;
+  series: ChartSeries;
+  /** 'sport' = the sport color; else a palette color name. */
+  color: 'sport' | 'hr' | 'power' | 'elevation';
+}
+
 export interface ShareContent {
   title: string;
   /** Date, time and place. */
@@ -39,10 +49,14 @@ export interface ShareContent {
   /** The sport icon as rendered in the DOM (lucide SVG); drawn as vector paths. */
   icon: SVGSVGElement | null;
   stats: ShareStat[];
+  /** Mini charts (at most three are drawn). */
+  charts?: ShareChart[];
   /** The route ([lat, lon] parts, already without privacy zones); empty = no route. */
   parts: LatLon[][];
   showStart: boolean;
   showEnd: boolean;
+  /** With the route line hidden: the route's extent for the map background (never drawn). */
+  area?: LatLon[][];
   /** "Cadence" */
   brand: string;
 }
@@ -269,6 +283,80 @@ function drawStats(ctx: CanvasRenderingContext2D, c: ShareContent, l: ReturnType
   });
 }
 
+function chartColor(c: ShareChart, pal: SharePalette, sport: string): string {
+  switch (c.color) {
+    case 'hr':
+      return pal.series[7]!;
+    case 'power':
+      return pal.series[6]!;
+    case 'elevation':
+      return pal.fg3;
+    default:
+      return sport;
+  }
+}
+
+/** Mini charts side by side: label and value above a filled line (no axes: the shape is the point). */
+function drawCharts(
+  ctx: CanvasRenderingContext2D,
+  charts: ShareChart[],
+  r: Rect,
+  f: ReturnType<typeof shareLayout>['font'],
+  pal: SharePalette,
+  sport: string,
+) {
+  const gap = 32;
+  const n = charts.length;
+  const w = (r.w - gap * (n - 1)) / n;
+  const labelSize = Math.round(f.label * 0.9);
+  const head = Math.round(labelSize * 1.5);
+  charts.forEach((c, i) => {
+    const x = r.x + i * (w + gap);
+    const color = chartColor(c, pal, sport);
+    ctx.textBaseline = 'top';
+    ctx.font = font(500, labelSize);
+    ctx.fillStyle = pal.fg3;
+    const valueW = (() => {
+      ctx.font = font(600, labelSize);
+      return ctx.measureText(c.value).width;
+    })();
+    ctx.font = font(500, labelSize);
+    ctx.fillText(ellipsize(ctx, c.label, Math.max(40, w - valueW - 12)), x, r.y);
+    ctx.font = font(600, labelSize);
+    ctx.fillStyle = pal.fg2;
+    ctx.textAlign = 'right';
+    ctx.fillText(c.value, x + w, r.y);
+    ctx.textAlign = 'left';
+    // plot area
+    const top = r.y + head;
+    const h = r.h - head;
+    const px = (v: number) => x + v * w;
+    const py = (v: number) => top + (1 - v) * (h - 4) + 2;
+    // a hairline at the bottom
+    ctx.fillStyle = pal.fg3;
+    ctx.globalAlpha = 0.35;
+    ctx.fillRect(x, top + h - 1, w, 1.5);
+    ctx.globalAlpha = 1;
+    for (const part of c.series.parts) {
+      const line = new Path2D();
+      part.forEach(([vx, vy], j) => (j ? line.lineTo(px(vx), py(vy)) : line.moveTo(px(vx), py(vy))));
+      const area = new Path2D(line);
+      area.lineTo(px(part[part.length - 1]![0]), top + h);
+      area.lineTo(px(part[0]![0]), top + h);
+      area.closePath();
+      ctx.fillStyle = color;
+      ctx.globalAlpha = 0.18;
+      ctx.fill(area);
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 4;
+      ctx.lineJoin = 'round';
+      ctx.lineCap = 'round';
+      ctx.stroke(line);
+    }
+  });
+}
+
 function drawRoute(ctx: CanvasRenderingContext2D, parts: [number, number][][], color: string, w: number) {
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
@@ -322,7 +410,10 @@ function drawFinish(ctx: CanvasRenderingContext2D, x: number, y: number, r: numb
 /** Draw the image into a new canvas. Never rejects because of the map: without tiles it uses the plain background. */
 export async function renderShareImage(c: ShareContent, o: ShareOptions): Promise<ShareResult> {
   const routeless = !c.parts.some((p) => p.length >= 2);
-  const l = shareLayout(o.format, routeless ? 'sticker' : o.background, c.stats.length);
+  const charts = (c.charts ?? []).slice(0, 3);
+  // the map stays when only the route line is hidden: `parts` is empty, `area` keeps the map's extent
+  const area = c.area && c.area.some((p) => p.length >= 2) ? c.area : null;
+  const l = shareLayout(o.format, routeless && !area ? 'sticker' : o.background, c.stats.length, charts.length);
   const canvas = document.createElement('canvas');
   canvas.width = l.width;
   canvas.height = l.height;
@@ -333,9 +424,9 @@ export async function renderShareImage(c: ShareContent, o: ShareOptions): Promis
   await loadFonts();
 
   const fit =
-    l.route && !routeless
+    l.route && (!routeless || area)
       ? fitTracks(
-          c.parts,
+          routeless ? area! : c.parts,
           l.width,
           l.height,
           { top: l.route.y, left: l.route.x, right: l.width - l.route.x - l.route.w, bottom: l.height - l.route.y - l.route.h },
@@ -384,7 +475,7 @@ export async function renderShareImage(c: ShareContent, o: ShareOptions): Promis
       [headEnd / (headEnd + 90), 0.86],
       [1, 0],
     ]);
-    const statsTop = l.stats.y - 110;
+    const statsTop = (l.charts?.y ?? l.stats.y) - 110;
     scrim(ctx, pal, statsTop, l.height, [
       [0, 0],
       [100 / (l.height - statsTop), 0.88],
@@ -397,7 +488,7 @@ export async function renderShareImage(c: ShareContent, o: ShareOptions): Promis
     ctx.shadowBlur = 14;
   }
 
-  if (fit) {
+  if (fit && !routeless) {
     const w = Math.max(6, Math.round(l.width / 120));
     drawRoute(ctx, fit.parts, sport, w);
     const r = w * 1.6;
@@ -405,7 +496,8 @@ export async function renderShareImage(c: ShareContent, o: ShareOptions): Promis
     if (c.showStart) drawStart(ctx, fit.start[0], fit.start[1], r, pal.good);
   }
   drawHeader(ctx, c, l.header, l.font, pal, sport);
-  drawStats(ctx, c, l, pal);
+  if (l.charts && charts.length) drawCharts(ctx, charts, l.charts, l.font, pal, sport);
+  if (c.stats.length) drawStats(ctx, c, l, pal);
 
   // footer: mark + wordmark left, attribution right
   const fy = l.footer.y + l.footer.h / 2;

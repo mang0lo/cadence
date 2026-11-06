@@ -13,6 +13,140 @@ export type LatLon = [number, number];
 
 export const SHARE_FORMATS: readonly ShareFormat[] = ['square', 'portrait', 'story'];
 
+/** Values that can be shown on the image (each one can be turned on or off). */
+export type ShareStatKey =
+  | 'distance'
+  | 'movingTime'
+  | 'elapsedTime'
+  | 'pace'
+  | 'speed'
+  | 'elevation'
+  | 'avgHr'
+  | 'maxHr'
+  | 'avgPower'
+  | 'cadence'
+  | 'calories'
+  | 'effort';
+export const SHARE_STAT_KEYS: readonly ShareStatKey[] = [
+  'distance',
+  'movingTime',
+  'elapsedTime',
+  'pace',
+  'speed',
+  'elevation',
+  'avgHr',
+  'maxHr',
+  'avgPower',
+  'cadence',
+  'calories',
+  'effort',
+];
+/** The layout has room for two rows of three. */
+export const MAX_SHARE_STATS = 6;
+
+/** Small charts over the distance (or time) that can be added below the route. */
+export type ShareChartKey = 'elevation' | 'pace' | 'heartRate' | 'power';
+export const SHARE_CHART_KEYS: readonly ShareChartKey[] = ['elevation', 'pace', 'heartRate', 'power'];
+export const MAX_SHARE_CHARTS = 3;
+
+/**
+ * What is shown: the stored choice in catalog order, limited to what the activity has; the defaults when nothing of
+ * the stored choice is available (or nothing was chosen yet).
+ */
+export function shareSelection<T extends string>(
+  stored: readonly T[] | null,
+  available: readonly T[],
+  defaults: readonly T[],
+  order: readonly T[],
+  max: number,
+): T[] {
+  const has = new Set(available);
+  const pick = (list: readonly T[]) => order.filter((k) => list.includes(k) && has.has(k)).slice(0, max);
+  if (stored) {
+    const chosen = pick(stored);
+    // an explicit empty choice stays empty; a choice of only unavailable values falls back to the defaults
+    if (chosen.length || !stored.length) return chosen;
+  }
+  return pick(defaults);
+}
+
+/** A mini chart: the values normalized to 0..1 in x (along the activity) and y, split where data is missing. */
+export interface ChartSeries {
+  parts: [number, number][][];
+  min: number;
+  max: number;
+}
+
+/**
+ * Downsample a stream into `buckets` means along x (distance or time) for a small chart. Gaps (no values in a bucket)
+ * and track breaks split the line. The y range uses the 2nd–98th percentile so a single spike does not flatten the
+ * chart; `minRange` keeps a nearly flat line from being stretched over the whole height.
+ */
+export function chartSeries(
+  x: readonly (number | null | undefined)[],
+  y: readonly (number | null | undefined)[],
+  opts: { breaks?: readonly number[]; buckets?: number; minRange?: number } = {},
+): ChartSeries | null {
+  const n = Math.min(x.length, y.length);
+  const buckets = opts.buckets ?? 120;
+  let x0 = Infinity;
+  let x1 = -Infinity;
+  for (let i = 0; i < n; i++) {
+    const xv = x[i];
+    if (xv == null || !Number.isFinite(xv)) continue;
+    x0 = Math.min(x0, xv);
+    x1 = Math.max(x1, xv);
+  }
+  if (!(x1 > x0)) return null;
+  const sum = new Float64Array(buckets);
+  const cnt = new Uint32Array(buckets);
+  const brk = new Uint8Array(buckets);
+  const breakSet = new Set(opts.breaks ?? []);
+  for (let i = 0; i < n; i++) {
+    const xv = x[i];
+    const yv = y[i];
+    if (xv == null || !Number.isFinite(xv)) continue;
+    const b = Math.min(buckets - 1, Math.floor(((xv - x0) / (x1 - x0)) * buckets));
+    if (breakSet.has(i)) brk[b] = 1;
+    if (yv == null || !Number.isFinite(yv)) continue;
+    sum[b] += yv;
+    cnt[b]++;
+  }
+  const means: (number | null)[] = Array.from(sum, (v, b) => (cnt[b] ? v / cnt[b]! : null));
+  const vals = means.filter((v): v is number => v !== null).sort((a, b) => a - b);
+  if (vals.length < 2) return null;
+  const q = (f: number) => vals[Math.min(vals.length - 1, Math.max(0, Math.round(f * (vals.length - 1))))]!;
+  let lo = q(0.02);
+  let hi = q(0.98);
+  const minRange = opts.minRange ?? 0;
+  if (hi - lo < minRange) {
+    const mid = (hi + lo) / 2;
+    lo = mid - minRange / 2;
+    hi = mid + minRange / 2;
+  }
+  if (!(hi > lo)) {
+    lo -= 1;
+    hi += 1;
+  }
+  const parts: [number, number][][] = [];
+  let cur: [number, number][] = [];
+  means.forEach((v, b) => {
+    if (brk[b] && cur.length) {
+      if (cur.length >= 2) parts.push(cur);
+      cur = [];
+    }
+    if (v === null) {
+      if (cur.length >= 2) parts.push(cur);
+      cur = [];
+      return;
+    }
+    const yn = Math.max(0, Math.min(1, (v - lo) / (hi - lo)));
+    cur.push([(b + 0.5) / buckets, yn]);
+  });
+  if (cur.length >= 2) parts.push(cur);
+  return parts.length ? { parts, min: lo, max: hi } : null;
+}
+
 export const SHARE_SIZES: Record<ShareFormat, { width: number; height: number }> = {
   square: { width: 1080, height: 1080 },
   portrait: { width: 1080, height: 1350 },
@@ -135,7 +269,9 @@ export interface ShareLayout {
   header: Rect;
   /** The box the route is fitted into; null for the sticker (stats only). */
   route: Rect | null;
-  /** Key stats in `cols` columns × `rows` rows. */
+  /** Mini charts side by side (null without charts). */
+  charts: Rect | null;
+  /** Key stats in `cols` columns × `rows` rows (h = 0 without stats). */
   stats: Rect;
   cols: number;
   rows: number;
@@ -154,36 +290,53 @@ const statRowHeight = (f: ShareLayout['font']) => Math.round(f.label * 1.3 + 8 +
  * them). Up to four stats are one row, five or six two rows of three; a story has two bigger columns. The sticker
  * centers header, stats and wordmark (no route).
  */
-export function shareLayout(format: ShareFormat, background: ShareBackground, statCount: number): ShareLayout {
+export function shareLayout(
+  format: ShareFormat,
+  background: ShareBackground,
+  statCount: number,
+  chartCount = 0,
+): ShareLayout {
   const { width, height } = SHARE_SIZES[format];
   const story = format === 'story';
   const margin = 64;
-  const count = Math.max(1, Math.min(6, statCount));
-  const cols = story ? Math.min(2, count) : count <= 4 ? count : 3;
+  const count = Math.max(0, Math.min(MAX_SHARE_STATS, statCount));
+  const cols = Math.max(1, story ? Math.min(2, count) : count <= 4 ? count : 3);
   const rows = Math.ceil(count / cols);
   const font = story
     ? { sport: 30, title: 64, subtitle: 34, label: 30, value: 80, unit: 36, brand: 32, attribution: 22 }
     : { sport: 26, title: 54, subtitle: 30, label: 26, value: cols >= 4 ? 58 : 64, unit: 28, brand: 28, attribution: 20 };
   const header = { x: margin, y: 0, w: width - 2 * margin, h: headerHeight(font) };
   const rowGap = 36;
-  const stats = { x: margin, y: 0, w: width - 2 * margin, h: rows * statRowHeight(font) + (rows - 1) * rowGap };
+  const stats = { x: margin, y: 0, w: width - 2 * margin, h: rows ? rows * statRowHeight(font) + (rows - 1) * rowGap : 0 };
   const footer = { x: margin, y: 0, w: width - 2 * margin, h: Math.round(font.brand * 1.5) };
+  const charts = chartCount > 0 ? { x: margin, y: 0, w: width - 2 * margin, h: story ? 200 : 150 } : null;
   if (background === 'sticker') {
     const gap = 56;
-    const total = header.h + gap + stats.h + gap + footer.h;
+    const blocks = [header.h, charts?.h ?? 0, stats.h, footer.h].filter((h) => h > 0);
+    const total = blocks.reduce((a, b) => a + b, 0) + gap * (blocks.length - 1);
     header.y = Math.round((height - total) / 2);
-    stats.y = header.y + header.h + gap;
-    footer.y = stats.y + stats.h + gap;
-    return { width, height, header, route: null, stats, cols, rows, footer, font };
+    let y = header.y + header.h + gap;
+    if (charts) {
+      charts.y = y;
+      y += charts.h + gap;
+    }
+    stats.y = y;
+    footer.y = stats.h ? stats.y + stats.h + gap : y;
+    return { width, height, header, route: null, charts, stats, cols, rows, footer, font };
   }
   const top = story ? 240 : margin;
   const bottom = story ? 260 : 52;
   header.y = top;
   footer.y = height - bottom - footer.h;
-  stats.y = footer.y - 40 - stats.h;
+  stats.y = footer.y - (stats.h ? 40 + stats.h : 0);
+  let above = stats.y;
+  if (charts) {
+    charts.y = above - (stats.h ? 40 : 36) - charts.h;
+    above = charts.y;
+  }
   const routeTop = header.y + header.h + 36;
-  const route = { x: margin, y: routeTop, w: width - 2 * margin, h: stats.y - 44 - routeTop };
-  return { width, height, header, route, stats, cols, rows, footer, font };
+  const route = { x: margin, y: routeTop, w: width - 2 * margin, h: Math.max(80, above - 44 - routeTop) };
+  return { width, height, header, route, charts, stats, cols, rows, footer, font };
 }
 
 // ---------------------------------------------------------------------------
