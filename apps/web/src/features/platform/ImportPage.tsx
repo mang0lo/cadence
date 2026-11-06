@@ -193,7 +193,8 @@ export default function ImportPage() {
   };
 
   const choose = () => {
-    if (native && postNative('pickImportFile')) return;
+    // the native picker hands over a path on this computer: only the built-in server can read it
+    if (native && status?.localImport && postNative('pickImportFile')) return;
     fileInput.current?.click();
   };
 
