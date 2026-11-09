@@ -21,6 +21,7 @@ show a Cadence server.
   to your launcher.
 - **Windows**: the `Cadence-Setup-0.3.0.exe` installer or the portable `.exe` below.
 - **Server**: `ghcr.io/mang0lo/cadence:v0.3.0` (also `:latest`).
+- After the update Cadence rebuilds its analysis once in the background (places, countries and training kinds).
 
 ### Added
 
@@ -38,8 +39,14 @@ show a Cadence server.
   the built-in one, with a reachability check, and go back with one click. A server that does not answer offers
   "Try again" / "Use built-in server".
 - **Version in the title bar** of the Mac and desktop apps; Settings → About shows the app and the server version.
-- **Search by place**: the activity search also finds where an activity started or ended ("Warnemünde", "Rostock"),
-  with German names for places stored in English ("Wien").
+- **Search by place**: the activity search finds every place an activity started in, ended in or **passed through**
+  (a ride through Hannover, Berlin and München is found under all three; districts count for their city), with
+  German names for places stored in English ("Wien").
+
+- **Small tags on activities** (feed, list, activity page), each only when the data exists: the estimated **kind of
+  training** (intervals, long, tempo, easy, recovery — from pace / power repetitions, length and heart-rate zones),
+  the **country** (several for a route across borders; searchable by name, "Italien") and the **temperature** at
+  the start as recorded by the watch.
 
 ### Security
 

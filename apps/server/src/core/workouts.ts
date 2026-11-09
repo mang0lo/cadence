@@ -8,6 +8,7 @@ import type {
   WorkoutStreams,
   WorkoutSummary,
 } from '@cadence/shared';
+import { trainingKind } from '@cadence/shared';
 import { all, get, json, type Db } from '../db/db';
 import { haversine } from '../lib/geo';
 import { gunzipJson } from '../lib/gzip';
@@ -16,7 +17,8 @@ import { placeNameAt } from '../lib/places';
 /** Columns of `workouts` needed for WorkoutSummary. */
 export const SUMMARY_COLS = `id, name, sport, activity_type, start_ts, end_ts, tz_min, duration_s, moving_s, distance_m,
   energy_kcal, elevation_gain_m, avg_hr, max_hr, avg_speed, effort, effort_estimated, indoor, has_route, polyline,
-  source_name, notes, hidden, duplicate_of, start_lat, start_lon, end_lat, end_lon, place, place_end`;
+  source_name, notes, hidden, duplicate_of, start_lat, start_lon, end_lat, end_lon, place, place_end,
+  countries, hard_reps, hr_zones, temperature_c, humidity_pct`;
 
 export interface WorkoutRow {
   id: number;
@@ -50,6 +52,12 @@ export interface WorkoutRow {
   /** Start place and, for one-way activities, where it ended (stored by the derive step, see computePlaces). */
   place: string | null;
   place_end: string | null;
+  /** "|DE|AT|" */
+  countries: string | null;
+  hard_reps: number | null;
+  hr_zones: string | null;
+  temperature_c: number | null;
+  humidity_pct: number | null;
 }
 
 export interface WorkoutFullRow extends WorkoutRow {
@@ -102,6 +110,16 @@ export function toSummary(r: WorkoutRow): WorkoutSummary {
   return {
     place: r.place,
     placeEnd: r.place_end,
+    trainingKind: trainingKind({
+      sport: r.sport,
+      movingS: r.moving_s ?? r.duration_s,
+      distanceM: r.distance_m,
+      zones: json<number[] | null>(r.hr_zones, null),
+      hardReps: r.hard_reps,
+    }),
+    countries: r.countries ? r.countries.split('|').filter(Boolean) : [],
+    weather:
+      r.temperature_c !== null && !r.indoor ? { temperatureC: r.temperature_c, humidityPct: r.humidity_pct } : null,
     id: r.id,
     name: r.name,
     sport: r.sport,

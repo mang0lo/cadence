@@ -17,6 +17,7 @@ import {
   type ActivityTotals,
   type ActivityWeekDay,
 } from '@cadence/shared';
+import { countrySearchCodes } from '../../lib/places';
 import { all, get, type Db } from '../../db/db';
 import { SUMMARY_COLS, toSummary, type WorkoutRow } from '../../core/workouts';
 import { haversine } from '../../lib/geo';
@@ -107,8 +108,14 @@ export function listWhere(athleteId: number, f: ListFilter): { sql: string; para
     // letter for names starting with an umlaut ("österreich")
     const capital = `%${escapeLike(q.charAt(0).toLocaleUpperCase() + q.slice(1))}%`;
     for (const l of new Set([like, capital])) {
-      ors.push(`place LIKE ? ESCAPE '\\'`, `place_end LIKE ? ESCAPE '\\'`);
-      params.push(l, l);
+      // places_via: every place the route passes through
+      ors.push(`place LIKE ? ESCAPE '\\'`, `place_end LIKE ? ESCAPE '\\'`, `places_via LIKE ? ESCAPE '\\'`);
+      params.push(l, l, l);
+    }
+    // countries the route passes through, by their English or German name ("italien")
+    for (const code of countrySearchCodes(q)) {
+      ors.push(`countries LIKE ?`);
+      params.push(`%|${code}|%`);
     }
     // German names of places stored in English ("wien" → Vienna)
     const names = placeSearchNames(q);
@@ -116,6 +123,10 @@ export function listWhere(athleteId: number, f: ListFilter): { sql: string; para
       const marks = names.map(() => '?').join(',');
       ors.push(`place IN (${marks})`, `place_end IN (${marks})`);
       params.push(...names, ...names);
+      for (const n of names) {
+        ors.push(`places_via LIKE ? ESCAPE '\\'`);
+        params.push(`%|${escapeLike(n)}|%`);
+      }
     }
     const allSports = Object.keys(SPORTS).length;
     for (const [tod, sports] of defaultNameMatches(q)) {

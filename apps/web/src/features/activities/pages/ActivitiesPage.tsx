@@ -29,6 +29,7 @@ import {
   cn,
 } from '@/components/ui';
 import { PlaceText } from '@/components/map/PlaceText';
+import { WorkoutTags } from '@/components/WorkoutTags';
 import { useFormat } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
 import { useSettings } from '@/lib/settings';
@@ -312,6 +313,7 @@ function ListTable({
                   )}
                   {w.hidden && <Badge icon={EyeOff} className="shrink-0">{t('activities.list.hiddenBadge')}</Badge>}
                 </div>
+                <WorkoutTags w={w} className="mt-1 pl-7.5" />
                 {/* medals in their own line, so the place is never squeezed to its icon */}
                 {w.medals[0] && (
                   <div className="mt-1 flex min-w-0 items-center gap-1.5 overflow-hidden pl-7.5">
@@ -390,6 +392,7 @@ function ListCards({ items, actions }: { items: ActivityListItem[]; actions: Row
             <Actions w={w} a={actions} />
           </div>
           <StatList items={keyStats(w, fmt, t, 4)} size="sm" className="mt-3" />
+          <WorkoutTags w={w} className="mt-3" />
           {(w.medals.length > 0 || w.hidden) && (
             <div className="mt-2 flex flex-wrap gap-1.5">
               {w.medals.slice(0, 3).map((m) => (

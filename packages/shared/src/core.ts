@@ -1,3 +1,4 @@
+import type { TrainingKind, WorkoutWeather } from './tags';
 /**
  * Core API contract shared by server and web.
  *
@@ -175,6 +176,12 @@ export interface WorkoutSummary {
   place?: string | null;
   /** Where a one-way activity ended, when that is another place (A → B); null for loops. */
   placeEnd?: string | null;
+  /** Estimated kind of training (intervals, long, tempo, easy, recovery); null when the data does not say. */
+  trainingKind?: TrainingKind | null;
+  /** ISO 3166-1 alpha-2 codes of the countries the route passes through, in order (empty without GPS). */
+  countries?: string[];
+  /** Weather at the start as recorded by the watch (outdoor activities only). */
+  weather?: WorkoutWeather | null;
   /** True when the user hid the workout (only returned with includeHidden). */
   hidden?: boolean;
   /** Id of the workout this one duplicates (only returned with includeDuplicates). */

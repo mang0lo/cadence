@@ -1,4 +1,5 @@
 import { computePlaces } from '../core/workouts';
+import { placesAlong, placesColumn } from '../lib/places';
 import type { Migration } from './migrate';
 
 /**
@@ -336,5 +337,27 @@ export const coreMigrations: Migration[] = [
         if (p.place) upd.run(p.place, p.placeEnd, r.id);
       }
     },
+  },
+  {
+    // Every place a route passes through ("|Hannover|Berlin|"), for the activity search
+    id: 'core_004_workout_places_via',
+    up: (db) => {
+      db.exec('ALTER TABLE workouts ADD COLUMN places_via TEXT');
+      const rows = db.prepare('SELECT id, polyline FROM workouts WHERE polyline IS NOT NULL').all() as {
+        id: number;
+        polyline: string;
+      }[];
+      const upd = db.prepare('UPDATE workouts SET places_via = ? WHERE id = ?');
+      for (const r of rows) {
+        const via = placesColumn(placesAlong(r.polyline));
+        if (via) upd.run(via, r.id);
+      }
+    },
+  },
+  {
+    // Automatic tags: countries of the route ("|DE|AT|") and hard repetitions (training kind); filled by the
+    // derive step (DERIVE_VERSION 3 rebuilds existing workouts once)
+    id: 'core_005_workout_tags',
+    up: 'ALTER TABLE workouts ADD COLUMN countries TEXT; ALTER TABLE workouts ADD COLUMN hard_reps INTEGER;',
   },
 ];

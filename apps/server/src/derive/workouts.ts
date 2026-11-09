@@ -5,7 +5,9 @@ import {
   sportInfo,
   type WorkoutStatistic,
 } from '@cadence/shared';
+import { hardReps } from '@cadence/shared';
 import { computePlaces } from '../core/workouts';
+import { countriesAlong, placesAlong, placesColumn } from '../lib/places';
 import { all, get, json, prepare, run, tx, type Db } from '../db/db';
 import type { DeriveStep } from '../features/types';
 import { bounds, encodePolylineParts, simplifyIndices, type LatLon } from '../lib/geo';
@@ -437,7 +439,23 @@ export function deriveWorkout(db: Db, cache: DeriveCache, id: number): void {
     ],
   );
   const places = computePlaces(startLL?.[0] ?? null, startLL?.[1] ?? null, endLL?.[0] ?? null, endLL?.[1] ?? null);
-  run(db, 'UPDATE workouts SET place = ?, place_end = ? WHERE id = ?', [places.place, places.placeEnd, id]);
+  // hard repetitions: pace for foot sports and swims, power on the bike (speed there mostly follows the terrain)
+  let reps: number | null = null;
+  if (built) {
+    const signal = w.sport === 'ride' ? built.power : (built.speed ?? null);
+    if (signal) {
+      const moving = built.moving;
+      reps = hardReps(built.t, Array.from(signal, (x, i) => (moving[i] ? x : null)));
+    }
+  }
+  run(db, 'UPDATE workouts SET place = ?, place_end = ?, places_via = ?, countries = ?, hard_reps = ? WHERE id = ?', [
+    places.place,
+    places.placeEnd,
+    placesColumn(placesAlong(polyline)),
+    placesColumn(countriesAlong(polyline)),
+    reps,
+    id,
+  ]);
 }
 
 export const workoutsStep: DeriveStep = {
