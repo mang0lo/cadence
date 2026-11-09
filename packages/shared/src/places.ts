@@ -38,5 +38,17 @@ const DE_NAMES: Record<string, string> = {
   Mexico: 'Mexiko-Stadt',
 };
 
+/**
+ * Stored (GeoNames) names of the places whose German name contains the search text: "wien" → ["Vienna"], so a
+ * search in German finds activities whose place is stored under its English name.
+ */
+export function placeSearchNames(q: string): string[] {
+  const s = q.trim().toLowerCase();
+  if (s.length < 2) return [];
+  return Object.entries(DE_NAMES)
+    .filter(([, de]) => de.toLowerCase().includes(s))
+    .map(([name]) => name);
+}
+
 /** A place name in the UI language. */
 export const placeName = (name: string, lang: 'en' | 'de'): string => (lang === 'de' ? (DE_NAMES[name] ?? name) : name);

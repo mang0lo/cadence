@@ -16,7 +16,7 @@ import { placeNameAt } from '../lib/places';
 /** Columns of `workouts` needed for WorkoutSummary. */
 export const SUMMARY_COLS = `id, name, sport, activity_type, start_ts, end_ts, tz_min, duration_s, moving_s, distance_m,
   energy_kcal, elevation_gain_m, avg_hr, max_hr, avg_speed, effort, effort_estimated, indoor, has_route, polyline,
-  source_name, notes, hidden, duplicate_of, start_lat, start_lon, end_lat, end_lon`;
+  source_name, notes, hidden, duplicate_of, start_lat, start_lon, end_lat, end_lon, place, place_end`;
 
 export interface WorkoutRow {
   id: number;
@@ -47,6 +47,9 @@ export interface WorkoutRow {
   start_lon: number | null;
   end_lat: number | null;
   end_lon: number | null;
+  /** Start place and, for one-way activities, where it ended (stored by the derive step, see computePlaces). */
+  place: string | null;
+  place_end: string | null;
 }
 
 export interface WorkoutFullRow extends WorkoutRow {
@@ -77,19 +80,28 @@ export interface WorkoutFullRow extends WorkoutRow {
 /** One-way activities end at least this far from the start to be named "A → B". */
 const ONE_WAY_MIN_M = 2000;
 
-/** Start place and, for one-way activities, the place where it ended. */
-function placesOf(r: WorkoutRow): { place: string | null; placeEnd: string | null } {
-  const place = placeNameAt(r.start_lat, r.start_lon);
-  if (!place || r.end_lat === null || r.end_lon === null || r.start_lat === null || r.start_lon === null)
+/**
+ * Start place and, for one-way activities, the place where it ended (offline gazetteer). Stored in
+ * workouts.place / place_end by the derive step so lists can search them.
+ */
+export function computePlaces(
+  startLat: number | null,
+  startLon: number | null,
+  endLat: number | null,
+  endLon: number | null,
+): { place: string | null; placeEnd: string | null } {
+  const place = placeNameAt(startLat, startLon);
+  if (!place || endLat === null || endLon === null || startLat === null || startLon === null)
     return { place, placeEnd: null };
-  if (haversine(r.start_lat, r.start_lon, r.end_lat, r.end_lon) < ONE_WAY_MIN_M) return { place, placeEnd: null };
-  const end = placeNameAt(r.end_lat, r.end_lon);
+  if (haversine(startLat, startLon, endLat, endLon) < ONE_WAY_MIN_M) return { place, placeEnd: null };
+  const end = placeNameAt(endLat, endLon);
   return { place, placeEnd: end && end !== place ? end : null };
 }
 
 export function toSummary(r: WorkoutRow): WorkoutSummary {
   return {
-    ...placesOf(r),
+    place: r.place,
+    placeEnd: r.place_end,
     id: r.id,
     name: r.name,
     sport: r.sport,

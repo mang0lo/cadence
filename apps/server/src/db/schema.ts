@@ -1,3 +1,4 @@
+import { computePlaces } from '../core/workouts';
 import type { Migration } from './migrate';
 
 /**
@@ -320,5 +321,20 @@ export const coreMigrations: Migration[] = [
         data BLOB NOT NULL
       );
     `,
+  },
+  {
+    // Place names of start and (one-way) end, so the activity list can search them; filled by derive from now on
+    id: 'core_003_workout_places',
+    up: (db) => {
+      db.exec('ALTER TABLE workouts ADD COLUMN place TEXT; ALTER TABLE workouts ADD COLUMN place_end TEXT;');
+      const rows = db
+        .prepare('SELECT id, start_lat, start_lon, end_lat, end_lon FROM workouts WHERE start_lat IS NOT NULL')
+        .all() as { id: number; start_lat: number; start_lon: number; end_lat: number | null; end_lon: number | null }[];
+      const upd = db.prepare('UPDATE workouts SET place = ?, place_end = ? WHERE id = ?');
+      for (const r of rows) {
+        const p = computePlaces(r.start_lat, r.start_lon, r.end_lat, r.end_lon);
+        if (p.place) upd.run(p.place, p.placeEnd, r.id);
+      }
+    },
   },
 ];

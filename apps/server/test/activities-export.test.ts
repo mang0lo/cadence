@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { ActivityListPage, ImportJob } from '@cadence/shared';
+import { placeSearchNames, type ActivityListPage, type ImportJob } from '@cadence/shared';
 import { generateSample } from '../scripts/sample/generate';
 import { buildApp, migrateAll } from '../src/app';
 import { loadConfig } from '../src/config';
@@ -73,6 +73,20 @@ afterAll(async () => {
   await app?.close();
   db?.close();
   fs.rmSync(dir, { recursive: true, force: true });
+});
+
+describe('search by place', () => {
+  it('finds activities by the German name of a place stored in English', async () => {
+    expect(placeSearchNames('wien')).toEqual(['Vienna']);
+    expect(placeSearchNames('münch')).toEqual(['Munich']);
+    expect(placeSearchNames('w')).toEqual([]);
+    const total = async (q: string) =>
+      (await app.inject({ url: `/api/activities/list?q=${encodeURIComponent(q)}&limit=1` })).json<ActivityListPage>().total;
+    const vienna = await total('vienna');
+    expect(vienna).toBeGreaterThan(0);
+    expect(await total('Wien')).toBe(vienna);
+    expect(await total('zzz-nowhere')).toBe(0);
+  });
 });
 
 describe('activities CSV export', () => {

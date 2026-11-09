@@ -56,7 +56,7 @@ export const messages: Dictionary = {
     },
     list: {
       subtitle: 'Every workout from Apple Health',
-      search: 'Search title, notes, source…',
+      search: 'Search title, place, notes…',
       withGps: 'With GPS',
       showHidden: 'Show hidden',
       range: 'Period',
@@ -555,7 +555,7 @@ export const messages: Dictionary = {
     },
     list: {
       subtitle: 'Alle Trainings aus Apple Health',
-      search: 'Titel, Notizen, Quelle suchen…',
+      search: 'Titel, Ort, Notizen suchen…',
       withGps: 'Mit GPS',
       showHidden: 'Ausgeblendete zeigen',
       range: 'Zeitraum',

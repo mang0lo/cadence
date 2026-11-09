@@ -135,6 +135,16 @@ describe('a ride paused for a train ride and continued in another city', () => {
     expect(detail.place).toBe('Rostock');
   });
 
+  it('finds the activity by the places it started and ended in', async () => {
+    const total = async (q: string) =>
+      (await getJson<Page<WorkoutSummary>>(`/api/activities/list?q=${encodeURIComponent(q)}`)).total;
+    expect(await total('rostock')).toBe(1);
+    expect(await total('Rost')).toBe(1);
+    expect(await total('hamburg')).toBe(0);
+    const end = (await getJson<Page<WorkoutSummary>>('/api/workouts')).items[0]!.placeEnd!;
+    expect(await total(end)).toBe(1);
+  });
+
   it('stores and serves the route in two parts', async () => {
     const w = (await getJson<Page<WorkoutSummary>>('/api/workouts')).items[0]!;
     const parts = decodePolylineParts(w.polyline!);
