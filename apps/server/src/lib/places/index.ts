@@ -4,7 +4,7 @@
  * on a 0.5° grid.
  */
 import zlib from 'node:zlib';
-import { haversine } from '../geo';
+import { decodePolylineParts, haversine } from '../geo';
 import { placesBytes } from './data';
 
 export interface Place {
@@ -131,3 +131,69 @@ export function placeNameAt(lat: number | null, lon: number | null, maxKm = 25):
   nameCache.set(key, name);
   return name;
 }
+
+/** A village or district counts as passed through within this distance of its center. */
+const VIA_NEAR_KM = 2;
+/** Cities from 100,000 inhabitants are found from farther away: 3 km, plus 4 km per factor ten (Berlin ≈ 9 km). */
+const VIA_CITY_POPLOG = 150;
+const viaCityKm = (popLog: number) => 3 + (4 * (popLog - VIA_CITY_POPLOG)) / 30;
+
+const aroundCache = new Map<string, string[]>();
+
+/**
+ * The places a position lies in: the nearest town, village or district within VIA_NEAR_KM, and every city whose
+ * center is close enough for its size — so a ride through Kreuzberg is also a ride through Berlin.
+ */
+export function placesAround(lat: number, lon: number): string[] {
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return [];
+  const key = `${lat.toFixed(2)},${lon.toFixed(2)}`;
+  const hit = aroundCache.get(key);
+  if (hit) return hit;
+  const g = load();
+  const ci = Math.floor((lat + 90) / CELL);
+  const cj = Math.floor((lon + 180) / CELL);
+  let near = -1;
+  let nearKm = VIA_NEAR_KM;
+  const cities: number[] = [];
+  for (let di = -1; di <= 1; di++)
+    for (let dj = -1; dj <= 1; dj++) {
+      const list = g.grid.get((ci + di) * 1000 + ((((cj + dj) % 720) + 720) % 720));
+      if (!list) continue;
+      for (const i of list) {
+        const km = haversine(lat, lon, g.lat[i]! / 1e5, g.lon[i]! / 1e5) / 1000;
+        if (km <= nearKm) {
+          nearKm = km;
+          near = i;
+        }
+        if (g.popLog[i]! >= VIA_CITY_POPLOG && km <= viaCityKm(g.popLog[i]!)) cities.push(i);
+      }
+    }
+  const names = [...new Set([...(near >= 0 ? [near] : []), ...cities].map((i) => placeAt(g, i).name))];
+  if (aroundCache.size >= 50_000) aroundCache.clear();
+  aroundCache.set(key, names);
+  return names;
+}
+
+/** Every place a route (encoded polyline, possibly in parts) passes through, in the order of the route. */
+export function placesAlong(polyline: string | null, stepM = 800): string[] {
+  if (!polyline) return [];
+  const out = new Set<string>();
+  for (const part of decodePolylineParts(polyline)) {
+    for (let i = 0; i < part.length; i++) {
+      const [lat, lon] = part[i]!;
+      for (const n of placesAround(lat, lon)) out.add(n);
+      const next = part[i + 1];
+      if (!next) continue;
+      // the stored route is simplified: long straight stretches are sampled in between
+      const steps = Math.floor(haversine(lat, lon, next[0], next[1]) / stepM);
+      for (let k = 1; k <= steps; k++) {
+        const f = k / (steps + 1);
+        for (const n of placesAround(lat + (next[0] - lat) * f, lon + (next[1] - lon) * f)) out.add(n);
+      }
+    }
+  }
+  return [...out];
+}
+
+/** Stored form of the places of a route: "|Hannover|Berlin|" (searchable with LIKE), null without any. */
+export const placesColumn = (names: string[]): string | null => (names.length ? `|${names.join('|')}|` : null);

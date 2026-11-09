@@ -38,8 +38,9 @@ show a Cadence server.
   the built-in one, with a reachability check, and go back with one click. A server that does not answer offers
   "Try again" / "Use built-in server".
 - **Version in the title bar** of the Mac and desktop apps; Settings → About shows the app and the server version.
-- **Search by place**: the activity search also finds where an activity started or ended ("Warnemünde", "Rostock"),
-  with German names for places stored in English ("Wien").
+- **Search by place**: the activity search finds every place an activity started in, ended in or **passed through**
+  (a ride through Hannover, Berlin and München is found under all three; districts count for their city), with
+  German names for places stored in English ("Wien").
 
 ### Security
 

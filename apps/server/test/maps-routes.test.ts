@@ -386,3 +386,26 @@ describe('routes derive step + API', () => {
     expect((await ctx.app.inject({ url: '/api/maps/routes?min=0' })).statusCode).toBe(400);
   });
 });
+
+describe('places along a route', () => {
+  it('finds every city a long ride passes through, also via its districts', async () => {
+    const { placesAlong, placesAround } = await import('../src/lib/places');
+    const { encodePolylineParts } = await import('../src/lib/geo');
+    // Hannover → Berlin → München as a very coarse line (the stored polyline is simplified too)
+    const names = placesAlong(
+      encodePolylineParts([
+        [
+          [52.3759, 9.732],
+          [52.52, 13.405],
+          [48.1372, 11.5755],
+        ],
+      ]),
+    );
+    expect(names).toEqual(expect.arrayContaining(['Hannover', 'Berlin', 'Munich']));
+    expect(names.indexOf('Hannover')).toBeLessThan(names.indexOf('Berlin'));
+    expect(names).not.toContain('Hamburg');
+    // in a district 5 km from the center: the district and the city
+    expect(placesAround(52.497, 13.39)).toContain('Berlin');
+    expect(placesAlong(null)).toEqual([]);
+  });
+});
