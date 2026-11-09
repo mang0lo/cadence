@@ -7,9 +7,11 @@ import type { PrivacyZone } from '@cadence/shared';
 import { fitTracks, project, thumbnailLayout, unproject, type ThumbnailLayout } from '../../web/src/components/map/tiles';
 import {
   SHARE_FORMATS,
+  chartSeries,
   hidePrivacyZones,
   shareFileName,
   shareLayout,
+  shareSelection,
   slugify,
   type LatLon,
   type Rect,
@@ -246,5 +248,57 @@ describe('map tiles (shared by thumbnails and share images)', () => {
     expect(larger.tiles[0]!.size).toBeCloseTo(2 * fit.tiles[0]!.size, 6);
     expect(larger.tiles.length).toBeLessThan(fit.tiles.length);
     expect(larger.parts).toEqual(fit.parts);
+  });
+});
+
+describe('share image: values and small charts', () => {
+  const ORDER = ['a', 'b', 'c', 'd'] as const;
+  it('shows the stored choice in catalog order, limited to what the activity has', () => {
+    expect(shareSelection(['c', 'a'], ['a', 'b', 'c'], ['a', 'b'], ORDER, 6)).toEqual(['a', 'c']);
+    // nothing chosen yet → defaults (only the available ones)
+    expect(shareSelection(null, ['a', 'c'], ['a', 'b'], ORDER, 6)).toEqual(['a']);
+    // only unavailable values chosen (e.g. power on an activity without power) → defaults
+    expect(shareSelection(['d'], ['a', 'b'], ['b'], ORDER, 6)).toEqual(['b']);
+    // an explicit empty choice stays empty
+    expect(shareSelection([], ['a', 'b'], ['a'], ORDER, 6)).toEqual([]);
+    expect(shareSelection(['a', 'b', 'c', 'd'], ['a', 'b', 'c', 'd'], [], ORDER, 2)).toEqual(['a', 'b']);
+  });
+
+  it('downsamples a stream into a normalized line, split at gaps and track breaks', () => {
+    const x = Array.from({ length: 1000 }, (_, i) => i);
+    const y = x.map((i) => (i >= 400 && i < 450 ? null : 100 + Math.sin(i / 100) * 10));
+    const s = chartSeries(x, y, { buckets: 100 })!;
+    expect(s.parts.length).toBe(2);
+    for (const p of s.parts)
+      for (const [vx, vy] of p) {
+        expect(vx).toBeGreaterThanOrEqual(0);
+        expect(vx).toBeLessThanOrEqual(1);
+        expect(vy).toBeGreaterThanOrEqual(0);
+        expect(vy).toBeLessThanOrEqual(1);
+      }
+    const withBreak = chartSeries(x, x.map(() => 5), { buckets: 50, breaks: [600], minRange: 10 })!;
+    expect(withBreak.parts.length).toBe(2);
+    // a flat line stays in the middle instead of being stretched over the height
+    expect(withBreak.parts[0]![0]![1]).toBeCloseTo(0.5, 5);
+    expect(chartSeries([0, 1], [null, null])).toBeNull();
+    expect(chartSeries([5, 5, 5], [1, 2, 3])).toBeNull();
+  });
+
+  it('makes room for the charts between the route and the stats', () => {
+    for (const format of ['square', 'portrait', 'story'] as const) {
+      const l = shareLayout(format, 'map', 4, 2);
+      expect(l.charts).not.toBeNull();
+      expect(l.route!.y + l.route!.h).toBeLessThanOrEqual(l.charts!.y);
+      expect(l.charts!.y + l.charts!.h).toBeLessThanOrEqual(l.stats.y);
+      expect(l.stats.y + l.stats.h).toBeLessThanOrEqual(l.footer.y);
+      expect(shareLayout(format, 'map', 4).charts).toBeNull();
+    }
+    // no values at all: the charts sit right above the footer
+    const bare = shareLayout('square', 'plain', 0, 1);
+    expect(bare.stats.h).toBe(0);
+    expect(bare.charts!.y + bare.charts!.h).toBeLessThanOrEqual(bare.footer.y);
+    const sticker = shareLayout('story', 'sticker', 3, 3);
+    expect(sticker.header.y + sticker.header.h).toBeLessThan(sticker.charts!.y);
+    expect(sticker.charts!.y + sticker.charts!.h).toBeLessThan(sticker.stats.y);
   });
 });

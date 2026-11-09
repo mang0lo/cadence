@@ -268,12 +268,14 @@ export default async function workoutRoutes(app: FastifyInstance) {
       );
     }
     out.push(' </trkseg></trk>', '</gpx>', '');
-    const file = `${title.replace(/[^\w\- ]+/g, '').trim() || 'workout'}-${localDay(w.start_ts, w.tz_min)}.gpx`;
+    // keep letters of every language (umlauts …); drop what file systems do not allow
+    const file = `${title.replace(/[^\p{L}\p{N}\- ]+/gu, '').trim() || 'workout'}-${localDay(w.start_ts, w.tz_min)}.gpx`;
     reply
       .type('application/gpx+xml; charset=utf-8')
       .header(
         'content-disposition',
-        `attachment; filename="${file}"; filename*=UTF-8''${encodeURIComponent(file)}`,
+        // header values must be Latin-1: ASCII fallback plus the real name (RFC 5987)
+        `attachment; filename="${file.replace(/[^\x20-\x7e]/g, '_')}"; filename*=UTF-8''${encodeURIComponent(file)}`,
       );
     return out.join('\n');
   });

@@ -94,6 +94,24 @@ final class WebViewController: NSViewController, WKNavigationDelegate, WKUIDeleg
     private(set) var baseURL: URL?
     /// Called by the web UI through the bridge or by menu items; implemented by the app delegate.
     var onRestartRequested: (() -> Void)?
+    /// Settings → Server in the web UI: use this server from now on (nil = the one built into the app).
+    var onConnectServer: ((URL?) -> Void)?
+    /// A page did not load (network error).
+    var onLoadFailed: ((Error) -> Void)?
+
+    /// Shown to the web UI as `window.cadenceShell` (app version, the server in use) before its scripts run.
+    var shellInfo: [String: Any] = [:] {
+        didSet { installShellInfo() }
+    }
+
+    private func installShellInfo() {
+        guard isViewLoaded,
+              let data = try? JSONSerialization.data(withJSONObject: shellInfo),
+              let json = String(data: data, encoding: .utf8) else { return }
+        let scripts = webView.configuration.userContentController
+        scripts.removeAllUserScripts()
+        scripts.addUserScript(WKUserScript(source: "window.cadenceShell = \(json);", injectionTime: .atDocumentStart, forMainFrameOnly: true))
+    }
 
     override func loadView() {
         let config = WKWebViewConfiguration()
@@ -150,6 +168,19 @@ final class WebViewController: NSViewController, WKNavigationDelegate, WKUIDeleg
         pageLoaded = false
         overlay.hide()
         webView.load(URLRequest(url: url))
+    }
+
+    /// A remote server that does not answer: try again or go back to the built-in server.
+    func showServerUnreachable(_ url: URL, _ error: Error) {
+        overlay.show(
+            title: "\(url.host ?? url.absoluteString) is not reachable",
+            detail: error.localizedDescription,
+            spinning: false,
+            actions: [
+                ("Try Again", { [weak self] in self?.onRestartRequested?() }),
+                ("Use Built-in Server", { [weak self] in self?.onConnectServer?(nil) }),
+            ]
+        )
     }
 
     func navigate(to path: String) {
@@ -209,7 +240,20 @@ final class WebViewController: NSViewController, WKNavigationDelegate, WKUIDeleg
         case "pickImportFile": pickImportFile()
         case "openDataFolder": NSWorkspace.shared.open(ServerProcess.dataDirectory)
         case "saveFile": saveFile(body)
+        case "connectServer": connectServer(body)
         default: break
+        }
+    }
+
+    /// `{ url }` from Settings → Server; an empty url switches back to the built-in server.
+    private func connectServer(_ body: [String: Any]) {
+        let text = ((body["url"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if text.isEmpty {
+            onConnectServer?(nil)
+        } else if let url = URL(string: text), ["http", "https"].contains(url.scheme?.lowercased() ?? ""), url.host != nil {
+            onConnectServer?(url)
+        } else {
+            NSSound.beep()
         }
     }
 
@@ -323,6 +367,12 @@ final class WebViewController: NSViewController, WKNavigationDelegate, WKUIDeleg
 
     func webView(_ webView: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) {
         download.delegate = self
+    }
+
+    /// The page could not be loaded at all (e.g. a remote server that is offline).
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        if (error as NSError).code == NSURLErrorCancelled { return }
+        onLoadFailed?(error)
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {

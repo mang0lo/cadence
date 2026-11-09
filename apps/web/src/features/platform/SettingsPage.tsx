@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router';
-import { Heart, Info, MapPin, Palette, Settings as SettingsIcon, Trash2, User, Watch } from 'lucide-react';
+import { Heart, Info, Server, MapPin, Palette, Settings as SettingsIcon, Trash2, User, Watch } from 'lucide-react';
 import type { Map } from 'maplibre-gl';
 import type { AthleteSettings, PrivacyZone } from '@cadence/shared';
 import { BaseMap } from '@/components/map/BaseMap';
@@ -10,8 +10,10 @@ import { Button, Card, CardHeader, Field, IconButton, Input, KeyValues, Page, Pa
 import { api } from '@/lib/api';
 import { useFormat } from '@/lib/format';
 import { useT } from '@/lib/i18n';
+import { isNativeShell, shellInfo } from '@/lib/native';
 import { useSettings } from '@/lib/settings';
 import { BackupSection } from './BackupSection';
+import { ServerConnection } from './ServerConnection';
 
 function Section({ title, icon, children, hint }: { title: string; icon: typeof User; children: ReactNode; hint?: string }) {
   return (
@@ -135,6 +137,7 @@ export default function SettingsPage() {
   const fmt = useFormat();
   const qc = useQueryClient();
   const { settings, athlete, status, update } = useSettings();
+  const shell = shellInfo();
   const [name, setName] = useState(athlete?.name ?? '');
   useEffect(() => setName(athlete?.name ?? ''), [athlete?.name]);
   const set = (patch: Partial<AthleteSettings>) => void update(patch);
@@ -337,7 +340,10 @@ export default function SettingsPage() {
           <KeyValues
             items={[
               [t('platform.settings.mode'), status ? t(`platform.settings.modes.${status.mode}`) : '–'],
-              [t('platform.settings.version'), status?.version ?? '–'],
+              ...(shell
+                ? ([[t('platform.settings.appVersion'), `${t(`platform.settings.apps.${shell.app}`)} ${shell.version}`]] as [string, string][])
+                : []),
+              [shell ? t('platform.settings.serverVersion') : t('platform.settings.version'), status?.version ?? '–'],
               [t('platform.settings.records'), status ? fmt.int(status.counts.records) : '–'],
               [t('platform.settings.workouts'), status ? fmt.int(status.counts.workouts) : '–'],
               [
@@ -347,6 +353,12 @@ export default function SettingsPage() {
             ]}
           />
         </Section>
+
+        {isNativeShell() && (
+          <Section title={t('platform.connection.title')} icon={Server} hint={t('platform.connection.hint')}>
+            <ServerConnection />
+          </Section>
+        )}
 
         <div className="lg:col-span-2">
           <BackupSection />

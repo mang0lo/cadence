@@ -124,15 +124,17 @@ function ImportIndicator() {
 }
 
 function ThemeToggle() {
-  const { settings, update } = useSettings();
+  const { update } = useSettings();
   const resolved = useResolvedTheme();
   const next = resolved === 'dark' ? 'light' : 'dark';
+  const t = useT();
+  const label = t(next === 'dark' ? 'common.themeDark' : 'common.themeLight');
   return (
     <button
       onClick={() => void update({ theme: next })}
       className="grid size-8 place-items-center rounded-control text-fg-3 hover:bg-surface-2 hover:text-fg"
-      title={settings.theme}
-      aria-label="Toggle theme"
+      title={label}
+      aria-label={label}
     >
       {resolved === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
     </button>
@@ -268,7 +270,7 @@ export function AppShell() {
           <button
             className="grid size-8 place-items-center rounded-control text-fg-2"
             onClick={() => setOpen(true)}
-            aria-label="Menu"
+            aria-label={t('common.menu')}
           >
             <Menu size={18} />
           </button>

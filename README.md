@@ -111,7 +111,7 @@ CADENCE_PASSWORD=choose-something docker compose up -d     # → http://<server>
   automatically.
 - **Move your data**: Settings → *Backup & moving to a server* → download the backup in the Mac app, restore it on
   the server (keeps renamed activities, goals and segments).
-- Point the Mac app at the server via **Cadence → Connect to Server…**.
+- Point the Mac or desktop app at the server in **Settings → Server** (Mac also **Cadence → Connect to Server…**).
 - Releases: push a `v*` tag or run the **Release** workflow from the Actions tab (with the version from
   `package.json`); it builds the DMG and pushes `ghcr.io/mang0lo/cadence` (see `.github/workflows/release.yml`).
 
@@ -143,7 +143,10 @@ Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (conventions, feature modules,
 
 - Multi-user accounts and sharing on the server (the schema is already athlete-scoped)
 - Live sync from the iPhone (e.g. via the *Health Auto Export* app's REST integration) instead of manual exports
-- Native iOS companion reading HealthKit directly
+- Native iOS companion reading HealthKit directly (automatic sync to the server)
+- Imports for other common health devices and services, next to Apple Health and COROS / FIT files: Garmin Connect,
+  Polar Flow, Suunto, Wahoo, Fitbit, Samsung Health / Google Health Connect, Oura, Whoop, Withings (scales, blood
+  pressure) and GPX / TCX files from any app
 - Apply privacy zones to GPX exports (share images already use them)
 
 ## License

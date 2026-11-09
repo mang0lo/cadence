@@ -1,6 +1,7 @@
 import {
   SPORTS,
   defaultWorkoutName,
+  placeSearchNames,
   sportInfo,
   type TimeOfDay,
   type ActivitiesSummary,
@@ -102,6 +103,20 @@ export function listWhere(athleteId: number, f: ListFilter): { sql: string; para
     const like = `%${escapeLike(q)}%`;
     const ors = [`name LIKE ? ESCAPE '\\'`, `notes LIKE ? ESCAPE '\\'`, `source_name LIKE ? ESCAPE '\\'`];
     params.push(like, like, like);
+    // where it took place ("warnemünde", "rostock"); LIKE only folds ASCII case, so also try a capital first
+    // letter for names starting with an umlaut ("österreich")
+    const capital = `%${escapeLike(q.charAt(0).toLocaleUpperCase() + q.slice(1))}%`;
+    for (const l of new Set([like, capital])) {
+      ors.push(`place LIKE ? ESCAPE '\\'`, `place_end LIKE ? ESCAPE '\\'`);
+      params.push(l, l);
+    }
+    // German names of places stored in English ("wien" → Vienna)
+    const names = placeSearchNames(q);
+    if (names.length) {
+      const marks = names.map(() => '?').join(',');
+      ors.push(`place IN (${marks})`, `place_end IN (${marks})`);
+      params.push(...names, ...names);
+    }
     const allSports = Object.keys(SPORTS).length;
     for (const [tod, sports] of defaultNameMatches(q)) {
       const hours = TOD_HOURS[tod].map(([a, b]) => `(${LOCAL_HOUR} >= ${a} AND ${LOCAL_HOUR} < ${b})`).join(' OR ');

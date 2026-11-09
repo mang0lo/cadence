@@ -3,7 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { LogIn } from 'lucide-react';
 import { Logo } from '@/components/layout/Logo';
 import { Button, Card, ErrorState, Field, Input } from '@/components/ui';
-import { api } from '@/lib/api';
+import { ApiError, api } from '@/lib/api';
 import { useT } from '@/lib/i18n';
 
 /** Shown instead of the app when the server requires a password (CADENCE_PASSWORD). */
@@ -32,8 +32,14 @@ export function LoginPage() {
             try {
               await api.post('/auth/login', { password });
               await qc.invalidateQueries();
-            } catch {
-              setError(t('platform.login.wrong'));
+            } catch (e) {
+              setError(
+                e instanceof ApiError && e.code === 'too_many_attempts'
+                  ? t('platform.login.tooMany')
+                  : e instanceof ApiError && e.status === 401
+                    ? t('platform.login.wrong')
+                    : t('platform.login.unreachable'),
+              );
             } finally {
               setBusy(false);
             }

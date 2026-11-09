@@ -10,12 +10,24 @@ interface NativeBridge {
   postMessage(msg: { type: string; [k: string]: unknown }): void;
 }
 
+/** What the native shell tells the web UI about itself (macOS: injected script, Electron: preload). */
+export interface ShellInfo {
+  app: 'macos' | 'desktop';
+  /** Version of the app (not of the server it shows). */
+  version: string;
+  /** The remote Cadence server the app shows, null = the server built into the app. */
+  remote: string | null;
+}
+
 declare global {
   interface Window {
     webkit?: { messageHandlers?: { cadence?: NativeBridge } };
-    cadenceNative?: NativeBridge & { platform: string };
+    cadenceNative?: NativeBridge & { platform: string; info?: ShellInfo };
+    cadenceShell?: ShellInfo;
   }
 }
+
+export { normalizeServerUrl } from './serverUrl';
 
 export const NATIVE_IMPORT_EVENT = 'cadence:native-import';
 
@@ -24,6 +36,10 @@ const bridge = (): NativeBridge | undefined =>
 
 export function isNativeShell(): boolean {
   return !!bridge();
+}
+
+export function shellInfo(): ShellInfo | null {
+  return window.cadenceShell ?? window.cadenceNative?.info ?? null;
 }
 
 export function postNative(type: string, payload: Record<string, unknown> = {}): boolean {

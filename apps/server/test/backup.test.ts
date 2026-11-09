@@ -55,6 +55,28 @@ describe('backup & restore', () => {
     expect(leftovers()).toEqual([]);
   });
 
+  it('leaves the logins of other services out of the backup', async () => {
+    const secret = 'd41d8cd98f00b204e9800998ecf8427e-coros-password-hash';
+    run(db, "INSERT INTO settings (athlete_id, key, value) VALUES (1, 'connect.coros', ?)", [
+      JSON.stringify({ email: 'me@example.org', pwdMd5: secret, accessToken: 'token-123456789' }),
+    ]);
+    run(db, "INSERT INTO settings (athlete_id, key, value) VALUES (1, 'consistency.test', '\"kept\"')");
+    const payload = (await app.inject({ url: '/api/backup' })).rawPayload;
+    const file = path.join(dir, 'no-secrets.db');
+    fs.writeFileSync(file, payload);
+    const copy = new DatabaseSync(file, { readOnly: true });
+    const keys = (copy.prepare('SELECT key FROM settings').all() as { key: string }[]).map((r) => r.key);
+    copy.close();
+    expect(keys).toContain('consistency.test');
+    expect(keys).not.toContain('connect.coros');
+    // not in the freed pages of the file either
+    expect(payload.includes(Buffer.from(secret))).toBe(false);
+    expect(payload.includes(Buffer.from('token-123456789'))).toBe(false);
+    // the running database keeps the login
+    expect(db.prepare("SELECT 1 AS x FROM settings WHERE key = 'connect.coros'").get()).toBeTruthy();
+    run(db, "DELETE FROM settings WHERE key IN ('connect.coros', 'consistency.test')");
+  });
+
   it('rejects files that are not Cadence databases', async () => {
     const res = await app.inject({ method: 'POST', url: '/api/backup/restore', ...multipart('x.db', Buffer.from('not sqlite')) });
     expect(res.statusCode).toBe(400);

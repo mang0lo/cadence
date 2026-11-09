@@ -3,6 +3,60 @@
 All notable changes to Cadence. Versions follow [semantic versioning](https://semver.org); every `v*` tag builds a
 release (see `.github/workflows/release.yml`), whose notes are taken from the matching section below.
 
+## [0.3.0] – 2026-11-06
+
+Other watches (COROS, FIT files), Cadence for Linux and Windows, a much more flexible share image and the apps can
+show a Cadence server.
+
+> 🇩🇪 **Neu in 0.3.0:** COROS-Uhren (Aktivitäten, Gesundheitswerte, Schlaf) und FIT-Dateien, Einstellung „Meine Uhr“,
+> Cadence als App für Linux und Windows, Teilen-Bild mit frei wählbaren Werten (z. B. Pace *und* Tempo), kleinen
+> Diagrammen und schaltbarer Strecke / Datum / Ort, **Einstellungen → Server** zum Verbinden der App mit einem
+> Cadence-Server (z. B. Docker), Version in der Titelleiste.
+
+### Install
+
+- **Mac app**: `Cadence-0.3.0.dmg` below (macOS 14+, Apple silicon; not notarized: **System Settings → Privacy &
+  Security → Open Anyway**).
+- **Linux**: `Cadence-0.3.0-linux-x86_64.AppImage` or the `.deb` below; `./install.sh path/to/Cadence.AppImage` adds it
+  to your launcher.
+- **Windows**: the `Cadence-Setup-0.3.0.exe` installer or the portable `.exe` below.
+- **Server**: `ghcr.io/mang0lo/cadence:v0.3.0` (also `:latest`).
+
+### Added
+
+- **Other watches**: connect a **COROS** account (activities as FIT files, resting heart rate, HRV, sleep with stages,
+  VO2max, steps, daily goals as activity rings), or import **FIT files** from any watch. **Settings → My watch** chooses
+  which source wins when Apple Health and the watch record the same thing; duplicates of the same workout are merged.
+  Pages show the source of their data and only appear when there is data.
+- **Linux and Windows apps** (Electron, same features as the Mac app): AppImage and .deb, installer and portable .exe;
+  `install.sh` for Linux launchers. Releases now build all platforms.
+- **Share image**: every value can be turned on or off (distance, moving / elapsed time, pace **and** speed, elevation,
+  heart rate, power, cadence, calories, effort — up to six), up to three **small charts** (elevation, pace / speed,
+  heart rate, power) along the activity, and the route line, date and place can be hidden; the choice is remembered
+  per sport.
+- **Settings → Server** in the Mac and desktop apps: show a Cadence server (e.g. Docker on a home server) instead of
+  the built-in one, with a reachability check, and go back with one click. A server that does not answer offers
+  "Try again" / "Use built-in server".
+- **Version in the title bar** of the Mac and desktop apps; Settings → About shows the app and the server version.
+- **Search by place**: the activity search also finds where an activity started or ended ("Warnemünde", "Rostock"),
+  with German names for places stored in English ("Wien").
+
+### Security
+
+- **Login brake** on password-protected servers: eight wrong passwords from one address lock its logins for five
+  minutes; sessions that are logged in keep working.
+- **Backups no longer contain the COROS login** (email, password hash, tokens) — connect again on the Watches page
+  after restoring a backup.
+- Baseline protection headers (no embedding in other sites, no MIME sniffing, no activity URLs in referrers).
+
+### Fixed
+
+- Import in the apps while connected to a remote server opens the upload page (a remote server cannot read files on
+  your computer).
+- GPX file names keep umlauts and other letters ("Übungsfahrt-2026-06-20.gpx").
+- Web app files are cached properly on servers (faster reloads; updates are picked up right away).
+- Screen-reader labels of the theme switch, the menu button and loading spinners are translated.
+
 ## [0.2.1] – 2026-11-03
 
 > 🇩🇪 **Karten in den Vorschauen ohne API-Key:** CARTO verlangt inzwischen einen API-Key und zeigte nur noch

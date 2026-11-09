@@ -5,6 +5,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var window: NSWindow!
     private let web = WebViewController()
     private let server = ServerProcess()
+    /// CFBundleShortVersionString (set from package.json by scripts/build-macos.sh); nil in `swift run` builds.
+    private let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.mainMenu = buildMenu()
@@ -15,7 +17,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             backing: .buffered,
             defer: false
         )
-        window.title = "Cadence"
+        // the version in the title bar, next to the window buttons
+        window.title = version.map { "Cadence \($0)" } ?? "Cadence"
         window.minSize = NSSize(width: 820, height: 560)
         window.contentViewController = web
         window.delegate = self
@@ -26,6 +29,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         NSApp.activate(ignoringOtherApps: true)
 
         web.onRestartRequested = { [weak self] in self?.startBackend() }
+        web.onConnectServer = { [weak self] url in
+            Preferences.remoteServerURL = url
+            self?.startBackend()
+        }
+        web.onLoadFailed = { [weak self] error in
+            // only a remote server can be unreachable; the built-in one reports through the server process
+            guard let remote = Preferences.remoteServerURL else { return }
+            self?.web.showServerUnreachable(remote, error)
+        }
         server.onUnexpectedExit = { [weak self] code in
             // 75 = the server restarts itself on purpose (e.g. to apply a restored backup)
             if code == 75 {
@@ -52,6 +64,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// Remote server (Preferences) → dev server (CADENCE_DEV_URL) → bundled local server.
     private func startBackend() {
         server.stop()
+        web.shellInfo = [
+            "app": "macos",
+            "version": version ?? "dev",
+            "remote": Preferences.remoteServerURL?.absoluteString ?? NSNull(),
+        ]
         if let remote = Preferences.remoteServerURL {
             window.subtitle = remote.host ?? ""
             web.load(remote)
@@ -73,7 +90,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     // MARK: - Menu actions
 
-    @objc private func importExport(_ sender: Any?) { web.pickImportFile() }
+    @objc private func importExport(_ sender: Any?) {
+        // a remote server cannot read files on this Mac: its import page uploads the file instead
+        if Preferences.remoteServerURL != nil { web.navigate(to: "/import") } else { web.pickImportFile() }
+    }
     @objc private func openSettings(_ sender: Any?) { web.navigate(to: "/settings") }
     @objc private func openDataFolder(_ sender: Any?) {
         try? FileManager.default.createDirectory(at: ServerProcess.dataDirectory, withIntermediateDirectories: true)

@@ -3,6 +3,7 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { pipeline } from 'node:stream/promises';
 import type { FastifyInstance } from 'fastify';
+import { features } from '../features';
 import { HttpError, badRequest } from '../lib/http';
 
 /**
@@ -49,12 +50,34 @@ function validateBackup(file: string): void {
   }
 }
 
+/**
+ * Remove the logins of other services (Feature.secretSettings) from a backup copy. secure_delete overwrites the
+ * freed pages, so the values are not left behind in the file.
+ */
+export function stripSecrets(file: string): void {
+  const keys = features.flatMap((f) => f.secretSettings ?? []);
+  if (!keys.length) return;
+  const db = new DatabaseSync(file);
+  try {
+    db.exec('PRAGMA secure_delete = ON');
+    db.prepare(`DELETE FROM settings WHERE key IN (${keys.map(() => '?').join(',')})`).run(...keys);
+  } finally {
+    db.close();
+  }
+}
+
 /** GET /api/backup, POST /api/backup/restore */
 export default async function backupRoutes(app: FastifyInstance) {
   // Consistent snapshot: VACUUM INTO works while imports and readers are running.
   app.get('/backup', async (_req, reply) => {
     const tmp = path.join(app.config.dataDir, `backup-${process.pid}-${Date.now()}.db`);
     app.db.exec(`VACUUM INTO '${tmp.replace(/'/g, "''")}'`);
+    try {
+      stripSecrets(tmp);
+    } catch (e) {
+      fs.rmSync(tmp, { force: true });
+      throw e;
+    }
     const size = fs.statSync(tmp).size;
     const stream = fs.createReadStream(tmp);
     stream.on('close', () => fs.rm(tmp, { force: true }, () => undefined));

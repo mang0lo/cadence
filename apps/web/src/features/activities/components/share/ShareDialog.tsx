@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Check, Copy, Download, Share2 } from 'lucide-react';
-import { sportInfo, trackParts, workoutTitle, type WorkoutDetail } from '@cadence/shared';
+import { Check, Copy, Download, LineChart, Plus, Share2 } from 'lucide-react';
+import { sportInfo, trackParts, workoutTitle, type WorkoutDetail, type WorkoutStreams } from '@cadence/shared';
 import { thumbnailBasemap } from '@/components/map/tiles';
 import { Button, Dialog, Field, SegmentedControl, Spinner, Switch } from '@/components/ui';
-import { useFormat } from '@/lib/format';
-import { useI18n } from '@/lib/i18n';
+import { useFormat, type Formatter } from '@/lib/format';
+import { useI18n, type TFunction } from '@/lib/i18n';
 import { isNativeShell, postNative } from '@/lib/native';
 import { activityPlace } from '@/lib/places';
 import { decodePolylineParts } from '@/lib/polyline';
@@ -14,24 +14,118 @@ import { useStoredState } from '@/lib/storage';
 import { useResolvedTheme } from '@/lib/theme';
 import { dayKey } from '@/lib/time';
 import { useStreams } from '../../api';
-import { isPaceSport, keyStats, shortDistanceParts } from '../../lib/display';
+import { isPaceSport, shortDistanceParts } from '../../lib/display';
 import {
+  MAX_SHARE_CHARTS,
+  MAX_SHARE_STATS,
+  SHARE_CHART_KEYS,
   SHARE_FORMATS,
+  SHARE_STAT_KEYS,
+  chartSeries,
   hidePrivacyZones,
   shareFileName,
+  shareSelection,
   type LatLon,
   type ShareBackground,
+  type ShareChartKey,
   type ShareFormat,
+  type ShareStatKey,
   type ShareTheme,
 } from '../../lib/share';
-import { blobBase64, canvasBlob, renderShareImage, type ShareResult, type ShareStat } from '../../lib/shareImage';
+import {
+  blobBase64,
+  canvasBlob,
+  renderShareImage,
+  type ShareChart,
+  type ShareResult,
+  type ShareStat,
+} from '../../lib/shareImage';
 import { haversine, simplifyIndices } from '../../lib/streams';
+import { ToggleChip } from '../ToggleChip';
+
+/** Every value the activity has, formatted for the image. */
+function statCatalog(w: WorkoutDetail, fmt: Formatter, t: TFunction): Partial<Record<ShareStatKey, ShareStat>> {
+  const info = sportInfo(w.sport);
+  const out: Partial<Record<ShareStatKey, ShareStat>> = {};
+  const moving = w.movingS ?? w.durationS;
+  if ((w.distanceM ?? 0) > 0) {
+    const d = w.sport === 'swim' ? shortDistanceParts(w.distanceM!, fmt) : fmt.distanceParts(w.distanceM);
+    out.distance = { label: t('common.distance'), ...d };
+  }
+  out.movingTime = { label: t('common.movingTime'), value: fmt.duration(moving) };
+  if (w.elapsedS > moving + 60) out.elapsedTime = { label: t('common.elapsedTime'), value: fmt.duration(w.elapsedS) };
+  if (info.distance && (w.distanceM ?? 0) > 0 && w.avgSpeed) {
+    // pace per km/mi (per 100 m for swims) and speed for every distance sport, whatever its usual display
+    out.pace = { label: t('common.pace'), ...fmt.paceParts(w.avgSpeed, info.speedMode === 'pace100' ? w.sport : 'run') };
+    out.speed = { label: t('common.speed'), ...fmt.speedParts(w.avgSpeed) };
+  }
+  if (w.hasRoute && (w.elevationGainM ?? 0) >= 1) out.elevation = { label: t('common.elevationGain'), ...fmt.elevationParts(w.elevationGainM) };
+  if (w.avgHr) out.avgHr = { label: t('common.avgHr'), value: fmt.int(w.avgHr), unit: 'bpm' };
+  if (w.maxHr) out.maxHr = { label: t('common.maxHr'), value: fmt.int(w.maxHr), unit: 'bpm' };
+  if (w.avgPower) out.avgPower = { label: t('activities.stats.avgPower'), value: fmt.int(w.avgPower), unit: 'W' };
+  if (w.avgCadence)
+    out.cadence = { label: t('activities.stats.avgCadence'), value: fmt.int(w.avgCadence), unit: info.group === 'cycle' ? 'rpm' : 'spm' };
+  if (w.energyKcal) out.calories = { label: t('common.calories'), value: fmt.int(w.energyKcal), unit: 'kcal' };
+  if (w.effort !== null) out.effort = { label: t('common.effort'), value: fmt.int(w.effort) };
+  return out;
+}
+
+/** What the image shows when the user has not chosen yet (the 0.2 defaults). */
+function defaultStats(w: WorkoutDetail): ShareStatKey[] {
+  const info = sportInfo(w.sport);
+  if (info.distance && (w.distanceM ?? 0) > 0)
+    return ['distance', 'movingTime', isPaceSport(w.sport) ? 'pace' : 'speed', 'elevation'];
+  return ['movingTime', 'calories', 'avgHr', 'effort'];
+}
+
+/** Mini charts the streams allow, along the distance (time without distance). */
+function chartCatalog(
+  w: WorkoutDetail,
+  s: WorkoutStreams | undefined,
+  fmt: Formatter,
+  t: TFunction,
+): Partial<Record<ShareChartKey, ShareChart>> {
+  const out: Partial<Record<ShareChartKey, ShareChart>> = {};
+  if (!s || s.t.length < 10) return out;
+  const x = s.dist && s.dist.length === s.t.length && s.dist[s.dist.length - 1]! > 100 ? s.dist : s.t;
+  const opts = { breaks: s.breaks };
+  const ele = s.ele ? chartSeries(x, s.ele, { ...opts, minRange: 20 }) : null;
+  if (ele && w.hasRoute)
+    out.elevation = {
+      label: t('common.elevation'),
+      value: w.elevationGainM ? `↗ ${fmt.elevation(w.elevationGainM)}` : '',
+      series: ele,
+      color: 'elevation',
+    };
+  if (s.speed && sportInfo(w.sport).speedMode !== 'none') {
+    // standing still is not "slow": only moving samples
+    const v = s.speed.map((sp, i) => (s.moving && !s.moving[i] ? null : sp));
+    const sp = chartSeries(x, v, { ...opts, minRange: 0.5 });
+    if (sp)
+      out.pace = {
+        label: isPaceSport(w.sport) ? t('common.pace') : t('common.speed'),
+        value: w.avgSpeed ? `Ø ${fmt.pace(w.avgSpeed, w.sport)}` : '',
+        series: sp,
+        color: 'sport',
+      };
+  }
+  const hr = s.hr ? chartSeries(x, s.hr, { ...opts, minRange: 15 }) : null;
+  if (hr) out.heartRate = { label: t('common.heartRate'), value: w.avgHr ? `Ø ${fmt.hr(w.avgHr)}` : '', series: hr, color: 'hr' };
+  const pw = s.power ? chartSeries(x, s.power, { ...opts, minRange: 50 }) : null;
+  if (pw) out.power = { label: t('common.power'), value: w.avgPower ? `Ø ${fmt.power(w.avgPower)}` : '', series: pw, color: 'power' };
+  return out;
+}
+
+interface ShareShow {
+  route: boolean;
+  date: boolean;
+  place: boolean;
+}
 
 /** The route at full resolution from the streams (simplified to below a pixel), else the stored polyline. */
-function useRouteParts(w: WorkoutDetail): LatLon[][] {
-  const streams = useStreams(w.id);
+function useRouteParts(w: WorkoutDetail, data: WorkoutStreams | undefined): LatLon[][] {
   return useMemo(() => {
-    const s = streams.data;
+    const s = data;
     if (s?.lat && s.lon && s.lat.length === s.t.length && s.lat.length > 1) {
       const out: LatLon[][] = [];
       const b = w.bounds;
@@ -47,7 +141,7 @@ function useRouteParts(w: WorkoutDetail): LatLon[][] {
       if (out.length) return out;
     }
     return w.polyline ? decodePolylineParts(w.polyline) : [];
-  }, [streams.data, w.polyline, w.bounds]);
+  }, [data, w.polyline, w.bounds]);
 }
 
 /** Dialog with a live preview of the share image and its options; saves, shares or copies the PNG. */
@@ -58,39 +152,46 @@ export default function ShareDialog({ w, onClose }: { w: WorkoutDetail; onClose:
   const resolved = useResolvedTheme();
   const zones = settings.privacyZones ?? [];
   const mapsOff = settings.thumbnailMaps === false;
-  const route = useRouteParts(w);
+  const streams = useStreams(w.id);
+  const route = useRouteParts(w, streams.data);
   const hasRoute = route.some((p) => p.length >= 2);
 
   const [format, setFormat] = useStoredState<ShareFormat>('activities.shareFormat', 'square');
   const [background, setBackground] = useState<ShareBackground>(mapsOff || !w.hasRoute ? 'plain' : 'map');
   const [theme, setTheme] = useState<ShareTheme>(resolved);
   const [privacy, setPrivacy] = useState(true);
-  const [showHr, setShowHr] = useState(false);
-  const [showPower, setShowPower] = useState(false);
+  const [show, setShow] = useStoredState<ShareShow>('activities.shareShow', { route: true, date: true, place: true });
   const bg: ShareBackground = !hasRoute && background === 'map' ? 'plain' : background;
 
   const priv = useMemo(() => (privacy && zones.length && hasRoute ? hidePrivacyZones(route, zones) : null), [privacy, zones, hasRoute, route]);
   const parts = priv ? priv.parts : route;
 
-  const info = sportInfo(w.sport);
-  const distanceSport = info.distance && (w.distanceM ?? 0) > 0;
-  const stats = useMemo<ShareStat[]>(() => {
-    if (!distanceSport) return keyStats(w, fmt, t, 4).map(({ label, value, unit }) => ({ label, value, unit }));
-    const out: ShareStat[] = [];
-    const d = w.sport === 'swim' ? shortDistanceParts(w.distanceM!, fmt) : fmt.distanceParts(w.distanceM);
-    out.push({ label: t('common.distance'), ...d });
-    out.push({ label: t('common.movingTime'), value: fmt.duration(w.movingS ?? w.durationS) });
-    if (info.speedMode !== 'none' && w.avgSpeed)
-      out.push({ label: isPaceSport(w.sport) ? t('common.pace') : t('common.speed'), ...fmt.paceParts(w.avgSpeed, w.sport) });
-    if (w.hasRoute && (w.elevationGainM ?? 0) >= 1) out.push({ label: t('common.elevationGain'), ...fmt.elevationParts(w.elevationGainM) });
-    if (showHr && w.avgHr) out.push({ label: t('common.avgHr'), value: fmt.int(w.avgHr), unit: 'bpm' });
-    if (showPower && w.avgPower) out.push({ label: t('activities.stats.avgPower'), value: fmt.int(w.avgPower), unit: 'W' });
-    return out;
-  }, [w, fmt, t, info.speedMode, distanceSport, showHr, showPower]);
+  // ---- what is on the image: values, charts (chosen per sport and remembered), date / place / route ----
+  const catalog = useMemo(() => statCatalog(w, fmt, t), [w, fmt, t]);
+  const availableStats = SHARE_STAT_KEYS.filter((k) => catalog[k]);
+  const [storedStats, setStoredStats] = useStoredState<ShareStatKey[] | null>(`activities.shareStats.${w.sport}`, null);
+  const statKeys = shareSelection(storedStats, availableStats, defaultStats(w), SHARE_STAT_KEYS, MAX_SHARE_STATS);
+  const stats = useMemo<ShareStat[]>(() => statKeys.map((k) => catalog[k]!), [statKeys.join(), catalog]); // eslint-disable-line react-hooks/exhaustive-deps
+  const toggleStat = (k: ShareStatKey, on: boolean) =>
+    setStoredStats(on ? [...statKeys, k] : statKeys.filter((x) => x !== k));
+
+  const charts = useMemo(() => chartCatalog(w, streams.data, fmt, t), [w, streams.data, fmt, t]);
+  const availableCharts = SHARE_CHART_KEYS.filter((k) => charts[k]);
+  const [storedCharts, setStoredCharts] = useStoredState<ShareChartKey[] | null>(`activities.shareCharts.${w.sport}`, null);
+  const chartKeys = shareSelection(storedCharts, availableCharts, [], SHARE_CHART_KEYS, MAX_SHARE_CHARTS);
+  const chosenCharts = useMemo(() => chartKeys.map((k) => charts[k]!), [chartKeys.join(), charts]); // eslint-disable-line react-hooks/exhaustive-deps
+  const toggleChart = (k: ShareChartKey, on: boolean) =>
+    setStoredCharts(on ? [...chartKeys, k] : chartKeys.filter((x) => x !== k));
 
   const title = workoutTitle(w, lang);
   const place = activityPlace(w, lang);
-  const subtitle = [fmt.date(w.startTs, w.tzMin, 'day'), fmt.time(w.startTs, w.tzMin), place].filter(Boolean).join(' · ');
+  const subtitle = [
+    show.date ? fmt.date(w.startTs, w.tzMin, 'day') : null,
+    show.date ? fmt.time(w.startTs, w.tzMin) : null,
+    show.place ? place : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
   const filename = shareFileName(dayKey(w.startTs, w.tzMin), title);
 
   // ---- rendering (into a fresh canvas each time; the newest result wins) ----
@@ -110,7 +211,10 @@ export default function ShareDialog({ w, onClose }: { w: WorkoutDetail; onClose:
         sportSlot: sportSlot(w.sport),
         icon: iconRef.current?.querySelector('svg') ?? null,
         stats,
-        parts: bg === 'sticker' ? [] : parts,
+        charts: chosenCharts,
+        parts: bg === 'sticker' || !show.route ? [] : parts,
+        // without the route line the map still shows its area
+        area: bg === 'map' && !show.route ? parts : undefined,
         showStart: !priv?.startHidden,
         showEnd: !priv?.endHidden,
         brand: t('common.appName'),
@@ -135,7 +239,7 @@ export default function ShareDialog({ w, onClose }: { w: WorkoutDetail; onClose:
     return () => {
       current = false;
     };
-  }, [title, subtitle, w.sport, lang, stats, bg, parts, priv, t, format, theme, settings.mapStyle]);
+  }, [title, subtitle, w.sport, lang, stats, chosenCharts, show.route, bg, parts, priv, t, format, theme, settings.mapStyle]);
 
   // ---- output ----
   const [done, setDone] = useState<'saved' | 'copied' | null>(null);
@@ -244,7 +348,7 @@ export default function ShareDialog({ w, onClose }: { w: WorkoutDetail; onClose:
       <span ref={iconRef} className="hidden" aria-hidden>
         <SportIcon sport={w.sport} size={24} strokeWidth={2.25} />
       </span>
-      <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_16rem]">
+      <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_18rem]">
         <div
           className="relative grid min-h-64 place-items-center overflow-hidden rounded-control border border-border p-3"
           // a checkerboard shows where the sticker is transparent
@@ -299,20 +403,57 @@ export default function ShareDialog({ w, onClose }: { w: WorkoutDetail; onClose:
               items={(['light', 'dark'] as const).map((v) => ({ value: v, label: t(`activities.share.themes.${v}`) }))}
             />
           </Field>
-          {(zones.length > 0 && hasRoute) || (distanceSport && (w.avgHr || w.avgPower)) ? (
-            <div className="grid gap-2.5">
-              {zones.length > 0 && hasRoute && (
-                <div className="grid gap-1">
-                  <Switch checked={privacy} onChange={setPrivacy} label={t('activities.share.privacy')} />
-                  <span className="pl-11 text-xs text-fg-3">{t('activities.share.privacyHint')}</span>
-                </div>
-              )}
-              {distanceSport && !!w.avgHr && <Switch checked={showHr} onChange={setShowHr} label={t('activities.share.showHr')} />}
-              {distanceSport && !!w.avgPower && (
-                <Switch checked={showPower} onChange={setShowPower} label={t('activities.share.showPower')} />
-              )}
+          <Field
+            label={t('activities.share.values')}
+            help={statKeys.length >= MAX_SHARE_STATS ? t('activities.share.valuesMax', { count: MAX_SHARE_STATS }) : undefined}
+            group
+          >
+            <div className="flex flex-wrap gap-1.5">
+              {availableStats.map((k) => {
+                const on = statKeys.includes(k);
+                return (
+                  <span key={k} className={!on && statKeys.length >= MAX_SHARE_STATS ? 'pointer-events-none opacity-50' : undefined}>
+                    <ToggleChip size="sm" icon={Plus} active={on} onChange={(v) => toggleStat(k, v)}>
+                      {t(`activities.share.stats.${k}`)}
+                    </ToggleChip>
+                  </span>
+                );
+              })}
             </div>
-          ) : null}
+          </Field>
+          {availableCharts.length > 0 && (
+            <Field
+              label={t('activities.share.charts')}
+              help={chartKeys.length ? undefined : t('activities.share.chartsHint')}
+              group
+            >
+              <div className="flex flex-wrap gap-1.5">
+                {availableCharts.map((k) => {
+                  const on = chartKeys.includes(k);
+                  return (
+                    <span key={k} className={!on && chartKeys.length >= MAX_SHARE_CHARTS ? 'pointer-events-none opacity-50' : undefined}>
+                      <ToggleChip size="sm" icon={LineChart} active={on} onChange={(v) => toggleChart(k, v)}>
+                        {t(`activities.share.chartKinds.${k}`)}
+                      </ToggleChip>
+                    </span>
+                  );
+                })}
+              </div>
+            </Field>
+          )}
+          <div className="grid gap-2.5">
+            {hasRoute && bg !== 'sticker' && (
+              <Switch checked={show.route} onChange={(v) => setShow({ ...show, route: v })} label={t('activities.share.showRoute')} />
+            )}
+            <Switch checked={show.date} onChange={(v) => setShow({ ...show, date: v })} label={t('activities.share.showDate')} />
+            {place && <Switch checked={show.place} onChange={(v) => setShow({ ...show, place: v })} label={t('activities.share.showPlace')} />}
+            {zones.length > 0 && hasRoute && (
+              <div className="grid gap-1">
+                <Switch checked={privacy} onChange={setPrivacy} label={t('activities.share.privacy')} />
+                <span className="pl-11 text-xs text-fg-3">{t('activities.share.privacyHint')}</span>
+              </div>
+            )}
+          </div>
           {status && <p className="text-xs text-fg-3">{status}</p>}
         </div>
       </div>

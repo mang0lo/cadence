@@ -12,6 +12,8 @@ const feature: Feature = {
   name: 'connect',
   migrations: connectMigrations,
   routes: connectRoutes,
+  // the COROS login (email, password hash, tokens): reconnect on the Watches page after restoring a backup
+  secretSettings: ['connect.coros'],
 };
 
 export default feature;

@@ -26,9 +26,45 @@ let server: ChildProcess | null = null;
 let serverUrl: string | null = null;
 let win: BrowserWindow | null = null;
 let quitting = false;
+/** URL of the built-in server while it runs. */
+let localUrl: string | null = null;
+/** The built-in server is being stopped on purpose (switched to a remote server). */
+let stoppingLocal = false;
 
 /** Exit code of the server when it restarts itself on purpose (e.g. to apply a restored backup). */
 const RESTART_EXIT_CODE = 75;
+
+/** "Cadence 0.3.0": the version in the title bar, next to the window buttons. */
+const WINDOW_TITLE = `${APP_NAME} ${app.getVersion()}`;
+
+// ---- preferences of the desktop shell (the web UI keeps everything else in the database) ----
+interface DesktopPrefs {
+  /** A Cadence server (e.g. Docker on a home server) to show instead of the built-in one. */
+  remoteServerUrl?: string | null;
+}
+const prefsFile = path.join(dataDir, 'desktop.json');
+function readPrefs(): DesktopPrefs {
+  try {
+    return JSON.parse(fs.readFileSync(prefsFile, 'utf8')) as DesktopPrefs;
+  } catch {
+    return {};
+  }
+}
+function writePrefs(p: DesktopPrefs): void {
+  fs.mkdirSync(dataDir, { recursive: true });
+  fs.writeFileSync(prefsFile, JSON.stringify(p, null, 2));
+}
+/** http(s) URL with a host, normalized without a trailing slash; null otherwise. */
+function serverUrlOf(text: string): string | null {
+  try {
+    const u = new URL(text.includes('://') ? text : `http://${text}`);
+    if ((u.protocol !== 'http:' && u.protocol !== 'https:') || !u.hostname) return null;
+    return u.toString().replace(/\/$/, '');
+  } catch {
+    return null;
+  }
+}
+const remoteServer = (): string | null => serverUrlOf(readPrefs().remoteServerUrl ?? '');
 
 /** server/index.js and the web UI: inside the package (resources) or, unpackaged, from the repo's build output. */
 function resources(): { entry: string; web: string } {
@@ -93,7 +129,12 @@ function startServer(): Promise<string> {
     child.stderr!.on('data', (chunk: Buffer) => log.write(chunk));
     child.on('exit', (code) => {
       server = null;
+      localUrl = null;
       log.end();
+      if (stoppingLocal) {
+        stoppingLocal = false;
+        return;
+      }
       if (!resolved) {
         resolved = true;
         clearTimeout(timer);
@@ -103,6 +144,7 @@ function startServer(): Promise<string> {
         void startServer()
           .then((url) => {
             serverUrl = url;
+            localUrl = url;
             return win?.loadURL(url);
           })
           .catch((e: Error) => {
@@ -120,9 +162,22 @@ function startServer(): Promise<string> {
   });
 }
 
+/** The built-in server's URL, starting it when it does not run. */
+async function ensureLocalServer(): Promise<string> {
+  if (server && localUrl) return localUrl;
+  localUrl = await startServer();
+  return localUrl;
+}
+
 /** Native open dialog → import the file in place, like the macOS shell. */
 async function pickImportFile(): Promise<void> {
   if (!win) return;
+  // a remote server cannot read files on this computer: its import page uploads the file instead
+  const remote = remoteServer();
+  if (remote && !process.env.CADENCE_DEV_URL) {
+    await win.loadURL(`${remote}/import`).catch(() => undefined);
+    return;
+  }
   const r = await dialog.showOpenDialog(win, {
     title: 'Import',
     properties: ['openFile'],
@@ -196,7 +251,7 @@ async function createWindow(): Promise<void> {
     height: 900,
     minWidth: 1024,
     minHeight: 640,
-    title: APP_NAME,
+    title: WINDOW_TITLE,
     backgroundColor: '#f6f7f4',
     icon: path.join(__dirname, '..', 'resources', 'icon.png'),
     show: false,
@@ -212,6 +267,32 @@ async function createWindow(): Promise<void> {
     if (!smoke) win?.show();
   });
   win.on('closed', () => (win = null));
+  // keep "Cadence <version>" instead of the page's <title>
+  win.on('page-title-updated', (e) => {
+    e.preventDefault();
+    const remote = remoteServer();
+    win?.setTitle(remote ? `${WINDOW_TITLE} – ${new URL(remote).host}` : WINDOW_TITLE);
+  });
+  // a remote server that does not answer: try again or go back to the built-in one
+  win.webContents.on('did-fail-load', (_e, code, description, url, isMainFrame) => {
+    const remote = remoteServer();
+    if (!isMainFrame || !remote || code === -3 /* aborted */ || !url.startsWith(remote)) return;
+    void dialog
+      .showMessageBox(win!, {
+        type: 'warning',
+        title: APP_NAME,
+        message: `${new URL(remote).host} is not reachable`,
+        detail: description,
+        buttons: ['Try again', 'Use built-in server', 'Quit'],
+        defaultId: 0,
+        cancelId: 2,
+      })
+      .then(({ response }) => {
+        if (response === 0) void win?.loadURL(remote);
+        else if (response === 1) void connectServer(null);
+        else app.quit();
+      });
+  });
   // links to other sites (map attributions, COROS, docs) open in the browser
   win.webContents.setWindowOpenHandler(({ url }) => {
     void shell.openExternal(url);
@@ -225,8 +306,8 @@ async function createWindow(): Promise<void> {
   });
 
   try {
-    serverUrl = process.env.CADENCE_DEV_URL || (await startServer());
-    await win.loadURL(serverUrl);
+    serverUrl = process.env.CADENCE_DEV_URL || remoteServer() || (await ensureLocalServer());
+    await win.loadURL(serverUrl).catch(() => undefined); // a failed load is handled by did-fail-load
     if (smoke) {
       await new Promise((r) => setTimeout(r, 4000));
       const img = await win.webContents.capturePage();
@@ -246,6 +327,24 @@ async function createWindow(): Promise<void> {
   }
 }
 
+/** Settings → Server: show another Cadence server (null = the built-in one, started again when needed). */
+async function connectServer(url: string | null): Promise<void> {
+  if (!win) return;
+  writePrefs({ ...readPrefs(), remoteServerUrl: url });
+  if (url) {
+    // the built-in server is not needed while another one is shown
+    if (server) {
+      stoppingLocal = true;
+      server.kill();
+    }
+    serverUrl = url;
+  } else {
+    serverUrl = process.env.CADENCE_DEV_URL || (await ensureLocalServer());
+  }
+  win.setTitle(url ? `${WINDOW_TITLE} – ${new URL(url).host}` : WINDOW_TITLE);
+  await win.loadURL(serverUrl).catch(() => undefined);
+}
+
 /** Save a file the web UI made (share image): blob downloads are unreliable in embedded views, like on macOS. */
 async function saveFile(filename: string, base64: string): Promise<void> {
   if (!win) return;
@@ -256,10 +355,21 @@ async function saveFile(filename: string, base64: string): Promise<void> {
   await fs.promises.writeFile(r.filePath, Buffer.from(base64, 'base64'));
 }
 
-ipcMain.on('cadence', (_e, msg: { type?: string; filename?: string; base64?: string }) => {
+ipcMain.on('cadence', (_e, msg: { type?: string; filename?: string; base64?: string; url?: string }) => {
   if (msg?.type === 'pickImportFile') void pickImportFile();
   else if (msg?.type === 'openDataFolder') void shell.openPath(dataDir);
   else if (msg?.type === 'saveFile' && msg.filename && msg.base64) void saveFile(msg.filename, msg.base64);
+  else if (msg?.type === 'connectServer') {
+    const text = (msg.url ?? '').trim();
+    const url = text ? serverUrlOf(text) : null;
+    if (text && !url) return;
+    void connectServer(url).catch((e: Error) => dialog.showErrorBox(APP_NAME, e.message));
+  }
+});
+
+// what the web UI shows in Settings → Server (window.cadenceNative.info)
+ipcMain.on('cadence-info', (e) => {
+  e.returnValue = { app: 'desktop', version: app.getVersion(), remote: remoteServer() };
 });
 
 if (!app.requestSingleInstanceLock()) {

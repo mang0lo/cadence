@@ -41,6 +41,12 @@ const router = createBrowserRouter([
     path: '/',
     element: <AppShell />,
     errorElement: <RouteError />,
+    // shown while the first lazy page loads (React Router warns without one)
+    HydrateFallback: () => (
+      <div className="grid h-dvh place-items-center bg-bg">
+        <Spinner size={28} />
+      </div>
+    ),
     children: [
       ...featureModules.flatMap((f) => f.routes).map((r) => ({ ...r, errorElement: <RouteError /> })),
       { path: '*', element: <NotFound /> },
