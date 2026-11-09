@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { workoutTitle, type ActivityNav, type WorkoutDetail } from '@cadence/shared';
 import { PlaceText } from '@/components/map/PlaceText';
+import { WorkoutTags } from '@/components/WorkoutTags';
 import { Badge, Button, ErrorState, IconButton, Input, Textarea, cn } from '@/components/ui';
 import { useFormat } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
@@ -220,6 +221,7 @@ export function ActivityHeader({ w, nav }: { w: WorkoutDetail; nav: ActivityNav 
             )}
             {w.hidden && <Badge icon={EyeOff}>{t('activities.list.hiddenBadge')}</Badge>}
           </div>
+          <WorkoutTags w={w} />
           {device && (
             <div className="text-xs text-fg-3">
               {t('activities.detail.device')}: {device}

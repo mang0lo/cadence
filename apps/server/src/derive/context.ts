@@ -5,7 +5,7 @@ import type { DeriveContext } from '../features/types';
  * queues that rederive by itself when it starts (JobManager.start).
  * 2: track breaks (no distance, elevation or line across a jump while paused), multi-part polylines.
  */
-export const DERIVE_VERSION = 2;
+export const DERIVE_VERSION = 3;
 /** Version of the gzip JSON stored in workout_streams. */
 export const STREAMS_VERSION = 1;
 

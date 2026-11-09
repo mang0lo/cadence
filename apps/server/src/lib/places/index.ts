@@ -197,3 +197,53 @@ export function placesAlong(polyline: string | null, stepM = 800): string[] {
 
 /** Stored form of the places of a route: "|Hannover|Berlin|" (searchable with LIKE), null without any. */
 export const placesColumn = (names: string[]): string | null => (names.length ? `|${names.join('|')}|` : null);
+
+/** ISO country codes along a route (start, end and a point every few kilometers), in order. */
+export function countriesAlong(polyline: string | null, stepM = 4000): string[] {
+  if (!polyline) return [];
+  const out = new Set<string>();
+  const add = (lat: number, lon: number) => {
+    const c = nearestPlace(Math.round(lat * 50) / 50, Math.round(lon * 50) / 50, 30)?.country;
+    if (c && /^[A-Z]{2}$/.test(c)) out.add(c);
+  };
+  for (const part of decodePolylineParts(polyline))
+    for (let i = 0; i < part.length; i++) {
+      const [lat, lon] = part[i]!;
+      const next = part[i + 1];
+      if (i === 0 || !next) add(lat, lon);
+      if (!next) continue;
+      const steps = Math.floor(haversine(lat, lon, next[0], next[1]) / stepM);
+      for (let k = 1; k <= steps; k++) {
+        const f = k / (steps + 1);
+        add(lat + (next[0] - lat) * f, lon + (next[1] - lon) * f);
+      }
+    }
+  return [...out];
+}
+
+let countryNames: Map<string, string[]> | null = null;
+
+/** Country codes whose English or German name contains the search text ("ital" → IT, "österreich" → AT). */
+export function countrySearchCodes(q: string): string[] {
+  const s = q.trim().toLowerCase();
+  if (s.length < 3) return [];
+  if (!countryNames) {
+    countryNames = new Map();
+    const names = [new Intl.DisplayNames(['en'], { type: 'region' }), new Intl.DisplayNames(['de'], { type: 'region' })];
+    const A = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    for (const a of A)
+      for (const b of A) {
+        const code = a + b;
+        const list = names.flatMap((n) => {
+          try {
+            const name = n.of(code);
+            return name && name !== code ? [name.toLowerCase()] : [];
+          } catch {
+            return [];
+          }
+        });
+        if (list.length) countryNames.set(code, list);
+      }
+  }
+  return [...countryNames].filter(([, list]) => list.some((n) => n.includes(s))).map(([code]) => code);
+}

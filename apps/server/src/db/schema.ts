@@ -354,4 +354,10 @@ export const coreMigrations: Migration[] = [
       }
     },
   },
+  {
+    // Automatic tags: countries of the route ("|DE|AT|") and hard repetitions (training kind); filled by the
+    // derive step (DERIVE_VERSION 3 rebuilds existing workouts once)
+    id: 'core_005_workout_tags',
+    up: 'ALTER TABLE workouts ADD COLUMN countries TEXT; ALTER TABLE workouts ADD COLUMN hard_reps INTEGER;',
+  },
 ];

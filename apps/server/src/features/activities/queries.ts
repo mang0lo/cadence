@@ -17,6 +17,7 @@ import {
   type ActivityTotals,
   type ActivityWeekDay,
 } from '@cadence/shared';
+import { countrySearchCodes } from '../../lib/places';
 import { all, get, type Db } from '../../db/db';
 import { SUMMARY_COLS, toSummary, type WorkoutRow } from '../../core/workouts';
 import { haversine } from '../../lib/geo';
@@ -110,6 +111,11 @@ export function listWhere(athleteId: number, f: ListFilter): { sql: string; para
       // places_via: every place the route passes through
       ors.push(`place LIKE ? ESCAPE '\\'`, `place_end LIKE ? ESCAPE '\\'`, `places_via LIKE ? ESCAPE '\\'`);
       params.push(l, l, l);
+    }
+    // countries the route passes through, by their English or German name ("italien")
+    for (const code of countrySearchCodes(q)) {
+      ors.push(`countries LIKE ?`);
+      params.push(`%|${code}|%`);
     }
     // German names of places stored in English ("wien" → Vienna)
     const names = placeSearchNames(q);

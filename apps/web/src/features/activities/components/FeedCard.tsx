@@ -2,6 +2,7 @@ import { Link, useNavigate } from 'react-router';
 import { EyeOff, MapPinOff } from 'lucide-react';
 import { workoutTitle, type ActivityListItem } from '@cadence/shared';
 import { PlaceText } from '@/components/map/PlaceText';
+import { WorkoutTags } from '@/components/WorkoutTags';
 import { RouteThumbnail } from '@/components/map/RouteThumbnail';
 import { Badge, Card, Skeleton } from '@/components/ui';
 import { useFormat } from '@/lib/format';
@@ -74,6 +75,7 @@ export function FeedCard({ w }: { w: ActivityListItem }) {
         </div>
         {w.notes && <p className="mt-3 line-clamp-2 whitespace-pre-line text-sm text-fg-2">{w.notes}</p>}
         <StatList items={keyStats(w, fmt, t, 5)} className="mt-4" />
+        <WorkoutTags w={w} className="mt-3" />
         {w.medals.length > 0 && <MedalList medals={w.medals} sport={w.sport} className="mt-3" />}
       </div>
       {w.polyline && (
