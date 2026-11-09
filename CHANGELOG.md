@@ -38,11 +38,24 @@ show a Cadence server.
   the built-in one, with a reachability check, and go back with one click. A server that does not answer offers
   "Try again" / "Use built-in server".
 - **Version in the title bar** of the Mac and desktop apps; Settings → About shows the app and the server version.
+- **Search by place**: the activity search also finds where an activity started or ended ("Warnemünde", "Rostock"),
+  with German names for places stored in English ("Wien").
+
+### Security
+
+- **Login brake** on password-protected servers: eight wrong passwords from one address lock its logins for five
+  minutes; sessions that are logged in keep working.
+- **Backups no longer contain the COROS login** (email, password hash, tokens) — connect again on the Watches page
+  after restoring a backup.
+- Baseline protection headers (no embedding in other sites, no MIME sniffing, no activity URLs in referrers).
 
 ### Fixed
 
 - Import in the apps while connected to a remote server opens the upload page (a remote server cannot read files on
   your computer).
+- GPX file names keep umlauts and other letters ("Übungsfahrt-2026-06-20.gpx").
+- Web app files are cached properly on servers (faster reloads; updates are picked up right away).
+- Screen-reader labels of the theme switch, the menu button and loading spinners are translated.
 
 ## [0.2.1] – 2026-11-03
 

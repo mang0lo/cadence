@@ -2,6 +2,7 @@
  * UI primitives. Import from '@/components/ui'. Styling uses theme tokens only (bg-surface, text-fg-2,
  * border-border, text-accent-fg …) so everything works in light and dark mode.
  */
+import { useT } from '@/lib/i18n';
 import clsx, { type ClassValue } from 'clsx';
 import {
   forwardRef,
@@ -580,7 +581,8 @@ export function Slider({
 // ---------------------------------------------------------------------------
 
 export function Spinner({ className, size = 18 }: { className?: string; size?: number }) {
-  return <Loader2 size={size} className={cn('animate-spin text-fg-3', className)} aria-label="Loading" />;
+  const t = useT();
+  return <Loader2 size={size} className={cn('animate-spin text-fg-3', className)} aria-label={t('common.loading')} />;
 }
 
 export function Skeleton({ className }: { className?: string }) {
