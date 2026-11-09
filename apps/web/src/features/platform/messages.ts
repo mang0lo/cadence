@@ -148,7 +148,7 @@ export const messages: Dictionary = {
       never: 'never',
       backup: 'Backup & moving to a server',
       backupHint:
-        'Download the complete database — including renamed activities, goals and segments — and restore it on another Cadence installation, e.g. when moving from the Mac app to your own server.',
+        'Download the complete database — including renamed activities, goals and segments — and restore it on another Cadence installation, e.g. when moving from the Mac app to your own server. Logins of watch accounts (COROS) are not part of the backup: connect again after restoring.',
       download: 'Download backup',
       restore: 'Restore backup…',
       restoreConfirm: 'This replaces ALL data of this installation with the backup. Continue?',
@@ -162,6 +162,8 @@ export const messages: Dictionary = {
       password: 'Password',
       submit: 'Sign in',
       wrong: 'Wrong password',
+      tooMany: 'Too many wrong passwords. Wait a few minutes and try again.',
+      unreachable: 'The server did not answer. Check the connection and try again.',
     },
   },
   de: {
@@ -311,7 +313,7 @@ export const messages: Dictionary = {
       never: 'nie',
       backup: 'Backup & Umzug auf einen Server',
       backupHint:
-        'Lade die komplette Datenbank herunter – inklusive umbenannter Aktivitäten, Ziele und Segmente – und stelle sie in einer anderen Cadence-Installation wieder her, z. B. beim Umzug von der Mac-App auf deinen eigenen Server.',
+        'Lade die komplette Datenbank herunter – inklusive umbenannter Aktivitäten, Ziele und Segmente – und stelle sie in einer anderen Cadence-Installation wieder her, z. B. beim Umzug von der Mac-App auf deinen eigenen Server. Zugangsdaten zu Uhren-Konten (COROS) sind nicht im Backup: nach dem Wiederherstellen neu verbinden.',
       download: 'Backup herunterladen',
       restore: 'Backup wiederherstellen…',
       restoreConfirm: 'Damit werden ALLE Daten dieser Installation durch das Backup ersetzt. Fortfahren?',
@@ -325,6 +327,8 @@ export const messages: Dictionary = {
       password: 'Passwort',
       submit: 'Anmelden',
       wrong: 'Falsches Passwort',
+      tooMany: 'Zu viele falsche Passwörter. Warte ein paar Minuten und versuche es noch einmal.',
+      unreachable: 'Der Server antwortet nicht. Prüfe die Verbindung und versuche es noch einmal.',
     },
   },
 };

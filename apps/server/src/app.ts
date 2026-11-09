@@ -64,6 +64,14 @@ export async function buildApp(config: Config, db: Db, opts: BuildAppOptions = {
       .send({ error: { code: typeof e.code === 'string' ? e.code : 'error', message: e.message ?? 'Unexpected error' } });
   });
 
+  // Baseline browser protections: no MIME sniffing, no embedding in other sites, no activity URLs in referrers.
+  app.addHook('onSend', async (_req, reply) => {
+    reply.header('x-content-type-options', 'nosniff');
+    reply.header('x-frame-options', 'SAMEORIGIN');
+    reply.header('content-security-policy', "frame-ancestors 'self'");
+    reply.header('referrer-policy', 'same-origin');
+  });
+
   await app.register(compress, { global: true, threshold: 2048 });
   await app.register(multipart, { limits: { fileSize: 64 * 1024 ** 3, files: 1 } });
   registerAuth(app, config.password);
@@ -79,7 +87,20 @@ export async function buildApp(config: Config, db: Db, opts: BuildAppOptions = {
 
   const hasWeb = fs.existsSync(path.join(config.webDir, 'index.html'));
   if (hasWeb) {
-    await app.register(fastifyStatic, { root: config.webDir, index: ['index.html'], wildcard: false });
+    await app.register(fastifyStatic, {
+      root: config.webDir,
+      index: ['index.html'],
+      wildcard: false,
+      // Vite's files in /assets carry a content hash: cache them for good; everything else is revalidated,
+      // so an update of the app is picked up on the next load
+      cacheControl: false,
+      setHeaders: (res, file) => {
+        res.header(
+          'cache-control',
+          /[\\/]assets[\\/]/.test(file) ? 'public, max-age=31536000, immutable' : 'no-cache',
+        );
+      },
+    });
   }
   app.setNotFoundHandler((req, reply) => {
     if (hasWeb && req.method === 'GET' && !req.url.startsWith('/api/')) return reply.sendFile('index.html');

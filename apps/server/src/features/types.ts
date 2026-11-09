@@ -52,6 +52,11 @@ export interface Feature {
    * trophies. Runs in the import worker after all derive steps; must be fast and must not write.
    */
   whatsNew?: (input: WhatsNewInput) => ImportHighlight[];
+  /**
+   * Setting keys that hold credentials of other services (logins, tokens). They are left out of backups: a
+   * backup file is moved around and must not let anyone log in to those accounts.
+   */
+  secretSettings?: string[];
 }
 
 export interface WhatsNewInput {
