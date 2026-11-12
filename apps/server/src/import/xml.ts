@@ -58,7 +58,6 @@ export function decodeEntities(raw: string): string {
 const Mode = { Normal: 0, Comment: 1, CData: 2, PI: 3, Decl: 4, DoctypeSubset: 5 } as const;
 type Mode = (typeof Mode)[keyof typeof Mode];
 
-const LT = 60; // <
 const GT = 62; // >
 const SLASH = 47; // /
 const EQ = 61; // =
@@ -67,7 +66,6 @@ const SQ = 39; // '
 const BANG = 33; // !
 const QM = 63; // ?
 const LBRACKET = 91; // [
-const RBRACKET = 93; // ]
 
 export class XmlScanner {
   private buf = '';

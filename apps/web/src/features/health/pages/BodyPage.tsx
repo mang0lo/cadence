@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Dumbbell, Percent, Ruler, Scale, TrendingUp } from 'lucide-react';
+import { Dumbbell, Percent, Ruler, Scale } from 'lucide-react';
 import { Link } from 'react-router';
 import { bmiSeries, leanMassSeries, trailingChange, type BloodPressureReading } from '@cadence/shared';
 import { useChartTheme } from '@/components/charts/theme';

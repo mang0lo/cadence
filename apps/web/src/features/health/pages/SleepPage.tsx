@@ -63,13 +63,12 @@ export default function SleepPage() {
     { enabled: !!asOf && hasSleep },
   );
 
-  const { current, previous, main, naps } = useMemo(() => {
+  const { previous, main, naps } = useMemo(() => {
     const list = nightsQ.data ?? [];
     const lo = asOf ? addDays(asOf, -(span - 1)) : '';
     const cur = list.filter((n) => n.day >= lo);
     const prev = list.filter((n) => n.day < lo);
     return {
-      current: cur,
       previous: prev.filter((n) => n.kind === 'night'),
       main: cur.filter((n) => n.kind === 'night'),
       naps: cur.filter((n) => n.kind === 'nap'),

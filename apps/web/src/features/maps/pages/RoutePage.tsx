@@ -3,17 +3,6 @@ import { Link, useParams } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Check, Pencil, Route as RouteIcon, Trophy, X } from 'lucide-react';
 import { sportInfo, workoutTitle, type MapsRouteDetail, type MapsRouteEffort } from '@cadence/shared';
-import { ChartCard } from '@/components/charts/ChartCard';
-import { EChart } from '@/components/charts/EChart';
-import {
-  axisTooltip,
-  legend,
-  lineSeries,
-  timeAxis,
-  tooltipHtml,
-  valueAxis,
-  grid,
-} from '@/components/charts/options';
 import { useChartTheme } from '@/components/charts/theme';
 import { overlayColors } from '@/components/map/styles';
 import {
@@ -28,7 +17,6 @@ import {
   Input,
   Page,
   PageHeader,
-  SegmentedControl,
   Skeleton,
   Stat,
   StatRow,
@@ -47,8 +35,6 @@ import { EffortTrend } from '../components/EffortTrend';
 import { LineMap, type MapLine } from '../components/LineMap';
 import { unionBox, type BBox } from '../lib/home';
 import { kindLabel, routeTitle } from '../lib/routeName';
-
-type Metric = 'time' | 'pace';
 
 /** +1:37 / −0:12 */
 const signedDuration = (fmt: { duration: (s: number) => string }, s: number): string =>

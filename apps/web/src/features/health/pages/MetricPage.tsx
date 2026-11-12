@@ -64,7 +64,6 @@ export default function MetricPage() {
   const intradayDay = pickedDay ?? s?.stats.latestDay ?? meta.data?.asOf ?? null;
 
   const stats = s?.stats;
-  const val = (v: number | null | undefined) => (v === null || v === undefined ? '–' : m.value(identifier, v, unit));
   const parts = (v: number | null | undefined) => m.parts(identifier, v ?? undefined, unit);
 
   return (

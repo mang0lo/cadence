@@ -108,7 +108,6 @@ export function ReadinessWidget() {
 const RHR = 'HKQuantityTypeIdentifierRestingHeartRate';
 const HRV = 'HKQuantityTypeIdentifierHeartRateVariabilitySDNN';
 const STEPS = 'HKQuantityTypeIdentifierStepCount';
-const SLEEP = 'HKCategoryTypeIdentifierSleepAnalysis';
 
 function Tile({
   to,
