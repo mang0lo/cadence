@@ -3,6 +3,9 @@ import * as echarts from 'echarts';
 import type { EChartsOption, ECharts } from 'echarts';
 import { cn } from '@/components/ui';
 import { baseOption } from './options';
+import { pointerInElement } from './pointer';
+
+export { pointerInElement };
 import { useChartTheme } from './theme';
 
 export type { EChartsOption, ECharts };
@@ -23,6 +26,47 @@ export interface EChartProps {
   /** Charts sharing a group sync their crosshair (echarts.connect). */
   group?: string;
   ariaLabel?: string;
+}
+
+/** Pointer events ECharts (zrender) reads positions from. Touch events are computed correctly by zrender itself. */
+const POINTER_EVENTS = [
+  'mousemove',
+  'mousedown',
+  'mouseup',
+  'mouseout',
+  'click',
+  'dblclick',
+  'contextmenu',
+  'wheel',
+  'mousewheel',
+  'pointermove',
+  'pointerdown',
+  'pointerup',
+  'pointerout',
+] as const;
+
+/**
+ * ECharts takes the pointer from `MouseEvent.offsetX/Y`, which some engines report in the unzoomed scale while the
+ * page is zoomed (WebKit with pinch or ⌘+ in the Mac app, CSS zoom): the tooltip then showed the value that would be
+ * under the pointer without zoom. zrender uses an event's `zrX/zrY` as given when they are already set, so they are
+ * set first (capture phase) from the client coordinates, which are right at every zoom level.
+ */
+function correctPointerPositions(container: HTMLElement, chart: ECharts): () => void {
+  const root = (): HTMLElement =>
+    (chart.getZr() as unknown as { painter?: { getViewportRoot?: () => HTMLElement } }).painter?.getViewportRoot?.() ??
+    container;
+  const onEvent = (e: Event) => {
+    const me = e as MouseEvent & { zrX?: number; zrY?: number };
+    if (typeof me.clientX !== 'number') return;
+    const el = root();
+    const p = pointerInElement(me, el.getBoundingClientRect(), { width: el.offsetWidth, height: el.offsetHeight });
+    me.zrX = p.x;
+    me.zrY = p.y;
+  };
+  for (const type of POINTER_EVENTS) container.addEventListener(type, onEvent, { capture: true, passive: true });
+  return () => {
+    for (const type of POINTER_EVENTS) container.removeEventListener(type, onEvent, { capture: true });
+  };
 }
 
 /** Theme-aware ECharts wrapper (canvas). Resizes with its container. */
@@ -47,10 +91,12 @@ export function EChart({
     const node = el.current!;
     const c = echarts.init(node, undefined, { renderer: 'canvas' });
     chart.current = c;
+    const stopPointerFix = correctPointerPositions(node, c);
     const ro = new ResizeObserver(() => c.resize());
     ro.observe(node);
     onReady?.(c);
     return () => {
+      stopPointerFix();
       ro.disconnect();
       c.dispose();
       chart.current = null;

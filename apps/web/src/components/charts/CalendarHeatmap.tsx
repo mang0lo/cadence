@@ -92,9 +92,13 @@ export function CalendarHeatmap({
   // the single tab stop: the focused day, else the selected one, else the last day
   const tabDay = clampDay(focusDay ?? selectedDay ?? to);
   const showTip = (day: string, el: SVGRectElement) => {
-    const box = wrap.current!.getBoundingClientRect();
+    const w = wrap.current!;
+    const box = w.getBoundingClientRect();
     const r = el.getBoundingClientRect();
-    setHover({ day, x: r.left - box.left + r.width / 2, y: r.top - box.top });
+    // rectangles are in zoomed screen units, the tooltip is placed in the wrapper's CSS pixels
+    const sx = w.offsetWidth ? box.width / w.offsetWidth : 1;
+    const sy = w.offsetHeight ? box.height / w.offsetHeight : 1;
+    setHover({ day, x: (r.left - box.left + r.width / 2) / (sx || 1), y: (r.top - box.top) / (sy || 1) });
   };
   const onKey = (e: KeyboardEvent<SVGRectElement>, day: string) => {
     const moves: Record<string, () => string> = {

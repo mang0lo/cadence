@@ -3,6 +3,14 @@
 All notable changes to Cadence. Versions follow [semantic versioning](https://semver.org); every `v*` tag builds a
 release (see `.github/workflows/release.yml`), whose notes are taken from the matching section below.
 
+## [Unreleased]
+
+### Fixed
+
+- **Charts while the page is zoomed** (pinch or ⌘+ in the Mac app, browser zoom): the tooltip showed the value that
+  would be under the pointer without zoom. Fixed for every chart, the range selection on the activity charts and the
+  tooltip of the calendar heatmap; zooming keeps working.
+
 ## [0.3.0] – 2026-11-06
 
 Other watches (COROS, FIT files), Cadence for Linux and Windows, a much more flexible share image and the apps can

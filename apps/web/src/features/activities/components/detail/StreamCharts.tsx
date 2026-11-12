@@ -3,7 +3,7 @@ import { Activity } from 'lucide-react';
 import type { LineSeriesOption } from 'echarts';
 import { M_PER_FT, M_PER_KM, M_PER_MI } from '@cadence/shared';
 import { ChartCard, type TableView } from '@/components/charts/ChartCard';
-import { EChart } from '@/components/charts/EChart';
+import { EChart, pointerInElement } from '@/components/charts/EChart';
 import { valueAxis } from '@/components/charts/options';
 import { useChartTheme, type ChartTheme } from '@/components/charts/theme';
 import { SegmentedControl } from '@/components/ui';
@@ -367,8 +367,13 @@ export function StreamCharts({ P, sport, zoneBounds, playback, hover, selection,
   useEffect(request, [selection, metrics, xMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const indexAt = (clientX: number): number => {
-    const r = wrap.current!.getBoundingClientRect();
-    const f = Math.max(0, Math.min(1, (clientX - r.left - GL) / (r.width - GL - GR)));
+    const el = wrap.current!;
+    // in the charts' own CSS pixels, also while the page is zoomed (GL / GR are CSS pixels)
+    const { x } = pointerInElement({ clientX, clientY: 0 }, el.getBoundingClientRect(), {
+      width: el.offsetWidth,
+      height: el.offsetHeight,
+    });
+    const f = Math.max(0, Math.min(1, (x - GL) / (el.offsetWidth - GL - GR)));
     return fracIndex(xFull, x0 + f * (x1 - x0));
   };
 
