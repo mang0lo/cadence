@@ -31,7 +31,7 @@ import {
   type RingRow,
 } from './data';
 import { localParts, monthStartOf, plusDays, TZ_MARGIN_S, utcMidnight, yearStartOf } from './days';
-import { listGoals } from './goals-service';
+import { listGoals, loadChecks } from './goals-service';
 import { computeScore } from './score';
 import { dailyStreak, weeklyStreak } from './streaks';
 
@@ -95,7 +95,10 @@ export function overview(db: Db, athleteId: number, today?: string): Consistency
   const lastYear = sameDateLastYear(asOf);
   // 12 + 52 weeks of daily rows are enough for the score and its trend
   const rows = loadDaily(db, athleteId, plusDays(asOf, -7 * 66));
-  const weeklyGoals = listGoals(db, athleteId).filter((g) => g.period === 'week');
+  const checks = loadChecks(db, athleteId);
+  const weeklyGoals = listGoals(db, athleteId)
+    .filter((g) => g.period === 'week')
+    .map((g) => ({ ...g, checks: checks.get(g.id) }));
   return {
     today: streaks.today,
     asOf,

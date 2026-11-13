@@ -7,6 +7,7 @@ import type {
   ConsistencyPrefs,
   DayDetail,
   Goal,
+  GoalCheckResult,
   GoalInput,
   GoalsResponse,
   PunchcardResponse,
@@ -78,6 +79,12 @@ export function useConsistencyMutations() {
     deleteGoal: useCallback(async (id: number) => {
       await api.delete(`/consistency/goals/${id}`);
       await refresh();
+    }, [refresh]),
+    /** Check a goal off by hand (or take the check mark back) — `day`: a day of the period, default the current one. */
+    checkGoal: useCallback(async (id: number, done: boolean, day?: string) => {
+      const out = await api.put<GoalCheckResult>(`/consistency/goals/${id}/check`, { done, day, today: todayKey() });
+      await refresh();
+      return out;
     }, [refresh]),
     setPrefs: useCallback(async (patch: Partial<ConsistencyPrefs>) => {
       const out = await api.put<ConsistencyPrefs>('/consistency/prefs', patch);

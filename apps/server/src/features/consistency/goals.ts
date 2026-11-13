@@ -4,6 +4,7 @@
  */
 import {
   LONGEST_PRESETS,
+  goalMetricsFor,
   sportInfo,
   type GoalInput,
   type GoalMetric,
@@ -28,10 +29,15 @@ export interface DailyRow {
   longestM?: number;
 }
 
-export const PERIOD_DAYS_MAX: Record<GoalPeriod, number> = { week: 7, month: 31, year: 366 };
+export const PERIOD_DAYS_MAX: Record<GoalPeriod, number> = { day: 1, week: 7, month: 31, year: 366 };
 
 /** How many completed periods the history shows. */
-export const HISTORY_LENGTH: Record<GoalPeriod, number> = { week: 12, month: 12, year: 5 };
+export const HISTORY_LENGTH: Record<GoalPeriod, number> = { day: 14, week: 12, month: 12, year: 5 };
+
+/** True when one of the hand-made check marks (days) lies inside [start, end]. */
+export function isChecked(checks: readonly string[] | undefined, start: string, end: string): boolean {
+  return !!checks && checks.some((d) => d >= start && d <= end);
+}
 
 /** Value of a goal metric over rows (already restricted to one period). */
 export function goalValue(rows: Iterable<DailyRow>, metric: GoalMetric, sport: string | null): number {
@@ -51,6 +57,9 @@ export function goalValue(rows: Iterable<DailyRow>, metric: GoalMetric, sport: s
         break;
       case 'elevation':
         v += r.elevationM;
+        break;
+      case 'calories':
+        v += r.energyKcal;
         break;
       case 'activities':
         v += r.count;
@@ -78,8 +87,10 @@ export function goalProjection(o: {
   start: string;
   end: string;
   asOf: string;
-  /** A single-activity goal (`longest`): reached or still open, there is no pace to project. */
+  /** A daily or single-activity (`longest`) goal: reached or still open, there is no pace to project. */
   single?: boolean;
+  /** Checked off by hand: done whatever the value. */
+  checked?: boolean;
 }): GoalPeriodProgress {
   const totalDays = daysBetween(o.start, o.end) + 1;
   const elapsedDays = Math.max(0, Math.min(totalDays, daysBetween(o.start, o.asOf)));
@@ -88,7 +99,9 @@ export function goalProjection(o: {
   const expected = totalDays ? (target * elapsedDays) / totalDays : target;
   const projected = (o.value * totalDays) / Math.max(1, Math.min(totalDays, elapsedDays + 1));
   const remaining = Math.max(0, target - o.value);
-  const status = o.value >= target ? 'done' : o.single ? 'open' : o.value + 1e-9 >= expected ? 'on_track' : 'behind';
+  const checked = !!o.checked;
+  const status =
+    checked || o.value >= target ? 'done' : o.single ? 'open' : o.value + 1e-9 >= expected ? 'on_track' : 'behind';
   return {
     start: o.start,
     end: o.end,
@@ -103,6 +116,7 @@ export function goalProjection(o: {
     remaining,
     remainingDays,
     perDayNeeded: !o.single && remaining > 0 && remainingDays > 0 ? remaining / remainingDays : null,
+    checked,
   };
 }
 
@@ -125,6 +139,15 @@ export function bucketByPeriod(rows: DailyRow[], period: GoalPeriod, weekStart: 
   return out;
 }
 
+export interface HistoryOptions {
+  /** Number of periods (default HISTORY_LENGTH[period]). */
+  length?: number;
+  /** Days of the hand-made check marks of the goal: a period containing one counts as reached. */
+  checks?: readonly string[];
+  /** Last day the imported data covers: a later period that is not reached is `pending`, not missed. */
+  horizon?: string;
+}
+
 /**
  * Completed periods before the one containing `asOf`, oldest first, back to the period containing
  * `firstDay` (at most HISTORY_LENGTH[period] entries).
@@ -135,16 +158,27 @@ export function goalHistory(
   asOf: string,
   weekStart: 0 | 1,
   firstDay: string | null,
-  length = HISTORY_LENGTH[goal.period],
+  opts: HistoryOptions = {},
 ): GoalPeriodResult[] {
   if (!firstDay) return [];
+  const length = opts.length ?? HISTORY_LENGTH[goal.period];
   const out: GoalPeriodResult[] = [];
   let start = previousPeriodStart(periodRange(asOf, goal.period, weekStart).start, goal.period);
   while (out.length < length) {
     const range = periodRange(start, goal.period, weekStart);
     if (range.end < firstDay) break;
     const value = goalValue(buckets.get(range.start) ?? [], goal.metric, goal.sport);
-    out.push({ start: range.start, end: range.end, value, hit: value >= goal.target });
+    const reached = value >= goal.target;
+    const manual = !reached && isChecked(opts.checks, range.start, range.end);
+    const pending = !reached && !manual && opts.horizon !== undefined && range.end > opts.horizon;
+    out.push({
+      start: range.start,
+      end: range.end,
+      value,
+      hit: reached || manual,
+      ...(manual ? { manual } : {}),
+      ...(pending ? { pending } : {}),
+    });
     start = previousPeriodStart(range.start, goal.period);
   }
   return out.reverse();
@@ -177,6 +211,8 @@ export function niceTarget(metric: GoalMetric, period: GoalPeriod, average: numb
       return v >= 10_000 ? Math.round(v / 1000) * 1000 : Math.max(500, Math.round(v / 500) * 500);
     case 'elevation':
       return Math.max(100, roundNice(v));
+    case 'calories':
+      return Math.max(50, roundNice(v));
   }
 }
 
@@ -197,7 +233,7 @@ export function recentAverage(
   firstDay: string | null,
   count: number,
 ): AverageResult {
-  const hist = goalHistory({ ...goal, target: Infinity }, buckets, asOf, weekStart, firstDay, count);
+  const hist = goalHistory({ ...goal, target: Infinity }, buckets, asOf, weekStart, firstDay, { length: count });
   if (!hist.length) return { average: 0, periods: 0 };
   return { average: hist.reduce((s, h) => s + h.value, 0) / hist.length, periods: hist.length };
 }
@@ -313,6 +349,11 @@ export function defaultGoals(rows: DailyRow[], asOf: string, weekStart: 0 | 1, f
       out.push({ period: 'month', sport: top, metric: 'distance', target: niceTarget('distance', 'month', dist.average, 1) });
   }
   return out;
+}
+
+/** True when the measure exists for the sport and period (no distance for strength training …). */
+export function metricFits(goal: Pick<GoalInput, 'sport' | 'metric' | 'period'>): boolean {
+  return goalMetricsFor(goal.sport, goal.period).includes(goal.metric);
 }
 
 /** True when `target` can be reached at all within the period (active days ≤ days of the period). */

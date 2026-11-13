@@ -8,6 +8,7 @@ import {
   type ConsistencyPrefs,
   type DayDetail,
   type Goal,
+  type GoalCheckResult,
   type GoalsResponse,
   type PunchcardResponse,
   type StreakSummary,
@@ -18,8 +19,8 @@ import { badRequest, notFound } from '../../lib/http';
 import { dayString, parseDay } from '../../lib/time';
 import { resolveDays, weekStartOfAthlete } from './data';
 import { DAY_RE, daysBetween, plusDays, weekStartOf } from './days';
-import { isFeasible, PERIOD_DAYS_MAX } from './goals';
-import { createGoal, deleteGoal, getGoal, goalsResponse, updateGoal } from './goals-service';
+import { isFeasible, metricFits, PERIOD_DAYS_MAX } from './goals';
+import { createGoal, deleteGoal, getGoal, goalsResponse, setGoalCheck, updateGoal } from './goals-service';
 import { calendar, dayDetail, getPrefs, overview, punchcard, setPrefs, streakSummary } from './overview';
 import { trophiesResponse } from './trophies';
 import { yearReview } from './year';
@@ -52,12 +53,12 @@ const calendarQuery = z
 const punchcardQuery = z.object({ year: z.union([year, z.literal('all')]).optional() });
 
 const goalFields = z.object({
-  period: z.enum(['week', 'month', 'year']),
+  period: z.enum(['day', 'week', 'month', 'year']),
   sport: z
     .string()
     .refine((s) => s in SPORTS, 'Unknown sport')
     .nullable(),
-  metric: z.enum(['distance', 'longest', 'time', 'elevation', 'activities', 'active_days']),
+  metric: z.enum(['distance', 'longest', 'time', 'elevation', 'calories', 'activities', 'active_days']),
   target: z.number().positive().max(1e9),
 });
 const feasible = {
@@ -66,8 +67,15 @@ const feasible = {
     .join(', ')})`,
   path: ['target'],
 };
-const goalBody = goalFields.refine(isFeasible, feasible);
+const fits = { message: 'This measure does not exist for the sport or period', path: ['metric'] };
+const goalBody = goalFields.refine(metricFits, fits).refine(isFeasible, feasible);
 const goalPatch = goalFields.partial();
+const checkBody = z.object({
+  /** A day of the period to check off; default: the current period (today for daily goals). */
+  day: day.optional(),
+  done: z.boolean(),
+  today: day.optional(),
+});
 
 const prefsBody = z
   .object({
@@ -139,8 +147,23 @@ export default async function consistencyRoutes(app: FastifyInstance) {
     const patch = goalPatch.parse(req.body ?? {});
     const cur = getGoal(app.db, req.athleteId, id);
     if (!cur) throw notFound('Goal');
+    if (!metricFits({ ...cur, ...patch })) throw badRequest(fits.message);
     if (!isFeasible({ ...cur, ...patch })) throw badRequest(feasible.message);
     return updateGoal(app.db, req.athleteId, id, patch)!;
+  });
+
+  /** Check a goal off by hand for one period (something was done but not tracked), or take the check mark back. */
+  app.put('/goals/:id/check', async (req): Promise<GoalCheckResult> => {
+    const { id } = idParam.parse(req.params);
+    const body = checkBody.parse(req.body ?? {});
+    const goal = getGoal(app.db, req.athleteId, id);
+    if (!goal) throw notFound('Goal');
+    const days = resolveDays(app.db, req.athleteId, body.today);
+    // a daily goal is about the real today, the others about the last day the data covers (like the goal cards)
+    const current = goal.period === 'day' ? days.today : days.asOf;
+    const target = body.day ?? current;
+    if (target > days.today) throw badRequest('A goal cannot be checked off for the future');
+    return setGoalCheck(app.db, req.athleteId, id, target, body.done)!;
   });
 
   app.delete('/goals/:id', async (req) => {

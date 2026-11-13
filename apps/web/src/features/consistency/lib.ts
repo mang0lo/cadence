@@ -52,6 +52,8 @@ export function formatGoalValue(fmt: Formatter, t: TFunction, metric: GoalMetric
       return v < 60 ? (fmt.lang === 'de' ? '0 Min.' : '0m') : fmt.durationShort(v);
     case 'elevation':
       return fmt.elevation(v);
+    case 'calories':
+      return fmt.energy(v);
     case 'activities':
       return t('common.activities', { count: Math.round(v) });
     case 'active_days':
@@ -59,16 +61,21 @@ export function formatGoalValue(fmt: Formatter, t: TFunction, metric: GoalMetric
   }
 }
 
-/** Display unit for entering a goal target (km/mi, h, m/ft, count). */
-export function targetUnit(fmt: Formatter, t: TFunction, metric: GoalMetric): string {
+/** Time targets are entered in minutes for a day ("30 min per day") and in hours for longer periods. */
+const timeUnitS = (period?: GoalPeriod): number => (period === 'day' ? 60 : 3600);
+
+/** Display unit for entering a goal target (km/mi, h or min, m/ft, kcal, count). */
+export function targetUnit(fmt: Formatter, t: TFunction, metric: GoalMetric, period?: GoalPeriod): string {
   switch (metric) {
     case 'distance':
     case 'longest':
       return fmt.distanceUnit;
     case 'time':
-      return 'h';
+      return period === 'day' ? t('consistency.goals.unit.minutes') : 'h';
     case 'elevation':
       return fmt.units === 'imperial' ? 'ft' : 'm';
+    case 'calories':
+      return 'kcal';
     case 'activities':
       return t('consistency.goals.unit.activities');
     case 'active_days':
@@ -77,7 +84,7 @@ export function targetUnit(fmt: Formatter, t: TFunction, metric: GoalMetric): st
 }
 
 /** Canonical target → number shown in the form's input. */
-export function toInputValue(fmt: Formatter, metric: GoalMetric, v: number): number {
+export function toInputValue(fmt: Formatter, metric: GoalMetric, v: number, period?: GoalPeriod): number {
   const imperial = fmt.units === 'imperial';
   const round = (x: number, d: number) => Math.round(x * 10 ** d) / 10 ** d;
   switch (metric) {
@@ -85,7 +92,7 @@ export function toInputValue(fmt: Formatter, metric: GoalMetric, v: number): num
     case 'longest':
       return round(v / (imperial ? M_PER_MI : M_PER_KM), metric === 'longest' ? 3 : 1);
     case 'time':
-      return round(v / 3600, 2);
+      return round(v / timeUnitS(period), period === 'day' ? 0 : 2);
     case 'elevation':
       return Math.round(imperial ? v / M_PER_FT : v);
     default:
@@ -94,14 +101,14 @@ export function toInputValue(fmt: Formatter, metric: GoalMetric, v: number): num
 }
 
 /** Number typed in the form → canonical target. */
-export function fromInputValue(fmt: Formatter, metric: GoalMetric, v: number): number {
+export function fromInputValue(fmt: Formatter, metric: GoalMetric, v: number, period?: GoalPeriod): number {
   const imperial = fmt.units === 'imperial';
   switch (metric) {
     case 'distance':
     case 'longest':
       return v * (imperial ? M_PER_MI : M_PER_KM);
     case 'time':
-      return v * 3600;
+      return v * timeUnitS(period);
     case 'elevation':
       return imperial ? v * M_PER_FT : v;
     default:
@@ -124,6 +131,7 @@ export function goalTargetText(fmt: Formatter, t: TFunction, g: Pick<GoalInput, 
 
 /** "2 – 8 Nov" style label of a period. */
 export function periodLabel(fmt: Formatter, period: GoalPeriod, start: string, end: string): string {
+  if (period === 'day') return fmt.day(start, 'weekdayShort');
   if (period === 'year') return start.slice(0, 4);
   if (period === 'month') return fmt.day(start, 'month');
   return `${fmt.day(start, 'dayShort')} – ${fmt.day(end, 'dayShort')}`;

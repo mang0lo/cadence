@@ -1,7 +1,8 @@
 /**
- * Goals: CRUD on consistency_goals plus progress for the API. consistency_goals survives a data reset
- * (Feature.keepOnReset); the goal list is additionally mirrored into the settings table (`consistency.goalsBackup`)
- * and restored from there on the next read if the table is ever found empty (e.g. after an older reset).
+ * Goals: CRUD on consistency_goals plus progress for the API, and the check marks set by hand
+ * (consistency_goal_checks). Both tables survive a data reset (Feature.keepOnReset); the goal list is additionally
+ * mirrored into the settings table (`consistency.goalsBackup`) and restored from there on the next read if the
+ * table is ever found empty (e.g. after an older reset).
  */
 import type { Goal, GoalInput, GoalMetric, GoalPeriod, GoalsResponse, GoalWithProgress } from '@cadence/shared';
 import { all, get, run, tx, type Db } from '../../db/db';
@@ -14,6 +15,7 @@ import {
   goalHistory,
   goalProjection,
   goalValue,
+  isChecked,
   rowsIn,
   suggestGoals,
   type DailyRow,
@@ -60,13 +62,53 @@ export function getGoal(db: Db, athleteId: number, id: number): Goal | null {
   return r ? toGoal(r) : null;
 }
 
+/** Days of the check marks per goal id, ascending. */
+export function loadChecks(db: Db, athleteId: number): Map<number, string[]> {
+  const out = new Map<number, string[]>();
+  for (const r of all<{ goal_id: number; day: string }>(
+    db,
+    `SELECT c.goal_id, c.day FROM consistency_goal_checks c JOIN consistency_goals g ON g.id = c.goal_id
+     WHERE g.athlete_id = ? ORDER BY c.goal_id, c.day`,
+    [athleteId],
+  )) {
+    let list = out.get(r.goal_id);
+    if (!list) out.set(r.goal_id, (list = []));
+    list.push(r.day);
+  }
+  return out;
+}
+
+/**
+ * Check a goal off by hand for the period containing `day` (or remove the check mark). Returns the period, or null
+ * when the goal does not exist.
+ */
+export function setGoalCheck(
+  db: Db,
+  athleteId: number,
+  id: number,
+  day: string,
+  done: boolean,
+): { start: string; end: string; done: boolean } | null {
+  return tx(db, () => {
+    const goal = getGoal(db, athleteId, id);
+    if (!goal) return null;
+    const { start, end } = periodRange(day, goal.period, weekStartOfAthlete(db, athleteId));
+    run(db, 'DELETE FROM consistency_goal_checks WHERE goal_id = ? AND day >= ? AND day <= ?', [id, start, end]);
+    if (done) run(db, 'INSERT INTO consistency_goal_checks (goal_id, day) VALUES (?, ?)', [id, start]);
+    writeBackup(db, athleteId);
+    return { start, end, done };
+  });
+}
+
 function writeBackup(db: Db, athleteId: number): void {
-  const list = listGoals(db, athleteId).map(({ period, sport, metric, target, position }) => ({
+  const checks = loadChecks(db, athleteId);
+  const list = listGoals(db, athleteId).map(({ id, period, sport, metric, target, position }) => ({
     period,
     sport,
     metric,
     target,
     position,
+    ...(checks.has(id) ? { checks: checks.get(id) } : {}),
   }));
   setSetting(db, athleteId, BACKUP_KEY, list);
   setSetting(db, athleteId, STATE_KEY, { seeded: true });
@@ -97,6 +139,8 @@ export function updateGoal(db: Db, athleteId: number, id: number, patch: Partial
     const cur = getGoal(db, athleteId, id);
     if (!cur) return null;
     const next = { ...cur, ...patch };
+    // check marks belong to periods: a daily goal turned into a weekly one starts without them
+    if (next.period !== cur.period) run(db, 'DELETE FROM consistency_goal_checks WHERE goal_id = ?', [id]);
     run(
       db,
       `UPDATE consistency_goals SET period = ?, sport = ?, metric = ?, target = ?, updated_at = unixepoch()
@@ -110,6 +154,11 @@ export function updateGoal(db: Db, athleteId: number, id: number, patch: Partial
 
 export function deleteGoal(db: Db, athleteId: number, id: number): boolean {
   return tx(db, () => {
+    run(
+      db,
+      'DELETE FROM consistency_goal_checks WHERE goal_id IN (SELECT id FROM consistency_goals WHERE athlete_id = ? AND id = ?)',
+      [athleteId, id],
+    );
     const n = run(db, 'DELETE FROM consistency_goals WHERE athlete_id = ? AND id = ?', [athleteId, id]).changes;
     if (n) writeBackup(db, athleteId);
     return n > 0;
@@ -130,10 +179,16 @@ export function ensureGoals(
 ): Goal[] {
   const goals = listGoals(db, athleteId);
   if (goals.length) return goals;
-  const backup = getSetting<(GoalInput & { position?: number })[]>(db, athleteId, BACKUP_KEY, []);
+  const backup = getSetting<(GoalInput & { position?: number; checks?: string[] })[]>(db, athleteId, BACKUP_KEY, []);
   const state = getSetting<{ seeded?: boolean }>(db, athleteId, STATE_KEY, {});
   if (backup.length) {
-    tx(db, () => backup.forEach((g, i) => insertGoal(db, athleteId, g, g.position ?? i)));
+    tx(db, () =>
+      backup.forEach((g, i) => {
+        const id = insertGoal(db, athleteId, g, g.position ?? i);
+        for (const day of new Set(g.checks ?? []))
+          run(db, 'INSERT INTO consistency_goal_checks (goal_id, day) VALUES (?, ?)', [id, day]);
+      }),
+    );
   } else if (!state.seeded && firstDay) {
     tx(db, () => {
       defaultGoals(rows, asOf, weekStart, firstDay).forEach((g, i) => insertGoal(db, athleteId, g, i));
@@ -143,7 +198,11 @@ export function ensureGoals(
   return listGoals(db, athleteId);
 }
 
-/** Current progress, projection and history of one goal. */
+/**
+ * Current progress, projection and history of one goal. Weekly, monthly and yearly goals are judged as of the last
+ * day the data covers (`asOf`). A daily goal is about the real `today`: it can be checked off before the next import,
+ * and earlier days the data does not cover yet are pending rather than missed.
+ */
 export function goalWithProgress(
   goal: Goal,
   rows: DailyRow[],
@@ -151,15 +210,27 @@ export function goalWithProgress(
   asOf: string,
   weekStart: 0 | 1,
   firstDay: string | null,
+  o: { checks?: readonly string[]; today?: string } = {},
 ): GoalWithProgress {
-  const { start, end } = periodRange(asOf, goal.period, weekStart);
+  const daily = goal.period === 'day';
+  const ref = daily && o.today && o.today > asOf ? o.today : asOf;
+  const { start, end } = periodRange(ref, goal.period, weekStart);
   const value = goalValue(rowsIn(rows, start, end), goal.metric, goal.sport);
-  const history = goalHistory(goal, buckets(goal.period), asOf, weekStart, firstDay);
+  const history = goalHistory(goal, buckets(goal.period), ref, weekStart, firstDay, { checks: o.checks, horizon: asOf });
+  const judged = history.filter((h) => !h.pending);
   return {
     ...goal,
-    current: goalProjection({ value, target: goal.target, start, end, asOf, single: goal.metric === 'longest' }),
+    current: goalProjection({
+      value,
+      target: goal.target,
+      start,
+      end,
+      asOf: ref,
+      single: daily || goal.metric === 'longest',
+      checked: isChecked(o.checks, start, end),
+    }),
     history,
-    hitRate: history.length ? history.filter((h) => h.hit).length / history.length : null,
+    hitRate: judged.length ? judged.filter((h) => h.hit).length / judged.length : null,
   };
 }
 
@@ -180,11 +251,14 @@ export function goalsResponse(db: Db, athleteId: number, today?: string): GoalsR
   const rows = loadDaily(db, athleteId);
   const goals = ensureGoals(db, athleteId, rows, days.asOf, weekStart, firstDay);
   const buckets = periodBuckets(rows, weekStart);
+  const checks = loadChecks(db, athleteId);
   return {
     today: days.today,
     asOf: days.asOf,
     weekStart,
-    goals: goals.map((g) => goalWithProgress(g, rows, buckets, days.asOf, weekStart, firstDay)),
+    goals: goals.map((g) =>
+      goalWithProgress(g, rows, buckets, days.asOf, weekStart, firstDay, { checks: checks.get(g.id), today: days.today }),
+    ),
     suggestions: suggestGoals(rows, goals, days.asOf, weekStart, firstDay),
   };
 }

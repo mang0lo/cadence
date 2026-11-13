@@ -3,7 +3,7 @@
  * Each widget renders its own <Card> and fetches its own data; it returns null when there is nothing to show.
  *
  *   <StreakWidget />    current daily streak, longest + weekly streak, the last 14 days
- *   <GoalsWidget />     the top 3 goals with progress and on-track status
+ *   <GoalsWidget />     the first goals (daily ones first) with progress, status and a check-off button
  *   <CalendarWidget />  activity calendar of the last 18 weeks
  */
 import { useMemo } from 'react';
@@ -15,8 +15,8 @@ import { Card, CardHeader, ErrorState, Skeleton, cn } from '@/components/ui';
 import { useFormat } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
 import { useSettings } from '@/lib/settings';
-import { useCalendar, useGoals, useStreaks } from './api';
-import { GoalIcon, GoalProgressBar, GoalStatusBadge } from './components/GoalParts';
+import { useCalendar, useConsistencyMutations, useGoals, useStreaks } from './api';
+import { GoalCheckButton, GoalIcon, GoalProgressBar, GoalStatusBadge } from './components/GoalParts';
 import { PendingNote } from './components/StreakCards';
 import { formatGoalValue, goalTitle } from './lib';
 
@@ -123,19 +123,22 @@ export function StreakWidget() {
   );
 }
 
-const PERIOD_ORDER: Record<GoalPeriod, number> = { week: 0, month: 1, year: 2 };
+const PERIOD_ORDER: Record<GoalPeriod, number> = { day: 0, week: 1, month: 2, year: 3 };
 
 export function GoalsWidget() {
   const { t, lang } = useI18n();
   const fmt = useFormat();
   const q = useGoals();
-  const goals = useMemo(
-    () =>
-      [...(q.data?.goals ?? [])]
-        .sort((a, b) => PERIOD_ORDER[a.period] - PERIOD_ORDER[b.period] || a.position - b.position)
-        .slice(0, 3),
-    [q.data],
-  );
+  const { checkGoal } = useConsistencyMutations();
+  // daily goals first (they are the ones to tick off today), then the shortest periods; a few more when there are
+  // daily goals so the weekly ones stay in view
+  const goals = useMemo(() => {
+    const sorted = [...(q.data?.goals ?? [])].sort(
+      (a, b) => PERIOD_ORDER[a.period] - PERIOD_ORDER[b.period] || a.position - b.position,
+    );
+    const daily = sorted.filter((g) => g.period === 'day').length;
+    return sorted.slice(0, Math.min(5, 3 + daily));
+  }, [q.data]);
   if (q.error)
     return (
       <Card>
@@ -161,16 +164,18 @@ export function GoalsWidget() {
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-sm font-medium text-fg">{title}</div>
                 </div>
-                <GoalStatusBadge status={g.current.status} />
+                <GoalCheckButton goal={g} compact onCheck={(done) => void checkGoal(g.id, done).catch(() => undefined)} />
               </div>
               <GoalProgressBar current={g.current} label={title} height={8} />
-              <div className="mt-1 flex justify-between gap-2 text-xs text-fg-3">
+              <div className="mt-1.5 flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-xs text-fg-3">
                 <span className="tabular">
                   <span className="font-medium text-fg">{formatGoalValue(fmt, t, g.metric, g.current.value)}</span>
                   {' / '}
                   {formatGoalValue(fmt, t, g.metric, g.current.target)}
+                  {' · '}
+                  {t(`consistency.goals.current.${g.period}`)}
                 </span>
-                <span>{t(`consistency.goals.current.${g.period}`)}</span>
+                <GoalStatusBadge status={g.current.status} checked={g.current.checked} />
               </div>
             </li>
           );

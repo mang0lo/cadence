@@ -66,8 +66,9 @@ export function daysInMonth(month: string): number {
   return daysBetween(`${month}-01`, monthEndOf(`${month}-01`)) + 1;
 }
 
-/** Inclusive range of the period (week / month / year) containing `day`. */
+/** Inclusive range of the period (day / week / month / year) containing `day`. */
 export function periodRange(day: string, period: GoalPeriod, weekStart: 0 | 1): { start: string; end: string } {
+  if (period === 'day') return { start: day, end: day };
   if (period === 'week') {
     const start = weekStartOf(day, weekStart);
     return { start, end: plusDays(start, 6) };
@@ -78,6 +79,7 @@ export function periodRange(day: string, period: GoalPeriod, weekStart: 0 | 1): 
 
 /** Start day of the period before the one starting at `start`. */
 export function previousPeriodStart(start: string, period: GoalPeriod): string {
+  if (period === 'day') return plusDays(start, -1);
   if (period === 'week') return plusDays(start, -7);
   if (period === 'month') return monthStartOf(plusDays(start, -1));
   return `${Number(start.slice(0, 4)) - 1}-01-01`;
