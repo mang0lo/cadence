@@ -3,7 +3,20 @@
 All notable changes to Cadence. Versions follow [semantic versioning](https://semver.org); every `v*` tag builds a
 release (see `.github/workflows/release.yml`), whose notes are taken from the matching section below.
 
-## [Unreleased]
+## [1.0.0] – 2026-11-13
+
+Cadence 1.0: goals per day that fill in from your activities or are checked off by hand, goals by calories, a sidebar
+in your own order, and charts, narrow windows and navigation behave as they should.
+
+### Install
+
+- **Mac app**: `Cadence-1.0.0.dmg` below (macOS 14+, Apple silicon; not notarized: **System Settings → Privacy &
+  Security → Open Anyway**).
+- **Linux**: `Cadence-1.0.0-linux-x86_64.AppImage` or the `.deb` below; `./install.sh path/to/Cadence.AppImage` adds it
+  to your launcher.
+- **Windows**: the `Cadence-Setup-1.0.0.exe` installer or the portable `.exe` below.
+- **Server**: `ghcr.io/mang0lo/cadence:v1.0.0` (also `:latest`).
+- Updating from 0.3.0 needs nothing from you: your data, goals and settings stay, and nothing is analysed again.
 
 ### Added
 
@@ -22,9 +35,13 @@ release (see `.github/workflows/release.yml`), whose notes are taken from the ma
   The order is saved with your settings, so it is the same in every app and browser; *Default order* brings the
   original one back.
 
-### Fixed
+### Changed
 
-- **Menu on phones**: the close button no longer covers the light/dark switch.
+- **Faster start of the charts**: only the chart types in use are loaded (1.12 MB → 0.68 MB of JavaScript).
+- **Sources of a metric** (All data → a metric) are computed about twice as fast and remembered until the next
+  import — noticeable for heart rate with millions of samples.
+
+### Fixed
 
 - **Charts while the page is zoomed** (pinch or ⌘+ in the Mac app, browser zoom): the tooltip showed the value that
   would be under the pointer without zoom. Fixed for every chart, the range selection on the activity charts and the
@@ -33,12 +50,7 @@ release (see `.github/workflows/release.yml`), whose notes are taken from the ma
   instead of jumping to the top.
 - **Narrow windows and phones**: no more sideways scrolling on Settings (also at 1024 px), Activities, Import,
   Consistency, route and segment pages.
-
-### Changed
-
-- **Faster start of the charts**: only the chart types in use are loaded (1.12 MB → 0.68 MB of JavaScript).
-- **Sources of a metric** (All data → a metric) are computed about twice as fast and remembered until the next
-  import — noticeable for heart rate with millions of samples.
+- **Menu on phones**: the close button no longer covers the light/dark switch.
 
 ## [0.3.0] – 2026-11-06
 
