@@ -32,7 +32,8 @@ jobs:
           tags: cadence:ci
 
   # Linux and Windows desktop app (Electron): package it, start the packaged app once (smoke test: the bundled server
-  # must come up and the UI render), keep the installers as artifacts of the run.
+  # must come up and the UI render), keep the installers as artifacts of the run for a few days. The build and the
+  # smoke test decide the job; an upload that fails (e.g. the artifact storage quota of the account is used up) does not.
   desktop:
     strategy:
       fail-fast: false
@@ -77,19 +78,26 @@ jobs:
             exit 1
           }
           Write-Output "smoke test passed (exit code $($p.ExitCode))"
+      - name: Installers exist
+        shell: bash
+        env:
+          FILES: ${{ matrix.files }}
+        run: ls -l $FILES
       - uses: actions/upload-artifact@v4
         if: always()
+        continue-on-error: true
         with:
           name: smoke-${{ runner.os }}
           path: ${{ runner.temp }}/smoke.png
           if-no-files-found: ignore
-          retention-days: 7
+          retention-days: 3
       - uses: actions/upload-artifact@v4
+        continue-on-error: true
         with:
           name: cadence-${{ runner.os }}
           path: ${{ matrix.files }}
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 3
 
   # macOS app (Swift shell + bundled Node runtime) as a disk image
   macos-app:
@@ -103,9 +111,13 @@ jobs:
           cache: npm
       - run: npm ci --no-audit --no-fund
       - run: npm run mac -- --dmg
+      - name: Disk image exists
+        run: ls -l build/Cadence-*.dmg
+      # like the desktop installers: kept for a few days, and a failing upload does not fail the build
       - uses: actions/upload-artifact@v4
+        continue-on-error: true
         with:
           name: cadence-macOS
           path: build/Cadence-*.dmg
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 3
