@@ -89,6 +89,9 @@ function recordWhere(
   return { sql, params };
 }
 
+/** /metric/sources answers per athlete, type and range; `stamp` = sample count and newest sample of the type. */
+const sourcesCache = new Map<string, { stamp: string; value: MetricSources }>();
+
 export function registerMetricRoutes(app: FastifyInstance): void {
   app.get('/explorer', async (req): Promise<ExplorerResponse> => buildExplorer(app.db, req.athleteId));
 
@@ -152,6 +155,18 @@ export function registerMetricRoutes(app: FastifyInstance): void {
     checkDayOrder(q.fromDay, q.toDay);
     const t = resolveType(app.db, q.type);
     const w = recordWhere(req.athleteId, t.id, q);
+    // Millions of samples for heart rate: the answer only changes with an import, so it is kept per type and range
+    // (validated against the type's sample count and newest sample).
+    const stat = get<{ count: number; last_ts: number | null }>(
+      app.db,
+      'SELECT count, last_ts FROM record_type_stats WHERE athlete_id = ? AND type_id = ?',
+      [req.athleteId, t.id],
+    );
+    const cacheKey = `${req.athleteId}|${t.id}|${q.fromDay ?? ''}|${q.toDay ?? ''}`;
+    const stamp = `${stat?.count ?? 0}|${stat?.last_ts ?? 0}`;
+    const cached = sourcesCache.get(cacheKey);
+    if (cached && cached.stamp === stamp) return cached.value;
+    // group on the two integer ids first, then name the few groups (joining and concatenating per sample is slow)
     const rows = all<{
       source_id: number;
       name: string | null;
@@ -161,11 +176,12 @@ export function registerMetricRoutes(app: FastifyInstance): void {
       last_ts: number;
     }>(
       app.db,
-      `SELECT r.source_id, s.name, COALESCE(d.name, '') || CASE WHEN d.hardware IS NULL THEN '' ELSE ' (' || d.hardware || ')' END AS device,
-              COUNT(*) AS n, MIN(r.start_ts) AS first_ts, MAX(r.start_ts) AS last_ts
-       FROM records r LEFT JOIN sources s ON s.id = r.source_id LEFT JOIN devices d ON d.id = r.device_id
-       WHERE ${w.sql}
-       GROUP BY r.source_id, device`,
+      `SELECT g.source_id, s.name, COALESCE(d.name, '') || CASE WHEN d.hardware IS NULL THEN '' ELSE ' (' || d.hardware || ')' END AS device,
+              g.n, g.first_ts, g.last_ts
+       FROM (
+         SELECT r.source_id, r.device_id, COUNT(*) AS n, MIN(r.start_ts) AS first_ts, MAX(r.start_ts) AS last_ts
+         FROM records r WHERE ${w.sql} GROUP BY r.source_id, r.device_id
+       ) g LEFT JOIN sources s ON s.id = g.source_id LEFT JOIN devices d ON d.id = g.device_id`,
       w.params,
     );
     const by = new Map<number, MetricSourceRow & { devSet: Set<string> }>();
@@ -184,7 +200,10 @@ export function registerMetricRoutes(app: FastifyInstance): void {
     const sources = [...by.values()]
       .map(({ devSet, ...s }) => ({ ...s, devices: [...devSet].sort() }))
       .sort((a, b) => b.count - a.count);
-    return { type: t.identifier, total: sources.reduce((n, s) => n + s.count, 0), sources };
+    const value: MetricSources = { type: t.identifier, total: sources.reduce((n, s) => n + s.count, 0), sources };
+    if (sourcesCache.size >= 200) sourcesCache.clear();
+    sourcesCache.set(cacheKey, { stamp, value });
+    return value;
   });
 
   // Raw samples, paginated

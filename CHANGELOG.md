@@ -10,6 +10,16 @@ release (see `.github/workflows/release.yml`), whose notes are taken from the ma
 - **Charts while the page is zoomed** (pinch or ⌘+ in the Mac app, browser zoom): the tooltip showed the value that
   would be under the pointer without zoom. Fixed for every chart, the range selection on the activity charts and the
   tooltip of the calendar heatmap; zooming keeps working.
+- **Going back keeps your place**: returning from an activity to the feed or a list restores the scroll position
+  instead of jumping to the top.
+- **Narrow windows and phones**: no more sideways scrolling on Settings (also at 1024 px), Activities, Import,
+  Consistency, route and segment pages.
+
+### Changed
+
+- **Faster start of the charts**: only the chart types in use are loaded (1.12 MB → 0.68 MB of JavaScript).
+- **Sources of a metric** (All data → a metric) are computed about twice as fast and remembered until the next
+  import — noticeable for heart rate with millions of samples.
 
 ## [0.3.0] – 2026-11-06
 
