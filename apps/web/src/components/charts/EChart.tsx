@@ -1,5 +1,19 @@
 import { useEffect, useRef } from 'react';
-import * as echarts from 'echarts';
+import { BarChart, CustomChart, LineChart, ScatterChart } from 'echarts/charts';
+import {
+  AxisPointerComponent,
+  DataZoomComponent,
+  GridComponent,
+  LegendComponent,
+  MarkAreaComponent,
+  MarkLineComponent,
+  MarkPointComponent,
+  TooltipComponent,
+  VisualMapComponent,
+} from 'echarts/components';
+import * as echarts from 'echarts/core';
+import { LabelLayout, LegacyGridContainLabel } from 'echarts/features';
+import { CanvasRenderer } from 'echarts/renderers';
 import type { EChartsOption, ECharts } from 'echarts';
 import { cn } from '@/components/ui';
 import { baseOption } from './options';
@@ -7,6 +21,28 @@ import { pointerInElement } from './pointer';
 
 export { pointerInElement };
 import { useChartTheme } from './theme';
+
+// Only what the app's charts use (the full build is more than twice as large). A chart type or option component
+// that is not registered here is silently ignored by ECharts: add it when a chart needs one.
+echarts.use([
+  LineChart,
+  BarChart,
+  ScatterChart,
+  CustomChart,
+  GridComponent,
+  TooltipComponent,
+  AxisPointerComponent,
+  LegendComponent,
+  MarkLineComponent,
+  MarkAreaComponent,
+  MarkPointComponent,
+  VisualMapComponent,
+  DataZoomComponent,
+  LabelLayout,
+  // the charts' grids use `containLabel` (see options.ts): without this feature ECharts 6 lays them out differently
+  LegacyGridContainLabel,
+  CanvasRenderer,
+]);
 
 export type { EChartsOption, ECharts };
 

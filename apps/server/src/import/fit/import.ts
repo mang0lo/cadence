@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import yauzl from 'yauzl';
 import type { ImportStats } from '@cadence/shared';
-import { prepare, tx, type Db } from '../../db/db';
+import { prepare, tx } from '../../db/db';
 import { dayString } from '../../lib/time';
 import { tzOffsetMinutes } from '../../lib/tz';
 import type { ImportResult, RunImportOptions } from '../importer';

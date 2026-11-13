@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import type { CustomSeriesOption } from 'echarts';
-import { Activity, Droplets, HeartPulse, Moon, Thermometer, Wind, type LucideIcon } from 'lucide-react';
+import { Activity, Droplets, HeartPulse, Moon, Wind, type LucideIcon } from 'lucide-react';
 import type { DailyMetric, SleepNight, SleepNightDetail, SleepStage, TimedValue } from '@cadence/shared';
 import { ChartCard } from '@/components/charts/ChartCard';
 import { EChart } from '@/components/charts/EChart';

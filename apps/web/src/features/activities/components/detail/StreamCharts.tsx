@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, type ReactNode } from 'react';
 import { Activity } from 'lucide-react';
 import type { LineSeriesOption } from 'echarts';
 import { M_PER_FT, M_PER_KM, M_PER_MI } from '@cadence/shared';

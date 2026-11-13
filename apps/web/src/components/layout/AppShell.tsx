@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Link, NavLink, Outlet, useLocation, useNavigation } from 'react-router';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Link, NavLink, Outlet, useLocation, useNavigation, useNavigationType } from 'react-router';
 import { Menu, Moon, Sparkles, Sun, Watch, X } from 'lucide-react';
 import { featureModules } from '@/features/registry';
 import type { NavGroup, NavItem } from '@/features/types';
@@ -234,6 +234,57 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   );
 }
 
+/**
+ * Scroll position of the content area: a new page starts at the top, going back (or forward) returns to where the
+ * page was left — e.g. back from an activity to the same spot in the feed. The content of the page may still be
+ * loading, so the position is applied again for a moment until it can be reached; any input of the user stops that.
+ */
+function useScrollRestoration(): void {
+  const location = useLocation();
+  const type = useNavigationType();
+  const positions = useRef(new Map<string, number>());
+  const lastPath = useRef(location.pathname);
+
+  // remember the position of the entry that is shown
+  useEffect(() => {
+    const main = document.querySelector('main');
+    if (!main) return;
+    const key = location.key;
+    const onScroll = () => positions.current.set(key, main.scrollTop);
+    main.addEventListener('scroll', onScroll, { passive: true });
+    return () => main.removeEventListener('scroll', onScroll);
+  }, [location.key]);
+
+  useEffect(() => {
+    const main = document.querySelector('main');
+    if (!main) return;
+    const samePage = lastPath.current === location.pathname;
+    lastPath.current = location.pathname;
+    if (type !== 'POP') {
+      // filters and tabs change the query of the same page: stay where you are
+      if (!samePage) main.scrollTo({ top: 0 });
+      return;
+    }
+    const target = positions.current.get(location.key) ?? 0;
+    let frame = 0;
+    let tries = 0;
+    const stop = () => {
+      cancelAnimationFrame(frame);
+      for (const e of USER_INPUT) main.removeEventListener(e, stop);
+    };
+    const apply = () => {
+      main.scrollTo({ top: target });
+      if (Math.abs(main.scrollTop - target) > 2 && tries++ < 120) frame = requestAnimationFrame(apply);
+      else stop();
+    };
+    for (const e of USER_INPUT) main.addEventListener(e, stop, { passive: true });
+    apply();
+    return stop;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.key]);
+}
+const USER_INPUT = ['wheel', 'touchstart', 'pointerdown', 'keydown'] as const;
+
 /** App frame: sidebar navigation (drawer on small screens) + routed content. */
 export function AppShell() {
   const [open, setOpen] = useState(false);
@@ -241,9 +292,7 @@ export function AppShell() {
   const navigation = useNavigation();
   const t = useT();
   useEffect(() => setOpen(false), [location.pathname]);
-  useEffect(() => {
-    document.querySelector('main')?.scrollTo({ top: 0 });
-  }, [location.pathname]);
+  useScrollRestoration();
 
   return (
     <div className="flex h-full bg-bg">
