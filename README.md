@@ -5,14 +5,10 @@
 <h1 align="center">Cadence</h1>
 
 <p align="center">
-  A self-hosted, Strava-style training log fed by your <b>complete Apple Health export</b>.<br/>
-  Mac app first — the same code runs as a server for your browser, anywhere.
+  A self-hosted, Strava-style training log fed by your <b>complete Apple Health export</b> — and by COROS watches
+  and FIT files.<br/>
+  A desktop app for Mac, Linux and Windows; the same code runs as a server for your browser, anywhere.
 </p>
-
-> 🇩🇪 **Kurz:** Cadence ist ein Strava-Klon für deine eigenen Apple-Health-Daten. Exportiere auf dem iPhone
-> „Alle Gesundheitsdaten“, zieh die `export.zip` in die App – fertig: Trainings mit Karten-Playback, Fortschritt über
-> die Zeit, Konstanz, Bestleistungen und alle Gesundheitswerte. Läuft lokal als Mac-App (deine Daten verlassen
-> nie deinen Rechner) und später unverändert per Docker auf deinem eigenen Server. Oberfläche auf Deutsch und Englisch.
 
 ## Highlights
 
@@ -22,17 +18,22 @@
   records — lossless, streamed (multi-GB exports in seconds) and idempotent: re-importing a newer export only adds
   what is new. After every import a **what's new** summary lists the new activities, records, trophies, explorer
   tiles, route best times and segment PRs.
+- **Other watches**: connect a **COROS** account (activities, resting heart rate, HRV, sleep with stages, VO2max,
+  steps, daily goals) or import **FIT files** from any watch. *Settings → My watch* decides which source wins when
+  Apple Health and the watch recorded the same thing; duplicates of a workout are merged.
 - **Dashboard**: activity feed with route thumbnails, PR medals and sport-specific stats; athlete card with this
-  week and all-time totals; widgets for this week, fitness & form, streaks, goals, the last 18 weeks, a health
-  snapshot and explorer tiles.
+  week and all-time totals; widgets for this week, readiness, fitness & form, power, streaks, goals, the last 18
+  weeks, a health snapshot and explorer tiles.
 - **Activities**: filterable, sortable list (sport, period, search, GPS) with quick actions and **CSV export**; every
-  activity shows where it took place (offline place names, "Rostock → Berlin" for one-way trips). The activity page has a
+  activity shows where it took place (offline place names, "Rostock → Berlin" for one-way trips) and small tags for
+  the estimated **kind of training** (intervals, long, tempo, easy, recovery), the **country** and the
+  **temperature**. The search also finds every place and country a route passes through. The activity page has a
   **map replay** (1×–300×, follow camera, 3D flyover, route colored by pace, heart rate, grade or HR zones), synced
   elevation / pace / heart-rate / cadence / power charts with section selection, splits, laps, HR zones, best efforts
   with medals, aerobic decoupling, efficiency factor, grade-adjusted pace, power (NP, IF, TSS, peaks), climbs,
   distributions, a comparison with similar activities, the route rank and segment efforts, and GPX export.
   **Compare two activities** on one map with a synchronized replay and the time gap over the distance, and create a
-  **share image** (map, route and stats; privacy zones cut out).
+  **share image** (map, route, the stats you pick and small charts; privacy zones cut out).
 - **Progress over time**: weekly / monthly / yearly volume, year over year, period comparison, per-activity trends
   (pace, heart rate, efficiency, cadence, power, running dynamics) with trend lines, pace at a given heart rate and
   intensity distribution; records per distance with progression, top 10 and a race predictor; fitness, fatigue &
@@ -50,17 +51,26 @@
   (weight, BMI, body fat, blood pressure); an explorer for every record type in the export and an ECG viewer on
   paper grid.
 <!-- FEATURES:END -->
-- **Bilingual** (Deutsch / English), metric or imperial units, light & dark mode.
-- **Private by design**: no account, no cloud, no tracking. Maps load public map tiles; nothing else leaves the machine.
+- **English and German** interface, metric or imperial units, light & dark mode; works on phone-sized windows too.
+- **Private by design**: no account, no cloud, no tracking. Maps load public map tiles (no API key); place names
+  come from a bundled offline gazetteer. Nothing else leaves the machine — unless you connect a COROS account, which
+  talks to COROS.
 
-## Install the Mac app
+## Install
 
-**Download**: get `Cadence-<version>.dmg` from the
-[latest release](https://github.com/mang0lo/cadence/releases/latest) (macOS 14+, Apple silicon) and drag Cadence
-into Applications. The app is not notarized yet, so macOS blocks the first launch: open **System Settings → Privacy &
-Security** and click **Open Anyway**. Release notes: [CHANGELOG.md](CHANGELOG.md).
+Download from the [latest release](https://github.com/mang0lo/cadence/releases/latest)
+(release notes: [CHANGELOG.md](CHANGELOG.md)):
 
-**Build it yourself** — requirements: macOS 14+, [Node.js](https://nodejs.org) 24+ and the Xcode Command Line Tools
+| System | File | Notes |
+| --- | --- | --- |
+| **macOS** 14+, Apple silicon | `Cadence-<version>.dmg` | Drag Cadence into Applications. Not notarized yet: on the first launch open **System Settings → Privacy & Security** and click **Open Anyway**. |
+| **Linux** x86-64 | `Cadence-<version>-linux-x86_64.AppImage` or the `.deb` | `./install.sh path/to/Cadence.AppImage` adds the AppImage to your launcher (see below). |
+| **Windows** x64 | `Cadence-Setup-<version>-win-x64.exe` or the portable `.exe` | Not code-signed: SmartScreen may ask before the first start. |
+| **Server** | `ghcr.io/mang0lo/cadence` | See [Run it as a server](#run-it-as-a-server). |
+
+### Build the Mac app yourself
+
+Requirements: macOS 14+, [Node.js](https://nodejs.org) 24+ and the Xcode Command Line Tools
 (`xcode-select --install`):
 
 ```bash
@@ -72,7 +82,7 @@ npm run mac -- --install      # builds build/Cadence.app and copies it to /Appli
 `npm run mac -- --dmg` also produces a disk image. The app bundles the official Node.js runtime, so the built app
 runs on Macs without Node. Data lives in `~/Library/Application Support/Cadence`, logs in `~/Library/Logs/Cadence`.
 
-### Linux and Windows
+### Build the Linux and Windows apps yourself
 
 The same app for Linux and Windows is built with Electron (requirements: [Node.js](https://nodejs.org) 24+):
 
@@ -89,18 +99,25 @@ On Linux, `./install.sh` installs the built AppImage for your user (app, `cadenc
 shows up in Noctalia, GNOME, KDE, rofi … right away). `./install.sh --build` builds it first, `./install.sh
 path/to/Cadence.AppImage` installs a downloaded one, `./install.sh --uninstall` removes it.
 
-## Import your Apple Health data
+## Import your data
+
+**Apple Health**
 
 1. iPhone → **Health** app → tap your profile picture → **Export All Health Data**.
-2. Send the `export.zip` to your Mac (AirDrop, Files, iCloud Drive).
-3. In Cadence: **File → Import Apple Health Export…** (⌘I), drag the zip into the window, or drop it on the Dock icon.
+2. Send the `export.zip` to your computer (AirDrop, Files, iCloud Drive).
+3. In Cadence: **File → Import Apple Health Export…** (⌘I) on the Mac, **File → Import…** (Ctrl+O) on Linux and
+   Windows, or drag the zip into the Import page (on the Mac also onto the Dock icon).
 
-Re-import a newer export whenever you like — duplicates are detected. **Import → Rebuild analysis** recomputes
-all statistics (heart-rate setting changes are applied automatically).
+**Other watches**: drop `.fit` files (or a zip of them) into the Import page, or connect a COROS account on the
+**Watches** page — new activities and health values are then synced automatically. COROS has no public API for this:
+Cadence uses the same private interface as COROS' own web app, which can change at any time.
 
-## Run it as a server (later)
+Re-import a newer export whenever you like — duplicates are detected, and a summary shows what is new.
+**Import → Rebuild analysis** recomputes all statistics (heart-rate setting changes are applied automatically).
 
-The Mac app is just a window around a normal web server, so moving to a server needs no code changes:
+## Run it as a server
+
+The desktop apps are just a window around a normal web server, so moving to a server needs no code changes:
 
 ```bash
 cd deploy
@@ -109,11 +126,13 @@ CADENCE_PASSWORD=choose-something docker compose up -d     # → http://<server>
 
 - Data is stored in the `cadence-data` volume; new `export.zip` files dropped into `deploy/import/` are imported
   automatically.
-- **Move your data**: Settings → *Backup & moving to a server* → download the backup in the Mac app, restore it on
-  the server (keeps renamed activities, goals and segments).
-- Point the Mac or desktop app at the server in **Settings → Server** (Mac also **Cadence → Connect to Server…**).
-- Releases: push a `v*` tag or run the **Release** workflow from the Actions tab (with the version from
-  `package.json`); it builds the DMG and pushes `ghcr.io/mang0lo/cadence` (see `.github/workflows/release.yml`).
+- `CADENCE_PASSWORD` protects the server with one password (repeated wrong passwords are locked out for a few
+  minutes). Put it behind HTTPS (a reverse proxy) before you expose it to the internet.
+- While the repository is private, `docker login ghcr.io` with a token that may read packages before pulling the
+  image; `docker compose up -d --build` builds it from the source instead.
+- **Move your data**: Settings → *Backup & moving to a server* → download the backup in the app, restore it on the
+  server (keeps renamed activities, goals and segments; watch-account logins are not part of a backup).
+- Point the desktop app at the server in **Settings → Server** (Mac also **Cadence → Connect to Server…**).
 
 Configuration is done with environment variables (`PORT`, `HOST`, `CADENCE_DATA_DIR`, `CADENCE_PASSWORD`,
 `CADENCE_IMPORT_DIR`, …) — see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#runtime-modes--configuration).
@@ -134,10 +153,16 @@ npm run typecheck && npm test && npm run build
 | `apps/server` | Fastify + `node:sqlite`, Apple Health importer (worker thread), analytics, feature modules |
 | `apps/web` | React 19, Vite, Tailwind 4, ECharts, MapLibre |
 | `apps/macos` | Native SwiftPM shell (WKWebView, native menus and import panel) |
+| `apps/desktop` | Electron shell for Linux and Windows |
 | `deploy` | Dockerfile and docker-compose |
 
 Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (conventions, feature modules, data model) and
 [docs/APPLE_HEALTH.md](docs/APPLE_HEALTH.md) (the export format and how it maps to the database).
+
+**Releases**: set the version (`npm version <x.y.z> --workspaces --include-workspace-root --no-git-tag-version`), add
+a `## [x.y.z]` section to [CHANGELOG.md](CHANGELOG.md) (it becomes the release notes), merge to `main`, then publish a
+release with the tag `v<x.y.z>` on GitHub (or run the **Release** workflow from the Actions tab). The workflow
+builds the DMG, the Linux and Windows apps and the `ghcr.io/mang0lo/cadence` image.
 
 ## Roadmap
 
@@ -147,10 +172,11 @@ Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (conventions, feature modules,
 - Imports for other common health devices and services, next to Apple Health and COROS / FIT files: Garmin Connect,
   Polar Flow, Suunto, Wahoo, Fitbit, Samsung Health / Google Health Connect, Oura, Whoop, Withings (scales, blood
   pressure) and GPX / TCX files from any app
+- Regions (states, provinces) next to countries, and your own tags on activities
 - Apply privacy zones to GPX exports (share images already use them)
 
 ## License
 
 [MIT](LICENSE). Map data © OpenStreetMap contributors, OpenMapTiles, OpenFreeMap; imagery © Esri; terrain © Mapzen/AWS.
 Place names: [GeoNames](https://www.geonames.org) (CC BY 4.0), bundled offline — positions are never sent anywhere.
-Not affiliated with Strava or Apple.
+Not affiliated with Strava, Apple or COROS.

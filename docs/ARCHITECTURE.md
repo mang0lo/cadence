@@ -61,6 +61,10 @@ The server is configured only through environment variables (`apps/server/src/co
   (`run`, `ride`, `walk`, `hike`, `swim`, …); the raw `HKWorkoutActivityType…` value is kept in `activity_type`.
 - **Hidden & duplicates**: analytics must exclude `hidden = 1` and `duplicate_of IS NOT NULL` workouts
   unless explicitly asked otherwise.
+- **Places and tags of a workout** are stored by the derive step from the offline gazetteer (`lib/places`):
+  `place` / `place_end` (start, and the end of one-way activities), `places_via` and `countries` (`|Hannover|Berlin|`,
+  `|DE|AT|` — every place and country the route passes through, searchable with `LIKE`), `hard_reps` (repetitions for
+  the estimated training kind, `trainingKind()` in `packages/shared/src/tags.ts`).
 - **node:sqlite binding**: only `number | bigint | string | null | Uint8Array` can be bound. The helpers in
   `apps/server/src/db/db.ts` (`all/get/run/tx`) convert booleans and `undefined`; raw prepared statements do not.
 
@@ -108,6 +112,14 @@ Routes of a feature are mounted under `/api/<name>`. Migration ids are prefixed 
 Derive step ids are prefixed `<name>.`. "Delete all data" (`POST /api/import/reset`) empties every table with an
 `athlete_id` column except `settings` and the tables a feature lists in `keepOnReset` (user-written data such as goals
 and segments); `onReset` lets a feature clear references from kept rows to deleted workouts.
+
+Two more optional hooks of a server `Feature`:
+
+- `whatsNew(input)` returns highlights of the workouts an import added (records, trophies, explorer tiles …). They are
+  stored with the job (`ImportStats.summary`) and rendered on the import screen by the web module's `whatsNew`
+  component of the same feature (`FeatureModule.whatsNew`).
+- `secretSettings` lists setting keys that hold logins of other services (e.g. `connect.coros`). They are removed
+  from backups (`GET /api/backup`), so a backup file never lets anyone log in to those accounts.
 
 Current features: `activities`, `progress`, `consistency`, `maps`, `health`, `connect` (+ `platform` in the web app for import/settings).
 
@@ -162,7 +174,10 @@ lucide-react icons. Path alias `@/` = `apps/web/src`.
   (src/lib/messages.ts). Workout titles: `workoutTitle(w, lang)` from @cadence/shared.
 - **Sports**: `SportIcon`, `SportBadge`, `sportLabel`, `sportColorVar(sport)` (DOM) / `sportColor(theme, sport)` (charts),
   `sortSports()` (src/lib/sports.tsx). Sport colors are fixed per sport — never assign colors by rank.
-- **Charts** (`src/components/charts`): `<EChart option=… height=…/>` + builders in `options.ts` (`timeAxis`, `valueAxis`,
+- **Charts** (`src/components/charts`): ECharts is loaded modularly — a new chart type or option component must be
+  registered in `EChart.tsx` (`echarts.use`), unregistered ones are silently ignored. Pointer positions are corrected
+  for page zoom there too (`pointer.ts`); use `pointerInElement` for own pointer math instead of `offsetX`.
+  `<EChart option=… height=…/>` + builders in `options.ts` (`timeAxis`, `valueAxis`,
   `categoryAxis`, `axisTooltip`, `itemTooltip`, `tooltipHtml`, `lineSeries`, `areaSeries`, `barSeries`,
   `stackedBarSeries`, `scatterSeries`, `legend`, `dataZoom`, `grid`) and `const theme = useChartTheme()` for colors
   (`theme.series[0..7]`, `theme.seq`, `theme.seqBlue`, `theme.zones`, `theme.diverging`, `theme.status`). Wrap charts in
@@ -175,7 +190,9 @@ lucide-react icons. Path alias `@/` = `apps/web/src`.
   switch). Helpers: `setGeoJSON`, `addRouteLayers`, `gradientExpression`, `addCircleLayer`, `lineFeature`,
   `pointFeature`, `featureCollection`, `fitTo`, `overlayColors(pref, theme)`. For lists use `<RouteThumbnail polyline/>`
   (SVG) — never many WebGL maps on one page. `decodePolyline` in `src/lib/polyline.ts`.
-- **Layout**: the content area is the viewport minus a 240 px sidebar (784 px at a 1024 px window). Use
+- **Layout**: grid items may shrink below their content (base rule in `styles.css`), so a long line never widens a
+  column; check pages at phone width (390 px) too. The content area is the viewport minus a 240 px sidebar (784 px at a
+  1024 px window). Use
   `minmax(0,1fr)` instead of `1fr` in custom grid templates and `min-w-0` on flex children so long content never
   forces horizontal scrolling; put fixed-width side columns behind `xl:`. Check pages at 1024 px and ~1440 px.
   Custom breakpoints must be in rem (`min-[85rem]:`): px arbitrary breakpoints sort before `lg:` and lose.
