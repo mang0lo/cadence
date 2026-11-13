@@ -26,11 +26,6 @@ release (see `.github/workflows/release.yml`), whose notes are taken from the ma
 Other watches (COROS, FIT files), Cadence for Linux and Windows, a much more flexible share image and the apps can
 show a Cadence server.
 
-> 🇩🇪 **Neu in 0.3.0:** COROS-Uhren (Aktivitäten, Gesundheitswerte, Schlaf) und FIT-Dateien, Einstellung „Meine Uhr“,
-> Cadence als App für Linux und Windows, Teilen-Bild mit frei wählbaren Werten (z. B. Pace *und* Tempo), kleinen
-> Diagrammen und schaltbarer Strecke / Datum / Ort, **Einstellungen → Server** zum Verbinden der App mit einem
-> Cadence-Server (z. B. Docker), Version in der Titelleiste.
-
 ### Install
 
 - **Mac app**: `Cadence-0.3.0.dmg` below (macOS 14+, Apple silicon; not notarized: **System Settings → Privacy &
@@ -84,10 +79,6 @@ show a Cadence server.
 
 ## [0.2.1] – 2026-11-03
 
-> 🇩🇪 **Karten in den Vorschauen ohne API-Key:** CARTO verlangt inzwischen einen API-Key und zeigte nur noch
-> „API KEY REQUIRED“. Vorschauen, Teilen-Bild und die dunkle Karte nutzen jetzt OpenFreeMap – kostenlos, ohne
-> Anmeldung. Jede Vorschau wird einmal gerendert und als Bild gespeichert.
-
 ### Install
 
 - **Mac app**: download `Cadence-0.2.1.dmg` below and drag Cadence into Applications (your data is kept).
@@ -104,12 +95,6 @@ show a Cadence server.
 
 Compare activities, share them as an image, a power curve with FTP estimate, a daily readiness score and a summary
 of what is new after every import — plus the fixes from testing 0.1.0.
-
-> 🇩🇪 **Neu in 0.2.0:** Zwei Aktivitäten vergleichen (wer war wo vorne), Teilen-Bild mit Karte und Werten,
-> Leistungskurve mit FTP-Schätzung, tägliche Erholungs-Einschätzung, „Was ist neu“ nach jedem Import, Ort an jeder
-> Aktivität, CSV-Export, Kartenhintergrund in den Vorschauen, Marathon- und Ironman-Ziele. Behoben: Trainings, die
-> pausiert und woanders fortgesetzt wurden (z. B. nach einer Zugfahrt), ziehen keinen Strich mehr über die Karte, und
-> Strecken heißen nach dem echten Ort statt immer „Berlin“.
 
 ### Install
 
@@ -167,11 +152,6 @@ of what is new after every import — plus the fixes from testing 0.1.0.
 ## [0.1.0] – 2026-11-02
 
 First release: a self-hosted, Strava-style training log for your complete Apple Health export.
-
-> 🇩🇪 **Erste Version.** Exportiere auf dem iPhone „Alle Gesundheitsdaten“, zieh die `export.zip` in Cadence –
-> Trainings mit Karten-Replay, Fortschritt über die Zeit, Konstanz, Bestleistungen und alle Gesundheitswerte.
-> Läuft lokal als Mac-App (deine Daten bleiben auf deinem Rechner) oder per Docker auf deinem eigenen Server.
-> Oberfläche auf Deutsch und Englisch.
 
 ### Install
 
