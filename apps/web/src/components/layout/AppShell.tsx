@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigation, useNavigationType } from 'react-router';
-import { Menu, Moon, Sparkles, Sun, Watch, X } from 'lucide-react';
+import { ArrowUpDown, ChevronDown, ChevronUp, GripVertical, Menu, Moon, Sparkles, Sun, Watch, X } from 'lucide-react';
 import { featureModules } from '@/features/registry';
 import type { NavGroup, NavItem } from '@/features/types';
 import { useImportJobs } from '@/features/platform/useImportJobs';
@@ -17,26 +17,60 @@ import { useSettings } from '@/lib/settings';
 import { useDataSources } from '@/lib/sources';
 import { useResolvedTheme } from '@/lib/theme';
 import { Logo } from './Logo';
+import { mergeShown, moved, orderNav, type NavPrefs } from './navOrder';
 
 const GROUPS: NavGroup[] = ['training', 'habits', 'explore', 'health', 'app'];
+const ALL_ITEMS: NavItem[] = featureModules.flatMap((f) => f.nav);
 
-function useNav() {
+interface Nav {
+  /** The groups and pages shown, in the athlete's order. */
+  shown: { group: NavGroup; items: NavItem[] }[];
+  /** Every group with every page (also the ones hidden for this athlete), in the athlete's order. */
+  all: { group: NavGroup; items: NavItem[] }[];
+}
+
+function useNav(prefs: NavPrefs): Nav {
   const sources = useDataSources().data;
   return useMemo(() => {
+    const all = orderNav(ALL_ITEMS, GROUPS, prefs) as Nav['all'];
     // pages that cannot have data for this athlete (ECG, body …) are left out once the data sources are known
-    const items = featureModules
-      .flatMap((f) => f.nav)
-      .filter((it) => !it.available || !sources || it.available(sources));
+    const visible = ALL_ITEMS.filter((it) => !it.available || !sources || it.available(sources));
     // An item whose path prefixes another item must match exactly, else both would be active.
-    const withEnd = items.map((it) => ({
+    const withEnd = visible.map((it) => ({
       ...it,
-      end: it.end || it.path === '/' || items.some((o) => o !== it && o.path.startsWith(`${it.path}/`)),
+      end: it.end || it.path === '/' || visible.some((o) => o !== it && o.path.startsWith(`${it.path}/`)),
     }));
-    return GROUPS.map((g) => ({
-      group: g,
-      items: withEnd.filter((i) => i.group === g).sort((a, b) => a.order - b.order),
-    })).filter((g) => g.items.length);
-  }, [sources]);
+    return { all, shown: orderNav(withEnd, GROUPS, prefs) as Nav['shown'] };
+  }, [sources, prefs]);
+}
+
+/** The saved order after moving a page inside its group (positions among the pages shown). */
+function withItemMoved(nav: Nav, group: NavGroup, from: number, to: number): NavPrefs {
+  const shown = nav.shown.find((g) => g.group === group)!.items.map((i) => i.path);
+  const next = moved(shown, from, to);
+  return {
+    groups: nav.all.map((g) => g.group),
+    order: nav.all.flatMap((g) => {
+      const paths = g.items.map((i) => i.path);
+      return g.group === group ? mergeShown(paths, next) : paths;
+    }),
+  };
+}
+
+/** The saved order after moving a group (positions among the groups shown). */
+function withGroupMoved(nav: Nav, from: number, to: number): NavPrefs {
+  const next = moved(
+    nav.shown.map((g) => g.group),
+    from,
+    to,
+  );
+  return {
+    groups: mergeShown(
+      nav.all.map((g) => g.group),
+      next,
+    ),
+    order: nav.all.flatMap((g) => g.items.map((i) => i.path)),
+  };
 }
 
 function NavEntry({ item, onNavigate }: { item: NavItem; onNavigate?: () => void }) {
@@ -191,13 +225,167 @@ function WatchBadge({ onNavigate }: { onNavigate?: () => void }) {
   );
 }
 
+const moveButton =
+  'grid size-6 shrink-0 place-items-center rounded-control text-fg-3 hover:bg-surface-3 hover:text-fg disabled:pointer-events-none disabled:opacity-30';
+
+function MoveButtons({
+  name,
+  group,
+  index,
+  count,
+  onMove,
+}: {
+  name: string;
+  /** A group is moved, not a page (a group and a page can have the same name, e.g. "Health"). */
+  group?: boolean;
+  index: number;
+  count: number;
+  onMove: (to: number) => void;
+}) {
+  const t = useT();
+  const up = t(group ? 'common.navEdit.moveGroupUp' : 'common.navEdit.moveUp', { name });
+  const down = t(group ? 'common.navEdit.moveGroupDown' : 'common.navEdit.moveDown', { name });
+  return (
+    <>
+      <button type="button" className={moveButton} disabled={index === 0} aria-label={up} title={up} onClick={() => onMove(index - 1)}>
+        <ChevronUp size={14} aria-hidden />
+      </button>
+      <button
+        type="button"
+        className={moveButton}
+        disabled={index === count - 1}
+        aria-label={down}
+        title={down}
+        onClick={() => onMove(index + 1)}
+      >
+        <ChevronDown size={14} aria-hidden />
+      </button>
+    </>
+  );
+}
+
+/**
+ * The navigation while its order is edited: pages are dragged inside their group or moved with the arrows (also by
+ * keyboard and touch), groups with the arrows next to their name. The rows are not links.
+ */
+function NavEditor({
+  nav,
+  onPreview,
+  onChange,
+}: {
+  nav: Nav;
+  /** A move while dragging: shown, saved when the drag ends. */
+  onPreview: (next: NavPrefs) => void;
+  onChange: (next: NavPrefs) => void;
+}) {
+  const t = useT();
+  const [dragging, setDragging] = useState<{ group: NavGroup; path: string } | null>(null);
+  const latest = useRef<NavPrefs | null>(null);
+
+  const over = (e: DragEvent<HTMLDivElement>, group: NavGroup, index: number) => {
+    if (!dragging || dragging.group !== group) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    const items = nav.shown.find((g) => g.group === group)!.items;
+    const from = items.findIndex((i) => i.path === dragging.path);
+    if (from < 0 || from === index) return;
+    // swap once the pointer is past the middle of the row it moves over, so the rows do not flicker
+    const rect = e.currentTarget.getBoundingClientRect();
+    const middle = rect.top + rect.height / 2;
+    if ((from < index && e.clientY < middle) || (from > index && e.clientY > middle)) return;
+    latest.current = withItemMoved(nav, group, from, index);
+    onPreview(latest.current);
+  };
+  const end = () => {
+    setDragging(null);
+    if (latest.current) onChange(latest.current);
+    latest.current = null;
+  };
+
+  return (
+    <>
+      {nav.shown.map((g, gi) => (
+        <div key={g.group}>
+          <div className="flex items-center gap-0.5 pb-1 pl-2.5 pr-1">
+            <span className="min-w-0 flex-1 truncate text-[11px] font-semibold uppercase tracking-wider text-fg-3">
+              {t(`common.nav.${g.group}`)}
+            </span>
+            <MoveButtons
+              name={t(`common.nav.${g.group}`)}
+              group
+              index={gi}
+              count={nav.shown.length}
+              onMove={(to) => onChange(withGroupMoved(nav, gi, to))}
+            />
+          </div>
+          <div className="space-y-0.5">
+            {g.items.map((it, i) => {
+              const Icon = it.icon;
+              const name = t(it.labelKey);
+              return (
+                <div
+                  key={it.path}
+                  draggable
+                  onDragStart={(e) => {
+                    e.dataTransfer.effectAllowed = 'move';
+                    e.dataTransfer.setData('text/plain', name);
+                    setDragging({ group: g.group, path: it.path });
+                  }}
+                  onDragOver={(e) => over(e, g.group, i)}
+                  onDrop={(e) => e.preventDefault()}
+                  onDragEnd={end}
+                  className={cn(
+                    'flex cursor-grab items-center gap-1.5 rounded-control border border-transparent py-0.5 pl-1 pr-1 text-sm font-medium text-fg-2 hover:bg-surface-2',
+                    dragging?.path === it.path && 'border-border-strong bg-surface-2 opacity-60',
+                  )}
+                >
+                  <GripVertical size={14} className="shrink-0 text-fg-3" aria-hidden />
+                  <Icon size={16} className="shrink-0 text-fg-3" aria-hidden />
+                  <span className="min-w-0 flex-1 truncate">{name}</span>
+                  <MoveButtons
+                    name={name}
+                    index={i}
+                    count={g.items.length}
+                    onMove={(to) => onChange(withItemMoved(nav, g.group, i, to))}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+    </>
+  );
+}
+
 function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const t = useT();
-  const nav = useNav();
-  const { athlete } = useSettings();
+  const { athlete, settings, update } = useSettings();
+  const [editing, setEditing] = useState(false);
+  // the order being edited: shown at once, saved in the background (one request after the other)
+  const [draft, setDraft] = useState<NavPrefs | null>(null);
+  const saving = useRef<Promise<unknown>>(Promise.resolve());
+  const savedPrefs = useMemo<NavPrefs>(
+    () => ({ order: settings.navOrder ?? [], groups: settings.navGroups ?? [] }),
+    [settings.navOrder, settings.navGroups],
+  );
+  const nav = useNav(draft ?? savedPrefs);
+  const save = (next: NavPrefs) => {
+    setDraft(next);
+    saving.current = saving.current
+      .then(() => update({ navOrder: [...next.order], navGroups: [...next.groups] }, { refetch: false }))
+      .catch(() => undefined);
+  };
+  const finish = () => {
+    setEditing(false);
+    void saving.current.then(() => setDraft(null));
+  };
+  const shownPrefs = draft ?? savedPrefs;
+  const custom = shownPrefs.order.length > 0 || shownPrefs.groups.length > 0;
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center justify-between px-4 pb-3 pt-4">
+      {/* in the drawer the close button sits in the top right corner */}
+      <div className={cn('flex items-center justify-between px-4 pb-3 pt-4', onNavigate && 'pr-11')}>
         <Link to="/" onClick={onNavigate} className="flex items-center gap-2">
           <Logo size={28} />
           <span className="text-[17px] font-semibold tracking-tight text-fg">{t('common.appName')}</span>
@@ -205,18 +393,55 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
         <ThemeToggle />
       </div>
       <nav className="flex-1 space-y-4 overflow-y-auto px-2.5 pb-4 scrollbar-thin">
-        {nav.map((g) => (
-          <div key={g.group}>
-            <div className="px-2.5 pb-1 text-[11px] font-semibold uppercase tracking-wider text-fg-3">
-              {t(`common.nav.${g.group}`)}
+        {editing ? (
+          <>
+            {/* stays in view while the list scrolls */}
+            <div className="sticky top-0 z-10 -mx-2.5 space-y-2 border-b border-border bg-surface px-3.5 pb-2.5">
+              <p className="text-xs text-fg-3">{t('common.navEdit.hint')}</p>
+              <div className="flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  disabled={!custom}
+                  onClick={() => save({ order: [], groups: [] })}
+                  className="-ml-2 rounded-control px-2 py-1.5 text-xs font-medium text-fg-3 hover:bg-surface-2 hover:text-fg disabled:pointer-events-none disabled:opacity-40"
+                >
+                  {t('common.navEdit.reset')}
+                </button>
+                <button
+                  type="button"
+                  onClick={finish}
+                  className="rounded-control bg-accent-strong px-3 py-1.5 text-xs font-medium text-on-accent hover:brightness-110"
+                >
+                  {t('common.navEdit.done')}
+                </button>
+              </div>
             </div>
-            <div className="space-y-0.5">
-              {g.items.map((it) => (
-                <NavEntry key={it.path} item={it} onNavigate={onNavigate} />
-              ))}
-            </div>
-          </div>
-        ))}
+            <NavEditor nav={nav} onPreview={setDraft} onChange={save} />
+          </>
+        ) : (
+          <>
+            {nav.shown.map((g) => (
+              <div key={g.group}>
+                <div className="px-2.5 pb-1 text-[11px] font-semibold uppercase tracking-wider text-fg-3">
+                  {t(`common.nav.${g.group}`)}
+                </div>
+                <div className="space-y-0.5">
+                  {g.items.map((it) => (
+                    <NavEntry key={it.path} item={it} onNavigate={onNavigate} />
+                  ))}
+                </div>
+              </div>
+            ))}
+            <button
+              type="button"
+              onClick={() => setEditing(true)}
+              className="flex w-full items-center gap-2.5 rounded-control px-2.5 py-1.5 text-xs font-medium text-fg-3 hover:bg-surface-2 hover:text-fg"
+            >
+              <ArrowUpDown size={15} aria-hidden />
+              {t('common.navEdit.start')}
+            </button>
+          </>
+        )}
       </nav>
       <div className="space-y-2 border-t border-border p-3">
         <ImportIndicator />

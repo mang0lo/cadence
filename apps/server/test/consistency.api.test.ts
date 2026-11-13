@@ -8,6 +8,7 @@ import type {
   ConsistencyOverview,
   DayDetail,
   Goal,
+  GoalCheckResult,
   GoalsResponse,
   PunchcardResponse,
   StreakSummary,
@@ -233,15 +234,90 @@ describe('consistency API', () => {
     expect((await app.inject({ url: '/api/consistency/year/1900' })).statusCode).toBe(400);
   });
 
+  it('has daily goals that are filled by activities or checked off by hand', async () => {
+    const post = (payload: object) => app.inject({ method: 'POST', url: '/api/consistency/goals', payload });
+    const check = (id: number, payload: object) => app.inject({ method: 'PUT', url: `/api/consistency/goals/${id}/check`, payload });
+    // the measure must exist for the sport and the period
+    expect((await post({ period: 'week', sport: 'strength', metric: 'distance', target: 5000 })).statusCode).toBe(400);
+    expect((await post({ period: 'day', sport: null, metric: 'active_days', target: 1 })).statusCode).toBe(400);
+    expect((await post({ period: 'week', sport: 'strength', metric: 'calories', target: 1500 })).statusCode).toBe(201);
+    const res = await post({ period: 'day', sport: 'run', metric: 'distance', target: 5000 });
+    expect(res.statusCode).toBe(201);
+    const daily = res.json<Goal>();
+
+    // two days after the last import: a daily goal is about the real today
+    const LATER = '2026-06-05';
+    const goalAt = async (today: string) =>
+      (await getJson<GoalsResponse>(`/api/consistency/goals?today=${today}`)).goals.find((g) => g.id === daily.id)!;
+    let g = await goalAt(LATER);
+    expect(g.current).toMatchObject({ start: LATER, end: LATER, value: 0, target: 5000, status: 'open', checked: false });
+    expect(g.history).toHaveLength(14);
+    const byDay = () => new Map(g.history.map((h) => [h.start, h]));
+    // filled by the runs of 24 May – 2 Jun; 3 Jun has only a hidden run; 4 Jun is not imported yet
+    expect(byDay().get('2026-06-02')).toMatchObject({ value: 8000, hit: true });
+    expect(byDay().get('2026-06-03')).toEqual({ start: '2026-06-03', end: '2026-06-03', value: 0, hit: false });
+    expect(byDay().get('2026-06-04')).toMatchObject({ hit: false, pending: true });
+    expect(g.hitRate).toBeCloseTo(10 / 13);
+    // on the day of the import it is that day
+    expect((await goalAt(TODAY)).current).toMatchObject({ start: TODAY, status: 'open' });
+
+    // forgot to track: check today off, and a day of the history
+    const today = await check(daily.id, { done: true, today: LATER });
+    expect(today.json<GoalCheckResult>()).toEqual({ start: LATER, end: LATER, done: true });
+    expect((await check(daily.id, { done: true, day: '2026-06-03', today: LATER })).statusCode).toBe(200);
+    g = await goalAt(LATER);
+    expect(g.current).toMatchObject({ value: 0, status: 'done', checked: true });
+    expect(byDay().get('2026-06-03')).toMatchObject({ value: 0, hit: true, manual: true });
+    expect(g.hitRate).toBeCloseTo(11 / 13);
+    // checking twice keeps one check mark; the future cannot be checked off
+    await check(daily.id, { done: true, today: LATER });
+    expect(get<{ n: number }>(db, 'SELECT COUNT(*) AS n FROM consistency_goal_checks WHERE goal_id = ?', [daily.id])!.n).toBe(2);
+    expect((await check(daily.id, { done: true, day: '2026-06-06', today: LATER })).statusCode).toBe(400);
+    expect((await check(9999, { done: true })).statusCode).toBe(404);
+    expect((await check(daily.id, {})).statusCode).toBe(400);
+    // and back
+    expect((await check(daily.id, { done: false, today: LATER })).json<GoalCheckResult>().done).toBe(false);
+    expect((await goalAt(LATER)).current).toMatchObject({ status: 'open', checked: false });
+
+    // other periods are checked off for the period the data is in (June), whatever day it is today
+    const month = async () => (await getJson<GoalsResponse>(`/api/consistency/goals?today=${TODAY}`)).goals.find((x) => x.id === created.id)!;
+    expect((await month()).current).toMatchObject({ status: 'on_track', checked: false });
+    expect((await check(created.id, { done: true, today: '2026-07-15' })).json<GoalCheckResult>()).toEqual({
+      start: '2026-06-01',
+      end: '2026-06-30',
+      done: true,
+    });
+    expect((await month()).current).toMatchObject({ status: 'done', checked: true, value: 16_000 });
+    await check(created.id, { done: false, today: TODAY });
+    expect((await month()).current).toMatchObject({ status: 'on_track', checked: false });
+
+    // a daily goal that becomes a weekly one starts without its check marks
+    await app.inject({ method: 'PATCH', url: `/api/consistency/goals/${daily.id}`, payload: { period: 'week', target: 20_000 } });
+    expect(get<{ n: number }>(db, 'SELECT COUNT(*) AS n FROM consistency_goal_checks WHERE goal_id = ?', [daily.id])!.n).toBe(0);
+    expect((await goalAt(TODAY)).current).toMatchObject({ start: '2026-06-01', checked: false });
+  });
+
   it('deletes goals and restores them after a data reset', async () => {
     expect((await app.inject({ method: 'DELETE', url: `/api/consistency/goals/${created.id}` })).statusCode).toBe(200);
     expect((await app.inject({ method: 'DELETE', url: `/api/consistency/goals/${created.id}` })).statusCode).toBe(404);
-    const before = (await getJson<GoalsResponse>(`/api/consistency/goals?today=${TODAY}`)).goals;
+    let before = (await getJson<GoalsResponse>(`/api/consistency/goals?today=${TODAY}`)).goals;
+    await app.inject({ method: 'PUT', url: `/api/consistency/goals/${before[0]!.id}/check`, payload: { done: true, today: TODAY } });
+    before = (await getJson<GoalsResponse>(`/api/consistency/goals?today=${TODAY}`)).goals;
     resetAthleteData(db, 1);
-    // consistency_goals is declared in Feature.keepOnReset, so the rows survive the reset itself
+    // consistency_goals and the check marks are declared in Feature.keepOnReset, so the rows survive the reset itself
     expect(get<{ n: number }>(db, 'SELECT COUNT(*) AS n FROM consistency_goals')!.n).toBe(before.length);
-    const after = (await getJson<GoalsResponse>(`/api/consistency/goals?today=${TODAY}`)).goals;
+    expect(get<{ n: number }>(db, 'SELECT COUNT(*) AS n FROM consistency_goal_checks')!.n).toBe(1);
+    let after = (await getJson<GoalsResponse>(`/api/consistency/goals?today=${TODAY}`)).goals;
     expect(after.map((g) => [g.period, g.metric, g.sport, g.target])).toEqual(before.map((g) => [g.period, g.metric, g.sport, g.target]));
-    expect(after[0]!.current.value).toBe(0);
+    expect(after[0]!.current).toMatchObject({ value: 0, checked: true, status: 'done' });
+    // a goal table found empty is restored from its mirror in the settings, check marks included
+    run(db, 'DELETE FROM consistency_goals');
+    expect(get<{ n: number }>(db, 'SELECT COUNT(*) AS n FROM consistency_goal_checks')!.n).toBe(0);
+    after = (await getJson<GoalsResponse>(`/api/consistency/goals?today=${TODAY}`)).goals;
+    expect(after).toHaveLength(before.length);
+    expect(after[0]!.current.checked).toBe(true);
+    // deleting a goal takes its check marks along
+    expect((await app.inject({ method: 'DELETE', url: `/api/consistency/goals/${after[0]!.id}` })).statusCode).toBe(200);
+    expect(get<{ n: number }>(db, 'SELECT COUNT(*) AS n FROM consistency_goal_checks')!.n).toBe(0);
   });
 });

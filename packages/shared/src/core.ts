@@ -48,6 +48,10 @@ export interface AthleteSettings {
   watch: WatchKind;
   /** Per data type override of `watch` ('auto' = follow the watch). */
   sources: DataSourcePrefs;
+  /** Sidebar: paths of the pages in the wanted order (pages it does not list follow in their default order). */
+  navOrder: string[];
+  /** Sidebar: the groups ('training', 'habits' …) in the wanted order. Empty = default. */
+  navGroups: string[];
 }
 
 /** 'apple' = Apple Watch via Apple Health, 'coros' = COROS cloud sync, 'other' = FIT files from any other watch. */
@@ -96,6 +100,8 @@ export const DEFAULT_SETTINGS: AthleteSettings = {
   privacyZones: [],
   watch: 'apple',
   sources: { workouts: 'auto', heart: 'auto' },
+  navOrder: [],
+  navGroups: [],
 };
 
 /** Zone upper bounds as a fraction of max HR (maxhr) or heart-rate reserve (hrr), for Z1..Z4. */

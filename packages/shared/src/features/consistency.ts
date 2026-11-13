@@ -7,6 +7,7 @@
  * the latest export is older (streaks and goals are judged "as of" that day).
  */
 import type { WorkoutSummary } from '../core';
+import { sportInfo } from '../sports';
 
 // ---------------------------------------------------------------------------
 // Streaks & consistency score
@@ -188,12 +189,42 @@ export interface PunchcardResponse {
 // Goals
 // ---------------------------------------------------------------------------
 
-export type GoalPeriod = 'week' | 'month' | 'year';
-/** `longest`: the longest single activity of the period (e.g. "run a marathon this year"). */
-export type GoalMetric = 'distance' | 'longest' | 'time' | 'elevation' | 'activities' | 'active_days';
+export type GoalPeriod = 'day' | 'week' | 'month' | 'year';
+/**
+ * `longest`: the longest single activity of the period (e.g. "run a marathon this year"); `calories`: active energy
+ * of the activities (kcal).
+ */
+export type GoalMetric = 'distance' | 'longest' | 'time' | 'elevation' | 'calories' | 'activities' | 'active_days';
 
-export const GOAL_PERIODS: readonly GoalPeriod[] = ['week', 'month', 'year'];
-export const GOAL_METRICS: readonly GoalMetric[] = ['distance', 'longest', 'time', 'elevation', 'activities', 'active_days'];
+export const GOAL_PERIODS: readonly GoalPeriod[] = ['day', 'week', 'month', 'year'];
+export const GOAL_METRICS: readonly GoalMetric[] = [
+  'distance',
+  'longest',
+  'time',
+  'elevation',
+  'calories',
+  'activities',
+  'active_days',
+];
+
+/** Sport groups whose activities climb (elevation goals make sense). */
+const CLIMBING_GROUPS: ReadonlySet<string> = new Set(['foot', 'cycle', 'winter']);
+
+/**
+ * The measures a goal can have for a sport (null = all sports) and period: distance only where the sport records
+ * one, elevation only where it climbs, and no "active days" for a single day (that is "1 activity").
+ */
+export function goalMetricsFor(sport: string | null, period: GoalPeriod): GoalMetric[] {
+  const info = sport === null ? null : sportInfo(sport);
+  const distance = info === null || info.distance;
+  const climbs = info === null || (info.distance && CLIMBING_GROUPS.has(info.group));
+  return GOAL_METRICS.filter((m) => {
+    if (m === 'distance' || m === 'longest') return distance;
+    if (m === 'elevation') return climbs;
+    if (m === 'active_days') return period !== 'day';
+    return true;
+  });
+}
 
 /** Classic single-activity distances (m) for `longest` goals and trophies, by sport. */
 export const LONGEST_PRESETS: Record<'run' | 'ride' | 'swim', { key: string; distanceM: number }[]> = {
@@ -229,7 +260,7 @@ export const TRIATHLON_DISTANCES: { key: 'olympicTri' | 'halfIronman' | 'ironman
   { key: 'ironman', swim: 3800, ride: 180246, run: 42195 },
 ];
 
-/** Target in canonical units: distance/elevation m, time s, activities/active days count. */
+/** Target in canonical units: distance/elevation m, time s, calories kcal, activities/active days count. */
 export interface GoalInput {
   period: GoalPeriod;
   /** null = all sports */
@@ -244,7 +275,7 @@ export interface Goal extends GoalInput {
   createdAt: number;
 }
 
-/** `open`: a single-activity goal (`longest`) that is not reached yet — it has no linear pace to judge. */
+/** `open`: a daily or single-activity (`longest`) goal that is not reached yet — it has no linear pace to judge. */
 export type GoalStatus = 'done' | 'on_track' | 'behind' | 'open';
 
 export interface GoalPeriodProgress {
@@ -267,6 +298,8 @@ export interface GoalPeriodProgress {
   remainingDays: number;
   /** remaining / remainingDays (null when done or no days left). */
   perDayNeeded: number | null;
+  /** Checked off by hand (something was not tracked): the period counts as reached whatever `value` says. */
+  checked: boolean;
 }
 
 export interface GoalPeriodResult {
@@ -274,13 +307,24 @@ export interface GoalPeriodResult {
   end: string;
   value: number;
   hit: boolean;
+  /** Reached because it was checked off by hand, not by the tracked activities. */
+  manual?: boolean;
+  /** The imported data does not cover the whole period yet: neither reached nor missed. */
+  pending?: boolean;
 }
 
 export interface GoalWithProgress extends Goal {
   current: GoalPeriodProgress;
-  /** Completed periods since the first data, oldest first (≤ 12 weeks / 12 months / 5 years). */
+  /** Completed periods since the first data, oldest first (≤ 14 days / 12 weeks / 12 months / 5 years). */
   history: GoalPeriodResult[];
   hitRate: number | null;
+}
+
+/** PUT /api/consistency/goals/:id/check: the period that was checked off (or unchecked). */
+export interface GoalCheckResult {
+  start: string;
+  end: string;
+  done: boolean;
 }
 
 export interface GoalSuggestion extends GoalInput {

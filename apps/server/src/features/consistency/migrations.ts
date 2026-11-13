@@ -39,4 +39,17 @@ export const migrations: Migration[] = [
       ) WITHOUT ROWID;
     `,
   },
+  {
+    id: 'consistency_002_goal_checks',
+    up: /* sql */ `
+      -- Goals checked off by hand (something was done but not tracked): one row per goal and period, keyed by a
+      -- local day inside the period (its first day when written), so a changed week start still finds it.
+      CREATE TABLE consistency_goal_checks (
+        goal_id INTEGER NOT NULL REFERENCES consistency_goals(id) ON DELETE CASCADE,
+        day TEXT NOT NULL,
+        created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        PRIMARY KEY (goal_id, day)
+      ) WITHOUT ROWID;
+    `,
+  },
 ];

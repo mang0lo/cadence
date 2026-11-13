@@ -123,6 +123,17 @@ Two more optional hooks of a server `Feature`:
 
 Current features: `activities`, `progress`, `consistency`, `maps`, `health`, `connect` (+ `platform` in the web app for import/settings).
 
+Goals (`consistency`): a goal is a period (day / week / month / year), an optional sport, a measure and a target in
+canonical units; `goalMetricsFor(sport, period)` in the shared package says which measures exist for a sport and is
+used by the form and the API alike. Progress is computed from `daily_activity`, never stored. Weekly, monthly and
+yearly goals are judged as of the last day the data covers; a daily goal is about the real today, and days the data
+does not cover yet are `pending`, not missed. `consistency_goal_checks` holds the check marks set by hand (one day
+inside the checked period); a checked period counts as reached everywhere, also for the consistency score.
+
+The sidebar is built from the `nav` of every web module. The athlete's own order lives in the settings (`navOrder`:
+paths, `navGroups`: groups) and is applied by `components/layout/navOrder.ts`: pages the saved order does not know
+(added by a newer version) follow in their default order, and pages hidden for an athlete keep their slot.
+
 `connect` pulls activities from vendor clouds. COROS uses the private Training Hub API (unofficial, see
 `features/connect/coros-client.ts`): the settings key `connect.coros` holds the token and the MD5 of the password (what
 COROS' login takes, never the plain password), `connect_activities` tracks fetched / failed activities, FIT files are

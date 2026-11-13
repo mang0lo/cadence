@@ -31,6 +31,8 @@ const settingsPatch = z
       workouts: z.enum(['auto', 'apple', 'device']),
       heart: z.enum(['auto', 'apple', 'device']),
     }),
+    navOrder: z.array(z.string().min(1).max(120).startsWith('/')).max(200),
+    navGroups: z.array(z.string().min(1).max(40)).max(20),
     privacyZones: z.array(
       z.object({
         lat: z.number().min(-90).max(90),

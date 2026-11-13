@@ -44,12 +44,21 @@ function Suggestions({ items, onAdd }: { items: GoalSuggestion[]; onAdd: (s: Goa
 export default function GoalsPage() {
   const { t, lang } = useI18n();
   const q = useGoals();
-  const { createGoal, deleteGoal } = useConsistencyMutations();
+  const { createGoal, deleteGoal, checkGoal } = useConsistencyMutations();
   const [dialog, setDialog] = useState<{ initial: (GoalInput & { id?: number }) | null } | null>(null);
   const [toDelete, setToDelete] = useState<GoalWithProgress | null>(null);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<unknown>(null);
   const d = q.data;
+
+  const check = async (id: number, done: boolean, day?: string) => {
+    setActionError(null);
+    try {
+      await checkGoal(id, done, day);
+    } catch (e) {
+      setActionError(e);
+    }
+  };
 
   const add = async (s: GoalSuggestion) => {
     setActionError(null);
@@ -106,6 +115,8 @@ export default function GoalsPage() {
                     goal={g}
                     onEdit={() => setDialog({ initial: { id: g.id, period: g.period, sport: g.sport, metric: g.metric, target: g.target } })}
                     onDelete={() => setToDelete(g)}
+                    onCheck={(done) => void check(g.id, done)}
+                    onToggleHistory={(h) => void check(g.id, !h.manual, h.start)}
                   />
                 ))}
               </div>

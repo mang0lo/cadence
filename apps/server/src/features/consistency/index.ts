@@ -7,7 +7,8 @@ import { consistencyWhatsNew } from './whats-new';
 /**
  * "consistency" feature module (server side): calendar, streaks, consistency score, goals, trophies and
  * year in review.
- * - migrations: consistency_goals (user goals), consistency_achievements (derived trophies)
+ * - migrations: consistency_goals (user goals), consistency_goal_checks (goals checked off by hand),
+ *   consistency_achievements (derived trophies)
  * - routes: mounted under /api/consistency
  * - deriveSteps: consistency.achievements (trophy evaluation after every import / rebuild)
  */
@@ -17,7 +18,7 @@ const feature: Feature = {
   deriveSteps: [achievementsStep],
   routes,
   // goals are user-written: keep them when the user deletes all imported data
-  keepOnReset: ['consistency_goals'],
+  keepOnReset: ['consistency_goals', 'consistency_goal_checks'],
   whatsNew: consistencyWhatsNew,
 };
 

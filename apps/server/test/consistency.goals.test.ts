@@ -1,13 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_CONSISTENCY_PREFS } from '@cadence/shared';
-import { plusDays } from '../src/features/consistency/days';
+import { DEFAULT_CONSISTENCY_PREFS, goalMetricsFor } from '@cadence/shared';
+import { periodRange, plusDays, previousPeriodStart } from '../src/features/consistency/days';
 import {
   bucketByPeriod,
   defaultGoals,
   goalHistory,
   goalProjection,
   goalValue,
+  isChecked,
   isFeasible,
+  metricFits,
   niceTarget,
   roundNice,
   suggestGoals,
@@ -44,6 +46,68 @@ describe('goal values', () => {
     // distinct days; rows without activities do not count
     expect(goalValue(rows, 'active_days', null)).toBe(2);
     expect(goalValue(rows, 'active_days', 'strength')).toBe(1);
+    // active energy of the activities
+    expect(goalValue(rows, 'calories', null)).toBe(1500);
+    expect(goalValue(rows, 'calories', 'ride')).toBe(500);
+  });
+});
+
+describe('measures per sport and period', () => {
+  it('offers distance only where a sport records one and elevation only where it climbs', () => {
+    expect(goalMetricsFor('run', 'week')).toEqual(['distance', 'longest', 'time', 'elevation', 'calories', 'activities', 'active_days']);
+    expect(goalMetricsFor('swim', 'month')).toEqual(['distance', 'longest', 'time', 'calories', 'activities', 'active_days']);
+    expect(goalMetricsFor('strength', 'week')).toEqual(['time', 'calories', 'activities', 'active_days']);
+    expect(goalMetricsFor(null, 'year')).toHaveLength(7);
+    // a single day cannot have "active days"
+    expect(goalMetricsFor('strength', 'day')).toEqual(['time', 'calories', 'activities']);
+    expect(metricFits({ sport: 'strength', metric: 'distance', period: 'week' })).toBe(false);
+    expect(metricFits({ sport: 'strength', metric: 'calories', period: 'day' })).toBe(true);
+    expect(metricFits({ sport: null, metric: 'active_days', period: 'day' })).toBe(false);
+  });
+});
+
+describe('daily goals and check marks', () => {
+  const goal = { period: 'day' as const, sport: 'run', metric: 'distance' as const, target: 5000 };
+  const rows = [row('2026-11-01', 'run'), row('2026-11-03', 'run', { distanceM: 3000 }), row('2026-11-03', 'ride', { distanceM: 30_000 })];
+
+  it('treats a day as its own period', () => {
+    expect(periodRange('2026-11-04', 'day', 1)).toEqual({ start: '2026-11-04', end: '2026-11-04' });
+    expect(previousPeriodStart('2026-11-01', 'day')).toBe('2026-10-31');
+    expect(niceTarget('calories', 'day', 430, 1)).toBe(450);
+    expect(niceTarget('calories', 'week', 2900)).toBe(3000);
+  });
+
+  it('is open until reached or checked off, without a pace', () => {
+    const open = goalProjection({ value: 3000, target: 5000, start: '2026-11-03', end: '2026-11-03', asOf: '2026-11-03', single: true });
+    expect(open).toMatchObject({ status: 'open', checked: false, remaining: 2000, perDayNeeded: null, expected: 0 });
+    const checked = goalProjection({ ...open, asOf: '2026-11-03', single: true, checked: true });
+    // the tracked value stays what it is
+    expect(checked).toMatchObject({ status: 'done', checked: true, value: 3000, fraction: 0.6 });
+    // a check mark also completes a goal with a pace
+    expect(goalProjection({ value: 0, target: 70_000, start: '2026-11-02', end: '2026-11-08', asOf: '2026-11-06', checked: true }).status).toBe('done');
+  });
+
+  it('finds a check mark anywhere inside the period', () => {
+    expect(isChecked(['2026-11-02'], '2026-11-02', '2026-11-08')).toBe(true);
+    // written for a week starting on Monday, read with weeks starting on Sunday
+    expect(isChecked(['2026-11-02'], '2026-11-01', '2026-11-07')).toBe(true);
+    expect(isChecked(['2026-11-02'], '2026-11-09', '2026-11-15')).toBe(false);
+    expect(isChecked(undefined, '2026-11-02', '2026-11-08')).toBe(false);
+  });
+
+  it('lists the last days: reached, checked off by hand, missed, or not imported yet', () => {
+    const buckets = bucketByPeriod(rows, 'day', 1);
+    // today is 6 Nov, the data ends on 4 Nov; 2 Nov was checked off by hand
+    const h = goalHistory(goal, buckets, '2026-11-06', 1, '2026-11-01', { checks: ['2026-11-02'], horizon: '2026-11-04' });
+    expect(h).toEqual([
+      { start: '2026-11-01', end: '2026-11-01', value: 10_000, hit: true },
+      { start: '2026-11-02', end: '2026-11-02', value: 0, hit: true, manual: true },
+      { start: '2026-11-03', end: '2026-11-03', value: 3000, hit: false },
+      { start: '2026-11-04', end: '2026-11-04', value: 0, hit: false },
+      { start: '2026-11-05', end: '2026-11-05', value: 0, hit: false, pending: true },
+    ]);
+    // 14 days at most
+    expect(goalHistory(goal, buckets, '2026-11-06', 1, '2026-01-01')).toHaveLength(14);
   });
 });
 
@@ -205,6 +269,17 @@ describe('consistency score', () => {
     expect(s.basis).toBe('goals');
     expect(s.weeklyGoals).toBe(1);
     expect(s.met).toBe(0); // 3 × 30 min < 2 h
+    // weeks checked off by hand count as met: the Mondays of two of the last 12 weeks
+    const checked = computeScore({
+      rows,
+      weeklyGoals: [{ ...weeklyGoals[0]!, checks: ['2026-10-26', '2026-10-13'] }],
+      prefs: { scoreBasis: 'goals', minActiveDays: 3 },
+      asOf,
+      weekStart: 1,
+      firstDay: firstMonday,
+    });
+    expect(checked.met).toBe(2);
+    expect(checked.weeks.filter((w) => w.met).map((w) => w.weekStart)).toEqual(['2026-10-12', '2026-10-26']);
     // falls back to active days without weekly goals
     const fallback = computeScore({ rows, weeklyGoals: [], prefs: { scoreBasis: 'goals', minActiveDays: 1 }, asOf, weekStart: 1, firstDay: firstMonday });
     expect(fallback).toMatchObject({ basis: 'days', met: 12 });
