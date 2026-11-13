@@ -14,8 +14,11 @@ interface SettingsValue {
   status: StatusResponse | null;
   lang: Lang;
   loading: boolean;
-  /** PATCH /api/settings and refresh everything that depends on it. */
-  update: (patch: Partial<AthleteSettings>) => Promise<void>;
+  /**
+   * PATCH /api/settings and refresh everything that depends on it. `refetch: false` for preferences of the interface
+   * alone (e.g. the order of the sidebar): no data changes, so nothing is loaded again.
+   */
+  update: (patch: Partial<AthleteSettings>, opts?: { refetch?: boolean }) => Promise<void>;
 }
 
 const SettingsContext = createContext<SettingsValue | null>(null);
@@ -40,10 +43,11 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   useApplyTheme(settings.theme);
 
   const update = useCallback(
-    async (patch: Partial<AthleteSettings>) => {
+    async (patch: Partial<AthleteSettings>, opts?: { refetch?: boolean }) => {
       const next = await api.patch<AthleteSettings>('/settings', patch);
       qc.setQueryData(['core', 'settings', null], next);
       storage.setJSON('cadence.settings', next);
+      if (opts?.refetch === false) return;
       // HR settings change zones/effort; units change nothing server-side but refetch is cheap.
       await qc.invalidateQueries({ predicate: (q) => q.queryKey[0] !== 'core' || q.queryKey[1] === 'athlete' });
     },
