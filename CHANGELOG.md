@@ -5,7 +5,26 @@ release (see `.github/workflows/release.yml`), whose notes are taken from the ma
 
 ## [Unreleased]
 
+### Added
+
+- **Daily goals**: besides weekly, monthly and yearly goals there are now goals per day, e.g. "5 km run" or "30 min
+  strength training" every day. They are about today, show the last 14 days and come first in the goals on the
+  dashboard.
+- **Goals by calories**, and the measures on offer now depend on the sport: distance and longest activity only where
+  a sport records a distance, elevation only where it climbs; strength training, yoga and the like get time, calories
+  and activities.
+- **Check a goal off by hand**: goals fill in on their own from the activities of their sport. When something was
+  done but not tracked, *Check off* marks today (or this week, month, year) as reached, and a click on a missed day or
+  week of the history does the same afterwards. Check marks are shown as such, can be taken back, count for the
+  consistency score and survive "Delete all data".
+- **Your own order in the sidebar**: *Change order* at the end of the navigation lets you drag pages to their place
+  inside a group or move them with the arrows (also by keyboard and on a phone), and move whole groups up and down.
+  The order is saved with your settings, so it is the same in every app and browser; *Default order* brings the
+  original one back.
+
 ### Fixed
+
+- **Menu on phones**: the close button no longer covers the light/dark switch.
 
 - **Charts while the page is zoomed** (pinch or ⌘+ in the Mac app, browser zoom): the tooltip showed the value that
   would be under the pointer without zoom. Fixed for every chart, the range selection on the activity charts and the

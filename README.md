@@ -40,8 +40,10 @@
   form with ramp-rate warnings, VO2max with fitness level, resting HR and HRV; a **power curve** (1 s – 5 h) with FTP
   estimate, critical power and FTP history.
 - **Consistency**: calendar heatmap with day details, daily / weekly / activity-ring streaks, a consistency score,
-  active days per month, a weekday × hour punchcard and ring history; goals with on-track projection, history and
-  suggestions; about 100 trophies (bronze / silver / gold) and monthly challenges; a Wrapped-style year in review.
+  active days per month, a weekday × hour punchcard and ring history; daily, weekly, monthly and yearly goals per
+  sport (distance, time, calories, elevation, activities …) that fill in from your activities or are checked off by
+  hand, with on-track projection, history and suggestions; about 100 trophies (bronze / silver / gold) and monthly
+  challenges; a Wrapped-style year in review.
 - **Maps**: personal heatmap with glow themes and time-lapse, explorer tiles (zoom 14 and 17, max square and max
   cluster), automatically detected recurring routes with time trends, and personal segments with leaderboards that
   are matched against all your activities.
