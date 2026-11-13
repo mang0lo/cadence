@@ -231,7 +231,8 @@ export function BestEfforts({ w, P, onSelect }: { w: WorkoutDetail; P: Prepared 
             <TH numeric>{t('activities.efforts.time')}</TH>
             <TH numeric>{isPaceSport(w.sport) ? t('activities.efforts.pace') : t('common.speed')}</TH>
             <TH>{t('activities.efforts.rank')}</TH>
-            <TH numeric>
+            {/* relative: the visually hidden label is absolutely positioned and must stay inside the cell */}
+            <TH numeric className="relative">
               <span className="sr-only">{t('activities.efforts.select')}</span>
             </TH>
           </tr>

@@ -118,7 +118,8 @@ export function CardHeader({
   className?: string;
 }) {
   return (
-    <div className={cn('mb-3 flex items-start justify-between gap-3', className)}>
+    // on phones the actions (e.g. a wide segmented control) move below the title instead of pushing the card wider
+    <div className={cn('mb-3 flex items-start justify-between gap-x-3 gap-y-2 max-sm:flex-wrap', className)}>
       <div className="flex min-w-0 items-center gap-2">
         {Icon && <Icon size={16} className="shrink-0 text-fg-3" />}
         <div className="min-w-0">
@@ -126,7 +127,7 @@ export function CardHeader({
           {subtitle && <p className="truncate text-xs text-fg-3">{subtitle}</p>}
         </div>
       </div>
-      {actions && <div className="flex shrink-0 items-center gap-1.5">{actions}</div>}
+      {actions && <div className="flex min-w-0 max-w-full items-center gap-1.5 sm:shrink-0">{actions}</div>}
     </div>
   );
 }

@@ -197,6 +197,14 @@
   button:disabled {
     cursor: not-allowed;
   }
+  /*
+   * Grid items may shrink below their content: by default (min-width: auto) one long unbreakable line — a
+   * truncated title, a text field — widens its whole column and the page scrolls sideways on narrow windows.
+   * Zero specificity (:where) in the base layer, so any min-w-* utility still wins.
+   */
+  :where(.grid, .inline-grid) > * {
+    min-width: 0;
+  }
 }
 
 @utility tabular {
