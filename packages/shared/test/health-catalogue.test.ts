@@ -63,7 +63,9 @@ describe('health catalogue', () => {
       value: 'AsleepCore',
     });
     expect(metricDef('HKCategoryTypeIdentifierSleepAnalysis:AsleepCore')?.category).toBe('sleep');
-    expect(metricName('HKCategoryTypeIdentifierMindfulSession:NotApplicable', 'de')).toBe('Achtsamkeitsminuten');
+    expect(metricName('HKCategoryTypeIdentifierMindfulSession:NotApplicable', 'de')).toBe(
+      'Achtsamkeitsminuten',
+    );
     expect(categoryValueLabel('AsleepREM', 'de')).toBe('REM');
     expect(categoryValueLabel('SomeNewValue', 'en')).toBe('Some New Value');
   });
@@ -99,7 +101,9 @@ describe('display specs', () => {
     const d = displaySpec('HKQuantityTypeIdentifierDistanceWalkingRunning', 'm', 'imperial');
     expect(d.unit).toBe('mi');
     expect(d.convert(1609.344)).toBeCloseTo(1, 6);
-    expect(displaySpec('HKQuantityTypeIdentifierDistanceWalkingRunning', 'm', 'metric').convert(12_500)).toBe(12.5);
+    expect(displaySpec('HKQuantityTypeIdentifierDistanceWalkingRunning', 'm', 'metric').convert(12_500)).toBe(
+      12.5,
+    );
     const step = displaySpec('HKQuantityTypeIdentifierWalkingStepLength', 'm', 'metric');
     expect(step.unit).toBe('cm');
     expect(step.convert(0.74)).toBeCloseTo(74, 6);
@@ -183,7 +187,12 @@ describe('health analytics helpers', () => {
     expect(m[0]).toMatchObject({ mean: 79, n: 2, change: null });
     expect(m[1]!.change).toBeCloseTo(-2, 6);
     expect(m[2]!.change).toBeNull(); // March is missing
-    expect(monthlyAverages([{ day: '2025-12-31', value: 1 }, { day: '2026-01-01', value: 3 }])[1]!.change).toBe(2);
+    expect(
+      monthlyAverages([
+        { day: '2025-12-31', value: 1 },
+        { day: '2026-01-01', value: 3 },
+      ])[1]!.change,
+    ).toBe(2);
   });
 
   it('compares windows with a correctly signed difference', () => {
@@ -255,7 +264,10 @@ describe('health analytics helpers', () => {
     ];
     expect(bmiSeries(weight, 1.8).map((p) => Math.round(p.value * 10) / 10)).toEqual([24.7, 24.4]);
     expect(bmiSeries(weight, null)).toEqual([]);
-    const lean = leanMassSeries(weight, [{ day: '2026-03-02', value: 0.2 }, { day: '2026-03-03', value: 0.2 }]);
+    const lean = leanMassSeries(weight, [
+      { day: '2026-03-02', value: 0.2 },
+      { day: '2026-03-03', value: 0.2 },
+    ]);
     expect(lean).toHaveLength(1);
     expect(lean[0]!.day).toBe('2026-03-02');
     expect(lean[0]!.value).toBeCloseTo(63.2, 6);

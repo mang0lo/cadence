@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeServerUrl } from '../../web/src/lib/serverUrl';
+import { normalizeServerUrl } from '@/lib/serverUrl';
 
 describe('server address (Settings → Server in the apps)', () => {
   it('accepts host[:port] with or without scheme and normalizes it', () => {

@@ -17,8 +17,8 @@ import {
   smoothGrid,
   summaryRows,
   valueAtNoBreak,
-} from '../../web/src/features/activities/lib/compare';
-import { prepareStreams, type Prepared } from '../../web/src/features/activities/lib/streams';
+} from '@/features/activities/lib/compare';
+import { prepareStreams, type Prepared } from '@/features/activities/lib/streams';
 
 const M_PER_DEG = 111_320;
 
@@ -42,16 +42,17 @@ function synth(
   const lat0 = 48.2 + (o.northM ?? 0) / M_PER_DEG;
   const lon0 = 16.37;
   const kx = M_PER_DEG * Math.cos((48.2 * Math.PI) / 180);
-  const s: Required<Pick<WorkoutStreams, 't' | 'lat' | 'lon' | 'dist' | 'speed' | 'moving' | 'hr' | 'ele'>> = {
-    t: [],
-    lat: [],
-    lon: [],
-    dist: [],
-    speed: [],
-    moving: [],
-    hr: [],
-    ele: [],
-  };
+  const s: Required<Pick<WorkoutStreams, 't' | 'lat' | 'lon' | 'dist' | 'speed' | 'moving' | 'hr' | 'ele'>> =
+    {
+      t: [],
+      lat: [],
+      lon: [],
+      dist: [],
+      speed: [],
+      moving: [],
+      hr: [],
+      ele: [],
+    };
   let d = 0;
   let east = 0;
   let north = 0;
@@ -172,7 +173,9 @@ describe('compare: alignment by distance', () => {
 
 describe('compare: series on the grid', () => {
   it('bins speed while moving, heart rate and elevation per distance', () => {
-    const A = prep(synth(1000, { stops: [[300, 360]], hr: (t) => (t < 500 ? 130 : 160), ele: (d) => 100 + d / 100 }));
+    const A = prep(
+      synth(1000, { stops: [[300, 360]], hr: (t) => (t < 500 ? 130 : 160), ele: (d) => 100 + d / 100 }),
+    );
     const B = prep(synth(1000, { speed: () => 2.5 }));
     const al = align(A, B, 'moving')!;
     const a = sideSeries(A, al, 'a');
@@ -258,9 +261,22 @@ describe('compare: routes & summary', () => {
       avgPower: null,
       avgCadence: null,
     };
-    const rows = summaryRows(base, { ...base, movingS: 3060, avgHr: null, avgSpeed: 10_000 / 3060 }, { a: 2950, b: 3010 });
+    const rows = summaryRows(
+      base,
+      { ...base, movingS: 3060, avgHr: null, avgSpeed: 10_000 / 3060 },
+      { a: 2950, b: 3010 },
+    );
     const keys = rows.map((r) => r.key);
-    expect(keys).toEqual(['distance', 'commonTime', 'moving', 'elapsed', 'speed', 'avgHr', 'maxHr', 'elevation']);
+    expect(keys).toEqual([
+      'distance',
+      'commonTime',
+      'moving',
+      'elapsed',
+      'speed',
+      'avgHr',
+      'maxHr',
+      'elevation',
+    ]);
     const moving = rows.find((r) => r.key === 'moving')!;
     expect(moving.diff).toBe(-60);
     expect(moving.better).toBe('lower');
