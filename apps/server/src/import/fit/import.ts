@@ -3,10 +3,10 @@ import path from 'node:path';
 import yauzl from 'yauzl';
 import type { ImportStats } from '@cadence/shared';
 import { prepare, tx } from '../../db/db';
-import { dayString } from '../../lib/time';
 import { tzOffsetMinutes } from '../../lib/tz';
 import type { ImportResult, RunImportOptions } from '../importer';
 import { encodeSamples } from '../samples';
+import { ChangeScope, notePending } from '../scope';
 import { ImportInputError } from '../source';
 import { encodeTrack } from '../track';
 import { WarningCollector } from '../warnings';
@@ -178,7 +178,8 @@ export async function runFitImport(o: RunImportOptions & { source: FitSource }):
   );
 
   const changed: number[] = [];
-  let minTs = Infinity;
+  const scope = new ChangeScope();
+  let delta = new ChangeScope();
   const write = (a: FitActivity, file: FitFile, side: FitSidecar | null) => {
     const by = new Map(a.stats.map((s) => [s.type.replace('HKQuantityTypeIdentifier', ''), s]));
     const pick = (...types: string[]) => types.map((t) => by.get(t)).find(Boolean);
@@ -226,7 +227,7 @@ export async function runFitImport(o: RunImportOptions & { source: FitSource }):
     const id = Number(r.lastInsertRowid);
     stats.workoutsInserted++;
     changed.push(id);
-    if (a.startTs < minTs) minTs = a.startTs;
+    delta.noteWorkout(id, a.startTs);
     a.events.forEach((e, idx) => insEvent.run(id, idx, e.type, e.ts, null));
     if (a.track) {
       const n = a.track.t.length;
@@ -248,9 +249,13 @@ export async function runFitImport(o: RunImportOptions & { source: FitSource }):
   const pending: { a: FitActivity; file: FitFile; side: FitSidecar | null }[] = [];
   const flush = () => {
     if (!pending.length) return;
+    delta = new ChangeScope();
     tx(db, () => {
       for (const p of pending) write(p.a, p.file, p.side);
+      // the new workouts are noted for the derive in the same transaction (see scope.ts)
+      notePending(db, athleteId, delta);
     });
+    scope.merge(delta);
     pending.length = 0;
   };
   o.onProgress?.({ phase: 'parse', fraction: 0, message: `Reading ${src.files.length} FIT files`, stats });
@@ -286,10 +291,8 @@ export async function runFitImport(o: RunImportOptions & { source: FitSource }):
   o.onProgress?.({ phase: 'finalize', fraction: 1, message: 'Import finished', stats });
   return {
     stats,
-    changedWorkoutIds: changed.sort((a, b) => a - b),
-    newWorkoutIds: [...changed],
-    sinceDay: Number.isFinite(minTs) ? dayString(Math.floor(minTs / 86400) - 1) : null,
-    typeSince: new Map(),
+    scope,
+    newWorkoutIds: changed.sort((a, b) => a - b),
     elapsedMs: Date.now() - t0,
   };
 }

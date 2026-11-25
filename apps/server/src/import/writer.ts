@@ -13,6 +13,7 @@ import {
   type RecordMeta,
   type XmlNode,
 } from './parser';
+import { ChangeScope, notePending } from './scope';
 import type { Track } from './track';
 import { WarningCollector } from './warnings';
 import { parseWorkout, type ParsedWorkout } from './workout';
@@ -87,6 +88,7 @@ export function emptyStats(): ImportStats {
  * multi-row INSERT OR IGNORE, cached prepared statements). Re-importing a newer export only adds new rows:
  * records dedupe on (type, start, FNV-1a(end|source|value|text)), workouts on ext_key, correlations on
  * (type, start, end, source), ECGs on recorded time, everything else on a content hash.
+ * What each flush changed is persisted as the athlete's pending derive scope in the same transaction.
  */
 export class ImportWriter implements HealthSink {
   private types = new Map<string, TypeInfo>();
@@ -104,6 +106,8 @@ export class ImportWriter implements HealthSink {
   private items: XmlNode[] = [];
   private meNode: XmlAttrs | null = null;
   private warnedUnit = new Set<string>();
+  /** Changes of the flush in progress. */
+  private delta = new ChangeScope();
 
   /** Workouts inserted by this import. */
   readonly newWorkoutIds = new Set<number>();
@@ -111,10 +115,8 @@ export class ImportWriter implements HealthSink {
   readonly routeRefs: RouteRef[] = [];
   readonly inlineTracks: { workoutId: number; track: Track }[] = [];
   readonly clinicalRefs: { hash: number; path: string }[] = [];
-  /** Earliest start of newly inserted records per type id (drives incremental daily metrics). */
-  readonly typeMinTs = new Map<number, number>();
-  /** Earliest timestamp of any new data (records, workouts, summaries, correlations). */
-  minChangedTs = Infinity;
+  /** What this import changed so far (already persisted as pending derive scope). */
+  readonly scope = new ChangeScope();
   readonly warnings: WarningCollector;
 
   constructor(
@@ -234,7 +236,7 @@ export class ImportWriter implements HealthSink {
   }
 
   private noteChange(ts: number): void {
-    if (ts < this.minChangedTs) this.minChangedTs = ts;
+    this.delta.noteDay(ts);
   }
 
   // ---------------------------------------------------------------------------
@@ -384,6 +386,7 @@ export class ImportWriter implements HealthSink {
 
   flush(): void {
     if (!this.pending && !this.meNode) return;
+    const delta = (this.delta = new ChangeScope());
     tx(this.db, () => {
       this.flushRecords();
       this.flushCorrelations();
@@ -391,7 +394,10 @@ export class ImportWriter implements HealthSink {
       this.flushSummaries();
       this.flushItems();
       this.flushMe();
+      // what this flush changed commits together with the data (a cancelled import loses nothing to derive)
+      notePending(this.db, this.athleteId, delta);
     });
+    this.scope.merge(delta);
   }
 
   private flushRecords(): void {
@@ -437,13 +443,7 @@ export class ImportWriter implements HealthSink {
   private noteRecords(from: number, to: number, changes: number): void {
     this.stats.recordsInserted += changes;
     const p = this.recParams;
-    for (let r = from; r < to; r++) {
-      const typeId = p[r * COLS + 1] as number;
-      const ts = p[r * COLS + 2] as number;
-      const cur = this.typeMinTs.get(typeId);
-      if (cur === undefined || ts < cur) this.typeMinTs.set(typeId, ts);
-      if (ts < this.minChangedTs) this.minChangedTs = ts;
-    }
+    for (let r = from; r < to; r++) this.delta.noteRecord(p[r * COLS + 1] as number, p[r * COLS + 2] as number);
   }
 
   private flushCorrelations(): void {
@@ -557,7 +557,7 @@ export class ImportWriter implements HealthSink {
         id = Number(r.lastInsertRowid);
         this.stats.workoutsInserted++;
         this.newWorkoutIds.add(id);
-        this.noteChange(w.startTs);
+        this.delta.noteWorkout(id, w.startTs);
         w.events.forEach((e, idx) =>
           insEvent.run(id, idx, e.type, e.ts, e.durationS, e.meta ? JSON.stringify(e.meta) : null),
         );

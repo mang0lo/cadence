@@ -8,6 +8,7 @@ import { invalidateStatusCounts } from '../core/routes';
 import { all, get, json, run, type Db } from '../db/db';
 import { CancelledError, DERIVE_VERSION } from '../derive/context';
 import { executeJob, type JobOptions, type JobSpec } from './run-job';
+import { athletesWithPendingChanges, pendingScope } from './scope';
 import type { JobWorkerData, WorkerMessage } from './worker';
 import { emptyStats } from './writer';
 
@@ -93,7 +94,10 @@ export class JobManager {
     private readonly mode: JobRunnerMode = 'worker',
   ) {}
 
-  /** Recover after a restart: running jobs died with the old process; queued jobs are resumed. */
+  /**
+   * Recover after a restart: running jobs died with the old process; queued jobs are resumed; changes that no derive
+   * finished (an interrupted, cancelled or failed job, see scope.ts) are derived.
+   */
   start(): void {
     run(
       this.db,
@@ -121,6 +125,9 @@ export class JobManager {
     )) {
       if (!this.busy(r.athlete_id)) this.enqueueDerive(r.athlete_id, { origin: 'upgrade' });
     }
+    // a queued job takes the pending changes over itself
+    for (const athleteId of athletesWithPendingChanges(this.db))
+      if (!this.busy(athleteId)) this.enqueueRecovery(athleteId);
     queueMicrotask(() => this.pump());
   }
 
@@ -152,6 +159,11 @@ export class JobManager {
       sinceDay: null,
       ...options,
     });
+  }
+
+  /** Derive what earlier jobs left underived (the athlete's pending changes, scope.ts) and nothing else. */
+  private enqueueRecovery(athleteId: number): ImportJob {
+    return this.enqueueDerive(athleteId, { origin: 'recover', workoutIds: [], sinceDay: null, records: false });
   }
 
   private insert(
@@ -405,6 +417,15 @@ export class JobManager {
       this.maybeDeleteSource(r.sourcePath, r.options, status === 'done' || status === 'cancelled');
     invalidateStatusCounts();
     if (this.running === r) this.running = null;
+    // An import that stopped half way (cancelled, failed) committed data the derive has not seen: derive it right
+    // away. Never after a derive, so one the user cancelled or that keeps failing is not queued again and again.
+    if (r.job.kind === 'import' && status !== 'done' && !this.closed) {
+      try {
+        if (!this.busy(r.athleteId) && !pendingScope(this.db, r.athleteId).empty) this.enqueueRecovery(r.athleteId);
+      } catch (e) {
+        console.error('Could not queue the derive of a stopped import', e);
+      }
+    }
     const final = this.get(r.athleteId, r.id);
     if (final) this.emit(final);
     if (!this.closed) setImmediate(() => this.pump());
