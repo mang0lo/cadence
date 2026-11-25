@@ -10,6 +10,7 @@ import {
   type RacePrediction,
 } from '@cadence/shared';
 import { all, get, type Db } from '../../db/db';
+import { heartMetric } from '../../core/sources';
 import { SUMMARY_COLS, toSummary, type WorkoutRow } from '../../core/workouts';
 import { addDays, localDay } from '../../lib/time';
 import { median, RIEGEL_EXPONENT, riegel, shiftYears, timeFromVdot } from './math';
@@ -165,20 +166,24 @@ export function riegelFromCandidates(
   return { elapsedS: riegel(best.row.elapsedS, best.distanceM, targetM), basis: best };
 }
 
-/** Recent VO2max: median of the readings in the 30 days up to the latest one. */
+/**
+ * Recent VO2max of the preferred source (Settings → My watch, see heartMetric): median of the plausible readings in
+ * the 30 days up to the latest plausible one.
+ */
 export function recentVo2max(db: Db, athleteId: number, today: string): { value: number; day: string } | null {
+  const metric = heartMetric(db, athleteId, 'vo2max');
   const latest = get<{ day: string }>(
     db,
-    `SELECT day FROM daily_metrics WHERE athlete_id = ? AND metric = 'HKQuantityTypeIdentifierVO2Max' AND day <= ?
+    `SELECT day FROM daily_metrics WHERE athlete_id = ? AND metric = ? AND day <= ? AND value BETWEEN 10 AND 95
      ORDER BY day DESC LIMIT 1`,
-    [athleteId, today],
+    [athleteId, metric, today],
   );
   if (!latest) return null;
   const values = all<{ value: number }>(
     db,
-    `SELECT value FROM daily_metrics WHERE athlete_id = ? AND metric = 'HKQuantityTypeIdentifierVO2Max'
+    `SELECT value FROM daily_metrics WHERE athlete_id = ? AND metric = ?
        AND day > ? AND day <= ? AND value BETWEEN 10 AND 95`,
-    [athleteId, addDays(latest.day, -30), latest.day],
+    [athleteId, metric, addDays(latest.day, -30), latest.day],
   ).map((r) => r.value);
   const m = median(values);
   return m === null ? null : { value: Math.round(m * 10) / 10, day: latest.day };

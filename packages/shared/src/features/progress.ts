@@ -328,7 +328,10 @@ export interface RacePrediction {
   distanceM: number;
   /** Riegel (T2 = T1 · (D2/D1)^1.06) from the recent best effort closest in distance. */
   riegel: { elapsedS: number; basis: ProgressEffortRef & { effort: string; distanceM: number } } | null;
-  /** Daniels/Gilbert race time for Apple's VO2max used as VDOT. */
+  /**
+   * Daniels/Gilbert race time for the recent VO2max (preferred source: Apple Health or the watch's own, e.g. COROS)
+   * used as VDOT.
+   */
   vo2max: { elapsedS: number } | null;
 }
 
@@ -337,6 +340,7 @@ export interface ProgressPredictions {
   /** Best efforts of this many days back were used (widened when there were none). */
   windowDays: number;
   riegelExponent: number;
+  /** Median of the preferred source's VO2max readings in the 30 days up to the latest one (ml/kg/min). */
   vo2max: { value: number; day: string } | null;
   targets: RacePrediction[];
 }
