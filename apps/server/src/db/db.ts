@@ -16,15 +16,21 @@ export type Params = unknown[] | Record<string, unknown>;
 export function openDb(file: string, opts: { readOnly?: boolean } = {}): Db {
   if (file !== ':memory:') fs.mkdirSync(path.dirname(file), { recursive: true });
   const db = new DatabaseSync(file, { readOnly: opts.readOnly ?? false });
-  db.exec(`
-    PRAGMA busy_timeout = 15000;
-    PRAGMA foreign_keys = ON;
-    PRAGMA temp_store = MEMORY;
-    PRAGMA cache_size = -65536;
-    PRAGMA mmap_size = 268435456;
-  `);
-  if (!opts.readOnly && file !== ':memory:') {
-    db.exec(`PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;`);
+  try {
+    db.exec(`
+      PRAGMA busy_timeout = 15000;
+      PRAGMA foreign_keys = ON;
+      PRAGMA temp_store = MEMORY;
+      PRAGMA cache_size = -65536;
+      PRAGMA mmap_size = 268435456;
+    `);
+    if (!opts.readOnly && file !== ':memory:') {
+      db.exec(`PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;`);
+    }
+  } catch (e) {
+    // not a database (e.g. a bad restore): do not keep the file open, it is moved aside next
+    db.close();
+    throw e;
   }
   return db;
 }
@@ -73,6 +79,19 @@ export function run(db: Db, sql: string, params?: Params): { changes: number; la
   return { changes: Number(r.changes), lastInsertRowid: Number(r.lastInsertRowid) };
 }
 
+/**
+ * Undo after a failed statement, keeping the error that says why: for SQLITE_FULL, I/O errors or RAISE(ROLLBACK)
+ * SQLite has already rolled the whole transaction back, and a second ROLLBACK would only report that none is active.
+ */
+function rollback(db: Db, sql: string): void {
+  if (!db.isTransaction) return;
+  try {
+    db.exec(sql);
+  } catch {
+    /* the original error is rethrown */
+  }
+}
+
 /** Run `fn` inside a transaction (nested calls become savepoints). */
 export function tx<T>(db: Db, fn: () => T): T {
   if (db.isTransaction) {
@@ -83,7 +102,7 @@ export function tx<T>(db: Db, fn: () => T): T {
       db.exec(`RELEASE ${name}`);
       return out;
     } catch (e) {
-      db.exec(`ROLLBACK TO ${name}; RELEASE ${name}`);
+      rollback(db, `ROLLBACK TO ${name}; RELEASE ${name}`);
       throw e;
     }
   }
@@ -93,7 +112,7 @@ export function tx<T>(db: Db, fn: () => T): T {
     db.exec('COMMIT');
     return out;
   } catch (e) {
-    db.exec('ROLLBACK');
+    rollback(db, 'ROLLBACK');
     throw e;
   }
 }
