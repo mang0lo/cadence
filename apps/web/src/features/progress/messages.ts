@@ -146,6 +146,7 @@ export const messages: Dictionary = {
       empty: 'No heart-rate data with pace for this sport',
       emptyHint: 'Pace at heart rate needs activities with heart rate and GPS or distance.',
       pickSport: 'Choose a sport with distance to compare its pace at the same heart rate',
+      notSaved: 'This band could not be saved. It applies until you leave the page.',
     },
     intensity: {
       title: 'Intensity distribution',
@@ -531,6 +532,7 @@ export const messages: Dictionary = {
       empty: 'Keine Herzfrequenzdaten mit Pace für diese Sportart',
       emptyHint: 'Dafür braucht es Aktivitäten mit Herzfrequenz und GPS oder Distanz.',
       pickSport: 'Wähle eine Sportart mit Distanz, um ihre Pace bei gleicher Herzfrequenz zu vergleichen',
+      notSaved: 'Dieser Bereich konnte nicht gespeichert werden. Er gilt, bis du die Seite verlässt.',
     },
     intensity: {
       title: 'Intensitätsverteilung',

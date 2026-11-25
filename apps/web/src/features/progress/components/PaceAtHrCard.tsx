@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FocusEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FocusEvent } from 'react';
 import { HeartPulse } from 'lucide-react';
 import type { EChartsOption } from 'echarts';
 import { sportInfo, type PaceAtHrResponse, type ProgressHrBand } from '@cadence/shared';
@@ -148,9 +148,17 @@ export function PaceAtHrCard({ sport, range }: { sport: string; range: RangePara
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bandKey, customOpen]);
 
+  // the band applies at once and is saved in the background; a failed save would silently bring back the old band on
+  // the next visit, so say so (only for the latest pick of the sport on screen)
+  const [failedFor, setFailedFor] = useState<string | null>(null);
+  const saves = useRef(0);
   const pick = (b: ProgressHrBand) => {
     setPicked({ sport, band: b });
-    void save(sport, b).catch(() => undefined);
+    const n = ++saves.current;
+    setFailedFor(null);
+    save(sport, b).catch(() => {
+      if (n === saves.current) setFailedFor(sport);
+    });
   };
   const applyCustom = () => {
     const a = Math.round(Number(lo));
@@ -267,6 +275,11 @@ export function PaceAtHrCard({ sport, range }: { sport: string; range: RangePara
               </div>
             )}
           </div>
+          {failedFor === sport && (
+            <p role="alert" className="mb-2 text-xs text-critical-fg">
+              {t('progress.paceAtHr.notSaved')}
+            </p>
+          )}
           {distOption && (
             <div className="mb-3">
               <EChart
