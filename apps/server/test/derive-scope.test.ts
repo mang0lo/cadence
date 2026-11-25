@@ -104,3 +104,22 @@ describe('derive change set', () => {
     expect(d.changes.duplicateFlips).toEqual([copy]);
   });
 });
+
+describe('relative effort', () => {
+  it('extrapolates a heart-rate histogram with a dropout to the whole workout', async () => {
+    const full = workout('full');
+    const gap = workout('gap', { start: T0 + 86400 });
+    heartRate(T0, T0 + 3600, 150);
+    // the strap lost contact after 40 of 60 minutes
+    heartRate(T0 + 86400, T0 + 86400 + 2400, 150);
+    await derive('all');
+    const row = (id: number) =>
+      get<{ effort: number; trimp: number; hr_zones: string }>(db, 'SELECT effort, trimp, hr_zones FROM workouts WHERE id = ?', [id])!;
+    // more HR data never means less load than the average-HR fallback: the gap counts like the rest of the run
+    expect(row(gap).effort).toBeGreaterThan(row(full).effort * 0.95);
+    expect(row(gap).effort).toBeLessThan(row(full).effort * 1.05);
+    // time in zones stays what was measured
+    const zones = (id: number) => (JSON.parse(row(id).hr_zones) as number[]).reduce((a, b) => a + b, 0);
+    expect(zones(gap)).toBeLessThan(zones(full) * 0.7);
+  });
+});

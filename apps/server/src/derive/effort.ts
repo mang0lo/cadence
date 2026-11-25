@@ -11,9 +11,16 @@ export interface EffortBasis {
   restingHr: number;
   zoneBounds: number[];
   sex: string | null;
+  /** EFFORT_VERSION the efforts were computed with (missing = 1). */
+  version?: number;
 }
 
 const BASIS_KEY = 'core.effortBasis';
+/**
+ * Bump when the effort computation changes: the next derive recomputes every workout's effort once (cheap).
+ * 2: TRIMP of a histogram that covers only part of the moving time is extrapolated to all of it.
+ */
+const EFFORT_VERSION = 2;
 
 export function currentEffortBasis(db: Db, athleteId: number): EffortBasis {
   const hr = getEffectiveHr(db, athleteId);
@@ -22,7 +29,7 @@ export function currentEffortBasis(db: Db, athleteId: number): EffortBasis {
     settings.sex ??
     get<{ sex: string | null }>(db, 'SELECT sex FROM athletes WHERE id = ?', [athleteId])?.sex ??
     null;
-  return { maxHr: hr.maxHr, restingHr: hr.restingHr, zoneBounds: hr.zoneBounds, sex };
+  return { maxHr: hr.maxHr, restingHr: hr.restingHr, zoneBounds: hr.zoneBounds, sex, version: EFFORT_VERSION };
 }
 
 function significantChange(a: EffortBasis | null, b: EffortBasis): boolean {
@@ -31,9 +38,13 @@ function significantChange(a: EffortBasis | null, b: EffortBasis): boolean {
     a.maxHr !== b.maxHr ||
     Math.abs(a.restingHr - b.restingHr) >= 2 ||
     a.sex !== b.sex ||
-    JSON.stringify(a.zoneBounds) !== JSON.stringify(b.zoneBounds)
+    JSON.stringify(a.zoneBounds) !== JSON.stringify(b.zoneBounds) ||
+    (a.version ?? 1) !== (b.version ?? 1)
   );
 }
+
+/** Below this share of the moving time covered by the HR histogram, its TRIMP is extrapolated to the rest. */
+const FULL_COVERAGE = 0.95;
 
 interface Row {
   id: number;
@@ -46,7 +57,8 @@ interface Row {
 
 /**
  * HR zones (seconds in Z1..Z5) and relative effort for workouts:
- *   1. Banister TRIMP from the workout's HR histogram (time at each bpm),
+ *   1. Banister TRIMP from the workout's HR histogram (time at each bpm); a histogram with gaps (strap dropouts)
+ *      is extrapolated to the moving time, so a gap never makes the effort lower than no HR stream at all would,
  *   2. else TRIMP from average HR × duration,
  *   3. else a per-sport per-minute estimate (effort_estimated = 1).
  * The effective HR (max/resting/zones) is computed once per run. When it changed significantly since the
@@ -88,8 +100,11 @@ export function computeEfforts(
         }
       }
       const minutes = (r.moving_s ?? r.duration_s) / 60;
-      if (hist && hist.some((x) => x > 0)) {
+      const covered = hist ? hist.reduce((s, x) => s + x, 0) : 0;
+      if (hist && covered > 0) {
         trimp = trimpFromHistogram(hist, basis.restingHr, basis.maxHr, basis.sex);
+        // time in zones stays as measured; the load of the minutes without HR is assumed to be like the rest
+        if (covered < FULL_COVERAGE * minutes * 60) trimp *= Math.min(2, (minutes * 60) / covered);
         zones = zonesFromHistogram(hist, basis.zoneBounds);
         effort = trimp;
       } else if (r.avg_hr && r.avg_hr > 30) {
