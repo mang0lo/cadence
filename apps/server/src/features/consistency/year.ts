@@ -175,9 +175,6 @@ function efforts(
 }
 
 const HK = (t: string) => `HKQuantityTypeIdentifier${t}`;
-const SLEEP = ['AsleepCore', 'AsleepDeep', 'AsleepREM', 'Asleep', 'AsleepUnspecified'].map(
-  (v) => `HKCategoryTypeIdentifierSleepAnalysis:${v}`,
-);
 
 interface MetricAgg {
   avg: number | null;
@@ -201,16 +198,17 @@ function metricAggs(db: Db, athleteId: number, from: string, to: string): Map<st
   );
 }
 
+/**
+ * Mean asleep minutes per night (waking up in [from, to]) from the sleep nights of the health feature: one source per
+ * night, the whole night on its wake-up day, COROS nights included. Nights of an hour or less are left out.
+ */
 function sleepAvg(db: Db, athleteId: number, from: string, to: string): number | null {
   return (
     get<{ v: number | null }>(
       db,
-      `SELECT AVG(s) AS v FROM (
-         SELECT day, SUM(value) AS s FROM daily_metrics
-         WHERE athlete_id = ? AND metric IN (${SLEEP.map(() => '?').join(',')}) AND day >= ? AND day <= ?
-         GROUP BY day HAVING s > 60
-       )`,
-      [athleteId, ...SLEEP, from, to],
+      `SELECT AVG(asleep_s) / 60.0 AS v FROM health_sleep_nights
+       WHERE athlete_id = ? AND kind = 'night' AND asleep_s > 3600 AND day >= ? AND day <= ?`,
+      [athleteId, from, to],
     )?.v ?? null
   );
 }
