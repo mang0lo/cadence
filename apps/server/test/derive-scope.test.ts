@@ -8,6 +8,8 @@ import { all, get, openDb, run, type Db } from '../src/db/db';
 import { DERIVE_VERSION } from '../src/derive/context';
 import { recomputeDailyMetrics, refreshTypeStats } from '../src/derive/daily';
 import { runDerive } from '../src/derive/run';
+import { executeJob } from '../src/import/run-job';
+import { createHealthFixture } from './health-fixture';
 
 let dir: string;
 let db: Db;
@@ -184,5 +186,53 @@ describe('record type stats', () => {
       { day: new Date((night - 30 * 86400) * 1000).toISOString().slice(0, 10), value: 420 },
       { day: new Date(night * 1000).toISOString().slice(0, 10), value: 480 },
     ]);
+  });
+});
+
+describe('rederive of an edited workout', () => {
+  it('leaves the daily health metrics alone', async () => {
+    const a = workout('a');
+    heartRate(T0, T0 + 3600, 150);
+    await runDerive({ db, athleteId: 1, workoutIds: 'all', sinceDay: null });
+    const day = '2026-05-28';
+    const hr = () =>
+      get<{ value: number }>(db, "SELECT value FROM daily_metrics WHERE metric = 'HKQuantityTypeIdentifierHeartRate' AND day = ?", [day])
+        ?.value;
+    expect(hr()).toBe(150);
+    run(db, "UPDATE daily_metrics SET value = 999 WHERE metric = 'HKQuantityTypeIdentifierHeartRate'");
+    const rederive = (options: object) =>
+      executeJob(
+        db,
+        { id: 'r', kind: 'rederive', athleteId: 1, sourcePath: null, options: { origin: 'workout', workoutIds: [a], sinceDay: day, ...options } },
+        { progress: () => {}, checkCancelled: () => {}, log: () => {} },
+      );
+    const stats = await rederive({ records: false });
+    expect(stats.workoutsDerived).toBe(1);
+    expect(hr()).toBe(999);
+    // without `records: false` (jobs queued by older versions) every record type is recomputed from that day
+    await rederive({});
+    expect(hr()).toBe(150);
+  });
+
+  it('is what hiding a workout or changing its sport queues', async () => {
+    const fx = await createHealthFixture();
+    try {
+      run(
+        fx.db,
+        `INSERT INTO workouts (id, athlete_id, ext_key, activity_type, sport, start_ts, end_ts, tz_min, duration_s, derived_version)
+         VALUES (5, 1, 'w5', 'HKWorkoutActivityTypeRunning', 'run', ?, ?, 120, 3600, ?)`,
+        [T0, T0 + 3600, DERIVE_VERSION],
+      );
+      for (const payload of [{ hidden: true }, { sport: 'walk' }]) {
+        const res = await fx.app.inject({ method: 'PATCH', url: '/api/workouts/5', payload });
+        expect(res.statusCode).toBe(200);
+      }
+      const jobs = all<{ options: string }>(fx.db, "SELECT options FROM import_jobs WHERE kind = 'rederive'");
+      expect(jobs.length).toBeGreaterThan(0);
+      for (const j of jobs)
+        expect(JSON.parse(j.options)).toMatchObject({ origin: 'workout', workoutIds: [5], sinceDay: '2026-05-28', records: false });
+    } finally {
+      await fx.close();
+    }
   });
 });

@@ -207,12 +207,14 @@ export default async function workoutRoutes(app: FastifyInstance) {
       if (sportChanged)
         run(app.db, 'UPDATE best_efforts SET sport = ? WHERE workout_id = ?', [body.sport, id]);
       refreshDailyActivity(app.db, req.athleteId, localDay(w.start_ts, w.tz_min));
-      // sport changes alter moving thresholds / best efforts; both change what features aggregate
+      // sport changes alter moving thresholds / best efforts; both change what features aggregate. No health
+      // record changed: only this workout and its day are derived again (not the daily metrics of every type).
       if (sportChanged || hiddenChanged)
         app.jobs.enqueueDerive(req.athleteId, {
           origin: 'workout',
           workoutIds: [id],
           sinceDay: localDay(w.start_ts, w.tz_min),
+          records: false,
         });
     }
     return getWorkoutDetail(app.db, req.athleteId, id)!;
