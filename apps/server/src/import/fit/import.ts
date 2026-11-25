@@ -9,6 +9,7 @@ import type { ImportResult, RunImportOptions } from '../importer';
 import { encodeSamples } from '../samples';
 import { ImportInputError } from '../source';
 import { encodeTrack } from '../track';
+import { WarningCollector } from '../warnings';
 import { emptyStats } from '../writer';
 import { FitError, parseFit, type FitActivity } from './parse';
 
@@ -150,12 +151,7 @@ export async function runFitImport(o: RunImportOptions & { source: FitSource }):
   const check = o.checkCancelled ?? (() => {});
   const src = o.source;
   const { db, athleteId } = o;
-  const warnCounts = new Map<string, number>();
-  const warn = (msg: string, key = msg) => {
-    const n = (warnCounts.get(key) ?? 0) + 1;
-    warnCounts.set(key, n);
-    if (n === 1 && stats.warnings.length < 200) stats.warnings.push(msg);
-  };
+  const warnings = new WarningCollector(stats.warnings);
   if (!src.files.length) throw new ImportInputError('No FIT files to import');
   stats.bytesTotal = src.files.length;
 
@@ -266,7 +262,7 @@ export async function runFitImport(o: RunImportOptions & { source: FitSource }):
         pending.push({ a, file, side: await file.sidecar() });
       } catch (e) {
         const msg = e instanceof FitError ? e.message : `Unreadable FIT file (${(e as Error).message})`;
-        warn(`${path.basename(file.path)}: ${msg}`, msg);
+        warnings.add(`${path.basename(file.path)}: ${msg}`, msg);
       }
       done++;
       stats.bytesProcessed = done;
@@ -286,11 +282,7 @@ export async function runFitImport(o: RunImportOptions & { source: FitSource }):
   } finally {
     src.close();
   }
-  stats.warnings = stats.warnings.map((w) => {
-    const key = [...warnCounts.keys()].find((k) => w.endsWith(k));
-    const n = key ? warnCounts.get(key)! : 1;
-    return n > 1 ? `${w} (×${n})` : w;
-  });
+  stats.warnings = warnings.finish();
   o.onProgress?.({ phase: 'finalize', fraction: 1, message: 'Import finished', stats });
   return {
     stats,

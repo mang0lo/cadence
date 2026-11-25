@@ -14,6 +14,7 @@ import {
   type XmlNode,
 } from './parser';
 import type { Track } from './track';
+import { WarningCollector } from './warnings';
 import { parseWorkout, type ParsedWorkout } from './workout';
 import type { XmlAttrs } from './xml';
 
@@ -103,7 +104,6 @@ export class ImportWriter implements HealthSink {
   private items: XmlNode[] = [];
   private meNode: XmlAttrs | null = null;
   private warnedUnit = new Set<string>();
-  private warnCounts = new Map<string, number>();
 
   /** Workouts inserted by this import. */
   readonly newWorkoutIds = new Set<number>();
@@ -115,12 +115,14 @@ export class ImportWriter implements HealthSink {
   readonly typeMinTs = new Map<number, number>();
   /** Earliest timestamp of any new data (records, workouts, summaries, correlations). */
   minChangedTs = Infinity;
+  readonly warnings: WarningCollector;
 
   constructor(
     private readonly db: Db,
     private readonly athleteId: number,
     readonly stats: ImportStats,
   ) {
+    this.warnings = new WarningCollector(stats.warnings);
     for (const r of db.prepare('SELECT id, identifier, kind, unit FROM record_types').all() as {
       id: number;
       identifier: string;
@@ -141,17 +143,12 @@ export class ImportWriter implements HealthSink {
   }
 
   warn(msg: string, key = msg): void {
-    const n = (this.warnCounts.get(key) ?? 0) + 1;
-    this.warnCounts.set(key, n);
-    if (n === 1 && this.stats.warnings.length < 200) this.stats.warnings.push(msg);
+    this.warnings.add(msg, key);
   }
 
   /** Summarise repeated warnings ("… (×1234)"). */
   finishWarnings(): void {
-    this.stats.warnings = this.stats.warnings.map((w) => {
-      const n = this.warnCounts.get(w);
-      return n && n > 1 ? `${w} (×${n})` : w;
-    });
+    this.stats.warnings = this.warnings.finish();
   }
 
   // ---------------------------------------------------------------------------
@@ -271,7 +268,7 @@ export class ImportWriter implements HealthSink {
     if (start !== start) {
       const p = parseAppleDate(sd);
       if (!p) {
-        this.warn(`Record with unparseable date skipped (${type})`, 'bad-date');
+        this.warn(`Record with unparseable date skipped (${type})`, `bad-date:${type}`);
         return;
       }
       start = p.ts;
