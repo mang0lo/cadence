@@ -7,7 +7,7 @@ import { WorkoutTags } from '@/components/WorkoutTags';
 import { useFormat } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
 import { SportIcon, sportColorVar, sportLabel } from '@/lib/sports';
-import { shortDistanceParts } from '../../lib/display';
+import { shortDistanceParts, shownGain } from '../../lib/display';
 import { MedalList } from '../MedalBadge';
 import { Actions, type RowActions } from './RowActions';
 
@@ -123,7 +123,7 @@ export function ListTable({
                 {info.speedMode !== 'none' && w.avgSpeed ? fmt.pace(w.avgSpeed, w.sport) : '–'}
               </TD>
               <TD numeric className="hidden whitespace-nowrap xl:table-cell">
-                {w.hasRoute && w.elevationGainM !== null ? fmt.elevation(w.elevationGainM) : '–'}
+                {shownGain(w) !== null ? fmt.elevation(shownGain(w)) : '–'}
               </TD>
               <TD numeric className="hidden xl:table-cell">
                 {w.avgHr ? fmt.int(w.avgHr) : '–'}

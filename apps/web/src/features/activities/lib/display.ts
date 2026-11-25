@@ -138,6 +138,16 @@ export function weekdayShort(day: string, fmt: Formatter): string {
   return fmt.weekdayNames(0)[weekday(day)]!;
 }
 
+/**
+ * Elevation gain to show for a workout (the detail page's rule): also without a route, where it comes from the
+ * workout's own data (a route file missing from the export, a FIT total ascent) — the list sorts by it and its totals
+ * add it up. Null when unknown, and without a route when it is zero.
+ */
+export function shownGain(w: Pick<WorkoutSummary, 'hasRoute' | 'elevationGainM'>): number | null {
+  const g = w.elevationGainM;
+  return g !== null && (w.hasRoute || g > 0) ? g : null;
+}
+
 /** Sport-specific key stats of a workout for cards and list rows. */
 export function keyStats(w: WorkoutSummary, fmt: Formatter, t: TFunction, max = 4): StatItem[] {
   const info = sportInfo(w.sport);
@@ -152,7 +162,7 @@ export function keyStats(w: WorkoutSummary, fmt: Formatter, t: TFunction, max = 
       out.push({ key: 'pace', label: speedLabel(w.sport, t), value: p.value, unit: p.unit });
     }
     out.push({ key: 'time', label: t('common.movingTime'), value: fmt.duration(time) });
-    if (w.hasRoute && (w.elevationGainM ?? 0) >= 1) {
+    if ((shownGain(w) ?? 0) >= 1) {
       const e = fmt.elevationParts(w.elevationGainM);
       out.push({ key: 'elevation', label: t('common.elevationGain'), value: e.value, unit: e.unit });
     }

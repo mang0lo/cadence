@@ -6,17 +6,20 @@ import { createFormatter } from '@/lib/format';
 import {
   cadenceUnit,
   isCycling,
+  keyStats,
   minutesAxis,
   minutesTick,
   paceUnitM,
   paceValue,
   relativeTime,
+  shownGain,
   speedDiff,
   weekdayShort,
 } from '@/features/activities/lib/display';
+import type { TFunction } from '@/lib/i18n';
 import { routeColoring, routeGeometry } from '@/features/activities/lib/route';
 import type { ChartTheme } from '@/components/charts/theme';
-import type { WorkoutStreams } from '@cadence/shared';
+import type { WorkoutStreams, WorkoutSummary } from '@cadence/shared';
 import { M_PER_DEG, prep, synth } from './synth';
 
 /** A zig-zag north and south of the straight synthetic track, so the simplified route keeps many vertices. */
@@ -194,5 +197,30 @@ describe('route legend', () => {
     if (c.legend.kind !== 'ramp') throw new Error('ramp expected');
     expect(c.legend.from).toMatch(/^\d+$/);
     expect(c.legend.to).toMatch(/^\d+ bpm$/);
+  });
+});
+
+describe('display: elevation gain without a route', () => {
+  const t: TFunction = (key) => key;
+  const hike = {
+    sport: 'hike',
+    distanceM: 9400,
+    movingS: 9000,
+    durationS: 9300,
+    avgSpeed: 1.04,
+    avgHr: 128,
+    energyKcal: 900,
+    effort: null,
+  } as WorkoutSummary;
+
+  it('shows the gain of a workout without a route (missing route file, FIT total ascent) like the detail page', () => {
+    // the list sorts by it and its totals add it up, so the row must show it too
+    expect(shownGain({ hasRoute: false, elevationGainM: 412 })).toBe(412);
+    expect(shownGain({ hasRoute: true, elevationGainM: 0 })).toBe(0);
+    expect(shownGain({ hasRoute: false, elevationGainM: 0 })).toBeNull();
+    expect(shownGain({ hasRoute: true, elevationGainM: null })).toBeNull();
+    const stats = keyStats({ ...hike, hasRoute: false, elevationGainM: 412 }, en, t);
+    expect(stats.find((s) => s.key === 'elevation')).toMatchObject({ value: '412', unit: 'm' });
+    expect(keyStats({ ...hike, hasRoute: false, elevationGainM: null }, en, t).some((s) => s.key === 'elevation')).toBe(false);
   });
 });

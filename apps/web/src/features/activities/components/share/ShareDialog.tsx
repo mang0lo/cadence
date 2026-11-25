@@ -14,7 +14,7 @@ import { useStoredState } from '@/lib/storage';
 import { useResolvedTheme } from '@/lib/theme';
 import { dayKey } from '@/lib/time';
 import { useStreams } from '../../api';
-import { cadenceUnit, isPaceSport, shortDistanceParts } from '../../lib/display';
+import { cadenceUnit, isPaceSport, shortDistanceParts, shownGain } from '../../lib/display';
 import {
   MAX_SHARE_CHARTS,
   MAX_SHARE_STATS,
@@ -59,7 +59,7 @@ function statCatalog(w: WorkoutDetail, fmt: Formatter, t: TFunction): Partial<Re
     out.pace = { label: t('common.pace'), ...fmt.paceParts(w.avgSpeed, info.speedMode === 'pace100' ? w.sport : 'run') };
     out.speed = { label: t('common.speed'), ...fmt.speedParts(w.avgSpeed) };
   }
-  if (w.hasRoute && (w.elevationGainM ?? 0) >= 1) out.elevation = { label: t('common.elevationGain'), ...fmt.elevationParts(w.elevationGainM) };
+  if ((shownGain(w) ?? 0) >= 1) out.elevation = { label: t('common.elevationGain'), ...fmt.elevationParts(w.elevationGainM) };
   if (w.avgHr) out.avgHr = { label: t('common.avgHr'), value: fmt.int(w.avgHr), unit: 'bpm' };
   if (w.maxHr) out.maxHr = { label: t('common.maxHr'), value: fmt.int(w.maxHr), unit: 'bpm' };
   if (w.avgPower) out.avgPower = { label: t('activities.stats.avgPower'), value: fmt.int(w.avgPower), unit: 'W' };
