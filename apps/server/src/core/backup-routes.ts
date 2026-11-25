@@ -2,7 +2,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { pipeline } from 'node:stream/promises';
+import { Worker } from 'node:worker_threads';
 import type { FastifyInstance } from 'fastify';
+import { get, type Db } from '../db/db';
 import { features } from '../features';
 import { HttpError, badRequest } from '../lib/http';
 
@@ -99,21 +101,89 @@ export function stripSecrets(file: string): void {
   }
 }
 
+/** VACUUM INTO on a read-only connection of its own, in a worker thread (plain JS: the same in tsx and the bundle). */
+const SNAPSHOT_WORKER = `
+const { parentPort, workerData } = require('node:worker_threads');
+const { DatabaseSync } = require('node:sqlite');
+let db;
+try {
+  db = new DatabaseSync(workerData.source, { readOnly: true });
+  db.exec('PRAGMA busy_timeout = 15000');
+  db.exec("VACUUM INTO '" + workerData.target.replace(/'/g, "''") + "'");
+  parentPort.postMessage({ ok: true });
+} catch (e) {
+  parentPort.postMessage({ ok: false, message: e instanceof Error ? e.message : String(e) });
+} finally {
+  if (db) db.close();
+}`;
+
+/**
+ * Consistent snapshot of the database into `target`: VACUUM INTO works while imports and readers are running, and
+ * in a worker it does not stop the server for the seconds a large database takes.
+ */
+function snapshot(db: Db, target: string): Promise<void> {
+  const source = get<{ file: string }>(db, "SELECT file FROM pragma_database_list WHERE name = 'main'")?.file;
+  if (!source) {
+    // in-memory database (tests): no other connection can see it
+    db.exec(`VACUUM INTO '${target.replace(/'/g, "''")}'`);
+    return Promise.resolve();
+  }
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(SNAPSHOT_WORKER, { eval: true, workerData: { source, target } });
+    worker.once('message', (m: { ok: boolean; message?: string }) => (m.ok ? resolve() : reject(new Error(m.message))));
+    worker.once('error', reject);
+    worker.once('exit', (code) => reject(new Error(`The backup stopped unexpectedly (code ${code})`)));
+  });
+}
+
+/**
+ * The snapshot being made or downloaded. One at a time: a backup is a copy of the whole database, so parallel
+ * requests (a double click) get the same file while it is fresh; later ones are told to wait (409) until the
+ * download that still holds it has finished.
+ */
+interface Snapshot {
+  file: string;
+  /** Size in bytes once the file is complete. */
+  ready: Promise<number>;
+  readers: number;
+  madeAt: number | null;
+}
+const SHARE_MS = 30_000;
+
 /** GET /api/backup, POST /api/backup/restore */
 export default async function backupRoutes(app: FastifyInstance) {
-  // Consistent snapshot: VACUUM INTO works while imports and readers are running.
+  let current: Snapshot | null = null;
   app.get('/backup', async (_req, reply) => {
-    const tmp = path.join(app.config.dataDir, `backup-${process.pid}-${Date.now()}.db`);
-    app.db.exec(`VACUUM INTO '${tmp.replace(/'/g, "''")}'`);
+    let snap = current;
+    if (snap && snap.madeAt !== null && Date.now() - snap.madeAt > SHARE_MS) {
+      throw new HttpError(409, 'busy', 'Another backup download is still running. Try again when it has finished.');
+    }
+    if (!snap) {
+      const file = path.join(app.config.dataDir, `backup-${process.pid}-${Date.now()}.db`);
+      const made: Snapshot = { file, readers: 0, madeAt: null, ready: Promise.resolve(0) };
+      made.ready = snapshot(app.db, file).then(() => {
+        stripSecrets(file);
+        made.madeAt = Date.now();
+        return fs.statSync(file).size;
+      });
+      current = snap = made;
+    }
+    const s = snap;
+    s.readers++;
+    const release = () => {
+      if (--s.readers > 0) return;
+      if (current === s) current = null;
+      fs.rm(s.file, { force: true }, () => undefined);
+    };
+    let size: number;
     try {
-      stripSecrets(tmp);
+      size = await s.ready;
     } catch (e) {
-      fs.rmSync(tmp, { force: true });
+      release();
       throw e;
     }
-    const size = fs.statSync(tmp).size;
-    const stream = fs.createReadStream(tmp);
-    stream.on('close', () => fs.rm(tmp, { force: true }, () => undefined));
+    const stream = fs.createReadStream(s.file);
+    stream.on('close', release);
     reply.header('content-type', 'application/vnd.sqlite3');
     reply.header('content-length', size);
     reply.header('content-disposition', `attachment; filename="cadence-backup-${new Date().toISOString().slice(0, 10)}.db"`);
