@@ -13,6 +13,7 @@ import type {
 import { all, get, type Db } from '../../db/db';
 import { getSettings } from '../../core/settings';
 import { buildExplorer } from './explorer';
+import { SOURCE_NAMES, sourcesStamp, storedSourceGroups, type SourceGroupRow } from './record-sources';
 import { aggregatePoints, combineCategoryRows, summarize, withoutDuplicateSleep, type DailyRow } from './series';
 import { checkDayOrder, dayParam, localDayRange, localDaySql, resolveType, type TypeRow } from './util';
 
@@ -86,7 +87,7 @@ function typeStamp(db: Db, athleteId: number, typeId: number): { count: number; 
     'SELECT count, last_ts FROM record_type_stats WHERE athlete_id = ? AND type_id = ?',
     [athleteId, typeId],
   );
-  return { count: s?.count ?? 0, stamp: `${s?.count ?? 0}|${s?.last_ts ?? 0}` };
+  return { count: s?.count ?? 0, stamp: sourcesStamp(s?.count, s?.last_ts) };
 }
 
 /** /metric/sources answers per athlete, type and range, validated against the type's stamp. */
@@ -165,24 +166,19 @@ export function registerMetricRoutes(app: FastifyInstance): void {
     const cacheKey = `${req.athleteId}|${t.id}|${q.fromDay ?? ''}|${q.toDay ?? ''}`;
     const cached = sourcesCache.get(cacheKey);
     if (cached && cached.stamp === stamp) return cached.value;
-    // group on the two integer ids first, then name the few groups (joining and concatenating per sample is slow)
-    const rows = all<{
-      source_id: number;
-      name: string | null;
-      device: string | null;
-      n: number;
-      first_ts: number;
-      last_ts: number;
-    }>(
-      app.db,
-      `SELECT g.source_id, s.name, COALESCE(d.name, '') || CASE WHEN d.hardware IS NULL THEN '' ELSE ' (' || d.hardware || ')' END AS device,
-              g.n, g.first_ts, g.last_ts
-       FROM (
-         SELECT r.source_id, r.device_id, COUNT(*) AS n, MIN(r.start_ts) AS first_ts, MAX(r.start_ts) AS last_ts
-         FROM records r WHERE ${w.sql} GROUP BY r.source_id, r.device_id
-       ) g LEFT JOIN sources s ON s.id = g.source_id LEFT JOIN devices d ON d.id = g.device_id`,
-      w.params,
-    );
+    // the whole history is counted by the derive step (health.record-sources) while the type is unchanged; else group
+    // on the two integer ids first, then name the few groups (joining and concatenating per sample is slow)
+    const rows =
+      (!q.fromDay && !q.toDay ? storedSourceGroups(app.db, req.athleteId, t.id, stamp) : null) ??
+      all<SourceGroupRow>(
+        app.db,
+        `SELECT g.source_id, ${SOURCE_NAMES}, g.n, g.first_ts, g.last_ts
+         FROM (
+           SELECT r.source_id, r.device_id, COUNT(*) AS n, MIN(r.start_ts) AS first_ts, MAX(r.start_ts) AS last_ts
+           FROM records r WHERE ${w.sql} GROUP BY r.source_id, r.device_id
+         ) g LEFT JOIN sources s ON s.id = g.source_id LEFT JOIN devices d ON d.id = g.device_id`,
+        w.params,
+      );
     const by = new Map<number, MetricSourceRow & { devSet: Set<string> }>();
     for (const r of rows) {
       let s = by.get(r.source_id);
