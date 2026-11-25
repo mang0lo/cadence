@@ -57,6 +57,8 @@ export type AnalysisResult = Omit<ActivityAnalysis, 'workoutId' | 'computedAt'>;
 
 /** Longest gap (s) a single segment may contribute to moving time (same cap as core). */
 const MAX_SEGMENT_S = 600;
+/** Longest gap (s) a single segment may contribute to a time-weighted mean. */
+const MAX_WEIGHT_S = 30;
 /** Elevation grid resolution (m) for grades and climbs. */
 export const GRID_STEP_M = 10;
 
@@ -125,11 +127,18 @@ export function movingMean(s: Series, a: Float64Array | null): { mean: number | 
     if (!s.moving[i]) continue;
     const v = segValue(a, i);
     if (!isNum(v)) continue;
-    const dt = Math.min(segDt(s, i), 30);
+    const dt = Math.min(segDt(s, i), MAX_WEIGHT_S);
     sum += v * dt;
     w += dt;
   }
   return { mean: w > 0 ? sum / w : null, seconds: w };
+}
+
+/** Moving time with the same per-segment cap as the weights of movingMean (compare coverage like with like). */
+function weightedMovingSeconds(s: Series): number {
+  let m = 0;
+  for (let i = 1; i < s.n; i++) if (s.moving[i]) m += Math.min(segDt(s, i), MAX_WEIGHT_S);
+  return m;
 }
 
 // ---------------------------------------------------------------------------
@@ -230,7 +239,7 @@ export function gradeAdjustedSpeedSeries(s: Series, grid: ElevationGrid, sport: 
 /**
  * Aerobic decoupling (Friel): the moving time is split into two equal halves; for each half the time-weighted
  * output (speed or power) and heart rate are averaged. Needs ≥ 20 min of moving time and heart rate covering
- * ≥ 60 % of each half.
+ * ≥ 60 % of each half (measured in the capped weights, so sparse streams count fully).
  */
 export function aerobicDecoupling(
   s: Series,
@@ -243,25 +252,26 @@ export function aerobicDecoupling(
   if (total < minMovingS) return null;
   const half = total / 2;
   const acc = [
-    { o: 0, h: 0, w: 0 },
-    { o: 0, h: 0, w: 0 },
+    { o: 0, h: 0, w: 0, cap: 0 },
+    { o: 0, h: 0, w: 0, cap: 0 },
   ];
   let cum = 0;
   for (let i = 1; i < s.n; i++) {
     if (!s.moving[i]) continue;
     const dt = segDt(s, i);
-    const part = cum + dt / 2 < half ? 0 : 1;
+    const part = acc[cum + dt / 2 < half ? 0 : 1]!;
     cum += dt;
+    const w = Math.min(dt, MAX_WEIGHT_S);
+    part.cap += w;
     const o = segValue(output, i);
     const h = segValue(s.hr, i);
     if (!isNum(o) || !isNum(h) || h <= 0) continue;
-    const w = Math.min(dt, 30);
-    acc[part]!.o += o * w;
-    acc[part]!.h += h * w;
-    acc[part]!.w += w;
+    part.o += o * w;
+    part.h += h * w;
+    part.w += w;
   }
   const [a, b] = acc as [(typeof acc)[0], (typeof acc)[0]];
-  if (a.w < 0.6 * half || b.w < 0.6 * half) return null;
+  if (!(a.w > 0) || !(b.w > 0) || a.w < 0.6 * a.cap || b.w < 0.6 * b.cap) return null;
   const first = { output: a.o / a.w, hr: a.h / a.w };
   const second = { output: b.o / b.w, hr: b.h / b.w };
   const r1 = first.output / first.hr;
@@ -277,9 +287,9 @@ export function efficiencyFactor(
   basis: ActivityEfficiency['basis'],
 ): ActivityEfficiency | null {
   if (output === null || !(output > 0)) return null;
-  const total = movingSeconds(s);
+  if (movingSeconds(s) < 600) return null;
   const hr = movingMean(s, s.hr);
-  if (total < 600 || hr.mean === null || hr.seconds < 0.5 * total || hr.mean <= 0) return null;
+  if (hr.mean === null || hr.seconds < 0.5 * weightedMovingSeconds(s) || hr.mean <= 0) return null;
   const value = basis === 'power' ? output / hr.mean : (output * 60) / hr.mean;
   return { value, basis };
 }
