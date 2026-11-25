@@ -29,6 +29,19 @@ export function msDay(ms: number): string {
   return new Date(ms).toISOString().slice(0, 10);
 }
 
+/**
+ * Both ends of a series' fitted trend on the local time axis. The fit runs from the series' first to its last
+ * workout (fit.startTs / endTs are their UTC start times); each end takes that workout's own UTC offset, which
+ * differs across DST or travel. Without it a run on Jan 31 at 19:30 in New York would start the trend in February.
+ */
+export function fitEnds(
+  workouts: readonly { tzMin: number }[],
+  points: readonly (readonly [number, number])[],
+  fit: { startTs: number; endTs: number },
+): [number, number] {
+  return [localMs(fit.startTs, workouts[points[0]![0]]!.tzMin), localMs(fit.endTs, workouts[points[points.length - 1]![0]]!.tzMin)];
+}
+
 const monthYearCache = new Map<string, Intl.DateTimeFormat>();
 
 /** "Jan 2026" / "Jan. 2026" ('monthYearShort' would print "Jan 26", which reads like a date). */
