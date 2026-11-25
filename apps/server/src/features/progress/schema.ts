@@ -8,9 +8,10 @@ import type { Migration } from '../../db/migrate';
  * this feature existed):
  *   - running dynamics averages from records during the workout (stride length, ground contact time,
  *     vertical oscillation),
- *   - aerobic decoupling (Pa:HR) from the streams,
  *   - hr_speed: JSON {lo, s, d} = moving seconds and meters per integer bpm from bpm `lo`
  *     (pace inside any heart-rate band = Σd / Σs over the band, see math.ts).
+ *   Aerobic decoupling and the efficiency factor are read from activities_analysis (one definition with the activity
+ *   page); the decoupling_pct column of migration 001 is dropped by 003.
  *
  * progress_power_bests – per workout with a power stream: the best average power (W) for each standard duration
  * (PROGRESS_POWER_DURATIONS) the workout covers within one track part, with the local day and the sport, so the
@@ -60,6 +61,13 @@ export const progressMigrations: Migration[] = [
       ) WITHOUT ROWID;
       CREATE INDEX ix_progress_power_bests_day ON progress_power_bests(athlete_id, sport, day);
       CREATE INDEX ix_progress_power_bests_duration ON progress_power_bests(athlete_id, sport, duration_s, day);
+    `,
+  },
+  {
+    // decoupling comes from the activity analysis now (activities_analysis.decoupling_pct)
+    id: 'progress_003_drop_decoupling',
+    up: /* sql */ `
+      ALTER TABLE progress_workout_metrics DROP COLUMN decoupling_pct;
     `,
   },
 ];

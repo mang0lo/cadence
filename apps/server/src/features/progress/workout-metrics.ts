@@ -3,7 +3,7 @@ import { all, get, prepare, tx, type Db } from '../../db/db';
 import { maxPlausibleSpeed, movingThreshold } from '../../derive/streams';
 import { gunzipJson } from '../../lib/gzip';
 import type { DeriveStep } from '../types';
-import { aerobicDecoupling, hrSpeedHistogram, type HrSpeedHistogram, type StreamFilter } from './math';
+import { hrSpeedHistogram, type HrSpeedHistogram, type StreamFilter } from './math';
 
 /** Bump when the computation changes: rows of older versions are recomputed (derive or lazily). */
 export const METRICS_VERSION = 1;
@@ -28,11 +28,10 @@ export interface WorkoutMetrics {
   stride_m: number | null;
   gct_ms: number | null;
   vo_m: number | null;
-  decoupling_pct: number | null;
   hr_speed: HrSpeedHistogram | null;
 }
 
-/** Warm-up seconds ignored by pace-at-HR and decoupling (heart rate lags behind the pace at the start). */
+/** Warm-up seconds ignored by pace-at-HR (heart rate lags behind the pace at the start). */
 export const WARMUP_SKIP_S = 300;
 
 export function streamFilter(sport: string): StreamFilter {
@@ -70,15 +69,12 @@ export function computeWorkoutMetrics(
     }
   }
   let hist: HrSpeedHistogram | null = null;
-  let decoupling: number | null = null;
   if (sportInfo(w.sport).distance) {
     const blob = get<{ data: Uint8Array }>(db, 'SELECT data FROM workout_streams WHERE workout_id = ?', [w.id])?.data;
     if (blob) {
       try {
         const st = gunzipJson<WorkoutStreams>(blob);
-        const f = streamFilter(w.sport);
-        hist = hrSpeedHistogram(st, f);
-        decoupling = aerobicDecoupling(st, f);
+        hist = hrSpeedHistogram(st, streamFilter(w.sport));
       } catch {
         /* corrupt stream blob: leave empty */
       }
@@ -88,18 +84,17 @@ export function computeWorkoutMetrics(
     stride_m: round(dyn.stride, 3),
     gct_ms: round(dyn.gct, 1),
     vo_m: round(dyn.vo, 4),
-    decoupling_pct: decoupling !== null && Math.abs(decoupling) <= 60 ? round(decoupling, 2) : null,
     hr_speed: hist,
   };
 }
 
 function upsertSql(): string {
   return `INSERT INTO progress_workout_metrics
-      (workout_id, athlete_id, version, source_updated_at, stride_m, gct_ms, vo_m, decoupling_pct, hr_speed)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (workout_id, athlete_id, version, source_updated_at, stride_m, gct_ms, vo_m, hr_speed)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT (workout_id) DO UPDATE SET athlete_id = excluded.athlete_id, version = excluded.version,
       source_updated_at = excluded.source_updated_at, stride_m = excluded.stride_m, gct_ms = excluded.gct_ms,
-      vo_m = excluded.vo_m, decoupling_pct = excluded.decoupling_pct, hr_speed = excluded.hr_speed`;
+      vo_m = excluded.vo_m, hr_speed = excluded.hr_speed`;
 }
 
 /** Compute and store metrics for the given workouts in short transactions. Returns the number computed. */
@@ -126,7 +121,6 @@ export function storeWorkoutMetrics(
           m.stride_m,
           m.gct_ms,
           m.vo_m,
-          m.decoupling_pct,
           m.hr_speed ? JSON.stringify(m.hr_speed) : null,
         );
       }

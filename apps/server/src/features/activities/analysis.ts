@@ -241,21 +241,44 @@ export function gradeAdjustedSpeedSeries(s: Series, grid: ElevationGrid, sport: 
 // Decoupling & efficiency
 // ---------------------------------------------------------------------------
 
+export interface DecouplingOptions {
+  /** Moving seconds at the start that are left out: heart rate still catches up with the output there. */
+  warmupS?: number;
+  /** Minimum moving time after the warm-up. */
+  minMovingS?: number;
+}
+
 /**
- * Aerobic decoupling (Friel): the moving time is split into two equal halves; for each half the time-weighted
- * output (speed or power) and heart rate are averaged. Needs ≥ 20 min of moving time and heart rate covering
- * ≥ 60 % of each half (measured in the capped weights, so sparse streams count fully).
+ * The definition behind every stored decoupling value (activity page and Progress → Trends): the first 5 minutes of
+ * moving time are warm-up, the rest must be at least 20 minutes (two halves of ≥ 10 minutes).
+ */
+export const DECOUPLING: Required<DecouplingOptions> = { warmupS: 300, minMovingS: 20 * 60 };
+/** A larger drift is no physiology but a recording problem (a lift or a car ride with the workout running). */
+export const DECOUPLING_MAX_ABS_PCT = 60;
+/** Heart rate outside this range (bpm) is a sensor glitch. */
+const HR_MIN = 40;
+const HR_MAX = 230;
+
+/**
+ * Aerobic decoupling (Friel): the moving time after the warm-up is split into two equal halves; for each half the
+ * time-weighted output (speed or power) and heart rate are averaged. Needs `minMovingS` of moving time after the
+ * warm-up and heart rate covering ≥ 60 % of each half (measured in the capped weights, so sparse streams count
+ * fully). Null when |decoupling| > DECOUPLING_MAX_ABS_PCT.
+ * The analysis uses DECOUPLING; the defaults (no warm-up, 20 minutes) are the plain definition.
  */
 export function aerobicDecoupling(
   s: Series,
   output: Float64Array | null,
   basis: ActivityDecoupling['basis'],
-  minMovingS = 20 * 60,
+  o: DecouplingOptions = {},
 ): ActivityDecoupling | null {
   if (!output || !s.hr) return null;
-  const total = movingSeconds(s);
-  if (total < minMovingS) return null;
-  const half = total / 2;
+  const warmupS = o.warmupS ?? 0;
+  const minMovingS = o.minMovingS ?? 20 * 60;
+  const body = movingSeconds(s) - warmupS;
+  if (body < minMovingS) return null;
+  const mid = warmupS + body / 2;
+  const hr = s.hr.map((h) => (h >= HR_MIN && h <= HR_MAX ? h : NaN));
   const acc = [
     { o: 0, h: 0, w: 0, cap: 0 },
     { o: 0, h: 0, w: 0, cap: 0 },
@@ -264,16 +287,18 @@ export function aerobicDecoupling(
   for (let i = 1; i < s.n; i++) {
     if (!s.moving[i]) continue;
     const dt = segDt(s, i);
-    const part = acc[cum + dt / 2 < half ? 0 : 1]!;
+    const at = cum + dt / 2;
     cum += dt;
+    if (at < warmupS) continue;
+    const half = acc[at < mid ? 0 : 1]!;
     const w = Math.min(dt, MAX_WEIGHT_S);
-    part.cap += w;
-    const o = segValue(output, i);
-    const h = segValue(s.hr, i);
-    if (!isNum(o) || !isNum(h) || h <= 0) continue;
-    part.o += o * w;
-    part.h += h * w;
-    part.w += w;
+    half.cap += w;
+    const ov = segValue(output, i);
+    const h = segValue(hr, i);
+    if (!isNum(ov) || !isNum(h)) continue;
+    half.o += ov * w;
+    half.h += h * w;
+    half.w += w;
   }
   const [a, b] = acc as [(typeof acc)[0], (typeof acc)[0]];
   if (!(a.w > 0) || !(b.w > 0) || a.w < 0.6 * a.cap || b.w < 0.6 * b.cap) return null;
@@ -282,7 +307,9 @@ export function aerobicDecoupling(
   const r1 = first.output / first.hr;
   const r2 = second.output / second.hr;
   if (!(r1 > 0)) return null;
-  return { basis, first, second, pct: ((r1 - r2) / r1) * 100 };
+  const pct = ((r1 - r2) / r1) * 100;
+  if (!(Math.abs(pct) <= DECOUPLING_MAX_ABS_PCT)) return null;
+  return { basis, first, second, pct };
 }
 
 /** Efficiency factor: output per heartbeat (needs ≥ 10 min moving with heart rate on ≥ 50 % of it). */
@@ -763,6 +790,7 @@ export function analyzeActivity(inp: AnalysisInput): AnalysisResult {
       avgSpeed: null,
       gapSpeed: null,
       efficiency: null,
+      paceEfficiency: null,
       decoupling: null,
       climbs: [],
       laps,
@@ -783,16 +811,20 @@ export function analyzeActivity(inp: AnalysisInput): AnalysisResult {
   const power = powerAnalysis(s);
   const cycling = info.group === 'cycle';
 
+  // One definition for the activity page and Progress → Trends (which reads the stored values): Pw:HR for rides
+  // with power, else (grade adjusted) Pa:HR; DECOUPLING leaves out the warm-up.
+  const paced = info.distance && !DECOUPLING_EXCLUDED.has(sport) && !!s.speed && !!s.dist;
+  const paceEfficiency = paced ? efficiencyFactor(s, gapSpeed ?? avgSpeed, gapSpeed !== null ? 'gap' : 'speed') : null;
   let decoupling: ActivityDecoupling | null = null;
   let efficiency: ActivityEfficiency | null = null;
   if (cycling && power) {
-    decoupling = aerobicDecoupling(s, s.power, 'power');
+    decoupling = aerobicDecoupling(s, s.power, 'power', DECOUPLING);
     efficiency = efficiencyFactor(s, power.normalizedW ?? power.avgW, 'power');
   }
-  if (info.distance && !DECOUPLING_EXCLUDED.has(sport) && s.speed && s.dist) {
+  if (paced) {
     const output = footSport && grid ? gradeAdjustedSpeedSeries(s, grid, sport) : s.speed;
-    decoupling ??= aerobicDecoupling(s, output, 'pace');
-    efficiency ??= efficiencyFactor(s, gapSpeed ?? avgSpeed, gapSpeed !== null ? 'gap' : 'speed');
+    decoupling ??= aerobicDecoupling(s, output, 'pace', DECOUPLING);
+    efficiency ??= paceEfficiency;
   }
 
   return {
@@ -800,6 +832,7 @@ export function analyzeActivity(inp: AnalysisInput): AnalysisResult {
     avgSpeed,
     gapSpeed,
     efficiency,
+    paceEfficiency,
     decoupling,
     climbs: grid && totalDist !== null && totalDist >= 500 ? climbsOf(s, grid, DEFAULT_CLIMB_OPTIONS, gridParts(s, grid, stitched)) : [],
     laps,

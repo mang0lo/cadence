@@ -159,9 +159,11 @@ export interface ProgressWeeklySnapshot {
 
 /**
  * speed: average moving speed · hr: average heart rate · ef: efficiency factor (speed / HR = meters per
- * heartbeat) · cadence: steps (run/walk) or revolutions (ride) per minute · power: average power ·
+ * heartbeat; grade adjusted for foot sports, from the speed also for rides with power — the activity analysis'
+ * `paceEfficiency`) · cadence: steps (run/walk) or revolutions (ride) per minute · power: average power ·
  * stride / gct / vo: Apple Watch running dynamics (stride length m, ground contact time ms, vertical
- * oscillation m) · decoupling: aerobic decoupling (Pa:HR drift, %) between the halves of the workout.
+ * oscillation m) · decoupling: aerobic decoupling (%) between the halves of the workout after a 5-minute warm-up,
+ * the value of the activity page (Pw:HR for rides with power, else Pa:HR on the grade adjusted pace).
  */
 export type ProgressTrendMetric = 'speed' | 'hr' | 'ef' | 'cadence' | 'power' | 'stride' | 'gct' | 'vo' | 'decoupling';
 export const PROGRESS_TREND_METRICS: ProgressTrendMetric[] = [

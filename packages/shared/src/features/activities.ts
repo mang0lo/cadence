@@ -128,14 +128,17 @@ export interface ActivityNav {
 // Analysis (GET /api/activities/:id/analysis)
 // ---------------------------------------------------------------------------
 
-/** Aerobic decoupling: output:HR of the first vs the second half of the moving time. */
+/** Aerobic decoupling: output:HR of the first vs the second half of the moving time after the warm-up. */
 export interface ActivityDecoupling {
   /** 'pace' = (grade adjusted) speed : heart rate, 'power' = power : heart rate. */
   basis: 'pace' | 'power';
   /** Average output (m/s or W) and heart rate of each half. */
   first: { output: number; hr: number };
   second: { output: number; hr: number };
-  /** (ratio₁ − ratio₂) / ratio₁ × 100. Below 5 % = well coupled (aerobically fit for this effort). */
+  /**
+   * (ratio₁ − ratio₂) / ratio₁ × 100. Below 5 % = well coupled (aerobically fit for this effort). Values beyond
+   * ±60 % are recording problems and left out.
+   */
   pct: number;
 }
 
@@ -219,7 +222,17 @@ export interface ActivityAnalysis {
   avgSpeed: number | null;
   /** Grade adjusted average speed over the moving time (m/s) — foot sports with elevation data. */
   gapSpeed: number | null;
+  /** Power based for rides with power, else from the (grade adjusted) speed. */
   efficiency: ActivityEfficiency | null;
+  /**
+   * Efficiency from the (grade adjusted) speed ('gap' / 'speed' basis), also for rides with power where `efficiency`
+   * is power based. Progress → Trends plots it as "efficiency" (m per beat = m/min per bpm).
+   */
+  paceEfficiency?: ActivityEfficiency | null;
+  /**
+   * Power based for rides with power, else from the (grade adjusted) speed. Leaves out the first 5 minutes of moving
+   * time (warm-up) and needs 20 more minutes. Progress → Trends shows the same value.
+   */
   decoupling: ActivityDecoupling | null;
   climbs: ActivityClimb[];
   /** From 'lap' workout events. */

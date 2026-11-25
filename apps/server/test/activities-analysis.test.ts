@@ -3,6 +3,7 @@ import { PROGRESS_POWER_DURATIONS, type WorkoutStreams } from '@cadence/shared';
 import {
   aerobicDecoupling,
   analyzeActivity,
+  DECOUPLING,
   efficiencyFactor,
   POWER_PEAK_WINDOWS,
   statsBetween,
@@ -49,6 +50,51 @@ function synth(
 
 const run = (streams: WorkoutStreams, sport = 'run') =>
   analyzeActivity({ sport, startTs: 0, endTs: streams.t.at(-1)!, lapLengthM: null, streams, events: [] });
+
+describe('aerobic decoupling (one definition for the activity page and Progress)', () => {
+  it('leaves the warm-up out: a steady run whose heart rate is still rising for 4 minutes is coupled', () => {
+    const streams = synth(3600, { hr: (t) => (t < 240 ? 100 + (50 * t) / 240 : 150) });
+    // without the warm-up the slow heart rate of the first minutes looks like ~2 % drift
+    const s = toSeries(streams);
+    expect(aerobicDecoupling(s, s.speed, 'pace')!.pct).toBeGreaterThan(1.5);
+    expect(DECOUPLING.warmupS).toBe(300);
+    const d = run(streams).decoupling!;
+    expect(d.basis).toBe('pace');
+    expect(Math.abs(d.pct)).toBeLessThan(0.05);
+    expect(d.first.hr).toBeCloseTo(150, 6);
+  });
+
+  it('needs 20 minutes after the warm-up', () => {
+    expect(run(synth(1440, { hr: () => 150 })).decoupling).toBeNull();
+    expect(run(synth(1560, { hr: () => 150 })).decoupling).not.toBeNull();
+  });
+
+  it('drops implausible values (a lift ridden with the recording running)', () => {
+    const streams = synth(3600, { speed: (t) => (t < 1950 ? 1.2 : 4), hr: () => 120 });
+    expect(run(streams, 'hike').decoupling).toBeNull();
+  });
+
+  it('ignores heart rate readings outside 40–230 bpm', () => {
+    const streams = synth(3600, { hr: (t) => (t > 3000 && t < 3060 ? 255 : 150) });
+    expect(Math.abs(run(streams).decoupling!.pct)).toBeLessThan(1e-9);
+  });
+});
+
+describe('efficiency factor', () => {
+  it('stores a speed based value for rides with power as well', () => {
+    const a = run(synth(3600, { speed: () => 8, hr: () => 140, power: () => 210 }), 'ride');
+    expect(a.efficiency).toMatchObject({ basis: 'power' });
+    expect(a.efficiency!.value).toBeCloseTo(1.5, 6);
+    expect(a.paceEfficiency).toMatchObject({ basis: 'speed' });
+    expect(a.paceEfficiency!.value).toBeCloseTo((8 * 60) / 140, 6);
+  });
+
+  it('equals the efficiency for runs (grade adjusted)', () => {
+    const a = run(synth(1800, { hr: () => 150, ele: (d) => 100 + 20 * Math.sin(d / 400) }));
+    expect(a.efficiency!.basis).toBe('gap');
+    expect(a.paceEfficiency).toEqual(a.efficiency);
+  });
+});
 
 describe('heart rate coverage of sparse streams', () => {
   it('counts heart rate on points a minute or more apart in full', () => {

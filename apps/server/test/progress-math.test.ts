@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import type { WorkoutStreams } from '@cadence/shared';
 import {
   acwrStatus,
-  aerobicDecoupling,
   bandTotals,
   bucketKey,
   bucketsBetween,
@@ -338,15 +337,5 @@ describe('pace at heart rate', () => {
     });
     expect(mostCommonBand({ lo: 100, seconds: [0, 0] })).toBeNull();
     expect(mergeHistograms([])).toBeNull();
-  });
-
-  it('aerobic decoupling compares speed per heartbeat of both halves', () => {
-    // same speed, heart rate drifts from 140 to 154 in the second half → (1 − 140/154) ≈ 9.1 %
-    const st = stream(3301, 3, (i) => (i < 1800 ? 140 : 154));
-    expect(aerobicDecoupling(st, filter)!).toBeCloseTo((1 - 140 / 154) * 100, 1);
-    // steady → ~0
-    expect(Math.abs(aerobicDecoupling(stream(3301, 3, () => 140), filter)!)).toBeLessThan(1e-9);
-    // too short
-    expect(aerobicDecoupling(stream(1200, 3, () => 140), filter)).toBeNull();
   });
 });
