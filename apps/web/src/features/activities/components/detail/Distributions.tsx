@@ -33,7 +33,8 @@ export function HrZones({ w, zoneBounds }: { w: WorkoutDetail; zoneBounds: numbe
   const { athlete } = useSettings();
   const secs = w.hrZones;
   const total = secs ? secs.reduce((a, b) => a + b, 0) : 0;
-  const names = [1, 2, 3, 4, 5].map((z) => t(`common.zones.z${z}`));
+  // memoized: a new array would rebuild (and re-animate) the chart on every render of the activity page
+  const names = useMemo(() => [1, 2, 3, 4, 5].map((z) => t(`common.zones.z${z}`)), [t]);
   const option = useMemo(() => {
     if (!secs) return null;
     return {

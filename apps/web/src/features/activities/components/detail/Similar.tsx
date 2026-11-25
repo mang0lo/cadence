@@ -4,110 +4,14 @@ import { GitCompareArrows, Route, Trophy } from 'lucide-react';
 import { workoutTitle, type ActivitySimilar, type ActivitySimilarItem, type WorkoutDetail } from '@cadence/shared';
 import { ChartCard, type TableView } from '@/components/charts/ChartCard';
 import { EChart, type EChartsOption } from '@/components/charts/EChart';
-import { itemTooltip, legend, lineSeries, scatterSeries, timeAxis, tooltipHtml, valueAxis } from '@/components/charts/options';
-import { useChartTheme, type ChartTheme } from '@/components/charts/theme';
+import { useChartTheme } from '@/components/charts/theme';
 import { Badge, Delta, EmptyState, ErrorState, Skeleton } from '@/components/ui';
 import { clock, useFormat } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
 import { sportLabel } from '@/lib/sports';
 import { isPaceSport, paceValue } from '../../lib/display';
+import { linearTrend, trendChart, type Pt } from '../../lib/similar';
 import { ToggleChip } from '../ToggleChip';
-
-interface Pt {
-  id: number;
-  x: number; // ms
-  y: number;
-  current: boolean;
-  title: string;
-}
-
-/** Least squares line through (x, y); null with fewer than 3 points or no spread in x. */
-export function linearTrend(pts: { x: number; y: number }[]): { slope: number; intercept: number } | null {
-  if (pts.length < 3) return null;
-  const n = pts.length;
-  const mx = pts.reduce((s, p) => s + p.x, 0) / n;
-  const my = pts.reduce((s, p) => s + p.y, 0) / n;
-  let sxx = 0;
-  let sxy = 0;
-  for (const p of pts) {
-    sxx += (p.x - mx) ** 2;
-    sxy += (p.x - mx) * (p.y - my);
-  }
-  if (sxx === 0) return null;
-  const slope = sxy / sxx;
-  return { slope, intercept: my - slope * mx };
-}
-
-function trendChart(
-  pts: Pt[],
-  theme: ChartTheme,
-  o: {
-    inverse: boolean;
-    format: (v: number) => string;
-    names: { others: string; current: string; trend: string };
-    dateLabel: (ms: number) => string;
-    minInterval?: number;
-  },
-): EChartsOption {
-  const others = pts.filter((p) => !p.current);
-  const cur = pts.find((p) => p.current);
-  const tr = linearTrend(pts);
-  const xs = pts.map((p) => p.x);
-  const x0 = Math.min(...xs);
-  const x1 = Math.max(...xs);
-  const tooltip = itemTooltip(theme, (raw: unknown) => {
-    const p = raw as { data: [number, number, number, string]; seriesName: string; color: string };
-    if (p.seriesName === o.names.trend) return tooltipHtml(o.names.trend, [{ color: theme.muted, value: o.format(p.data[1]), label: o.dateLabel(p.data[0]) }], theme);
-    return tooltipHtml(o.dateLabel(p.data[0]), [{ color: p.color, value: o.format(p.data[1]), label: p.data[3] }], theme);
-  });
-  return {
-    grid: { left: 4, right: 12, top: 34, bottom: 4, containLabel: true },
-    legend: legend(theme, 'rect', { data: [o.names.current, o.names.others, o.names.trend] }),
-    tooltip,
-    xAxis: timeAxis(theme),
-    yAxis: valueAxis(theme, {
-      inverse: o.inverse,
-      scale: true,
-      minInterval: o.minInterval,
-      axisLabel: { color: theme.muted, fontSize: 11, formatter: o.format },
-    }),
-    series: [
-      scatterSeries(theme, o.names.others, others.map((p) => [p.x, p.y, p.id, p.title]), theme.other, { symbolSize: 8 }),
-      ...(tr && x1 > x0
-        ? [
-            lineSeries(
-              theme,
-              o.names.trend,
-              [
-                [x0, tr.intercept + tr.slope * x0],
-                [x1, tr.intercept + tr.slope * x1],
-              ],
-              theme.muted,
-              { lineStyle: { width: 1.5, color: theme.muted }, silent: false, z: 1 },
-            ),
-          ]
-        : []),
-      ...(cur
-        ? [
-            scatterSeries(theme, o.names.current, [[cur.x, cur.y, cur.id, cur.title]], theme.accent, {
-              symbolSize: 14,
-              z: 5,
-              label: {
-                show: true,
-                // label towards the middle of the chart so it is never clipped at the edges
-                position: x1 > x0 && (cur.x - x0) / (x1 - x0) < 0.5 ? 'right' : 'left',
-                distance: 8,
-                formatter: o.names.current,
-                color: theme.fg,
-                fontSize: 11,
-                fontWeight: 600,
-              },
-            }),
-          ]
-        : []),
-    ],
-  };
-}
 
 /** Pace (or effort) and heart rate of similar activities over time, this one highlighted with its rank. */
 export function Similar({
@@ -134,11 +38,12 @@ export function Similar({
   );
   const speedValue = (x: ActivitySimilarItem) => (x.avgSpeed ? paceValue(x.avgSpeed, w.sport, fmt.units) : null);
   const names = { others: t('activities.similar.others'), current: t('activities.similar.thisActivity'), trend: t('activities.similar.trend') };
-  const dateLabel = (ms: number) => fmt.date(ms / 1000, 0, 'day');
+  // the activity's own local day (as in the table), not the UTC one
+  const dateLabel = (ms: number, tzMin: number) => fmt.date(ms / 1000, tzMin, 'day');
   const pts = (value: (x: ActivitySimilarItem) => number | null): Pt[] =>
     items.flatMap((x) => {
       const y = value(x);
-      return y === null ? [] : [{ id: x.id, x: x.startTs * 1000, y, current: x.current, title: workoutTitle(x, lang) }];
+      return y === null ? [] : [{ id: x.id, x: x.startTs * 1000, y, current: x.current, title: workoutTitle(x, lang), tzMin: x.tzMin }];
     });
 
   const charts = useMemo(() => {
