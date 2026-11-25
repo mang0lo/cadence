@@ -1,6 +1,7 @@
 /**
  * Database loaders of the consistency feature. Everything is scoped by athlete and excludes hidden and
- * duplicate workouts (daily_activity already does). Queries hit primary keys / indexes only.
+ * duplicate workouts (daily_activity already does). Queries use primary keys / indexes; loaders without a range
+ * (whole history) read every visible workout or day once.
  */
 import { all, get, type Db } from '../../db/db';
 import { getSettings } from '../../core/settings';
@@ -42,20 +43,24 @@ export function ringFractions(r: RingRow): RingFractions {
 export const weekStartOfAthlete = (db: Db, athleteId: number): 0 | 1 => getSettings(db, athleteId).weekStart;
 
 /** Workout totals per day & sport (daily_activity), optionally limited to [from, to]. */
-export function loadDaily(db: Db, athleteId: number, from = '0000-01-01', to = '9999-12-31'): DailyRow[] {
-  // + the longest single activity of each day and sport (single-activity goals such as "a marathon this year")
+export function loadDaily(db: Db, athleteId: number, from?: string, to?: string): DailyRow[] {
+  // + the longest single activity of each day and sport (single-activity goals such as "a marathon this year"), from
+  // the workouts of the range only (start_ts index). CAST gives the computed day a type, so SQLite can index the join
+  // on (day, sport); without it every day scanned all workouts of its sport (seconds for a long history).
+  const lo = from ? utcMidnight(from) - TZ_MARGIN_S : -1e12;
+  const hi = to ? utcMidnight(to) + 86400 + TZ_MARGIN_S : 1e12;
   return all<DailyRow>(
     db,
     `SELECT d.day, d.sport, d.count, d.duration_s AS durationS, d.distance_m AS distanceM, d.elevation_m AS elevationM,
             d.effort, d.energy_kcal AS energyKcal, COALESCE(l.longest, 0) AS longestM
      FROM daily_activity d
      LEFT JOIN (
-       SELECT date(start_ts + tz_min * 60, 'unixepoch') AS day, sport, MAX(COALESCE(distance_m, 0)) AS longest
-       FROM workouts WHERE athlete_id = ? AND hidden = 0 AND duplicate_of IS NULL
+       SELECT CAST(date(start_ts + tz_min * 60, 'unixepoch') AS TEXT) AS day, sport, MAX(COALESCE(distance_m, 0)) AS longest
+       FROM workouts WHERE athlete_id = ? AND hidden = 0 AND duplicate_of IS NULL AND start_ts >= ? AND start_ts < ?
        GROUP BY 1, 2
      ) l ON l.day = d.day AND l.sport = d.sport
      WHERE d.athlete_id = ? AND d.day >= ? AND d.day <= ? ORDER BY d.day, d.sport`,
-    [athleteId, athleteId, from, to],
+    [athleteId, lo, hi, athleteId, from ?? '0000-01-01', to ?? '9999-12-31'],
   );
 }
 
