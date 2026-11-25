@@ -1,4 +1,4 @@
-import type { DeriveContext } from '../features/types';
+import type { DeriveChanges, DeriveContext } from '../features/types';
 
 /**
  * Bump to make the next import / rederive recompute every workout derived by an older version; the server also
@@ -16,11 +16,18 @@ export interface CoreDeriveContext extends DeriveContext {
     typeSince: Map<number, number> | null;
     warnings: string[];
   };
+  changes: DeriveChanges;
+}
+
+/** Changes of a context nobody described: any record type may have changed. */
+export function unknownChanges(): DeriveChanges {
+  return { recordTypes: 'all', effortBasis: false, duplicateFlips: [] };
 }
 
 export function asCore(ctx: DeriveContext): CoreDeriveContext {
   const c = ctx as CoreDeriveContext;
   c.core ??= { typeSince: null, warnings: [] };
+  c.changes ??= unknownChanges();
   return c;
 }
 

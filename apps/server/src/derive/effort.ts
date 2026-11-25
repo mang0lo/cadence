@@ -2,6 +2,7 @@ import { all, get, prepare, tx, type Db } from '../db/db';
 import { getEffectiveHr, getSetting, getSettings, setSetting } from '../core/settings';
 import type { DeriveStep } from '../features/types';
 import { gunzipFloat32 } from '../lib/gzip';
+import { asCore } from './context';
 import { effortPerMinute, trimpFromAverage, trimpFromHistogram, zonesFromHistogram } from './metrics';
 
 /** HR parameters the stored zones / efforts were computed with. */
@@ -49,13 +50,13 @@ interface Row {
  *   2. else TRIMP from average HR × duration,
  *   3. else a per-sport per-minute estimate (effort_estimated = 1).
  * The effective HR (max/resting/zones) is computed once per run. When it changed significantly since the
- * last run, every workout is recomputed and the context widens to workoutIds = 'all' for feature steps.
+ * last run, every workout is recomputed (`basisChanged`).
  */
 export function computeEfforts(
   db: Db,
   athleteId: number,
   workoutIds: number[] | 'all',
-): { all: boolean; count: number } {
+): { all: boolean; basisChanged: boolean; count: number } {
   const current = currentEffortBasis(db, athleteId);
   const prev = getSetting<EffortBasis | null>(db, athleteId, BASIS_KEY, null);
   const changed = significantChange(prev, current);
@@ -108,7 +109,7 @@ export function computeEfforts(
     }
     if (changed) setSetting(db, athleteId, BASIS_KEY, current);
   });
-  return { all: everything, count: rows.length };
+  return { all: everything, basisChanged: changed, count: rows.length };
 }
 
 export const effortStep: DeriveStep = {
@@ -117,8 +118,9 @@ export const effortStep: DeriveStep = {
   weight: 0.5,
   run(ctx) {
     const r = computeEfforts(ctx.db, ctx.athleteId, ctx.workoutIds);
-    // HR basis changed → every workout's effort changed: let feature steps see the full scope.
-    if (r.all && ctx.workoutIds !== 'all') ctx.workoutIds = 'all';
+    // HR basis changed → every workout's effort changed. Steps that build on effort, TRIMP or zones see it in
+    // ctx.changes; workoutIds stays "workouts whose inputs changed" (widening it rebuilt every feature cache).
+    if (r.basisChanged) asCore(ctx).changes.effortBasis = true;
     ctx.report(1, `${r.count} workouts`);
   },
 };

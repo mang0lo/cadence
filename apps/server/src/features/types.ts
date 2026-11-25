@@ -16,6 +16,27 @@ export interface DeriveContext {
   /** Throws when the job was cancelled. Call it regularly inside long loops. */
   checkCancelled: () => void;
   log: (message: string) => void;
+  /**
+   * What else changed in this run, for steps that depend on more than workoutIds / sinceDay. Always set by the
+   * derive pipeline (optional only so hand-built contexts stay valid); the core steps fill it while they run.
+   */
+  changes?: DeriveChanges;
+}
+
+/** See DeriveContext.changes. */
+export interface DeriveChanges {
+  /**
+   * Record types with new or changed records: identifier → earliest start_ts of the change, or 'all' = every type
+   * (from sinceDay on; the whole history when sinceDay is null). An empty map: no health records changed.
+   */
+  recordTypes: 'all' | ReadonlyMap<string, number>;
+  /**
+   * The effective heart-rate basis (max / resting HR, zone bounds, sex) changed: zones, TRIMP and relative effort
+   * of every workout were recomputed (set by core.effort; workoutIds is not widened for it).
+   */
+  effortBasis: boolean;
+  /** Workouts outside workoutIds whose duplicate_of changed in this run (set by core.duplicates). */
+  duplicateFlips: number[];
 }
 
 export interface DeriveStep {

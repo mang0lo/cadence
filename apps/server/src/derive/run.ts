@@ -1,6 +1,6 @@
 import { all, type Db } from '../db/db';
 import { features } from '../features';
-import type { DeriveContext, DeriveStep } from '../features/types';
+import type { DeriveChanges, DeriveContext, DeriveStep } from '../features/types';
 import { CancelledError, DERIVE_VERSION, type CoreDeriveContext } from './context';
 import { coreDeriveSteps } from './pipeline';
 
@@ -22,9 +22,30 @@ export interface RunDeriveOptions {
 }
 
 export interface DeriveResult {
+  /** Workouts derived by this run (the given ones plus those of an older DERIVE_VERSION), or 'all'. */
   workoutIds: number[] | 'all';
+  /** What changed besides the workouts (see DeriveContext.changes). */
+  changes: DeriveChanges;
   warnings: string[];
   steps: { id: string; ms: number; error?: string }[];
+}
+
+/** typeSince by identifier (DeriveChanges.recordTypes). */
+function recordTypesOf(db: Db, typeSince: Map<number, number> | null | undefined): DeriveChanges['recordTypes'] {
+  if (!typeSince) return 'all';
+  const out = new Map<string, number>();
+  if (!typeSince.size) return out;
+  const names = new Map(
+    all<{ id: number; identifier: string }>(db, 'SELECT id, identifier FROM record_types').map((r) => [
+      r.id,
+      r.identifier,
+    ]),
+  );
+  for (const [id, ts] of typeSince) {
+    const name = names.get(id);
+    if (name !== undefined) out.set(name, ts);
+  }
+  return out;
 }
 
 /**
@@ -61,6 +82,11 @@ export async function runDerive(o: RunDeriveOptions): Promise<DeriveResult> {
     checkCancelled: check,
     log: o.log ?? (() => {}),
     core: { typeSince: o.typeSince ?? null, warnings },
+    changes: {
+      recordTypes: recordTypesOf(o.db, o.typeSince),
+      effortBasis: false,
+      duplicateFlips: [],
+    },
   };
   for (const { step, core } of steps) {
     check();
@@ -89,5 +115,5 @@ export async function runDerive(o: RunDeriveOptions): Promise<DeriveResult> {
     done += w;
     o.onProgress?.(done / total, step.label);
   }
-  return { workoutIds: ctx.workoutIds, warnings, steps: timings };
+  return { workoutIds: ctx.workoutIds, changes: ctx.changes, warnings, steps: timings };
 }
