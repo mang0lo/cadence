@@ -172,7 +172,8 @@ export function deleteGoal(db: Db, athleteId: number, id: number): boolean {
 
 /**
  * Goals of the athlete. When there are none: restore the mirror after a data reset, or — once, as soon as
- * there is data — seed sensible defaults derived from recent activity.
+ * there is data — seed sensible defaults derived from recent activity. `seed: false` (an import or sync is still
+ * running, so the daily totals may be missing) postpones the seeding to a later call.
  */
 export function ensureGoals(
   db: Db,
@@ -181,6 +182,7 @@ export function ensureGoals(
   asOf: string,
   weekStart: 0 | 1,
   firstDay: string | null,
+  seed = true,
 ): Goal[] {
   const goals = listGoals(db, athleteId);
   if (goals.length) return goals;
@@ -194,7 +196,7 @@ export function ensureGoals(
           run(db, 'INSERT INTO consistency_goal_checks (goal_id, day) VALUES (?, ?)', [id, day]);
       }),
     );
-  } else if (!state.seeded && firstDay) {
+  } else if (seed && !state.seeded && firstDay) {
     tx(db, () => {
       defaultGoals(rows, asOf, weekStart, firstDay).forEach((g, i) => insertGoal(db, athleteId, g, i));
       writeBackup(db, athleteId);
@@ -249,12 +251,13 @@ export function periodBuckets(rows: DailyRow[], weekStart: 0 | 1): (period: Goal
   };
 }
 
-export function goalsResponse(db: Db, athleteId: number, today?: string): GoalsResponse {
+/** `seed`: whether default goals may be seeded now (see ensureGoals). */
+export function goalsResponse(db: Db, athleteId: number, today?: string, o: { seed?: boolean } = {}): GoalsResponse {
   const weekStart = weekStartOfAthlete(db, athleteId);
   const days = resolveDays(db, athleteId, today);
   const firstDay = firstDataDay(db, athleteId);
   const rows = loadDaily(db, athleteId);
-  const goals = ensureGoals(db, athleteId, rows, days.asOf, weekStart, firstDay);
+  const goals = ensureGoals(db, athleteId, rows, days.asOf, weekStart, firstDay, o.seed ?? true);
   const buckets = periodBuckets(rows, weekStart);
   const checks = loadChecks(db, athleteId);
   return {

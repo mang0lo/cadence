@@ -122,3 +122,51 @@ describe('check marks of weekly goals', () => {
     expect(backup.map((g: { checks: string[] }) => g.checks)).toEqual([['2026-06-10', '2026-06-18'], ['2026-06-01']]);
   });
 });
+
+describe('starting goals', () => {
+  // a fresh athlete whose first import is still running: workouts and rings are in, the daily totals are not yet
+  let dir2: string;
+  let db2: Db;
+  let app2: FastifyInstance;
+  const goalsOf = async () => {
+    const res = await app2.inject({ url: '/api/consistency/goals?today=2026-06-24' });
+    expect(res.statusCode, res.body).toBe(200);
+    return res.json<GoalsResponse>().goals.map((g) => `${g.period} ${g.sport ?? 'all'} ${g.metric} ${g.target}`);
+  };
+
+  beforeAll(async () => {
+    dir2 = fs.mkdtempSync(path.join(os.tmpdir(), 'cadence-goal-seed-'));
+    const config = loadConfig({ CADENCE_DATA_DIR: path.join(dir2, 'data'), CADENCE_MODE: 'dev', LOG_LEVEL: 'silent' });
+    db2 = openDb(config.dbPath);
+    migrateAll(db2);
+    // runs on five days of every week from 2026-04-06 on (45 min, 10 km), rings every day
+    for (let day = '2026-04-06'; day <= '2026-06-21'; day = addDays(day, 1)) {
+      const start = Date.parse(`${day}T07:00:00+02:00`) / 1000;
+      if (new Date(`${day}T12:00:00Z`).getUTCDay() % 7 < 5)
+        run(
+          db2,
+          `INSERT INTO workouts (athlete_id, ext_key, activity_type, sport, start_ts, end_ts, tz_min, duration_s, distance_m, derived_version)
+           VALUES (1, ?, 'HKWorkoutActivityTypeRunning', 'run', ?, ?, 120, 2700, 10000, ?)`,
+          [`s${day}`, start, start + 2700, DERIVE_VERSION],
+        );
+      run(db2, 'INSERT INTO activity_summaries (athlete_id, day, active_energy_kcal, active_energy_goal_kcal) VALUES (1, ?, 500, 450)', [day]);
+    }
+    app2 = await buildApp(config, db2, { jobRunner: 'inline' });
+    await app2.ready();
+    run(db2, "INSERT INTO import_jobs (id, athlete_id, kind, status, progress) VALUES ('first', 1, 'import', 'running', 0.8)");
+  });
+
+  afterAll(async () => {
+    await app2?.close();
+    db2?.close();
+    fs.rmSync(dir2, { recursive: true, force: true });
+  });
+
+  it('are seeded from the daily totals once the import is done, not from the half-imported data', async () => {
+    expect(await goalsOf()).toEqual([]);
+    // the import finishes: its last core step writes the daily totals
+    refreshDailyActivity(db2, 1);
+    run(db2, "UPDATE import_jobs SET status = 'done', finished_at = unixepoch() WHERE id = 'first'");
+    expect(await goalsOf()).toEqual(['week all active_days 5', 'week all time 14400', 'month run distance 200000']);
+  });
+});

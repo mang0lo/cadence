@@ -133,7 +133,8 @@ export default async function consistencyRoutes(app: FastifyInstance) {
 
   app.get('/goals', async (req): Promise<GoalsResponse> => {
     const q = todayQuery.parse(req.query);
-    return goalsResponse(app.db, req.athleteId, q.today);
+    // the starting goals come from the daily totals, which the import writes last: not while one is running
+    return goalsResponse(app.db, req.athleteId, q.today, { seed: !app.jobs.busy(req.athleteId) });
   });
 
   app.post('/goals', async (req, reply): Promise<Goal> => {
