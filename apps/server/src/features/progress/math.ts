@@ -180,7 +180,8 @@ export function isLeapYear(y: number): boolean {
 
 /**
  * Contiguous buckets covering [fromDay, toDay]. Each bucket spans its full calendar period (a week can start
- * before fromDay); the caller clips the data, not the bucket.
+ * before fromDay); callers count only the data inside [fromDay, toDay] (and report the clipped ranges, see
+ * clipRange in common.ts).
  */
 export function bucketsBetween(fromDay: string, toDay: string, bucket: ProgressBucket, weekStart: 0 | 1): BucketRange[] {
   const out: BucketRange[] = [];

@@ -16,7 +16,7 @@ import { all, json, type Db } from '../../db/db';
 import { getSetting } from '../../core/settings';
 import { localDay } from '../../lib/time';
 import { currentAnalysisSql } from '../activities/store';
-import { dayTs, visibleWorkoutsInDays, weekStartOf, zoneBoundsOf } from './common';
+import { clipRange, dayTs, visibleWorkoutsInDays, weekStartOf, zoneBoundsOf } from './common';
 import {
   bandTotals,
   bucketKey,
@@ -306,13 +306,14 @@ export function intensity(
   const weekStart = weekStartOf(db, athleteId);
   const buckets = bucketsBetween(q.fromDay, q.toDay, q.bucket, weekStart).map((b) => ({
     ...b,
+    ...clipRange(b, q),
     zones: [0, 0, 0, 0, 0],
     total: 0,
     easyShare: null as number | null,
   }));
   const index = new Map(buckets.map((b, i) => [b.key, i]));
-  const from = buckets[0]?.fromDay ?? q.fromDay;
-  const { where, params } = visibleWorkoutsInDays('', athleteId, q.sport, from, q.toDay);
+  // only the requested days: the first and the last bucket can be partial
+  const { where, params } = visibleWorkoutsInDays('', athleteId, q.sport, q.fromDay, q.toDay);
   const rows = all<{ start_ts: number; tz_min: number; hr_zones: string | null }>(
     db,
     `SELECT start_ts, tz_min, hr_zones FROM workouts WHERE ${where}`,

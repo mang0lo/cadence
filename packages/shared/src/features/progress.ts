@@ -62,6 +62,7 @@ export interface ProgressOverview {
 // Volume, year over year, comparison, weekly snapshot
 // ---------------------------------------------------------------------------
 
+/** fromDay / toDay: the days of the bucket inside the requested range (the first and the last one can be partial). */
 export interface ProgressVolumeBucket extends ProgressDayRange {
   /** Week start day 'YYYY-MM-DD', month 'YYYY-MM' or year 'YYYY'. */
   key: string;
@@ -81,6 +82,7 @@ export interface ProgressVolumeResponse {
   /** Trailing average of the bucket totals over `rollingWindow` buckets (0 = none, e.g. for years). */
   rollingWindow: number;
   rolling: Record<ProgressVolumeMetric, (number | null)[]>;
+  /** Totals over [fromDay, toDay] (= the sum of the buckets, whatever the bucket size). */
   totals: ProgressTotals;
 }
 
@@ -264,8 +266,9 @@ export interface ProgressIntensityResponse {
   bucket: 'week' | 'month';
   /** Upper bounds (bpm) of Z1..Z4 the zone times were computed with. */
   zoneBounds: number[];
+  /** Workouts of [fromDay, toDay] only: the first and the last bucket can be partial (fromDay / toDay say so). */
   buckets: (ProgressDayRange & { key: string; zones: number[]; total: number; easyShare: number | null })[];
-  /** easy = Z1+Z2, hard = Z3..Z5 (share of the time with heart rate). */
+  /** Over [fromDay, toDay]. easy = Z1+Z2, hard = Z3..Z5 (share of the time with heart rate). */
   totals: { zones: number[]; total: number; easyShare: number | null; hardShare: number | null };
   coverage: { withZones: number; workouts: number };
 }

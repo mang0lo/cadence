@@ -1,4 +1,4 @@
-import { SPORTS, type ProgressTotals, type ProgressVolumeMetric } from '@cadence/shared';
+import { SPORTS, type ProgressDayRange, type ProgressTotals, type ProgressVolumeMetric } from '@cadence/shared';
 import { z } from 'zod';
 import { all, get, type Db } from '../../db/db';
 import { getEffectiveHr, getSetting, getSettings } from '../../core/settings';
@@ -164,6 +164,11 @@ export function visibleWorkoutsInDays(
     params.push(sport);
   }
   return { where: where.join(' AND '), params };
+}
+
+/** The part of a bucket inside the requested range (the first and the last bucket can be partial). */
+export function clipRange(b: ProgressDayRange, q: ProgressDayRange): ProgressDayRange {
+  return { fromDay: b.fromDay < q.fromDay ? q.fromDay : b.fromDay, toDay: b.toDay > q.toDay ? q.toDay : b.toDay };
 }
 
 /** Unix seconds of UTC midnight of a day (used as a stable x value for day-based series). */
