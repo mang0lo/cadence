@@ -7,8 +7,9 @@ import { RouteThumbnail } from '@/components/map/RouteThumbnail';
 import { Badge, Card, Skeleton } from '@/components/ui';
 import { useFormat } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
+import { useSettings } from '@/lib/settings';
 import { SportIcon, sportColorVar, sportLabel } from '@/lib/sports';
-import { keyStats } from '../lib/display';
+import { keyStats, relativeTime } from '../lib/display';
 import { MedalList } from './MedalBadge';
 import { StatList } from './StatList';
 
@@ -16,6 +17,7 @@ import { StatList } from './StatList';
 export function FeedCard({ w }: { w: ActivityListItem }) {
   const { t, lang } = useI18n();
   const fmt = useFormat();
+  const { settings } = useSettings();
   const navigate = useNavigate();
   const title = workoutTitle(w, lang);
   const href = `/activities/${w.id}`;
@@ -42,7 +44,8 @@ export function FeedCard({ w }: { w: ActivityListItem }) {
             <div className="truncate text-xs text-fg-3">
               {t('activities.feed.at', {
                 date: fmt.date(w.startTs, w.tzMin, 'dateTime'),
-                relative: fmt.relative(w.startTs),
+                // by the calendar: an evening run two days back is never "yesterday"
+                relative: relativeTime(w.startTs, w.tzMin, fmt, settings.weekStart),
               })}
             </div>
             <h3 className="mt-0.5 text-base font-semibold leading-snug text-fg">

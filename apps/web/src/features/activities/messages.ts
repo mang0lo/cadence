@@ -28,7 +28,7 @@ export const messages: Dictionary = {
     athlete: {
       editProfile: 'Edit profile',
       since: 'Training since {date}',
-      activities: { one: '{count} activity', other: '{count} activities' },
+      activities: { one: '{n} activity', other: '{n} activities' },
       thisWeek: 'This week',
       lastWeek: 'Last week: {value}',
       thisYear: 'This year',
@@ -524,7 +524,7 @@ export const messages: Dictionary = {
     athlete: {
       editProfile: 'Profil bearbeiten',
       since: 'Trainiert seit {date}',
-      activities: { one: '{count} Aktivität', other: '{count} Aktivitäten' },
+      activities: { one: '{n} Aktivität', other: '{n} Aktivitäten' },
       thisWeek: 'Diese Woche',
       lastWeek: 'Letzte Woche: {value}',
       thisYear: 'Dieses Jahr',

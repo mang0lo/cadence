@@ -3,7 +3,17 @@
  */
 import { describe, expect, it } from 'vitest';
 import { createFormatter } from '@/lib/format';
-import { cadenceUnit, isCycling, minutesTick, paceUnitM, paceValue, speedDiff } from '@/features/activities/lib/display';
+import {
+  cadenceUnit,
+  isCycling,
+  minutesAxis,
+  minutesTick,
+  paceUnitM,
+  paceValue,
+  relativeTime,
+  speedDiff,
+  weekdayShort,
+} from '@/features/activities/lib/display';
 import { routeColoring, routeGeometry } from '@/features/activities/lib/route';
 import type { ChartTheme } from '@/components/charts/theme';
 import type { WorkoutStreams } from '@cadence/shared';
@@ -85,6 +95,73 @@ describe('display: minute ticks', () => {
     expect(minutesTick(120, en)).toBe('2h');
     expect(minutesTick(30, de)).toBe('30 Min.');
     expect(minutesTick(120, de)).toBe('2 Std.');
+  });
+});
+
+describe('display: week chart axis', () => {
+  const ticks = (maxMin: number) => {
+    const a = minutesAxis(maxMin);
+    return Array.from({ length: a.max / a.interval + 1 }, (_, i) => i * a.interval);
+  };
+
+  it('never puts a tick between whole hours above one hour', () => {
+    for (let max = 0; max <= 1000; max++) {
+      const a = minutesAxis(max);
+      expect(a.max).toBeGreaterThanOrEqual(max);
+      expect(a.max / a.interval).toBeLessThanOrEqual(3);
+      for (const v of ticks(max)) if (v > 60) expect(v % 60).toBe(0);
+    }
+  });
+
+  it('labels a 70- or 95-minute day with hours and short weeks with minutes', () => {
+    expect(ticks(70).map((v) => minutesTick(v, en))).toEqual(['0', '1h', '2h']);
+    expect(ticks(95).map((v) => minutesTick(v, de))).toEqual(['0', '1 Std.', '2 Std.']);
+    expect(ticks(40).map((v) => minutesTick(v, en))).toEqual(['0', '15m', '30m', '45m']);
+    expect(ticks(55).map((v) => minutesTick(v, en))).toEqual(['0', '30m', '1h']);
+    expect(ticks(0)).toEqual([0, 15]);
+    expect(ticks(200)).toEqual([0, 120, 240]);
+  });
+});
+
+describe('display: relative time of a feed card', () => {
+  // Tuesday, 2026-11-24, 07:00 in Vienna (UTC+1)
+  const now = Date.UTC(2026, 10, 24, 6) / 1000;
+  const today = '2026-11-24';
+  const at = (iso: string, tzMin = 60) => Date.parse(iso) / 1000 - tzMin * 60;
+  const rel = (ts: number, tzMin = 60, f = en, weekStart: 0 | 1 = 1) => relativeTime(ts, tzMin, f, weekStart, now, today);
+
+  it('counts calendar days: a Sunday evening run is two days ago on Tuesday morning', () => {
+    expect(rel(at('2026-11-22T19:30:00Z'))).toBe('2 days ago');
+    expect(rel(at('2026-11-23T21:00:00Z'))).toBe('yesterday');
+    expect(rel(at('2026-11-22T19:30:00Z'), 60, de)).toBe('vorgestern');
+  });
+
+  it('uses minutes and hours on the same day', () => {
+    expect(rel(now - 25 * 60)).toBe('25 minutes ago');
+    expect(rel(at('2026-11-24T01:00:00Z'))).toBe('6 hours ago');
+  });
+
+  it('counts calendar weeks from the week start, then months and years', () => {
+    expect(rel(at('2026-11-14T09:00:00Z'))).toBe('2 weeks ago'); // Saturday of the week before last
+    expect(rel(at('2026-11-16T09:00:00Z'))).toBe('last week'); // Monday of last week (8 days)
+    expect(rel(at('2026-11-15T09:00:00Z'), 60, en, 0)).toBe('last week'); // a Sunday with weeks starting on Sunday
+    expect(rel(at('2026-10-02T09:00:00Z'))).toBe('last month');
+    expect(rel(at('2026-03-02T09:00:00Z'))).toBe('8 months ago');
+    expect(rel(at('2025-06-02T09:00:00Z'))).toBe('last year');
+  });
+
+  it('takes the local day of the activity', () => {
+    // 23:30 in New York on Nov 22 (UTC−5) is already Nov 23 in UTC: still two days ago for that athlete
+    expect(rel(Date.UTC(2026, 10, 23, 4, 30) / 1000, -300)).toBe('2 days ago');
+  });
+});
+
+describe('display: weekday names', () => {
+  it('gives only the weekday, also for locales without a comma in their date pattern', () => {
+    const gb = createFormatter('metric', 'en-GB', 'en');
+    expect(weekdayShort('2026-11-24', gb)).toBe('Tue');
+    expect(weekdayShort('2026-11-22', en)).toBe('Sun');
+    expect(weekdayShort('2026-11-23', de)).toBe('Mo');
   });
 });
 

@@ -1,6 +1,7 @@
 import { BEST_EFFORTS, M_PER_KM, M_PER_MI, sportInfo, type WorkoutSummary } from '@cadence/shared';
 import { clock, type Formatter } from '@/lib/format';
 import type { Lang, TFunction } from '@/lib/i18n';
+import { dayKey, diffDays, startOfWeek, todayKey, weekday } from '@/lib/time';
 
 /** "UTC+01:00" for an offset in minutes. */
 export function tzLabel(tzMin: number): string {
@@ -88,6 +89,53 @@ export function speedDiff(a: number, b: number, sport: string, fmt: Formatter): 
 /** Axis tick of a duration in minutes: "0", "30m", "2h" (en) / "30 Min.", "2 Std." (de). */
 export function minutesTick(min: number, fmt: Formatter): string {
   return min === 0 ? '0' : fmt.durationShort(min * 60);
+}
+
+/**
+ * Value axis for minutes up to `maxMin`: at most three steps above 0, of 15 or 30 minutes up to an hour and of whole
+ * hours beyond, so every minutesTick label is exact (never "2h" for a 90-minute tick).
+ */
+export function minutesAxis(maxMin: number): { max: number; interval: number } {
+  for (const step of [15, 30, 60, 120, 180, 240, 360, 480, 720]) {
+    const n = Math.max(1, Math.ceil(maxMin / step));
+    if (n <= 3 && (step >= 60 || n * step <= 60)) return { max: n * step, interval: step };
+  }
+  const step = Math.ceil(maxMin / 3 / 1440) * 1440;
+  return { max: 3 * step, interval: step };
+}
+
+/**
+ * How long ago an activity was, by the calendar: minutes or hours on its own day, then calendar days ("yesterday" is
+ * the day before today, never 30 hours ago two days back), calendar weeks from `weekStart` ("last week"), months and
+ * years. `ts`/`tzMin` give the activity's local day; `now` (unix s) and `today` (browser day key) are the reference.
+ */
+export function relativeTime(
+  ts: number,
+  tzMin: number,
+  fmt: Formatter,
+  weekStart: 0 | 1,
+  now = Date.now() / 1000,
+  today = todayKey(),
+): string {
+  const rtf = new Intl.RelativeTimeFormat(fmt.locale, { numeric: 'auto' });
+  const day = dayKey(ts, tzMin);
+  const days = diffDays(day, today);
+  if (days <= 0) {
+    const diff = ts - now;
+    return Math.abs(diff) < 3600 ? rtf.format(Math.round(diff / 60), 'minute') : rtf.format(Math.round(diff / 3600), 'hour');
+  }
+  if (days < 7) return rtf.format(-days, 'day');
+  const weeks = diffDays(startOfWeek(day, weekStart), startOfWeek(today, weekStart)) / 7;
+  if (weeks < 5) return rtf.format(-weeks, 'week');
+  const monthIndex = (d: string) => Number(d.slice(0, 4)) * 12 + Number(d.slice(5, 7));
+  const months = monthIndex(today) - monthIndex(day);
+  if (months < 12) return rtf.format(-Math.max(1, months), 'month');
+  return rtf.format(-Math.max(1, Number(today.slice(0, 4)) - Number(day.slice(0, 4))), 'year');
+}
+
+/** Short weekday name of a day key ("Tue", "Di."), whatever the locale's date pattern looks like. */
+export function weekdayShort(day: string, fmt: Formatter): string {
+  return fmt.weekdayNames(0)[weekday(day)]!;
 }
 
 /** Sport-specific key stats of a workout for cards and list rows. */
