@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync, type StatementSync } from 'node:sqlite';
+import { getEnvironmentData, isMainThread, setEnvironmentData } from 'node:worker_threads';
 
 /**
  * Thin helpers over node:sqlite (synchronous, no native addon needed).
@@ -33,6 +34,52 @@ export function openDb(file: string, opts: { readOnly?: boolean } = {}): Db {
     throw e;
   }
   return db;
+}
+
+/**
+ * Writes of the HTTP (main) thread go first. node:sqlite is synchronous: a main-thread write that finds the write
+ * lock taken sleeps in SQLite's busy handler on the event loop, and a job worker's back-to-back transactions leave it
+ * almost no gap (the whole server froze for seconds, writes failed with 'database is locked' after busy_timeout).
+ * Main-thread writes therefore announce themselves in a counter shared with every worker thread (environment data,
+ * which workers created after this module loaded inherit), and a worker lets them through before it takes the write
+ * lock again. A main-thread write now waits for at most the worker's current transaction.
+ */
+const WRITE_GATE = 'cadence.db.writeGate';
+const writeGate: Int32Array | null = (() => {
+  const shared = getEnvironmentData(WRITE_GATE);
+  if (shared instanceof Int32Array) return shared;
+  if (!isMainThread) return null;
+  const gate = new Int32Array(new SharedArrayBuffer(4));
+  setEnvironmentData(WRITE_GATE, gate);
+  return gate;
+})();
+/** A worker waits at most this long per write for the main thread (never while it holds the lock itself). */
+const MAX_YIELD_MS = 2000;
+
+/** Main thread: `fn` (a write) with the gate raised. Inside a transaction the lock is held already. */
+function announced<T>(db: Db, fn: () => T): T {
+  if (!writeGate || !isMainThread || db.isTransaction) return fn();
+  Atomics.add(writeGate, 0, 1);
+  try {
+    return fn();
+  } finally {
+    Atomics.sub(writeGate, 0, 1);
+    Atomics.notify(writeGate, 0);
+  }
+}
+
+/** Worker: before it takes the write lock, let announced main-thread writes through (bounded). */
+function yieldToMainThread(db: Db): void {
+  if (!writeGate || isMainThread) return;
+  let waiting = Atomics.load(writeGate, 0);
+  if (waiting <= 0 || db.isTransaction) return;
+  const deadline = Date.now() + MAX_YIELD_MS;
+  while (waiting > 0) {
+    const left = deadline - Date.now();
+    if (left <= 0) return;
+    Atomics.wait(writeGate, 0, waiting, Math.min(left, 50));
+    waiting = Atomics.load(writeGate, 0);
+  }
 }
 
 const statementCache = new WeakMap<Db, Map<string, StatementSync>>();
@@ -75,7 +122,10 @@ export function get<T = Record<string, unknown>>(db: Db, sql: string, params?: P
 }
 
 export function run(db: Db, sql: string, params?: Params): { changes: number; lastInsertRowid: number } {
-  const r = prepare(db, sql).run(...(bind(params) as SqlValue[]));
+  const st = prepare(db, sql);
+  const args = bind(params) as SqlValue[];
+  yieldToMainThread(db);
+  const r = announced(db, () => st.run(...args));
   return { changes: Number(r.changes), lastInsertRowid: Number(r.lastInsertRowid) };
 }
 
@@ -106,15 +156,18 @@ export function tx<T>(db: Db, fn: () => T): T {
       throw e;
     }
   }
-  db.exec('BEGIN IMMEDIATE');
-  try {
-    const out = fn();
-    db.exec('COMMIT');
-    return out;
-  } catch (e) {
-    rollback(db, 'ROLLBACK');
-    throw e;
-  }
+  yieldToMainThread(db);
+  return announced(db, () => {
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      const out = fn();
+      db.exec('COMMIT');
+      return out;
+    } catch (e) {
+      rollback(db, 'ROLLBACK');
+      throw e;
+    }
+  });
 }
 
 /** Parse a JSON column, returning `fallback` for NULL / invalid content. */

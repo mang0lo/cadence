@@ -58,7 +58,14 @@ export async function buildApp(config: Config, db: Db, opts: BuildAppOptions = {
     if (err instanceof ZodError) {
       return reply.code(400).send({ error: { code: 'invalid_request', message: err.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ') } });
     }
-    const e = err as { statusCode?: number; code?: string; message?: string };
+    const e = err as { statusCode?: number; code?: string; message?: string; errcode?: number };
+    // SQLITE_BUSY (also its extended codes): a job held the write lock longer than busy_timeout; worth a retry
+    if (typeof e.errcode === 'number' && (e.errcode & 0xff) === 5) {
+      return reply
+        .code(503)
+        .header('retry-after', 2)
+        .send({ error: { code: 'busy', message: 'The database is busy with a running job. Try again in a moment.' } });
+    }
     const status = e.statusCode && e.statusCode >= 400 ? e.statusCode : 500;
     if (status >= 500) req.log.error(err);
     return reply

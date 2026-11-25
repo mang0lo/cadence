@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { Worker } from 'node:worker_threads';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { all, openDb, run, tx, type Db } from '../src/db/db';
 
@@ -42,5 +43,41 @@ describe('transactions', () => {
     expect(() => openDb(file)).toThrow(/not a database/);
     // nothing holds the file open (Windows could not move it otherwise)
     fs.renameSync(file, `${file}.moved`);
+  });
+});
+
+describe('writes of the HTTP thread while a job worker writes', () => {
+  it('wait for one worker transaction, not for the whole job', async () => {
+    const batches = 16;
+    const holdMs = 150;
+    const worker = new Worker(new URL('./core-db-writer.worker.ts', import.meta.url), {
+      workerData: { file: path.join(dir, 'cadence.db'), batches, holdMs },
+      execArgv: ['--import', 'tsx'],
+    });
+    let done: { ms: number } | null = null;
+    let failed: Error | null = null;
+    const exited = new Promise((r) => worker.once('exit', r));
+    await new Promise<void>((resolve, reject) => {
+      worker.on('error', (e: Error) => ((failed = e), reject(e)));
+      void exited.then((code) => reject(new Error(`worker exited with ${String(code)}`)));
+      worker.on('message', (m: { type: string; ms: number }) => {
+        if (m.type === 'started') resolve();
+        else done = m;
+      });
+    });
+    const waits: number[] = [];
+    while (!done && !failed && waits.length < 40) {
+      await new Promise((r) => setTimeout(r, 120));
+      const t0 = performance.now();
+      run(db, 'INSERT INTO writes (who, at) VALUES (?, ?)', ['main', Date.now()]);
+      waits.push(performance.now() - t0);
+    }
+    await exited;
+    expect(failed).toBeNull();
+    const workerRows = all<{ n: number }>(db, "SELECT COUNT(*) AS n FROM writes WHERE who = 'worker'")[0]!.n;
+    expect(workerRows).toBe(batches);
+    expect(waits.length).toBeGreaterThan(5);
+    // without coordination the first write waits for the whole job (~2.4 s)
+    expect(Math.max(...waits)).toBeLessThan(holdMs + 400);
   });
 });
