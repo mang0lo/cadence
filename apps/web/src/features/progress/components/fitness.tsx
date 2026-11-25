@@ -518,10 +518,13 @@ export function DailyContextCard({
   kind,
   series,
   loading,
+  error,
 }: {
   kind: 'restingHr' | 'hrv';
   series: ProgressDailySeries | undefined;
   loading: boolean;
+  /** The request failed: say so instead of a skeleton that never ends. */
+  error: unknown;
 }) {
   const t = useT();
   const fmt = useFormat();
@@ -583,7 +586,9 @@ export function DailyContextCard({
         ) : undefined
       }
     >
-      {!series ? (
+      {error ? (
+        <ErrorState error={error} />
+      ) : !series ? (
         <ChartSkeleton height={170} />
       ) : !option ? (
         <EmptyState title={t('progress.fitness.noSeries')} className="h-[170px]" />

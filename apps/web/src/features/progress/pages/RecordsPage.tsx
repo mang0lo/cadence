@@ -80,7 +80,7 @@ export default function RecordsPage() {
                     loading={history.isFetching}
                     error={history.error}
                   />
-                  <TopTenCard sport={data.sport} effort={effort} history={history.data} />
+                  <TopTenCard sport={data.sport} effort={effort} history={history.data} error={history.error} />
                 </div>
               )}
             </>

@@ -57,8 +57,8 @@ export default function FitnessPage() {
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
             <Vo2Card data={physiology.data} loading={physiology.isFetching} error={physiology.error} />
             <div className="grid min-w-0 gap-4">
-              <DailyContextCard kind="restingHr" series={physiology.data?.restingHr} loading={physiology.isFetching} />
-              <DailyContextCard kind="hrv" series={physiology.data?.hrv} loading={physiology.isFetching} />
+              <DailyContextCard kind="restingHr" series={physiology.data?.restingHr} loading={physiology.isFetching} error={physiology.error} />
+              <DailyContextCard kind="hrv" series={physiology.data?.hrv} loading={physiology.isFetching} error={physiology.error} />
             </div>
           </div>
         </div>

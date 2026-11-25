@@ -278,14 +278,27 @@ export function ProgressionCard({
 // Top 10
 // ---------------------------------------------------------------------------
 
-export function TopTenCard({ sport, effort, history }: { sport: string; effort: string | null; history: ProgressEffortHistory | undefined }) {
+export function TopTenCard({
+  sport,
+  effort,
+  history,
+  error,
+}: {
+  sport: string;
+  effort: string | null;
+  history: ProgressEffortHistory | undefined;
+  /** The request failed: say so instead of skeleton rows that never end. */
+  error: unknown;
+}) {
   const t = useT();
   const fmt = useFormat();
   const { lang } = useI18n();
   return (
     <Card className="min-w-0">
       <CardHeader title={t('progress.records.top.title', { distance: effort ? effortLabel(sport, effort, lang) : '' })} icon={ListOrdered} />
-      {!history ? (
+      {error ? (
+        <ErrorState error={error} />
+      ) : !history ? (
         <div className="grid gap-2">
           {Array.from({ length: 8 }, (_, i) => (
             <Skeleton key={i} className="h-7 w-full" />
