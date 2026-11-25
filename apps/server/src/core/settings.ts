@@ -32,10 +32,14 @@ export function getSettings(db: Db, athleteId: number): AthleteSettings {
   return { ...DEFAULT_SETTINGS, ...getSetting<Partial<AthleteSettings>>(db, athleteId, SETTINGS_KEY, {}) };
 }
 
+/**
+ * Stores only the keys the athlete set, never the defaults: a key that is missing means "not chosen" (the first
+ * COROS connection picks the watch then), and a changed default reaches everyone who did not choose.
+ */
 export function updateSettings(db: Db, athleteId: number, patch: Partial<AthleteSettings>): AthleteSettings {
-  const next = { ...getSettings(db, athleteId), ...patch };
+  const next = { ...getSetting<Partial<AthleteSettings>>(db, athleteId, SETTINGS_KEY, {}), ...patch };
   setSetting(db, athleteId, SETTINGS_KEY, next);
-  return next;
+  return { ...DEFAULT_SETTINGS, ...next };
 }
 
 export function ageFrom(birthDate: string | null, at = new Date()): number | null {
