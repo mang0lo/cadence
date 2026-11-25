@@ -50,8 +50,15 @@ export const geometryStep: DeriveStep = {
     const { db, athleteId } = ctx;
     const ids = ctx.workoutIds === 'all' ? routeWorkoutIds(db, athleteId) : ctx.workoutIds;
     if (ctx.workoutIds === 'all') {
-      run(db, 'DELETE FROM maps_workout_tiles WHERE athlete_id = ?', [athleteId]);
-      // signatures are upserted below (keeping route ids for the rebuild); drop those of workouts without a route
+      // tiles are replaced per workout and signatures upserted (keeping route ids for the rebuild) below, batch by
+      // batch: a cancelled or failed rebuild keeps the rows of the workouts it did not reach. Only the rows of
+      // workouts without a route have to go here.
+      run(
+        db,
+        `DELETE FROM maps_workout_tiles WHERE athlete_id = ?
+           AND workout_id NOT IN (SELECT id FROM workouts WHERE athlete_id = ? AND has_route = 1)`,
+        [athleteId, athleteId],
+      );
       run(
         db,
         `DELETE FROM maps_workout_geo WHERE athlete_id = ?
