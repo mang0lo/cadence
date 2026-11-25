@@ -227,6 +227,8 @@ export interface IntradayBucket {
   min: number;
   max: number;
   n: number;
+  /** UTC offset of this bucket when it differs from the day's `tzMin` (after a DST change, while travelling). */
+  tzMin?: number;
 }
 
 export interface IntradayResponse {
@@ -234,7 +236,10 @@ export interface IntradayResponse {
   day: string;
   unit: string | null;
   aggregation: RecordTypeInfo['aggregation'];
-  /** Local UTC offset in minutes of the day (offset of the first sample). */
+  /**
+   * Local UTC offset in minutes of the day: the offset of its first sample (later buckets with another offset carry
+   * their own); without samples the offset of the type's nearest sample.
+   */
   tzMin: number;
   dayStartTs: number;
   dayEndTs: number;
