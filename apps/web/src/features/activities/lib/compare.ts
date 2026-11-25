@@ -8,7 +8,10 @@
  * position is never placed on the jump and chart lines get a gap there.
  */
 import type { WorkoutDetail } from '@cadence/shared';
-import { fracIndex, haversine, valueAt, type Prepared } from './streams';
+import { fracIndex, haversine, positionAt, valueAt, valueAtNoBreak, type Prepared } from './streams';
+
+// the break-aware primitives live in streams.ts; re-exported for the compare page
+export { positionAt, valueAtNoBreak };
 
 export type TimeBase = 'moving' | 'elapsed';
 
@@ -30,27 +33,6 @@ export function clockOf(P: Pick<Prepared, 'n' | 't' | 'moving'>, base: TimeBase)
     out[i] = out[i - 1]! + (P.moving[i] ? dt : 0);
   }
   return out;
-}
-
-/** Whether a fractional index lies on the segment that jumps to a new track part (i → i+1 with i+1 a break). */
-function onBreak(breaks: number[], fi: number): number | null {
-  const i = Math.floor(fi);
-  return fi > i && breaks.includes(i + 1) ? i : null;
-}
-
-/** Value at a fractional index, never interpolated across a track break (the last value before the jump). */
-export function valueAtNoBreak(arr: Float64Array | null, fi: number, breaks: number[]): number {
-  if (!arr) return NaN;
-  const i = onBreak(breaks, fi);
-  return i === null ? valueAt(arr, fi) : arr[i]!;
-}
-
-/** [lon, lat] at a fractional index; on the jump between two track parts it stays at the last fix before the jump. */
-export function positionAt(P: Pick<Prepared, 'lat' | 'lon' | 'breaks'>, fi: number): [number, number] | null {
-  if (!P.lat || !P.lon) return null;
-  const i = onBreak(P.breaks, fi);
-  if (i !== null) return [P.lon[i]!, P.lat[i]!];
-  return [valueAt(P.lon, fi), valueAt(P.lat, fi)];
 }
 
 export interface Alignment {
