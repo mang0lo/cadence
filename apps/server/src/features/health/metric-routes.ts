@@ -14,7 +14,7 @@ import { all, get, type Db } from '../../db/db';
 import { getSettings } from '../../core/settings';
 import { parseDay } from '../../lib/time';
 import { buildExplorer } from './explorer';
-import { aggregatePoints, combineCategoryRows, summarize, type DailyRow } from './series';
+import { aggregatePoints, combineCategoryRows, summarize, withoutDuplicateSleep, type DailyRow } from './series';
 import { checkDayOrder, dayParam, resolveType, type TypeRow } from './util';
 
 const seriesQuery = z.object({
@@ -112,13 +112,15 @@ export function registerMetricRoutes(app: FastifyInstance): void {
          WHERE athlete_id = ? AND metric >= ? AND metric < ? AND day >= ? AND day <= ? ORDER BY day`,
         [req.athleteId, `${t.identifier}:`, `${t.identifier};`, from, to],
       );
-      const byValue = new Map<string, DailyRow[]>();
+      const raw = new Map<string, DailyRow[]>();
       for (const r of rows) {
         const value = r.metric.slice(t.identifier.length + 1);
-        const arr = byValue.get(value) ?? [];
+        const arr = raw.get(value) ?? [];
         arr.push({ day: r.day, value: r.value, min: null, max: null, n: r.n });
-        byValue.set(value, arr);
+        raw.set(value, arr);
       }
+      // a night written by the watch (stages) and by a second app (generic Asleep) is stacked once, like it is counted
+      const byValue = withoutDuplicateSleep(raw, t.identifier);
       const categories: MetricCategorySeries[] = [...byValue.entries()]
         .map(([value, rs]) => ({
           value,
