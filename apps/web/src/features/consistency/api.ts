@@ -61,35 +61,46 @@ export function useSports() {
   return useApi<SportCount[]>(['consistency', 'sports'], '/meta/sports');
 }
 
-/** Goal and preference mutations; every change refreshes all consistency queries. */
+/**
+ * Goal and preference mutations. Each refreshes only what depends on it: goals and check marks feed the goals and the
+ * consistency score (overview, basis 'goals'), the preferences only the score. Streaks, calendars, punchcard, day
+ * details, trophies and the year review do not depend on either, so they are neither refetched nor dimmed.
+ */
 export function useConsistencyMutations() {
   const qc = useQueryClient();
-  const refresh = useCallback(() => qc.invalidateQueries({ queryKey: ['consistency'] }), [qc]);
+  const refreshGoals = useCallback(
+    () =>
+      Promise.all([
+        qc.invalidateQueries({ queryKey: ['consistency', 'goals'] }),
+        qc.invalidateQueries({ queryKey: ['consistency', 'overview'] }),
+      ]),
+    [qc],
+  );
   return {
     createGoal: useCallback(async (g: GoalInput) => {
       const out = await api.post<Goal>('/consistency/goals', g);
-      await refresh();
+      await refreshGoals();
       return out;
-    }, [refresh]),
+    }, [refreshGoals]),
     updateGoal: useCallback(async (id: number, patch: Partial<GoalInput>) => {
       const out = await api.patch<Goal>(`/consistency/goals/${id}`, patch);
-      await refresh();
+      await refreshGoals();
       return out;
-    }, [refresh]),
+    }, [refreshGoals]),
     deleteGoal: useCallback(async (id: number) => {
       await api.delete(`/consistency/goals/${id}`);
-      await refresh();
-    }, [refresh]),
+      await refreshGoals();
+    }, [refreshGoals]),
     /** Check a goal off by hand (or take the check mark back) — `day`: a day of the period, default the current one. */
     checkGoal: useCallback(async (id: number, done: boolean, day?: string) => {
       const out = await api.put<GoalCheckResult>(`/consistency/goals/${id}/check`, { done, day, today: todayKey() });
-      await refresh();
+      await refreshGoals();
       return out;
-    }, [refresh]),
+    }, [refreshGoals]),
     setPrefs: useCallback(async (patch: Partial<ConsistencyPrefs>) => {
       const out = await api.put<ConsistencyPrefs>('/consistency/prefs', patch);
-      await refresh();
+      await qc.invalidateQueries({ queryKey: ['consistency', 'overview'] });
       return out;
-    }, [refresh]),
+    }, [qc]),
   };
 }

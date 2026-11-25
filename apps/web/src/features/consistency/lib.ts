@@ -1,9 +1,20 @@
 /** Formatting helpers of the consistency feature (pure; pass `fmt`/`t` from the hooks). */
-import { M_PER_FT, M_PER_KM, M_PER_MI, type CalendarDay, type GoalInput, type GoalMetric, type GoalPeriod } from '@cadence/shared';
+import {
+  M_PER_FT,
+  M_PER_KM,
+  M_PER_MI,
+  goalMetricsFor,
+  type CalendarDay,
+  type GoalInput,
+  type GoalMetric,
+  type GoalPeriod,
+  type GoalWithProgress,
+  type YearReview,
+} from '@cadence/shared';
 import type { Formatter } from '@/lib/format';
 import type { Lang, TFunction } from '@/lib/i18n';
 import { sportLabel } from '@/lib/sports';
-import { addDays } from '@/lib/time';
+import { addDays, diffDays } from '@/lib/time';
 
 export type CalendarMetric = 'minutes' | 'distance' | 'activities' | 'effort' | 'move';
 export const CALENDAR_METRICS: CalendarMetric[] = ['minutes', 'distance', 'activities', 'effort', 'move'];
@@ -38,26 +49,87 @@ export function formatCalendarValue(fmt: Formatter, t: TFunction, m: CalendarMet
   }
 }
 
+/** The calendar metric to show: a stored 'move' only where the year has activity ring data, else active time. */
+export function shownCalendarMetric(metric: CalendarMetric, hasRings: boolean): CalendarMetric {
+  return CALENDAR_METRICS.includes(metric) && (metric !== 'move' || hasRings) ? metric : 'minutes';
+}
+
+// ---------------------------------------------------------------------------
+// Goal quantities: display, form input and parsing in one place
+// ---------------------------------------------------------------------------
+
+/**
+ * How a goal quantity is rounded for display: what was reached rounds down (a value just below the target never
+ * prints as the target), what is still missing rounds up, targets and averages round to the nearest.
+ */
+export type GoalRounding = 'nearest' | 'down' | 'up';
+
+function roundTo(v: number, digits: number, rounding: GoalRounding): number {
+  const f = 10 ** digits;
+  const x = v * f;
+  // the epsilon absorbs binary noise (0.29 × 100 = 28.999…)
+  const r = rounding === 'down' ? Math.floor(x + 1e-9) : rounding === 'up' ? Math.ceil(x - 1e-9) : Math.round(x);
+  return r / f;
+}
+
+/** Rounding of a progress value: down while it is below the target, to the nearest once it is reached. */
+export const reachedRounding = (value: number, target: number): GoalRounding => (value < target ? 'down' : 'nearest');
+
+/** A small remainder (< 1 km / mi) in m or yd, rounded up: "45 m more" instead of "0 km more". */
+function smallDistanceUp(fmt: Formatter, m: number): string {
+  const unitM = fmt.units === 'imperial' ? 0.9144 : 1;
+  return fmt.shortDistance(Math.ceil(m / unitM - 1e-9) * unitM);
+}
+
+/** Distance of a period total: one decimal below 10 (in the displayed unit, km or mi). */
+function goalDistance(fmt: Formatter, m: number, rounding: GoalRounding): string {
+  const v = fmt.distanceValue(m);
+  if (rounding === 'up' && m > 0 && v < 1) return smallDistanceUp(fmt, m);
+  const digits = m > 0 && v < 10 ? 1 : 0;
+  return `${fmt.num(roundTo(v, digits, rounding), digits)} ${fmt.distanceUnit}`;
+}
+
+/** Distance with one decimal only where needed (3.8 km, 21.1 km, 100 km): classic single distances, trophies. */
+export function classicDistance(fmt: Formatter, m: number, rounding: GoalRounding = 'nearest'): string {
+  const v = fmt.distanceValue(m);
+  if (rounding === 'up' && m > 0 && v < 1) return smallDistanceUp(fmt, m);
+  const shown = roundTo(v, 1, rounding);
+  return `${fmt.num(shown, Number.isInteger(shown) ? 0 : 1)} ${fmt.distanceUnit}`;
+}
+
+/** Elevation in m or ft. */
+export function goalElevation(fmt: Formatter, m: number, rounding: GoalRounding = 'nearest'): string {
+  const v = fmt.units === 'imperial' ? m / M_PER_FT : m;
+  return `${fmt.num(roundTo(v, 0, rounding))} ${fmt.elevationParts(0).unit}`;
+}
+
 /** Goal / challenge quantity in canonical units → display string. */
-export function formatGoalValue(fmt: Formatter, t: TFunction, metric: GoalMetric, v: number): string {
+export function formatGoalValue(
+  fmt: Formatter,
+  t: TFunction,
+  metric: GoalMetric,
+  v: number,
+  rounding: GoalRounding = 'nearest',
+): string {
   switch (metric) {
     case 'distance':
-      return fmt.distance(v, v > 0 && v < 10_000 ? 1 : 0);
-    case 'longest': {
-      // classic distances keep their decimal: 21.1 km, 42.2 km, 180.2 km
-      const shown = Math.round(fmt.distanceValue(v) * 10) / 10;
-      return fmt.distance(v, Number.isInteger(shown) ? 0 : 1);
+      return goalDistance(fmt, v, rounding);
+    case 'longest':
+      return classicDistance(fmt, v, rounding);
+    case 'time': {
+      // goals are about whole minutes ("30 min per day")
+      const min = roundTo(v / 60, 0, rounding);
+      return min > 0 ? fmt.durationShort(min * 60) : t('consistency.goals.zeroTime');
     }
-    case 'time':
-      return v < 60 ? (fmt.lang === 'de' ? '0 Min.' : '0m') : fmt.durationShort(v);
     case 'elevation':
-      return fmt.elevation(v);
+      return goalElevation(fmt, v, rounding);
     case 'calories':
-      return fmt.energy(v);
+      return fmt.energy(roundTo(v, 0, rounding));
     case 'activities':
-      return t('common.activities', { count: Math.round(v) });
-    case 'active_days':
-      return t('common.days', { count: Math.round(v) });
+    case 'active_days': {
+      const n = roundTo(v, 0, rounding);
+      return t(`consistency.common.${metric === 'activities' ? 'activities' : 'days'}`, { count: n, n: fmt.int(n) });
+    }
   }
 }
 
@@ -108,12 +180,120 @@ export function fromInputValue(fmt: Formatter, metric: GoalMetric, v: number, pe
     case 'longest':
       return v * (imperial ? M_PER_MI : M_PER_KM);
     case 'time':
-      return v * timeUnitS(period);
+      // whole minutes: 1.67 h is the 100 min it was shown for, not 6012 s
+      return Math.round((v * timeUnitS(period)) / 60) * 60;
     case 'elevation':
       return imperial ? v * M_PER_FT : v;
     default:
       return Math.round(v);
   }
+}
+
+const decimalCache = new Map<string, string>();
+
+/** Decimal separator of a locale ("," in German, "." in English and Swiss German). */
+function decimalSeparator(locale: string): string {
+  let d = decimalCache.get(locale);
+  if (d === undefined) {
+    d = new Intl.NumberFormat(locale).formatToParts(1.5).find((p) => p.type === 'decimal')?.value ?? '.';
+    decimalCache.set(locale, d);
+  }
+  return d;
+}
+
+/** Integer digits with group separators: 1–3 digits, then groups of 2 (Indian lakh style) or 3, the last one 3. */
+function ungroup(int: string, group: string): string | null {
+  if (!int.includes(group)) return int;
+  const parts = int.split(group);
+  const ok =
+    /^\d{1,3}$/.test(parts[0]!) &&
+    parts.slice(1, -1).every((p) => /^\d{2,3}$/.test(p)) &&
+    /^\d{3}$/.test(parts[parts.length - 1]!);
+  return ok ? parts.join('') : null;
+}
+
+/**
+ * A number typed into a goal form, read with the locale's separators: "1,000" is a thousand in English and "10.000"
+ * ten thousand in German (not 1 and 10). The locale's decimal separator is always a decimal point; the other one is
+ * a decimal point too where it cannot group thousands ("1.5" in German). A lone separator before exactly three digits
+ * ("42.195" in German) groups thousands, unless `preferDecimal` (single distances are entered with up to three
+ * decimals). Spaces and apostrophes are group separators. Anything else (signs, letters, broken groups) is NaN.
+ */
+export function parseGoalNumber(text: string, locale: string, preferDecimal = false): number {
+  const s = text.replace(/[\s  '’]/g, '');
+  if (!/^[\d.,]+$/.test(s) || !/\d/.test(s)) return NaN;
+  const dots = s.split('.').length - 1;
+  const commas = s.split(',').length - 1;
+  let decimal: '.' | ',' | null = null;
+  if (dots && commas) decimal = s.lastIndexOf('.') > s.lastIndexOf(',') ? '.' : ',';
+  else if (dots + commas === 1) {
+    const sep = dots ? '.' : ',';
+    const [int, frac] = s.split(sep) as [string, string];
+    const groupsThousands = frac.length === 3 && int.length >= 1 && int.length <= 3;
+    decimal = sep === decimalSeparator(locale) || !groupsThousands || preferDecimal ? sep : null;
+  }
+  const group = decimal === '.' ? ',' : decimal === ',' ? '.' : dots ? '.' : ',';
+  const parts = decimal ? s.split(decimal) : [s];
+  if (parts.length > 2) return NaN;
+  const int = parts[0] ?? '';
+  const frac = parts[1] ?? '';
+  const digits = ungroup(int, group);
+  if (digits === null || frac.includes(group)) return NaN;
+  return Number(`${digits || '0'}.${frac || '0'}`);
+}
+
+const inputFormatCache = new Map<string, Intl.NumberFormat>();
+
+/** Canonical target → text of the form's input: the locale's decimal separator, no grouping ("42,195", "1000"). */
+export function goalInputText(fmt: Formatter, metric: GoalMetric, v: number, period?: GoalPeriod): string {
+  let f = inputFormatCache.get(fmt.locale);
+  if (!f) {
+    f = new Intl.NumberFormat(fmt.locale, { useGrouping: false, maximumFractionDigits: 3 });
+    inputFormatCache.set(fmt.locale, f);
+  }
+  return f.format(toInputValue(fmt, metric, v, period));
+}
+
+/** The editable fields of the goal form (`sport` 'all' = every sport; `target` as typed). */
+export interface GoalForm {
+  period: GoalPeriod;
+  sport: string;
+  metric: GoalMetric;
+  target: string;
+}
+
+/** Display unit of a goal measure: time is in minutes for a day and in hours otherwise. */
+const unitKey = (f: Pick<GoalForm, 'metric' | 'period'>) => (f.metric === 'time' && f.period === 'day' ? 'time-min' : f.metric);
+
+/** Canonical target typed into the form (NaN when it is not a number). */
+function parseTarget(fmt: Formatter, f: GoalForm): number {
+  const v = parseGoalNumber(f.target, fmt.locale, f.metric === 'longest');
+  return Number.isFinite(v) ? fromInputValue(fmt, f.metric, v, f.period) : NaN;
+}
+
+/**
+ * The goal form after its period or sport changed. A measure the new combination does not have (distance for
+ * strength training, active days for a single day) falls back to time and clears the number, which meant something
+ * else; a time target keeps its amount when its unit changes (minutes per day ↔ hours).
+ */
+export function changeGoalForm(fmt: Formatter, form: GoalForm, change: Partial<Pick<GoalForm, 'period' | 'sport'>>): GoalForm {
+  const next = { ...form, ...change };
+  if (!goalMetricsFor(next.sport === 'all' ? null : next.sport, next.period).includes(form.metric))
+    return { ...next, metric: 'time', target: '' };
+  if (unitKey(next) !== unitKey(form)) {
+    const canonical = parseTarget(fmt, form);
+    if (canonical > 0) next.target = goalInputText(fmt, next.metric, canonical, next.period);
+  }
+  return next;
+}
+
+/**
+ * Canonical target of the form. `exact` is a target the form was filled with (the goal being edited, a quick pick):
+ * while its number and unit are untouched, the stored value is kept as is, not re-read from the rounded text.
+ */
+export function formTarget(fmt: Formatter, form: GoalForm, exact?: { form: GoalForm; target: number } | null): number {
+  if (exact && form.target === exact.form.target && unitKey(form) === unitKey(exact.form)) return exact.target;
+  return parseTarget(fmt, form);
 }
 
 /** "Distance · Run" */
@@ -127,6 +307,58 @@ export function goalTargetText(fmt: Formatter, t: TFunction, g: Pick<GoalInput, 
   // a single activity: "42.2 km in one go, this year"
   const key = g.metric === 'longest' ? 'consistency.goals.once' : 'consistency.goals.per';
   return t(`${key}.${g.period}`, { value: formatGoalValue(fmt, t, g.metric, g.target) });
+}
+
+/**
+ * One line telling where the goal stands: projection, what is left per day, or that it was reached. `asOfActive`: the
+ * day the numbers refer to already is an active day for this goal, so it cannot add another one.
+ */
+export function goalOutlook(g: GoalWithProgress, t: TFunction, fmt: Formatter, asOfActive = false): string {
+  const c = g.current;
+  const v = (x: number, rounding: GoalRounding = 'nearest') => formatGoalValue(fmt, t, g.metric, x, rounding);
+  const reached = (x: number) => v(x, reachedRounding(x, c.target));
+  if (c.checked) return t('consistency.goals.checkedText', { value: reached(c.value) });
+  if (c.status === 'done') return t('consistency.goals.doneText', { pct: fmt.pct(c.fraction) });
+  // a day has no pace: what is left, or that nothing was tracked yet
+  if (g.period === 'day' && g.metric !== 'longest')
+    return c.value > 0 ? t('consistency.goals.remainingToday', { value: v(c.remaining, 'up') }) : t('consistency.goals.nothingToday');
+  // a single effort: the longest so far and what is still missing to the target
+  if (g.metric === 'longest')
+    return c.value > 0
+      ? t('consistency.goals.longestSoFar', { value: reached(c.value), remaining: v(c.remaining, 'up'), days: t('common.days', { count: c.remainingDays }) })
+      : t('consistency.goals.longestNone', { days: t('common.days', { count: c.remainingDays }) });
+  // days that can still add an active day: the remaining ones, without asOf once it counts
+  const openDays = g.metric === 'active_days' && asOfActive ? c.remainingDays - 1 : c.remainingDays;
+  if (g.metric === 'active_days' && c.remaining > openDays) return t(`consistency.goals.outOfReach.${g.period}`);
+  // a projection needs a pace: nothing done on the first day(s) would project 0
+  const parts = c.value > 0 && c.elapsedDays > 0 ? [t(`consistency.goals.projected.${g.period}`, { value: reached(c.projected) })] : [];
+  if (c.perDayNeeded !== null)
+    parts.push(
+      g.metric === 'active_days'
+        ? t('consistency.goals.remainingDays', { count: Math.ceil(c.remaining), days: t('common.days', { count: openDays }) })
+        : t('consistency.goals.remaining', {
+            value: v(c.remaining, 'up'),
+            perDay: v(c.perDayNeeded, 'up'),
+            days: t('common.days', { count: c.remainingDays }),
+          }),
+    );
+  return parts.join(' · ');
+}
+
+/**
+ * Weeks covered by a year review's totals, for its "per week" average: from Jan 1, or the first day with data (the
+ * first year of data is usually partial), to Dec 31, or `asOf` while the year is still running.
+ */
+export function reviewWeeks(r: Pick<YearReview, 'year' | 'complete' | 'firstDay' | 'asOf'>): number {
+  const jan1 = `${r.year}-01-01`;
+  const start = r.firstDay && r.firstDay > jan1 ? r.firstDay : jan1;
+  const end = r.complete ? `${r.year}-12-31` : r.asOf;
+  return Math.max(1, (diffDays(start, end) + 1) / 7);
+}
+
+/** The data covers the year before `year` (at most January missing): only then is a comparison with it meaningful. */
+export function previousYearCovered(firstDay: string | null, year: number): boolean {
+  return !firstDay || firstDay <= `${year - 1}-01-31`;
 }
 
 /** "2 – 8 Nov" style label of a period. */
@@ -151,6 +383,9 @@ export function monthDays(month: string): string[] {
   for (let d = `${month}-01`; d.startsWith(month); d = addDays(d, 1)) out.push(d);
   return out;
 }
+
+/** Start of an hour of the day in the locale's clock: "07:00" (de) / "07:00 AM" (en-US). */
+export const hourLabel = (fmt: Formatter, h: number): string => fmt.time(h * 3600, 0);
 
 /** JS weekday (0 = Sunday) of display column i for a week start. */
 export const weekdayOfColumn = (i: number, weekStart: 0 | 1) => (i + weekStart) % 7;

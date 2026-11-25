@@ -19,6 +19,7 @@ import { useI18n } from '@/lib/i18n';
 import { useSettings } from '@/lib/settings';
 import { SportIcon } from '@/lib/sports';
 import { useYearReview } from '../api';
+import { reviewWeeks } from '../lib';
 import { NoActivities } from '../components/AsOfNote';
 import { achievementIcon, Medallion } from '../components/Medallion';
 import { achievementTitle } from '../components/TrophyParts';
@@ -104,7 +105,7 @@ function Health({ r }: { r: YearReview }) {
             upIsGood
             text={(() => {
               const d = Math.round(h.sleepPerNightMin.value - h.sleepPerNightMin.prev);
-              return `${d > 0 ? '+' : d < 0 ? '−' : '±'}${fmt.int(Math.abs(d))} min`;
+              return `${d > 0 ? '+' : d < 0 ? '−' : '±'}${d ? fmt.durationShort(Math.abs(d) * 60) : t('consistency.goals.zeroTime')}`;
             })()}
           />
         ) : null,
@@ -195,7 +196,8 @@ function Review({ r }: { r: YearReview }) {
   const { t, lang } = useI18n();
   const fmt = useFormat();
   const { settings } = useSettings();
-  const weeks = r.complete ? 52.18 : Math.max(1, (Date.parse(r.asOf) - Date.parse(`${r.year}-01-01`)) / 86400000 / 7 + 1 / 7);
+  // weeks the data covers: the first year of data starts late, the running year ends at asOf
+  const weeks = reviewWeeks(r);
   const improved = r.prs.filter((p) => p.previousBestS !== null);
   const firsts = r.prs.length - improved.length;
   const trophies = [...r.trophies].sort((a, b) => ['gold', 'silver', 'bronze'].indexOf(a.tier) - ['gold', 'silver', 'bronze'].indexOf(b.tier));
@@ -270,7 +272,11 @@ function Review({ r }: { r: YearReview }) {
               value={fmt.elevation(r.totals.elevationM)}
               hint={t('consistency.year.everest', { x: fmt.num(r.totals.elevationM / EVEREST_M, 1) })}
             />
-            <BigStat label={t('consistency.year.eiffel')} value={`${fmt.int(r.totals.elevationM / EIFFEL_M)} ×`} hint={t('consistency.year.eiffelHint')} />
+            <BigStat
+              label={t('consistency.year.eiffel')}
+              value={`${fmt.int(r.totals.elevationM / EIFFEL_M)} ×`}
+              hint={t('consistency.year.eiffelHint', { height: fmt.elevation(EIFFEL_M) })}
+            />
           </div>
         </Section>
       </div>

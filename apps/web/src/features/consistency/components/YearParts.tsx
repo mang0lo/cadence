@@ -10,10 +10,11 @@ import { Badge, Card, Delta } from '@/components/ui';
 import { useFormat, type Formatter } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
 import { SportBadge, SportIcon, sportColorVar } from '@/lib/sports';
+import { hourLabel, previousYearCovered } from '../lib';
 
 /** The previous year misses more than a month of data: totals are not comparable. */
 export function prevPartial(r: YearReview): boolean {
-  return !!r.previous && !!r.firstDay && r.firstDay > `${r.year - 1}-01-31`;
+  return !!r.previous && !previousYearCovered(r.firstDay, r.year);
 }
 
 /** Relative change, null without a meaningful base. */
@@ -123,8 +124,9 @@ export function MonthsChart({ r }: { r: YearReview }) {
   const { t } = useI18n();
   const fmt = useFormat();
   const theme = useChartTheme();
-  const names = fmt.monthNames('short');
-  const long = fmt.monthNames('long');
+  // stable per formatter (fmt.monthNames builds a new array each call, which would rebuild the chart every render)
+  const names = useMemo(() => fmt.monthNames('short'), [fmt]);
+  const long = useMemo(() => fmt.monthNames('long'), [fmt]);
   const option = useMemo(
     () => ({
       grid: grid({ top: 12 }),
@@ -146,7 +148,10 @@ export function MonthsChart({ r }: { r: YearReview }) {
         { axisPointer: { type: 'shadow', shadowStyle: { color: 'rgba(128,128,128,0.08)' } } },
       ),
       xAxis: categoryAxis(theme, names),
-      yAxis: valueAxis(theme, { axisLabel: { color: theme.muted, fontSize: 11, formatter: (v: number) => `${fmt.int(v)} h` } }),
+      // small years get half-hour ticks: print them as 0.5 h, not "1 h, 1 h"
+      yAxis: valueAxis(theme, {
+        axisLabel: { color: theme.muted, fontSize: 11, formatter: (v: number) => `${fmt.num(v, Number.isInteger(v) ? 0 : 1)} h` },
+      }),
       series: [barSeries(theme, t('consistency.year.hours'), r.months.map((m) => Math.round((m.durationS / 3600) * 10) / 10), theme.series[0]!)],
     }),
     [r, theme, names, long, fmt, t],
@@ -193,7 +198,7 @@ export function RhythmChart({ r, kind, weekStart }: { r: YearReview; kind: 'week
   const labels =
     kind === 'weekday' ? fmt.weekdayNames(weekStart, 'short') : Array.from({ length: 24 }, (_, h) => String(h));
   const longLabels =
-    kind === 'weekday' ? fmt.weekdayNames(weekStart, 'long') : Array.from({ length: 24 }, (_, h) => `${String(h).padStart(2, '0')}:00`);
+    kind === 'weekday' ? fmt.weekdayNames(weekStart, 'long') : Array.from({ length: 24 }, (_, h) => hourLabel(fmt, h));
   const values = kind === 'weekday' ? labels.map((_, i) => r.weekdays[(i + weekStart) % 7]!) : r.hours;
   const top = values.indexOf(Math.max(...values));
   const option = useMemo(

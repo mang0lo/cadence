@@ -8,9 +8,10 @@ import { EmptyState, ErrorState } from '@/components/ui';
 import { useFormat } from '@/lib/format';
 import { useT } from '@/lib/i18n';
 import { usePunchcard } from '../api';
+import { hourLabel } from '../lib';
 
 const HOURS = Array.from({ length: 24 }, (_, h) => h);
-const hh = (h: number) => `${String(h).padStart(2, '0')}:00`;
+const NO_CELLS: never[] = [];
 
 /** Weekday × start hour of activities (dot area ∝ count), weekdays in the user's week order. */
 export function PunchcardCard({ year, weekStart }: { year: number | 'all'; weekStart: 0 | 1 }) {
@@ -18,9 +19,11 @@ export function PunchcardCard({ year, weekStart }: { year: number | 'all'; weekS
   const fmt = useFormat();
   const theme = useChartTheme();
   const q = usePunchcard(year);
-  const short = fmt.weekdayNames(weekStart, 'short');
-  const long = fmt.weekdayNames(weekStart, 'long');
-  const cells = q.data?.cells ?? [];
+  // stable arrays, so the chart option is only rebuilt when something changed
+  const short = useMemo(() => fmt.weekdayNames(weekStart, 'short'), [fmt, weekStart]);
+  const long = useMemo(() => fmt.weekdayNames(weekStart, 'long'), [fmt, weekStart]);
+  const hh = (h: number) => hourLabel(fmt, h);
+  const cells = q.data?.cells ?? NO_CELLS;
   const max = Math.max(1, ...cells.map((c) => c.count));
   const row = (weekday: number) => (weekday - weekStart + 7) % 7;
   const busiest = [...cells].sort((a, b) => b.count - a.count)[0];
