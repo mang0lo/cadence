@@ -49,6 +49,11 @@ function isExportXml(name: string): boolean {
 
 export class ImportInputError extends Error {}
 
+/** export_cda.xml (clinical document, next to export.xml in the unzipped export) is no Apple Health export.xml. */
+export function isClinicalDocument(name: string): boolean {
+  return /export_cda\.xml$/i.test(name);
+}
+
 export async function openExportSource(input: string): Promise<ExportSource> {
   let st: fs.Stats;
   try {
@@ -57,6 +62,8 @@ export async function openExportSource(input: string): Promise<ExportSource> {
     throw new ImportInputError(`File not found: ${input}`);
   }
   if (st.isDirectory()) return openDir(input);
+  if (isClinicalDocument(input))
+    throw new ImportInputError('export_cda.xml is the clinical document export: choose export.xml or the export.zip');
   const fd = fs.openSync(input, 'r');
   const head = Buffer.alloc(4);
   fs.readSync(fd, head, 0, 4, 0);

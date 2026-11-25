@@ -1,3 +1,4 @@
+import { ImportInputError } from './source';
 import type { XmlAttrs, XmlHandler } from './xml';
 
 /** Generic captured element (Workout, Correlation and every element the importer keeps verbatim). */
@@ -78,8 +79,13 @@ export class AppleHealthHandler implements XmlHandler {
       return;
     }
     if (d === 1) {
-      if (name === 'HealthData') this.sink.exportInfo({ locale: attrs.locale });
-      else this.startTree(name, attrs, d); // not an Apple export root: capture whatever it is
+      // Anything else (e.g. export_cda.xml, the clinical document next to export.xml) would be captured as one
+      // giant tree and "imported" as nothing.
+      if (name !== 'HealthData')
+        throw new ImportInputError(
+          `Not an Apple Health export.xml (root element <${name}>): choose export.xml or the export.zip`,
+        );
+      this.sink.exportInfo({ locale: attrs.locale });
       return;
     }
     if (d === 2 && name === 'Record') {
