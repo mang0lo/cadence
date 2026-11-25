@@ -1,5 +1,6 @@
 import { all, get, prepare, run, tx, type Db } from '../../db/db';
 import { recomputeDailyMetrics, refreshTypeStats } from '../../derive/daily';
+import type { Aggregation } from '../../import/hk';
 import { fnv1a } from '../../lib/hash';
 import { parseDay } from '../../lib/time';
 import { getSettings } from '../../core/settings';
@@ -43,6 +44,8 @@ interface MetricSpec {
   pick: (d: DayRow) => number | undefined;
   /** Plausible range; 0 and anything outside means "no value". */
   range: [number, number];
+  /** 'sum' for daily totals (weeks add up, today is incomplete), else 'avg' (default). */
+  aggregation?: 'sum' | 'avg';
 }
 
 export const COROS_METRICS: MetricSpec[] = [
@@ -70,9 +73,27 @@ const addDaysStr = (day: string, n: number) =>
 
 /** Daily values of the COROS app API (coros-mobile.ts), flattened by mobileRows(). */
 export const COROS_MOBILE_METRICS: MetricSpec[] = [
-  { identifier: 'COROSSteps', unit: 'count', pick: (d) => d.steps as number | undefined, range: [1, 200_000] },
-  { identifier: 'COROSCalories', unit: 'kcal', pick: (d) => d.kcal as number | undefined, range: [1, 20_000] },
-  { identifier: 'COROSActiveMinutes', unit: 'min', pick: (d) => d.activeMin as number | undefined, range: [1, 1440] },
+  {
+    identifier: 'COROSSteps',
+    unit: 'count',
+    pick: (d) => d.steps as number | undefined,
+    range: [1, 200_000],
+    aggregation: 'sum',
+  },
+  {
+    identifier: 'COROSCalories',
+    unit: 'kcal',
+    pick: (d) => d.kcal as number | undefined,
+    range: [1, 20_000],
+    aggregation: 'sum',
+  },
+  {
+    identifier: 'COROSActiveMinutes',
+    unit: 'min',
+    pick: (d) => d.activeMin as number | undefined,
+    range: [1, 1440],
+    aggregation: 'sum',
+  },
   { identifier: 'COROSHeartRate', unit: 'count/min', pick: (d) => d.hrAvg as number | undefined, range: [25, 240] },
   { identifier: 'COROSHeartRateMin', unit: 'count/min', pick: (d) => d.hrMin as number | undefined, range: [25, 240] },
   { identifier: 'COROSHeartRateMax', unit: 'count/min', pick: (d) => d.hrMax as number | undefined, range: [25, 240] },
@@ -83,11 +104,12 @@ const ALL_METRICS = [...COROS_METRICS, ...COROS_MOBILE_METRICS];
 function ensureTypes(db: Db, specs: MetricSpec[]): Map<string, number> {
   const ids = new Map<string, number>();
   for (const m of specs) {
+    // one record per day: 'sum' and 'avg' give the same daily value, but weeks, months and today differ
     const row = get<{ id: number }>(
       db,
-      `INSERT INTO record_types (identifier, kind, unit, aggregation) VALUES (?, 'quantity', ?, 'avg')
-       ON CONFLICT (identifier) DO UPDATE SET identifier = excluded.identifier RETURNING id`,
-      [m.identifier, m.unit],
+      `INSERT INTO record_types (identifier, kind, unit, aggregation) VALUES (?, 'quantity', ?, ?)
+       ON CONFLICT (identifier) DO UPDATE SET aggregation = excluded.aggregation RETURNING id`,
+      [m.identifier, m.unit, m.aggregation ?? 'avg'],
     )!;
     ids.set(m.identifier, row.id);
   }
@@ -152,7 +174,7 @@ export function storeCorosDays(
 
 /** Rebuild daily_metrics / type stats of the COROS metrics from `fromDay` on (cheap: one value per day). */
 export function refreshCorosMetrics(db: Db, athleteId: number, fromDay: string | null): void {
-  const rows = all<{ id: number; identifier: string; kind: string; aggregation: 'avg' }>(
+  const rows = all<{ id: number; identifier: string; kind: string; aggregation: Aggregation }>(
     db,
     `SELECT id, identifier, kind, aggregation FROM record_types WHERE identifier IN (${ALL_METRICS.map(() => '?').join(',')})`,
     ALL_METRICS.map((m) => m.identifier),

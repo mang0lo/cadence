@@ -23,6 +23,16 @@ export const connectMigrations: Migration[] = [
     `,
   },
   {
+    // COROS' daily steps, calories and active minutes are totals: weeks and months add up, today is incomplete
+    id: 'connect_003_daily_totals',
+    up: /* sql */ `
+      UPDATE record_types SET aggregation = 'sum'
+      WHERE identifier IN ('COROSSteps', 'COROSCalories', 'COROSActiveMinutes');
+      UPDATE daily_metrics SET min = NULL, max = NULL
+      WHERE athlete_id IN (SELECT id FROM athletes) AND metric IN ('COROSSteps', 'COROSCalories', 'COROSActiveMinutes');
+    `,
+  },
+  {
     id: 'connect_004_rings',
     up: /* sql */ `
       -- The COROS app's daily rings as COROS reports them (calories → Move, active time → Exercise). activity_summaries
