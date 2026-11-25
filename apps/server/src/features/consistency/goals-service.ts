@@ -6,7 +6,7 @@
  */
 import type { Goal, GoalInput, GoalMetric, GoalPeriod, GoalsResponse, GoalWithProgress } from '@cadence/shared';
 import { all, get, run, tx, type Db } from '../../db/db';
-import { getSetting, setSetting } from '../../core/settings';
+import { getSetting, getSettings, setSetting } from '../../core/settings';
 import { firstDataDay, loadDaily, resolveDays, weekStartOfAthlete } from './data';
 import { periodRange, plusDays } from './days';
 import {
@@ -198,7 +198,8 @@ export function ensureGoals(
     );
   } else if (seed && !state.seeded && firstDay) {
     tx(db, () => {
-      defaultGoals(rows, asOf, weekStart, firstDay).forEach((g, i) => insertGoal(db, athleteId, g, i));
+      const units = getSettings(db, athleteId).units;
+      defaultGoals(rows, asOf, weekStart, firstDay, units).forEach((g, i) => insertGoal(db, athleteId, g, i));
       writeBackup(db, athleteId);
     });
   } else return goals;
@@ -267,6 +268,6 @@ export function goalsResponse(db: Db, athleteId: number, today?: string, o: { se
     goals: goals.map((g) =>
       goalWithProgress(g, rows, buckets, days.asOf, weekStart, firstDay, { checks: checks.get(g.id), today: days.today }),
     ),
-    suggestions: suggestGoals(rows, goals, days.asOf, weekStart, firstDay),
+    suggestions: suggestGoals(rows, goals, days.asOf, weekStart, firstDay, undefined, getSettings(db, athleteId).units),
   };
 }

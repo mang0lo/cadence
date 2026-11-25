@@ -3,16 +3,17 @@ import os from 'node:os';
 import path from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { Goal, GoalsResponse } from '@cadence/shared';
+import { M_PER_FT, M_PER_MI, type Goal, type GoalsResponse } from '@cadence/shared';
 import { buildApp, migrateAll } from '../src/app';
 import { loadConfig } from '../src/config';
 import { all, get, openDb, run, type Db } from '../src/db/db';
 import { DERIVE_VERSION } from '../src/derive/context';
 import { refreshDailyActivity } from '../src/derive/daily';
+import { niceTarget, roundNice } from '../src/features/consistency/goals';
 import { migrations } from '../src/features/consistency/migrations';
 import { addDays } from '../src/lib/time';
 
-/** Rules around goals: which sports a goal accepts, and where a check mark set by hand lands. */
+/** Rules around goals: which sports a goal accepts, where a check mark set by hand lands, nice targets. */
 let dir: string;
 let db: Db;
 let app: FastifyInstance;
@@ -168,5 +169,31 @@ describe('starting goals', () => {
     refreshDailyActivity(db2, 1);
     run(db2, "UPDATE import_jobs SET status = 'done', finished_at = unixepoch() WHERE id = 'first'");
     expect(await goalsOf()).toEqual(['week all active_days 5', 'week all time 14400', 'month run distance 200000']);
+  });
+});
+
+describe('nice targets in the units the athlete reads', () => {
+  const miles = (m: number) => m / M_PER_MI;
+  const isNice = (v: number) => Math.abs(roundNice(v) - v) < 1e-9;
+
+  it('rounds distances in miles and elevation in feet for imperial units', () => {
+    expect(miles(niceTarget('distance', 'week', 18_900, 1.1, 'imperial'))).toBeCloseTo(12.5, 9); // 12.9 mi
+    expect(miles(niceTarget('distance', 'month', 150_000, 1, 'imperial'))).toBeCloseTo(90, 9); // 93.2 mi
+    expect(niceTarget('elevation', 'month', 1500, 1, 'imperial') / M_PER_FT).toBeCloseTo(5000, 9); // 4,921 ft
+    expect(miles(niceTarget('longest', 'year', 12_000, 1, 'imperial'))).toBeCloseTo(7, 9); // 7.46 mi
+    expect(miles(niceTarget('longest', 'year', 7_000, 1, 'imperial'))).toBeCloseTo(4.5, 9); // 4.35 mi
+    // metric stays as it was
+    expect(niceTarget('distance', 'week', 18_900)).toBe(20_000);
+    expect(niceTarget('elevation', 'month', 1500, 1)).toBe(1500);
+    expect(niceTarget('longest', 'year', 12_400, 1)).toBe(12_000);
+  });
+
+  it('suggests distance goals in whole or half miles once the athlete reads miles', async () => {
+    expect((await app.inject({ method: 'PATCH', url: '/api/settings', payload: { units: 'imperial' } })).statusCode).toBe(200);
+    const distance = (await goals()).suggestions.filter((g) => g.metric === 'distance');
+    expect(distance.length).toBeGreaterThan(0);
+    for (const g of distance) expect(isNice(miles(g.target)), `${miles(g.target)} mi`).toBe(true);
+    expect((await app.inject({ method: 'PATCH', url: '/api/settings', payload: { units: 'metric' } })).statusCode).toBe(200);
+    for (const g of (await goals()).suggestions.filter((x) => x.metric === 'distance')) expect(isNice(g.target), `${g.target} m`).toBe(true);
   });
 });
