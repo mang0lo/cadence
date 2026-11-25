@@ -244,6 +244,7 @@ export function deleteCorosHealth(db: Db, athleteId: number): void {
   run(db, 'DELETE FROM health_external_nights WHERE athlete_id = ? AND source = ?', [athleteId, COROS_SOURCE]);
   rebuildSleepNights(db, athleteId, null);
   refreshCorosMetrics(db, athleteId, null);
+  deleteCorosRings(db, athleteId);
 }
 
 /** Flatten the COROS app's per type day lists into one row per day (input of storeCorosDays with the mobile specs). */
@@ -338,6 +339,8 @@ export async function syncCorosMobile(
   let nights = 0;
   let earliest: string | null = null;
   let emptyRun = 0;
+  // rings are stored once for the whole range: a day's goal can come from a day in another window
+  const calendar: MobileDay[] = [];
   for (let w = 0; w < (opts.maxWindows ?? 60); w++) {
     const start = addDaysStr(end, -(MOBILE_WINDOW_DAYS - 1));
     const lists: Partial<Record<keyof typeof MOBILE_DATA, MobileDay[]>> = {};
@@ -345,7 +348,7 @@ export async function syncCorosMobile(
       lists[key] = await daily(MOBILE_DATA[key], Number(compact(start)), Number(compact(end)));
     const r = storeCorosDays(db, athleteId, mobileRows(lists), COROS_MOBILE_METRICS);
     const s = storeCorosNights(db, athleteId, lists.sleep ?? []);
-    storeCorosRings(db, athleteId, lists.calendar ?? []);
+    calendar.push(...(lists.calendar ?? []));
     days += r.days;
     nights += s.nights;
     for (const e of [r.earliest, s.earliest]) if (e && (!earliest || e < earliest)) earliest = e;
@@ -354,54 +357,289 @@ export async function syncCorosMobile(
     if (!opts.sinceDay && emptyRun >= 2) break;
     end = addDaysStr(start, -1);
   }
+  storeCorosRings(db, athleteId, calendar);
   const from = opts.sinceDay ? (earliest ?? opts.sinceDay) : null;
   refreshCorosMetrics(db, athleteId, from);
   rebuildSleepNights(db, athleteId, from);
   return { days, nights, earliest };
 }
 
+/** Columns of an activity_summaries row (Apple's rings; COROS fills Move and Exercise only). */
+const SUMMARY_COLUMNS = [
+  'active_energy_kcal',
+  'active_energy_goal_kcal',
+  'move_time_min',
+  'move_time_goal_min',
+  'exercise_min',
+  'exercise_goal_min',
+  'stand_hours',
+  'stand_goal_hours',
+] as const;
+type Summary = Record<(typeof SUMMARY_COLUMNS)[number], number | null>;
+
+/** One day of COROS rings as COROS reports them (connect_rings). */
+interface CorosRing {
+  active_energy_kcal: number | null;
+  active_energy_goal_kcal: number | null;
+  exercise_min: number | null;
+  exercise_goal_min: number | null;
+}
+
+const asSummary = (r: CorosRing): Summary => ({
+  active_energy_kcal: r.active_energy_kcal,
+  active_energy_goal_kcal: r.active_energy_goal_kcal,
+  move_time_min: null,
+  move_time_goal_min: null,
+  exercise_min: r.exercise_min,
+  exercise_goal_min: r.exercise_goal_min,
+  stand_hours: null,
+  stand_goal_hours: null,
+});
+const sameSummary = (a: Summary, b: Summary) => SUMMARY_COLUMNS.every((c) => (a[c] ?? null) === (b[c] ?? null));
+/** A row an earlier version stored for COROS right in activity_summaries: no Stand / Move time, whole numbers. */
+const legacyCorosRow = (s: Summary) =>
+  s.move_time_min === null &&
+  s.move_time_goal_min === null &&
+  s.stand_hours === null &&
+  s.stand_goal_hours === null &&
+  Number.isInteger(s.active_energy_kcal ?? 0) &&
+  Number.isInteger(s.exercise_min ?? 0);
+const parseSummary = (json: string | null): Summary | null => {
+  if (!json) return null;
+  try {
+    const v = JSON.parse(json) as Partial<Summary>;
+    return Object.fromEntries(SUMMARY_COLUMNS.map((c) => [c, typeof v[c] === 'number' ? v[c] : null])) as Summary;
+  } catch {
+    return null;
+  }
+};
+const summaryOf = (row: Record<string, unknown>): Summary =>
+  Object.fromEntries(SUMMARY_COLUMNS.map((c) => [c, typeof row[c] === 'number' ? row[c] : null])) as Summary;
+
+/** COROS sets goals in steps: calories in 10 kcal, active time in 5 min. Shares below `minValue` are too rough. */
+const KCAL_GOAL = { step: 10, minValue: 20 };
+const MIN_GOAL = { step: 5, minValue: 5 };
+
 /**
- * The COROS app's daily goals as activity rings (activity_summaries): calories → Move, active time → Exercise (COROS
- * has no Stand ring). COROS reports the share of each goal in % capped at 100: below 100 it gives the goal exactly
- * (value / share), at 100 the ring is closed and the goal is the last one known (or the value itself). Days with
- * Apple rings keep them unless the athlete prefers the watch's own data (Settings → My watch).
+ * Daily goals of one ring from COROS' shares (whole percent, capped at 100), days in ascending order. A share of
+ * 20–99 % with enough progress gives the goal; other days take the last such goal before them – the first days
+ * the goal stored before them (`seed`), else the next one found – and else a rough estimate from their own share.
+ * The goal always agrees with COROS: below 100 % it is above the value (open ring), at 100 % at most the value
+ * (closed). Without a share there is only a known goal or none, never the day's own value.
+ */
+export function corosRingGoals(
+  days: { value: number; rate: number | undefined }[],
+  seed: number | null,
+  unit: { step: number; minValue: number },
+): (number | null)[] {
+  const round = (x: number) => Math.max(unit.step, Math.round(x / unit.step) * unit.step);
+  const exact = days.map(({ value, rate }) =>
+    typeof rate === 'number' && rate >= 20 && rate < 100 && value >= unit.minValue ? round((value * 100) / rate) : null,
+  );
+  let last = seed ?? exact.find((g) => g !== null) ?? null;
+  return days.map(({ value, rate }, i) => {
+    if (exact[i] !== null) last = exact[i]!;
+    let goal = last;
+    if (typeof rate !== 'number') return goal;
+    if (rate >= 100) return goal === null ? (value > 0 ? value : null) : Math.min(goal, value);
+    if (goal === null && rate > 0 && value > 0) goal = round((value * 100) / rate);
+    if (goal === null) return null;
+    return Math.max(goal, (Math.floor(value / unit.step) + 1) * unit.step);
+  });
+}
+
+function ringStatements(db: Db) {
+  return {
+    summary: prepare(
+      db,
+      `SELECT ${SUMMARY_COLUMNS.join(', ')} FROM activity_summaries WHERE athlete_id = ? AND day = ?`,
+    ),
+    putSummary: prepare(
+      db,
+      `INSERT INTO activity_summaries (athlete_id, day, ${SUMMARY_COLUMNS.join(', ')})
+       VALUES (?, ?, ${SUMMARY_COLUMNS.map(() => '?').join(', ')})
+       ON CONFLICT (athlete_id, day) DO UPDATE SET ${SUMMARY_COLUMNS.map((c) => `${c} = excluded.${c}`).join(', ')}`,
+    ),
+    putRing: prepare(
+      db,
+      `INSERT INTO connect_rings (athlete_id, provider, day, active_energy_kcal, active_energy_goal_kcal, exercise_min,
+         exercise_goal_min, replaced)
+       VALUES (?, 'coros', ?, ?, ?, ?, ?, ?)
+       ON CONFLICT (athlete_id, provider, day) DO UPDATE SET active_energy_kcal = excluded.active_energy_kcal,
+         active_energy_goal_kcal = excluded.active_energy_goal_kcal, exercise_min = excluded.exercise_min,
+         exercise_goal_min = excluded.exercise_goal_min, replaced = excluded.replaced`,
+    ),
+  };
+}
+
+/**
+ * Bring one day of activity_summaries in line with the preferred source: COROS' rings where the watch is preferred
+ * or Apple has none, else Apple's. `owned`: the row shows COROS' rings right now. Returns the Apple row the COROS
+ * rings replace (kept in connect_rings.replaced, so preferring Apple again restores it).
+ */
+function settleRingDay(
+  st: ReturnType<typeof ringStatements>,
+  athleteId: number,
+  day: string,
+  coros: Summary,
+  replaced: Summary | null,
+  cur: Summary | undefined,
+  owned: boolean,
+  preferDevice: boolean,
+): Summary | null {
+  const apple = owned ? replaced : (cur ?? null);
+  if (apple && !preferDevice) {
+    if (owned) st.putSummary.run(athleteId, day, ...SUMMARY_COLUMNS.map((c) => apple[c]));
+    return null;
+  }
+  if (!cur || !sameSummary(cur, coros)) st.putSummary.run(athleteId, day, ...SUMMARY_COLUMNS.map((c) => coros[c]));
+  return apple;
+}
+
+/**
+ * The COROS app's daily goals as activity rings: calories → Move, active time → Exercise (COROS has no Stand ring).
+ * The goals come from COROS' share of each goal (corosRingGoals). COROS' own copy of each day is kept in
+ * connect_rings; activity_summaries shows it where Apple has no rings or the athlete prefers the watch's own data
+ * (Settings → My watch), and follows it while the day's values change. Returns the number of days stored.
  */
 export function storeCorosRings(db: Db, athleteId: number, days: MobileDay[]): number {
   const preferDevice = preferred(getSettings(db, athleteId), 'heart') === 'device';
-  const rows = days
-    .map((d) => ({ day: dayOf(d.happenDay), c: d.calendarData }))
-    .filter((r): r is { day: string; c: NonNullable<MobileDay['calendarData']> } => !!r.day && !!r.c)
+  const byDay = new Map<string, NonNullable<MobileDay['calendarData']>>();
+  for (const d of days) {
+    const day = dayOf(d.happenDay);
+    if (day && d.calendarData) byDay.set(day, d.calendarData);
+  }
+  const rows = [...byDay]
+    .map(([day, c]) => ({
+      day,
+      kcal: Math.round((c.calorie ?? 0) / 1000),
+      min: Math.round((c.motionTime ?? 0) / 60),
+      kcalRate: c.calorieStandardRate,
+      minRate: c.motionTimeStandardRate,
+    }))
+    .filter((r) => r.kcal || r.min)
     .sort((a, b) => a.day.localeCompare(b.day));
-  let kcalGoal: number | null = null;
-  let minGoal: number | null = null;
-  // shares are whole percent: only days with enough progress give a reliable goal, rounded to COROS' steps
-  const goalOf = (value: number, rate: number | undefined, last: number | null, minValue: number, step: number) =>
-    rate && rate >= 20 && rate < 100 && value >= minValue
-      ? Math.max(step, Math.round((value * 100) / rate / step) * step)
-      : (last ?? (value > 0 ? value : null));
-  const upsert = prepare(
-    db,
-    `INSERT INTO activity_summaries (athlete_id, day, active_energy_kcal, active_energy_goal_kcal, exercise_min, exercise_goal_min)
-     VALUES (?, ?, ?, ?, ?, ?)
-     ON CONFLICT (athlete_id, day) DO UPDATE SET active_energy_kcal = excluded.active_energy_kcal,
-       active_energy_goal_kcal = excluded.active_energy_goal_kcal, exercise_min = excluded.exercise_min,
-       exercise_goal_min = excluded.exercise_goal_min, move_time_min = NULL, move_time_goal_min = NULL,
-       stand_hours = NULL, stand_goal_hours = NULL
-     WHERE ?`,
+  if (!rows.length) return 0;
+  // the goals in effect before these days (stored by an earlier sync)
+  const seed = (column: 'active_energy_goal_kcal' | 'exercise_goal_min') =>
+    get<{ g: number }>(
+      db,
+      `SELECT ${column} AS g FROM connect_rings
+       WHERE athlete_id = ? AND provider = 'coros' AND day < ? AND ${column} IS NOT NULL ORDER BY day DESC LIMIT 1`,
+      [athleteId, rows[0]!.day],
+    )?.g ?? null;
+  const kcalGoals = corosRingGoals(
+    rows.map((r) => ({ value: r.kcal, rate: r.kcalRate })),
+    seed('active_energy_goal_kcal'),
+    KCAL_GOAL,
   );
-  let n = 0;
+  const minGoals = corosRingGoals(
+    rows.map((r) => ({ value: r.min, rate: r.minRate })),
+    seed('exercise_goal_min'),
+    MIN_GOAL,
+  );
+  const st = ringStatements(db);
+  const mine = prepare(
+    db,
+    `SELECT active_energy_kcal, active_energy_goal_kcal, exercise_min, exercise_goal_min, replaced FROM connect_rings
+     WHERE athlete_id = ? AND provider = 'coros' AND day = ?`,
+  );
   tx(db, () => {
-    for (const { day, c } of rows) {
-      const kcal = Math.round((c.calorie ?? 0) / 1000);
-      const min = Math.round((c.motionTime ?? 0) / 60);
-      if (!kcal && !min) continue;
-      kcalGoal = goalOf(kcal, c.calorieStandardRate, kcalGoal, 20, 10);
-      minGoal = goalOf(min, c.motionTimeStandardRate, minGoal, 5, 5);
-      // the stored goal of a closed day is at most its value (else a closed COROS ring would show as open)
-      const kg = c.calorieStandardRate === 100 && kcalGoal !== null ? Math.min(kcalGoal, kcal) : kcalGoal;
-      const mg = c.motionTimeStandardRate === 100 && minGoal !== null ? Math.min(minGoal, min) : minGoal;
-      n += Number(upsert.run(athleteId, day, kcal, kg, min, mg, preferDevice ? 1 : 0).changes);
+    rows.forEach((r, i) => {
+      const ring: CorosRing = {
+        active_energy_kcal: r.kcal,
+        active_energy_goal_kcal: kcalGoals[i]!,
+        exercise_min: r.min,
+        exercise_goal_min: minGoals[i]!,
+      };
+      const prev = mine.get(athleteId, r.day) as (CorosRing & { replaced: string | null }) | undefined;
+      const row = st.summary.get(athleteId, r.day) as Record<string, unknown> | undefined;
+      const cur = row ? summaryOf(row) : undefined;
+      // the row shows COROS' rings when it holds what COROS stored last (or what an earlier version stored)
+      const owned = !!cur && (prev ? sameSummary(cur, asSummary(prev)) : legacyCorosRow(cur));
+      const replaced = settleRingDay(
+        st,
+        athleteId,
+        r.day,
+        asSummary(ring),
+        parseSummary(prev?.replaced ?? null),
+        cur,
+        owned,
+        preferDevice,
+      );
+      st.putRing.run(
+        athleteId,
+        r.day,
+        ring.active_energy_kcal,
+        ring.active_energy_goal_kcal,
+        ring.exercise_min,
+        ring.exercise_goal_min,
+        replaced ? JSON.stringify(replaced) : null,
+      );
+    });
+  });
+  return rows.length;
+}
+
+/**
+ * Apply the ring source preference to every stored COROS day again: after the preference changed (Settings → My
+ * watch) or an Apple import rewrote days. Runs in the connect derive step; cheap (one row per day).
+ */
+export function reconcileCorosRings(db: Db, athleteId: number): void {
+  const rows = all<Record<string, unknown> & CorosRing & { day: string; replaced: string | null; has: number }>(
+    db,
+    `SELECT c.day, c.replaced, c.active_energy_kcal, c.active_energy_goal_kcal, c.exercise_min, c.exercise_goal_min,
+       a.day IS NOT NULL AS has, ${SUMMARY_COLUMNS.map((col) => `a.${col} AS a_${col}`).join(', ')}
+     FROM connect_rings c LEFT JOIN activity_summaries a ON a.athlete_id = c.athlete_id AND a.day = c.day
+     WHERE c.athlete_id = ? AND c.provider = 'coros' ORDER BY c.day`,
+    [athleteId],
+  );
+  if (!rows.length) return;
+  const preferDevice = preferred(getSettings(db, athleteId), 'heart') === 'device';
+  const st = ringStatements(db);
+  const setReplaced = prepare(
+    db,
+    "UPDATE connect_rings SET replaced = ? WHERE athlete_id = ? AND provider = 'coros' AND day = ?",
+  );
+  tx(db, () => {
+    for (const r of rows) {
+      const coros = asSummary(r);
+      const cur = r.has
+        ? (Object.fromEntries(SUMMARY_COLUMNS.map((c) => [c, (r[`a_${c}`] as number | null) ?? null])) as Summary)
+        : undefined;
+      const replaced = settleRingDay(
+        st,
+        athleteId,
+        r.day,
+        coros,
+        parseSummary(r.replaced),
+        cur,
+        !!cur && sameSummary(cur, coros),
+        preferDevice,
+      );
+      const json = replaced ? JSON.stringify(replaced) : null;
+      if (json !== r.replaced) setReplaced.run(json, athleteId, r.day);
     }
   });
-  return n;
+}
+
+/** Take COROS' rings out of activity_summaries (Apple's come back where COROS replaced them). */
+export function deleteCorosRings(db: Db, athleteId: number): void {
+  const rows = all<CorosRing & { day: string; replaced: string | null }>(
+    db,
+    `SELECT day, active_energy_kcal, active_energy_goal_kcal, exercise_min, exercise_goal_min, replaced FROM connect_rings
+     WHERE athlete_id = ? AND provider = 'coros'`,
+    [athleteId],
+  );
+  const st = ringStatements(db);
+  tx(db, () => {
+    for (const r of rows) {
+      const row = st.summary.get(athleteId, r.day) as Record<string, unknown> | undefined;
+      if (!row || !sameSummary(summaryOf(row), asSummary(r))) continue; // Apple's rings (or none): keep
+      const apple = parseSummary(r.replaced);
+      if (apple) st.putSummary.run(athleteId, r.day, ...SUMMARY_COLUMNS.map((c) => apple[c]));
+      else run(db, 'DELETE FROM activity_summaries WHERE athlete_id = ? AND day = ?', [athleteId, r.day]);
+    }
+    run(db, "DELETE FROM connect_rings WHERE athlete_id = ? AND provider = 'coros'", [athleteId]);
+  });
 }
