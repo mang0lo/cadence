@@ -30,6 +30,8 @@ const KNOWN_PAGES_STOP = 1;
 const RETRY_AFTER_S = [3 * 3600, 12 * 3600, 86_400, 3 * 86_400, 7 * 86_400];
 /** Import jobs a cached file goes into (failed or cancelled ones) before it counts as failed. */
 const MAX_IMPORT_ATTEMPTS = 3;
+/** Bumped when COROS app data is stored differently: the next sync fetches its whole history once (2: rings). */
+const MOBILE_DATA_VERSION = 2;
 
 /** Stored in settings (never sent to the browser): the token and the MD5 of the password COROS expects. */
 interface CorosAccount {
@@ -54,6 +56,8 @@ interface CorosAccount {
   mobileToken?: string | null;
   /** Newest day fetched from the COROS app API. */
   mobileDay?: string | null;
+  /** MOBILE_DATA_VERSION of the last walk through the whole COROS app history. */
+  mobileVersion?: number;
 }
 
 const now = () => Math.floor(Date.now() / 1000);
@@ -560,9 +564,15 @@ export class CorosSync {
       "SELECT 1 FROM daily_metrics WHERE athlete_id = ? AND metric = 'COROSSteps' LIMIT 1",
       [athleteId],
     );
-    const since = full || !have ? null : (this.account(athleteId)?.mobileDay ?? null);
+    const cur = this.account(athleteId);
+    // stored by an older version (e.g. rings before connect_rings): walk the whole history once more
+    const current = (cur?.mobileVersion ?? 0) >= MOBILE_DATA_VERSION;
+    const since = full || !have || !current ? null : (cur?.mobileDay ?? null);
     const r = await syncCorosMobile(db, athleteId, daily, { sinceDay: since ? addDays(since, -3) : null });
-    this.save(athleteId, { mobileDay: new Date().toISOString().slice(0, 10) });
+    this.save(athleteId, {
+      mobileDay: new Date().toISOString().slice(0, 10),
+      ...(since === null ? { mobileVersion: MOBILE_DATA_VERSION } : {}),
+    });
     return r;
   }
 

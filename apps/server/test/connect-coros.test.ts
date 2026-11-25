@@ -686,6 +686,28 @@ describe('COROS health sync', () => {
     expect(fake.state.mobileLogins).toBe(2);
   });
 
+  it('walks the COROS app history once more after the update to repair the rings', async () => {
+    const { fake, sync } = setup([], healthDays(today, 40));
+    await sync.connect(1, 'me@example.com', 'secret', 'eu');
+    await sync.start(1);
+    // as an earlier version left it: no COROS copy of the rings, a rest day stored as closed (goal = its value)
+    const day = new Date(Date.parse(`${today}T00:00:00Z`) - 35 * 86400_000).toISOString().slice(0, 10);
+    run(db, 'DELETE FROM connect_rings');
+    run(db, 'UPDATE activity_summaries SET exercise_goal_min = exercise_min WHERE day = ?', [day]);
+    run(db, "UPDATE settings SET value = json_remove(value, '$.mobileVersion') WHERE key = 'connect.coros'");
+    fake.state.mobileCalls = [];
+    await sync.start(1);
+    expect(fake.state.mobileCalls.length).toBeGreaterThan(6); // more than the one window of a normal sync
+    expect(get(db, 'SELECT exercise_min, exercise_goal_min FROM activity_summaries WHERE day = ?', [day])).toEqual({
+      exercise_min: 18,
+      exercise_goal_min: 30,
+    });
+    // once
+    fake.state.mobileCalls = [];
+    await sync.start(1);
+    expect(fake.state.mobileCalls).toHaveLength(6);
+  });
+
   it('leaves the COROS app API alone when sleep & daily data is switched off', async () => {
     const { fake, sync } = setup([], healthDays(today, 5));
     await sync.connect(1, 'me@example.com', 'secret', 'eu');
