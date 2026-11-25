@@ -496,7 +496,7 @@ export function PredictorCard({ data, error }: { data: ProgressPredictions | und
             </tbody>
           </Table>
           <div className="mt-3 grid gap-1 text-xs text-fg-3">
-            <p>{t('progress.records.predictor.riegelNote', { exponent: fmt.num(data.riegelExponent, 2), days: data.windowDays })}</p>
+            <p>{t('progress.records.predictor.riegelNote', { exponent: fmt.num(data.riegelExponent, 2), days: fmt.int(data.windowDays) })}</p>
             <p>
               {data.vo2max
                 ? t('progress.records.predictor.vo2Note', { value: fmt.num(data.vo2max.value, 1), date: fmt.day(data.vo2max.day, 'day') })

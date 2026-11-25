@@ -176,7 +176,7 @@ export function VolumeCard({
         data && !empty
           ? t('progress.volume.footer', {
               value: formatVolume(fmt, metric, totalsValue(data.totals, metric)),
-              count: t('common.activities', { count: data.totals.count }),
+              count: t('progress.common.activityCount', { count: data.totals.count, n: fmt.int(data.totals.count) }),
             })
           : undefined
       }

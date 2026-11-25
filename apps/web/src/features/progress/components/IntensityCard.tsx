@@ -109,7 +109,11 @@ export function IntensityCard({ sport, range }: { sport: string; range: RangePar
           items={(['week', 'month'] as const).map((b) => ({ value: b, label: t(`progress.buckets.${b}`) }))}
         />
       }
-      footer={data && data.coverage.workouts > 0 ? t('progress.intensity.coverage', { n: data.coverage.withZones, total: data.coverage.workouts }) : undefined}
+      footer={
+        data && data.coverage.workouts > 0
+          ? t('progress.intensity.coverage', { n: fmt.int(data.coverage.withZones), total: fmt.int(data.coverage.workouts) })
+          : undefined
+      }
     >
       {q.error ? (
         <ErrorState error={q.error} />
