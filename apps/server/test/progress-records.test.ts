@@ -2,7 +2,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { migrateAll } from '../src/app';
 import { updateSettings } from '../src/core/settings';
 import { openDb, run, type Db } from '../src/db/db';
-import { predictions, recentVo2max } from '../src/features/progress/records';
+import { zSport } from '../src/features/progress/common';
+import { effortHistory, predictions, recentVo2max, records } from '../src/features/progress/records';
 
 let db: Db;
 
@@ -43,5 +44,16 @@ describe('race predictor VO2max', () => {
     metric('HKQuantityTypeIdentifierVO2Max', '2026-01-10', 45);
     metric('HKQuantityTypeIdentifierVO2Max', '2026-03-05', 3);
     expect(recentVo2max(db, 1, '2026-03-10')).toEqual({ value: 45, day: '2026-01-10' });
+  });
+});
+
+describe('sport validation', () => {
+  it('rejects inherited object keys with 400 instead of failing with 500', () => {
+    for (const s of ['constructor', 'toString', '__proto__', 'hasOwnProperty', 'valueOf'])
+      expect(zSport.safeParse(s).success, s).toBe(false);
+    expect(zSport.parse('run')).toBe('run');
+    expect(zSport.parse('all')).toBeNull();
+    expect(records(db, 1, { sport: 'constructor', today: '2026-03-10' }).efforts).toEqual([]);
+    expect(effortHistory(db, 1, { sport: 'toString', effort: '5k' })).toBeNull();
   });
 });

@@ -19,7 +19,7 @@ export const zSport = z
   .max(40)
   .optional()
   .transform((s) => (s && s !== 'all' ? s : null))
-  .refine((s) => s === null || s in SPORTS, 'unknown sport');
+  .refine((s) => s === null || Object.hasOwn(SPORTS, s), 'unknown sport');
 
 export const zVolumeMetric = z.enum(['distance', 'time', 'elevation', 'count', 'effort']);
 

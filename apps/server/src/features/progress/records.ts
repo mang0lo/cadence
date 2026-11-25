@@ -47,6 +47,9 @@ const toRef = (r: EffortRow): ProgressEffortRef => ({
   elapsedS: r.elapsed_s,
 });
 
+/** Best effort definitions of a sport (own keys only: 'constructor' is no sport). */
+const effortDefs = (sport: string) => (Object.hasOwn(BEST_EFFORTS, sport) ? BEST_EFFORTS[sport]! : []);
+
 /** Fastest of a list (ties: the earlier attempt keeps the record). */
 function fastest(rows: EffortRow[]): EffortRow | null {
   let best: EffortRow | null = null;
@@ -61,7 +64,7 @@ const HIGHLIGHTS: { key: ProgressHighlightKey; col: string; where?: (sport: stri
   { key: 'longest', col: 'distance_m' },
   { key: 'longestTime', col: 'COALESCE(moving_s, duration_s)' },
   { key: 'climb', col: 'elevation_gain_m' },
-  { key: 'fastest', col: 'avg_speed', where: () => 'AND distance_m >= ?', params: (s) => [FASTEST_MIN_M[s] ?? 1000] },
+  { key: 'fastest', col: 'avg_speed', where: () => 'AND distance_m >= ?', params: (s) => [Object.hasOwn(FASTEST_MIN_M, s) ? FASTEST_MIN_M[s]! : 1000] },
   { key: 'hardest', col: 'effort' },
 ];
 
@@ -86,7 +89,7 @@ export function records(db: Db, athleteId: number, q: { sport: string | null; to
     if (!list) byEffort.set(r.effort, (list = []));
     list.push(r);
   }
-  const efforts: ProgressEffortRow[] = (BEST_EFFORTS[sport] ?? []).map((def) => {
+  const efforts: ProgressEffortRow[] = effortDefs(sport).map((def) => {
     const list = (byEffort.get(def.key) ?? []).filter((r) => localDay(r.start_ts, r.tz_min) <= q.today);
     const inRange = (from: string) => list.filter((r) => localDay(r.start_ts, r.tz_min) >= from);
     const best = fastest(list);
@@ -117,7 +120,7 @@ export function records(db: Db, athleteId: number, q: { sport: string | null; to
 }
 
 export function effortHistory(db: Db, athleteId: number, q: { sport: string; effort: string }): ProgressEffortHistory | null {
-  const def = (BEST_EFFORTS[q.sport] ?? []).find((d) => d.key === q.effort);
+  const def = effortDefs(q.sport).find((d) => d.key === q.effort);
   if (!def) return null;
   const rows = effortRows(db, athleteId, q.sport, q.effort);
   let best = Infinity;
