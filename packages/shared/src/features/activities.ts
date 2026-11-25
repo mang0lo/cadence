@@ -265,6 +265,10 @@ export interface ActivitySimilarItem {
   avgHr: number | null;
   elevationGainM: number | null;
   effort: number | null;
+  /**
+   * Efficiency factor on `ActivitySimilar.efficiencyBasis` (never mixed units); null when the activity has none on
+   * that basis.
+   */
   efficiency: number | null;
   /** Same start and finish (±300 m) and distance (±10 %) as the activity asked for. */
   sameRoute: boolean;
@@ -277,6 +281,12 @@ export interface ActivitySimilar {
   sport: string;
   /** 'distance' = same sport within ±15 % distance; 'duration' = same sport within ±25 % duration. */
   basis: 'distance' | 'duration';
+  /**
+   * Basis of every `items[].efficiency`: the current activity's efficiency basis (else the most common one).
+   * Rides with power compare W per bpm with other rides with power; rides without power compare the speed based
+   * efficiency of all rides.
+   */
+  efficiencyBasis?: ActivityEfficiency['basis'] | null;
   /** The distance (m) or duration (s) window used. */
   min: number;
   max: number;

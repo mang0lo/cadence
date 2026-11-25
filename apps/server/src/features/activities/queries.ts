@@ -9,6 +9,7 @@ import {
   type ActivityListPage,
   type ActivityMedal,
   type ActivityNav,
+  type ActivityEfficiency,
   type ActivityNeighbor,
   type ActivitySimilar,
   type ActivitySimilarItem,
@@ -22,6 +23,7 @@ import { all, get, type Db } from '../../db/db';
 import { SUMMARY_COLS, toSummary, type WorkoutRow } from '../../core/workouts';
 import { haversine } from '../../lib/geo';
 import { dayString, parseDay } from '../../lib/time';
+import { currentAnalysisSql } from './store';
 
 // ---------------------------------------------------------------------------
 // List (feed + activities page)
@@ -426,12 +428,28 @@ interface SimilarRow {
   end_lat: number | null;
   end_lon: number | null;
   efficiency: number | null;
+  efficiency_basis: ActivityEfficiency['basis'] | null;
+  pace_efficiency: number | null;
   gap_speed: number | null;
 }
 
 const SIMILAR_COLS = `w.id, w.name, w.sport, w.start_ts, w.tz_min, w.distance_m, w.moving_s, w.duration_s, w.avg_speed,
   w.avg_hr, w.elevation_gain_m, w.effort, w.start_lat, w.start_lon, w.end_lat, w.end_lon,
-  a.efficiency AS efficiency, a.gap_speed AS gap_speed`;
+  a.efficiency AS efficiency, a.efficiency_basis AS efficiency_basis, a.pace_efficiency AS pace_efficiency,
+  a.gap_speed AS gap_speed`;
+
+/** Analysis values of the current algorithm only (rows of an older version are recomputed in the background). */
+const SIMILAR_FROM = `workouts w LEFT JOIN activities_analysis a ON a.workout_id = w.id AND ${currentAnalysisSql('a')}`;
+
+/**
+ * The efficiency factor of a workout on `basis`: W per bpm and m/min per bpm are different units, so rides with
+ * power are only compared with each other; rides without power use the speed based value of every ride.
+ */
+function efficiencyOn(r: SimilarRow, basis: ActivityEfficiency['basis'] | null): number | null {
+  if (basis === null) return null;
+  if (r.efficiency_basis === basis) return r.efficiency;
+  return basis === 'speed' && r.efficiency_basis === 'power' ? r.pace_efficiency : null;
+}
 
 /** Same start and finish within `radiusM` and distance within ±10 %. */
 export function sameRoute(a: SimilarRow, b: SimilarRow, radiusM = 300): boolean {
@@ -466,8 +484,7 @@ function rankBy<T extends { id: number }>(items: T[], id: number, value: (x: T) 
 export function similarActivities(db: Db, athleteId: number, id: number, limit = 250): ActivitySimilar | null {
   const cur = get<SimilarRow>(
     db,
-    `SELECT ${SIMILAR_COLS} FROM workouts w LEFT JOIN activities_analysis a ON a.workout_id = w.id
-     WHERE w.id = ? AND w.athlete_id = ?`,
+    `SELECT ${SIMILAR_COLS} FROM ${SIMILAR_FROM} WHERE w.id = ? AND w.athlete_id = ?`,
     [id, athleteId],
   );
   if (!cur) return null;
@@ -479,12 +496,19 @@ export function similarActivities(db: Db, athleteId: number, id: number, limit =
   const col = byDistance ? 'w.distance_m' : 'w.duration_s';
   const rows = all<SimilarRow>(
     db,
-    `SELECT ${SIMILAR_COLS} FROM workouts w LEFT JOIN activities_analysis a ON a.workout_id = w.id
+    `SELECT ${SIMILAR_COLS} FROM ${SIMILAR_FROM}
      WHERE w.athlete_id = ? AND w.sport = ? AND w.hidden = 0 AND w.duplicate_of IS NULL AND w.id <> ?
        AND ${col} BETWEEN ? AND ? ${byDistance ? 'AND w.avg_speed IS NOT NULL' : ''}
      ORDER BY w.start_ts DESC LIMIT ?`,
     [athleteId, cur.sport, id, min, max, limit],
   );
+  // the current activity's basis; without an efficiency of its own the most common one of the others
+  let efficiencyBasis = cur.efficiency_basis;
+  if (efficiencyBasis === null) {
+    const counts = new Map<ActivityEfficiency['basis'], number>();
+    for (const r of rows) if (r.efficiency_basis) counts.set(r.efficiency_basis, (counts.get(r.efficiency_basis) ?? 0) + 1);
+    efficiencyBasis = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+  }
   const toItem = (r: SimilarRow, current: boolean): ActivitySimilarItem => ({
     id: r.id,
     name: r.name,
@@ -499,7 +523,7 @@ export function similarActivities(db: Db, athleteId: number, id: number, limit =
     avgHr: r.avg_hr,
     elevationGainM: r.elevation_gain_m,
     effort: r.effort,
-    efficiency: r.efficiency,
+    efficiency: efficiencyOn(r, efficiencyBasis),
     sameRoute: current || sameRoute(cur, r),
     current,
   });
@@ -510,6 +534,7 @@ export function similarActivities(db: Db, athleteId: number, id: number, limit =
     workoutId: id,
     sport: cur.sport,
     basis,
+    efficiencyBasis,
     min,
     max,
     items,
