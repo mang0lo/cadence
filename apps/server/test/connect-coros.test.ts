@@ -8,6 +8,7 @@ import { getSettings, updateSettings } from '../src/core/settings';
 import { heartMetric } from '../src/core/sources';
 import { all, get, openDb, run, type Db } from '../src/db/db';
 import { CorosClient, CorosHttpError, md5Hex } from '../src/features/connect/coros-client';
+import { CorosMobileClient } from '../src/features/connect/coros-mobile';
 import { CorosSync } from '../src/features/connect/coros-sync';
 import { executeJob } from '../src/import/run-job';
 import { buildFit } from './fit-fixture';
@@ -71,6 +72,8 @@ function fakeCoros(activities: FakeActivity[], health: FakeDay[] = []) {
     queries: 0,
     rateLimitNext: 0,
     password: md5Hex('secret'),
+    /** Runs on every accepted download request (e.g. a Training Hub login in a browser replaces the token). */
+    onDownload: null as null | ((labelId: string) => void),
   };
   const ok = (data: unknown) => new Response(JSON.stringify({ result: '0000', message: 'OK', data }));
   const fail = (result: string, message: string) => new Response(JSON.stringify({ result, message }));
@@ -174,6 +177,7 @@ function fakeCoros(activities: FakeActivity[], health: FakeDay[] = []) {
         if (headers.accessToken !== state.token) return fail('1019', 'Access token invalid');
         expect(url.searchParams.get('fileType')).toBe('4');
         const id = url.searchParams.get('labelId')!;
+        state.onDownload?.(id);
         if (id === 'broken') return fail('5001', 'File not found');
         state.downloads.push(id);
         return ok({ fileUrl: `https://files.example/fit?id=${id}` });
@@ -188,10 +192,15 @@ function fakeCoros(activities: FakeActivity[], health: FakeDay[] = []) {
 function setup(activities: FakeActivity[], health: FakeDay[] = []) {
   const fake = fakeCoros(activities, health);
   const enqueued: { path: string; files: string[] }[] = [];
+  const derives: { workoutIds?: unknown; sinceDay?: unknown; origin?: unknown }[] = [];
   const jobs = {
     enqueueImport(_a: number, p: string, o: { options?: { files?: string[] } } = {}) {
       enqueued.push({ path: p, files: o.options?.files ?? [] });
       return { id: `job-${enqueued.length}` } as never;
+    },
+    enqueueDerive(_a: number, o: { workoutIds?: unknown; sinceDay?: unknown; origin?: unknown } = {}) {
+      derives.push(o);
+      return { id: `derive-${derives.length}` } as never;
     },
   };
   const sync = new CorosSync({
@@ -200,7 +209,7 @@ function setup(activities: FakeActivity[], health: FakeDay[] = []) {
     dataDir: dir,
     client: { fetch: fake.fetchImpl, sleep: async () => {}, minIntervalMs: 0 },
   });
-  return { fake, sync, enqueued };
+  return { fake, sync, enqueued, derives };
 }
 
 const act = (i: number, extra: Partial<FakeActivity> = {}): FakeActivity => ({
@@ -233,6 +242,37 @@ describe('COROS client', () => {
   it('talks to the regional host', () => {
     expect(new CorosClient({ region: 'eu' }).baseUrl).toBe('https://teameuapi.coros.com');
     expect(new CorosClient({ region: 'en' }).baseUrl).toBe('https://teamapi.coros.com');
+  });
+
+  it('spaces API requests but not the file downloads from the storage host', async () => {
+    const { fetchImpl } = fakeCoros([act(1), act(2)]);
+    const waits: number[] = [];
+    const c = new CorosClient({
+      region: 'eu',
+      fetch: fetchImpl,
+      minIntervalMs: 60_000,
+      sleep: async (ms) => void waits.push(ms),
+    });
+    await c.login('me@example.com', md5Hex('secret'));
+    await c.downloadFit('1001', 100);
+    await c.downloadFit('1002', 100);
+    // one wait before each download link request; the file requests right after them wait for nothing
+    expect(waits).toHaveLength(2);
+  });
+
+  it('retries the COROS app API too when it is rate limited', async () => {
+    const { state, fetchImpl } = fakeCoros([]);
+    const waits: number[] = [];
+    const m = new CorosMobileClient({
+      region: 'eu',
+      fetch: fetchImpl,
+      minIntervalMs: 0,
+      sleep: async (ms) => void waits.push(ms),
+      retryDelaysMs: [10, 20],
+    });
+    state.rateLimitNext = 1;
+    expect(await m.login('me@example.com', md5Hex('secret'))).toBe('m-1');
+    expect(waits).toEqual([10]);
   });
 });
 
@@ -328,7 +368,45 @@ describe('COROS sync', () => {
     const p = await sync.start(1);
     expect(p.state).toBe('failed');
     expect(p.error).toMatch(/connect the account again/);
-    expect(sync.status(1).lastError).toMatch(/connect the account again/);
+    expect(sync.status(1)).toMatchObject({ lastError: expect.stringMatching(/connect the account again/), needsReconnect: true });
+    // the auto sync stops sending a failing login every few hours
+    sync.autoTick();
+    expect(sync.isSyncing(1)).toBe(false);
+    expect(fake.state.logins).toBe(1);
+    // connecting again with the new password resumes it
+    await sync.connect(1, 'me@example.com', 'changed', 'eu');
+    expect(sync.status(1).needsReconnect).toBe(false);
+    sync.autoTick();
+    expect(sync.isSyncing(1)).toBe(true);
+    expect(await sync.start(1)).toMatchObject({ state: 'done', downloaded: 1 });
+  });
+
+  it('logs in again only when COROS rejects the token, not for other errors', async () => {
+    const { fake, sync } = setup([act(1), act(2, { labelId: 'broken' }), act(3), act(4)]);
+    await sync.connect(1, 'me@example.com', 'secret', 'eu');
+    // the missing file must not use up the login; then a browser login replaces the token
+    fake.state.onDownload = (id) => {
+      if (id === 'broken') fake.state.token = 'browser';
+    };
+    const p = await sync.start(1);
+    expect(p).toMatchObject({ state: 'done', downloaded: 3, failed: 1 });
+    expect(fake.state.logins).toBe(2); // connect + one new login
+    expect(sync.status(1).activities).toMatchObject({ fetched: 3, failed: 1 });
+  });
+
+  it('stops when COROS keeps rejecting new logins and leaves the rest for the next sync', async () => {
+    const { fake, sync, enqueued } = setup([act(1), act(2), act(3), act(4)]);
+    await sync.connect(1, 'me@example.com', 'secret', 'eu');
+    // every download request signs Cadence out again (e.g. a script logging in elsewhere)
+    fake.state.onDownload = (id) => void (fake.state.token = `elsewhere-${id}`);
+    const p = await sync.start(1);
+    expect(p.state).toBe('failed');
+    expect(p.error).toMatch(/keeps rejecting the login/);
+    expect(fake.state.logins).toBe(3); // connect + at most two per sync
+    expect(sync.status(1).activities).toMatchObject({ fetched: 3, failed: 0 });
+    expect(enqueued[0]!.files).toHaveLength(3);
+    fake.state.onDownload = null;
+    expect(await sync.start(1)).toMatchObject({ state: 'done', toDownload: 1, downloaded: 1 });
   });
 });
 

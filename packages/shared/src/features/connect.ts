@@ -53,6 +53,11 @@ export interface CorosStatus {
   lastSyncAt: number | null;
   /** Last error of a sync or of the login (e.g. the password changed). */
   lastError: string | null;
+  /**
+   * COROS refused the stored login (e.g. the password changed): the auto sync pauses until the account is connected
+   * again (a manual sync still tries).
+   */
+  needsReconnect: boolean;
   /** Activities known from COROS: fetched (imported) and failed downloads. */
   activities: { fetched: number; failed: number; lastStartTs: number | null };
   /** Daily health values from COROS: days stored and the range. */

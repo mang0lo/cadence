@@ -15,6 +15,7 @@ import {
 } from './coros-client';
 import { syncCorosHealth, syncCorosMobile } from './coros-health';
 import { CorosMobileClient } from './coros-mobile';
+import { CorosLoginError, CorosSession, isAuthFailure } from './coros-session';
 
 const PROVIDER = 'coros';
 const SETTINGS_KEY = 'connect.coros';
@@ -37,6 +38,8 @@ interface CorosAccount {
   autoSync: boolean;
   lastSyncAt: number | null;
   lastError: string | null;
+  /** COROS refused the stored login (password changed …): auto sync waits until the account is connected again. */
+  needsReconnect?: boolean;
   /** Newest day of health values fetched ('YYYY-MM-DD'); the next sync re-reads a few days before it. */
   healthDay?: string | null;
   /** Sleep, steps, calories and all-day HR from the COROS app API (its login can sign the phone app out). */
@@ -52,6 +55,8 @@ const now = () => Math.floor(Date.now() / 1000);
 function errorText(e: unknown): string {
   if (e instanceof CorosHttpError && e.rateLimited)
     return 'COROS is rate limiting requests – try again in a few minutes';
+  if (e instanceof CorosApiError && e.isAuth)
+    return `COROS keeps rejecting the login (${e.message}) – the next sync continues`;
   return (e as Error)?.message ?? String(e);
 }
 
@@ -59,7 +64,7 @@ export interface CorosSyncDeps {
   db: Db;
   jobs: Pick<JobManager, 'enqueueImport'>;
   dataDir: string;
-  /** Test seam: fetch / sleep / spacing of the COROS client. */
+  /** Test seam: fetch / sleep / spacing of the COROS clients. */
   client?: Partial<CorosClientOptions>;
 }
 
@@ -88,7 +93,7 @@ export class CorosSync {
   }
 
   private client(region: CorosRegion, accessToken: string | null): CorosClient {
-    return new CorosClient({ region, accessToken, ...this.deps.client });
+    return new CorosClient({ ...this.deps.client, region, accessToken });
   }
 
   status(athleteId: number): CorosStatus {
@@ -116,6 +121,7 @@ export class CorosSync {
       mobileData: a ? a.mobileData !== false : true,
       lastSyncAt: a?.lastSyncAt ?? null,
       lastError: a?.lastError ?? null,
+      needsReconnect: !!a?.needsReconnect,
       activities: { fetched: counts.fetched, failed: counts.failed, lastStartTs: counts.last },
       health: { days: health.days, firstDay: health.first, lastDay: health.last },
       sync: this.progress.get(athleteId) ?? null,
@@ -144,6 +150,7 @@ export class CorosSync {
       autoSync: prev?.autoSync ?? true,
       lastSyncAt: prev?.email === email.trim() ? prev.lastSyncAt : null,
       lastError: null,
+      needsReconnect: false,
     };
     setSetting(this.deps.db, athleteId, SETTINGS_KEY, account);
     // first COROS connection and the athlete never chose a watch: COROS it is (Settings → My watch)
@@ -203,31 +210,22 @@ export class CorosSync {
     if (!a) throw new Error('Not connected to COROS');
     const db = this.deps.db;
     const c = this.client(a.region, a.accessToken);
-    let relogged = false;
-    /** Run a call; when the token is no longer accepted, log in again once with the stored hash. */
-    const call = async <T>(fn: () => Promise<T>): Promise<T> => {
-      if (!c.accessToken) {
-        const l = await c.login(a.email, a.pwdMd5);
-        this.save(athleteId, { accessToken: l.accessToken });
-        relogged = true;
-      }
-      try {
-        return await fn();
-      } catch (e) {
-        if (!(e instanceof CorosApiError) || relogged) throw e;
-        relogged = true;
+    // calls log in again (once per token) when COROS no longer takes the token, e.g. after a Training Hub login
+    const session = new CorosSession({
+      token: () => c.accessToken,
+      login: async () => {
         let l;
         try {
           l = await c.login(a.email, a.pwdMd5);
-        } catch (le) {
-          throw le instanceof CorosApiError
-            ? new Error(`COROS login failed (${le.message}) – connect the account again`)
-            : le;
+        } catch (e) {
+          if (!(e instanceof CorosApiError)) throw e;
+          this.save(athleteId, { needsReconnect: true });
+          throw new CorosLoginError(`COROS login failed (${e.message}) – connect the account again`);
         }
-        this.save(athleteId, { accessToken: l.accessToken });
-        return fn();
-      }
-    };
+        this.save(athleteId, { accessToken: l.accessToken, needsReconnect: false });
+      },
+    });
+    const call = <T>(fn: () => Promise<T>): Promise<T> => session.run(fn);
 
     // ---- list (newest first) ----
     const state = new Map<string, string>();
@@ -297,8 +295,9 @@ export class CorosSync {
         files.push(file);
         p.downloaded++;
       } catch (e) {
-        // rate limited even after the retries: stop here, the rest stays new for the next sync
-        if (e instanceof CorosHttpError && (e.rateLimited || e.status === 0)) {
+        // the login no longer works, rate limited even after the retries, or COROS cannot be reached: stop here,
+        // the rest stays new for the next sync
+        if (isAuthFailure(e) || (e instanceof CorosHttpError && (e.rateLimited || e.status === 0))) {
           if (files.length) this.enqueue(athleteId, files, p);
           throw e;
         }
@@ -345,6 +344,7 @@ export class CorosSync {
     p.state = 'done';
     this.save(athleteId, {
       lastSyncAt: now(),
+      needsReconnect: false,
       lastError:
         [p.failed ? `${p.failed} activities could not be downloaded` : null, healthError]
           .filter(Boolean)
@@ -354,31 +354,20 @@ export class CorosSync {
 
   private async syncMobile(athleteId: number, a: CorosAccount, full: boolean) {
     const db = this.deps.db;
-    const sleep = this.deps.client?.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
-    const gap = this.deps.client?.minIntervalMs ?? 800;
-    const m = new CorosMobileClient({ region: a.region, token: a.mobileToken ?? null, fetch: this.deps.client?.fetch });
-    let relogged = false;
-    const login = async () => {
-      relogged = true;
-      try {
-        const token = await m.login(a.email, a.pwdMd5);
-        this.save(athleteId, { mobileToken: token });
-      } catch (e) {
-        throw e instanceof CorosApiError ? new Error(`COROS app login failed (${e.message})`) : e;
-      }
-    };
-    const daily = async (dataType: number, start: number, end: number) => {
-      if (!m.token) await login();
-      await sleep(gap);
-      try {
-        return await m.daily(dataType, start, end);
-      } catch (e) {
-        // token expired or replaced by a login in the phone app: log in once more
-        if (!(e instanceof CorosApiError) || relogged) throw e;
-        await login();
-        return m.daily(dataType, start, end);
-      }
-    };
+    const m = new CorosMobileClient({ ...this.deps.client, region: a.region, token: a.mobileToken ?? null });
+    // token expired or replaced by a login in the phone app: log in again (once per token)
+    const session = new CorosSession({
+      token: () => m.token,
+      login: async () => {
+        try {
+          this.save(athleteId, { mobileToken: await m.login(a.email, a.pwdMd5) });
+        } catch (e) {
+          throw e instanceof CorosApiError ? new Error(`COROS app login failed (${e.message})`) : e;
+        }
+      },
+    });
+    const daily = (dataType: number, start: number, end: number) =>
+      session.run(() => m.daily(dataType, start, end));
     const have = !!get(
       db,
       "SELECT 1 FROM daily_metrics WHERE athlete_id = ? AND metric = 'COROSSteps' LIMIT 1",
@@ -403,19 +392,21 @@ export class CorosSync {
     p.jobId = job.id;
   }
 
+  /** One auto sync round: connected athletes with auto sync on, unless COROS refused their stored login. */
+  autoTick(): void {
+    const rows = this.deps.db
+      .prepare('SELECT athlete_id FROM settings WHERE key = ?')
+      .all(SETTINGS_KEY) as { athlete_id: number }[];
+    for (const r of rows) {
+      const a = this.account(r.athlete_id);
+      if (a?.autoSync && !a.needsReconnect && !this.isSyncing(r.athlete_id)) void this.start(r.athlete_id);
+    }
+  }
+
   /** Auto sync for connected athletes that enabled it (desktop app and server alike). */
   startAuto(): void {
-    const tick = () => {
-      const rows = this.deps.db
-        .prepare('SELECT athlete_id FROM settings WHERE key = ?')
-        .all(SETTINGS_KEY) as { athlete_id: number }[];
-      for (const r of rows) {
-        const a = this.account(r.athlete_id);
-        if (a?.autoSync && !this.isSyncing(r.athlete_id)) void this.start(r.athlete_id);
-      }
-    };
-    const first = setTimeout(tick, AUTO_FIRST_MS);
-    const every = setInterval(tick, AUTO_EVERY_MS);
+    const first = setTimeout(() => this.autoTick(), AUTO_FIRST_MS);
+    const every = setInterval(() => this.autoTick(), AUTO_EVERY_MS);
     first.unref();
     every.unref();
     this.timers.push(first, every);
