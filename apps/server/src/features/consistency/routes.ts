@@ -56,7 +56,7 @@ const goalFields = z.object({
   period: z.enum(['day', 'week', 'month', 'year']),
   sport: z
     .string()
-    .refine((s) => s in SPORTS, 'Unknown sport')
+    .refine((s) => Object.hasOwn(SPORTS, s), 'Unknown sport')
     .nullable(),
   metric: z.enum(['distance', 'longest', 'time', 'elevation', 'calories', 'activities', 'active_days']),
   target: z.number().positive().max(1e9),
