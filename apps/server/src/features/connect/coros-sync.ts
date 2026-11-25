@@ -1,7 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import type { ConnectSyncProgress, CorosRegion, CorosStatus } from '@cadence/shared';
-import { getSetting, setSetting, updateSettings } from '../../core/settings';
+import type { AthleteSettings, ConnectSyncProgress, CorosRegion, CorosStatus } from '@cadence/shared';
+import { getSetting, getSettings, setSetting, updateSettings } from '../../core/settings';
+import { preferred } from '../../core/sources';
 import { addDays } from '../../lib/time';
 import { all, get, prepare, run, tx, type Db } from '../../db/db';
 import { fitHeaderComplete } from '../../import/fit/parse';
@@ -65,6 +66,35 @@ function errorText(e: unknown): string {
   return (e as Error)?.message ?? String(e);
 }
 
+/**
+ * Writes of the COROS login run with secure_delete: the space an old copy of the row (token, password hash) leaves
+ * behind is zeroed instead of staying readable in the database file.
+ */
+function secureWrite(db: Db, fn: () => void): void {
+  const on = get<{ secure_delete: number }>(db, 'PRAGMA secure_delete')?.secure_delete === 1;
+  if (!on) db.exec('PRAGMA secure_delete = ON');
+  try {
+    fn();
+  } finally {
+    if (!on) db.exec('PRAGMA secure_delete = OFF');
+  }
+}
+
+/** Best effort: copy the write-ahead log into the database and empty it, without waiting for readers. */
+function truncateWal(db: Db): void {
+  try {
+    const timeout = Number(get<{ timeout: number }>(db, 'PRAGMA busy_timeout')?.timeout) || 0;
+    db.exec('PRAGMA busy_timeout = 0');
+    try {
+      db.exec('PRAGMA wal_checkpoint(TRUNCATE)');
+    } finally {
+      db.exec(`PRAGMA busy_timeout = ${timeout}`);
+    }
+  } catch {
+    /* a reader holds the log: it is overwritten by later writes anyway */
+  }
+}
+
 /** A cached FIT file that arrived complete (fitHeaderComplete). */
 function cachedFit(file: string): boolean {
   let fd: number | undefined;
@@ -100,7 +130,7 @@ const activityOf = (r: ActivityRow): CorosActivity => ({
 
 export interface CorosSyncDeps {
   db: Db;
-  jobs: Pick<JobManager, 'enqueueImport'>;
+  jobs: Pick<JobManager, 'enqueueImport' | 'enqueueDerive'>;
   dataDir: string;
   /** Test seam: fetch / sleep / spacing of the COROS clients. */
   client?: Partial<CorosClientOptions>;
@@ -125,9 +155,13 @@ export class CorosSync {
     return getSetting<CorosAccount | null>(this.deps.db, athleteId, SETTINGS_KEY, null);
   }
 
+  private write(athleteId: number, account: CorosAccount): void {
+    secureWrite(this.deps.db, () => setSetting(this.deps.db, athleteId, SETTINGS_KEY, account));
+  }
+
   private save(athleteId: number, patch: Partial<CorosAccount>): void {
     const cur = this.account(athleteId);
-    if (cur) setSetting(this.deps.db, athleteId, SETTINGS_KEY, { ...cur, ...patch });
+    if (cur) this.write(athleteId, { ...cur, ...patch });
   }
 
   private client(region: CorosRegion, accessToken: string | null): CorosClient {
@@ -177,7 +211,10 @@ export class CorosSync {
     const c = this.client(region, null);
     const login = await c.login(email.trim(), pwdMd5);
     const prev = this.account(athleteId);
+    // the same account again (e.g. after a password change): keep where its syncs got to
+    const same = prev?.email === email.trim() && prev.region === region;
     const account: CorosAccount = {
+      ...(same ? prev : {}),
       email: email.trim(),
       region,
       pwdMd5,
@@ -186,19 +223,43 @@ export class CorosSync {
       nickname: login.nickname,
       connectedAt: now(),
       autoSync: prev?.autoSync ?? true,
+      // the athlete's choice: the COROS app API's login can sign the phone app out
+      mobileData: prev?.mobileData,
       lastSyncAt: prev?.email === email.trim() ? prev.lastSyncAt : null,
       lastError: null,
       needsReconnect: false,
     };
-    setSetting(this.deps.db, athleteId, SETTINGS_KEY, account);
+    this.write(athleteId, account);
     // first COROS connection and the athlete never chose a watch: COROS it is (Settings → My watch)
     const raw = getSetting<Record<string, unknown>>(this.deps.db, athleteId, 'core.settings', {});
-    if (!('watch' in raw)) updateSettings(this.deps.db, athleteId, { watch: 'coros' });
+    if (!('watch' in raw)) {
+      const before = getSettings(this.deps.db, athleteId);
+      this.sourcesChanged(athleteId, before, updateSettings(this.deps.db, athleteId, { watch: 'coros' }));
+    }
     return this.status(athleteId);
   }
 
+  /**
+   * What a change of Settings → My watch triggers (core/routes.ts): another copy of overlapping workouts wins → full
+   * rederive; another resting HR source → zones and effort again.
+   */
+  private sourcesChanged(athleteId: number, before: AthleteSettings, next: AthleteSettings): void {
+    if (!get(this.deps.db, 'SELECT 1 FROM workouts WHERE athlete_id = ? LIMIT 1', [athleteId])) return;
+    if (preferred(before, 'workouts') !== preferred(next, 'workouts'))
+      this.deps.jobs.enqueueDerive(athleteId, { origin: 'settings' });
+    else if (preferred(before, 'heart') !== preferred(next, 'heart'))
+      this.deps.jobs.enqueueDerive(athleteId, {
+        origin: 'settings',
+        workoutIds: [],
+        sinceDay: new Date().toISOString().slice(0, 10),
+      });
+  }
+
   disconnect(athleteId: number): void {
-    run(this.deps.db, 'DELETE FROM settings WHERE athlete_id = ? AND key = ?', [athleteId, SETTINGS_KEY]);
+    secureWrite(this.deps.db, () =>
+      run(this.deps.db, 'DELETE FROM settings WHERE athlete_id = ? AND key = ?', [athleteId, SETTINGS_KEY]),
+    );
+    truncateWal(this.deps.db);
   }
 
   setAutoSync(athleteId: number, autoSync: boolean): void {

@@ -315,6 +315,20 @@ describe('COROS sync', () => {
     expect(JSON.stringify(s)).not.toContain(md5Hex('secret'));
   });
 
+  it('leaves no copy of the login hash or token in the database files after disconnecting', async () => {
+    const { fake, sync } = setup([act(1)]);
+    await sync.connect(1, 'me@example.com', 'secret', 'eu');
+    fake.state.token = 'replaced'; // one more login and token during the sync
+    await sync.start(1);
+    sync.disconnect(1);
+    const files = ['cadence.db', 'cadence.db-wal'].map((f) => path.join(dir, f)).filter((f) => fs.existsSync(f));
+    const bytes = Buffer.concat(files.map((f) => fs.readFileSync(f)));
+    expect(bytes.length).toBeGreaterThan(0);
+    for (const secret of [md5Hex('secret'), 'tok-2', 'tok-3'])
+      expect(bytes.includes(Buffer.from(secret)), secret).toBe(false);
+    expect(sync.status(1).connected).toBe(false);
+  });
+
   it('downloads new activities, imports them, and only fetches new ones next time', async () => {
     const activities = Array.from({ length: 5 }, (_, i) => act(i));
     const { fake, sync, enqueued } = setup(activities);
@@ -682,10 +696,53 @@ describe('COROS health sync', () => {
   });
 
   it('keeps an explicitly chosen watch when COROS is connected', async () => {
-    const { sync } = setup([]);
+    const { sync, derives } = setup([]);
     updateSettings(db, 1, { watch: 'apple' });
     await sync.connect(1, 'me@example.com', 'secret', 'eu');
     expect(getSettings(db, 1).watch).toBe('apple');
+    expect(derives).toEqual([]);
+  });
+
+  it('rebuilds the analysis when connecting makes COROS the watch, as Settings does', async () => {
+    const { sync, derives } = setup([]);
+    // nothing to rebuild yet
+    await sync.connect(1, 'me@example.com', 'secret', 'eu');
+    expect(derives).toEqual([]);
+    sync.disconnect(1);
+    run(db, "DELETE FROM settings WHERE key = 'core.settings'");
+    // Apple workouts exist: the watch's copy of overlapping workouts wins from now on
+    run(
+      db,
+      `INSERT INTO workouts (athlete_id, ext_key, activity_type, sport, start_ts, end_ts, tz_min, duration_s)
+       VALUES (1, 'apple:1', 'HKWorkoutActivityTypeRunning', 'run', ?, ?, 60, 1800)`,
+      [START, START + 1800],
+    );
+    await sync.connect(1, 'me@example.com', 'secret', 'eu');
+    expect(getSettings(db, 1).watch).toBe('coros');
+    expect(derives).toEqual([{ origin: 'settings' }]);
+    // connecting again changes nothing
+    await sync.connect(1, 'me@example.com', 'secret', 'eu');
+    expect(derives).toHaveLength(1);
+  });
+
+  it('keeps the sleep & daily data choice and where the syncs got to when the account is connected again', async () => {
+    const { fake, sync } = setup([], healthDays(today, 30));
+    await sync.connect(1, 'me@example.com', 'secret', 'eu');
+    sync.setMobileData(1, false);
+    await sync.start(1);
+    // the password changed on COROS: the sync fails, the athlete connects again
+    fake.state.password = md5Hex('changed');
+    fake.state.token = 'expired';
+    expect(await sync.start(1)).toMatchObject({ state: 'failed' });
+    await sync.connect(1, 'me@example.com', 'changed', 'eu');
+    expect(sync.status(1).mobileData).toBe(false);
+    fake.state.analyseCalls = [];
+    expect(await sync.start(1)).toMatchObject({ state: 'done', error: null });
+    expect(fake.state.mobileLogins).toBe(0); // the phone app stays signed in
+    expect(fake.state.analyseCalls).toHaveLength(1); // the recent days, not the whole history again
+    // another account starts from scratch, but the choice stays
+    await sync.connect(1, 'me@example.com', 'changed', 'en');
+    expect(sync.status(1).mobileData).toBe(false);
   });
 });
 
