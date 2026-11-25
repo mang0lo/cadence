@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Flame } from 'lucide-react';
 import type { EChartsOption } from 'echarts';
 import type { ProgressIntensityResponse } from '@cadence/shared';
@@ -68,9 +68,11 @@ export function IntensityCard({ sport, range }: { sport: string; range: RangePar
   const t = useT();
   const fmt = useFormat();
   const theme = useChartTheme();
-  const [picked, setPicked] = useState<'week' | 'month' | null>(null);
-  useEffect(() => setPicked(null), [range?.fromDay]);
-  const bucket = picked ?? (range && diffDays(range.fromDay, range.toDay) > 460 ? 'month' : 'week');
+  // a picked bucket belongs to the period it was picked for (derived, so a period change never requests the old one)
+  const [picked, setPicked] = useState<{ fromDay: string | undefined; bucket: 'week' | 'month' } | null>(null);
+  const bucket =
+    (picked?.fromDay === range?.fromDay ? picked?.bucket : undefined) ??
+    (range && diffDays(range.fromDay, range.toDay) > 460 ? 'month' : 'week');
   const q = useIntensity(sport, bucket, range);
   const data = q.data;
   const labels = useMemo(() => zoneLabels(t, data?.zoneBounds ?? []), [t, data?.zoneBounds]);
@@ -102,7 +104,7 @@ export function IntensityCard({ sport, range }: { sport: string; range: RangePar
         <SegmentedControl
           size="sm"
           value={bucket}
-          onChange={setPicked}
+          onChange={(b) => setPicked({ fromDay: range?.fromDay, bucket: b })}
           label={t('progress.common.period')}
           items={(['week', 'month'] as const).map((b) => ({ value: b, label: t(`progress.buckets.${b}`) }))}
         />

@@ -114,12 +114,13 @@ export function PaceAtHrCard({ sport, range }: { sport: string; range: RangePara
   const fmt = useFormat();
   const theme = useChartTheme();
   const save = useSaveHrBand();
-  const [band, setBand] = useState<ProgressHrBand | null>(null);
-  const [customOpen, setCustomOpen] = useState(false);
-  useEffect(() => {
-    setBand(null);
-    setCustomOpen(false);
-  }, [sport]);
+  // the picked band and the open custom inputs belong to the sport they were chosen for. Derived per sport, not reset
+  // in an effect: the render after a sport change must not request the new sport with the old sport's band
+  const [picked, setPicked] = useState<{ sport: string; band: ProgressHrBand } | null>(null);
+  const [customFor, setCustomFor] = useState<string | null>(null);
+  const band = picked?.sport === sport ? picked.band : null;
+  const customOpen = customFor === sport;
+  const setCustomOpen = (open: boolean) => setCustomFor(open ? sport : null);
   const single = sport !== 'all' && sportInfo(sport).distance;
   const q = usePaceAtHr(single ? sport : null, range, band);
   const data = single ? q.data : undefined;
@@ -148,7 +149,7 @@ export function PaceAtHrCard({ sport, range }: { sport: string; range: RangePara
   }, [bandKey, customOpen]);
 
   const pick = (b: ProgressHrBand) => {
-    setBand(b);
+    setPicked({ sport, band: b });
     void save(sport, b).catch(() => undefined);
   };
   const applyCustom = () => {
