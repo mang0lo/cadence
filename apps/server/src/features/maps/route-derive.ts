@@ -65,8 +65,10 @@ function loadGeo(db: Db, athleteId: number): GeoRow[] {
 }
 
 /**
- * (Re)assign workouts to routes. `changed` = workouts to place (new / changed ones), or 'all' for a full rebuild; in
- * a full rebuild the new clusters take over the ids (and names) of the old routes they overlap with.
+ * (Re)assign workouts to routes. `changed` = workouts to place (new / changed ones), or 'all' for a full rebuild.
+ * New clusters take over the ids (and names) of the old routes they overlap with: in a full rebuild any old route of
+ * the same sport, otherwise only one that lost all its unchanged members (it has no representative left, so its
+ * changed members had to found a new cluster).
  */
 export function clusterRoutes(db: Db, athleteId: number, changed: Set<number> | 'all'): void {
   const rows = loadGeo(db, athleteId);
@@ -93,13 +95,13 @@ export function clusterRoutes(db: Db, athleteId: number, changed: Set<number> | 
         athleteId,
       ]).map((r) => [r.id, r.sport]),
     );
-    const reuse = full
-      ? matchOldRoutes(
-          assignment,
-          oldAssign,
-          (newId, oldId) => oldSport.get(oldId) === sportOf.get(founders.get(newId)!),
-        )
-      : new Map<number, number>();
+    // only new clusters (< 0) take over; a route that still has a representative keeps its members and id anyway
+    const reuse = matchOldRoutes(
+      assignment,
+      oldAssign,
+      (newId, oldId) =>
+        newId < 0 && !reps.has(oldId) && oldSport.get(oldId) === sportOf.get(founders.get(newId)!),
+    );
     const idOf = new Map<number, number>();
     const insert = prepare(db, 'INSERT INTO maps_routes (athlete_id, sport) VALUES (?, ?)');
     for (const [newId, founder] of founders) {
