@@ -184,7 +184,14 @@ export function refreshCorosMetrics(db: Db, athleteId: number, fromDay: string |
     recomputeDailyMetrics(db, athleteId, t, from === null ? null : from - 1);
     refreshTypeStats(db, athleteId, t.id);
   }
-  // the day's lowest / highest heart rate become the band of COROSHeartRate (one value per day otherwise)
+  applyCorosHeartRateBand(db, athleteId, fromDay);
+}
+
+/**
+ * The day's lowest / highest heart rate become the band (min / max) of COROSHeartRate, which has one value per day.
+ * Recomputing daily_metrics drops it, so the connect derive step applies it again after core.daily-metrics.
+ */
+export function applyCorosHeartRateBand(db: Db, athleteId: number, fromDay: string | null): void {
   run(
     db,
     `UPDATE daily_metrics AS d SET

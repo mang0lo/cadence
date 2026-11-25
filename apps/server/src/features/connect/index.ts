@@ -1,5 +1,5 @@
 import type { Feature } from '../types';
-import { reconcileCorosRings } from './coros-health';
+import { applyCorosHeartRateBand, reconcileCorosRings } from './coros-health';
 import { connectMigrations } from './migrations';
 import { connectRoutes } from './routes';
 
@@ -7,7 +7,8 @@ import { connectRoutes } from './routes';
  * "connect" feature module (server side): activities from other watches, pulled from the vendor cloud.
  * - COROS: the private Training Hub API (unofficial), see coros-client.ts.
  * - migrations: ids start with 'connect_'; routes under /api/connect.
- * - deriveSteps: connect.coros shows COROS' or Apple's rings per Settings → My watch.
+ * - deriveSteps: connect.coros (after core.daily-metrics) puts the COROS heart rate band back into daily_metrics
+ *   and shows COROS' or Apple's rings per Settings → My watch.
  * Downloaded FIT files are imported by the regular import job (src/import/fit).
  */
 const feature: Feature = {
@@ -20,6 +21,7 @@ const feature: Feature = {
       label: 'COROS daily data',
       weight: 0.1,
       run(ctx) {
+        applyCorosHeartRateBand(ctx.db, ctx.athleteId, ctx.sinceDay);
         reconcileCorosRings(ctx.db, ctx.athleteId);
         ctx.report(1);
       },

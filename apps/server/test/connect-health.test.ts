@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { MetricSeries } from '@cadence/shared';
 import { migrateAll } from '../src/app';
 import { all, get, openDb, run, type Db } from '../src/db/db';
+import { runDerive } from '../src/derive/run';
 import { syncCorosMobile } from '../src/features/connect/coros-health';
 import type { MobileDay } from '../src/features/connect/coros-mobile';
 import { connectMigrations } from '../src/features/connect/migrations';
@@ -106,5 +107,26 @@ describe('COROS daily totals', () => {
     expect(
       get(db, "SELECT value, min, max FROM daily_metrics WHERE metric = 'COROSHeartRateMin' AND day = '2026-03-02'"),
     ).toEqual({ value: 45, min: 45, max: 45 });
+  });
+});
+
+describe('COROS all-day heart rate', () => {
+  const band = () =>
+    all<{ day: string; value: number; min: number; max: number }>(
+      db,
+      "SELECT day, value, min, max FROM daily_metrics WHERE metric = 'COROSHeartRate' ORDER BY day",
+    );
+
+  it('keeps the daily low / high band through a rebuild of the analysis', async () => {
+    const days = range('2026-03-02', '2026-03-08');
+    await syncCorosMobile(db, 1, daily(days), { sinceDay: null, today: '2026-03-08' });
+    const expected = days.map((day) => ({ day, value: 60, min: 45, max: 150 }));
+    expect(band()).toEqual(expected);
+    // "Rebuild analysis" (or the rebuild after an update): every daily metric is computed again
+    await runDerive({ db, athleteId: 1, workoutIds: 'all', sinceDay: null });
+    expect(band()).toEqual(expected);
+    // a rederive from a day on (e.g. another resting HR source)
+    await runDerive({ db, athleteId: 1, workoutIds: [], sinceDay: '2026-03-06' });
+    expect(band()).toEqual(expected);
   });
 });
