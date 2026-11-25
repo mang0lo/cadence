@@ -108,6 +108,8 @@ export class ImportWriter implements HealthSink {
   private warnedUnit = new Set<string>();
   /** Changes of the flush in progress. */
   private delta = new ChangeScope();
+  /** Per record type id: latest start of the athlete's records before this import (null = none). */
+  private lastBefore = new Map<number, number | null>();
 
   /** Workouts inserted by this import. */
   readonly newWorkoutIds = new Set<number>();
@@ -400,6 +402,28 @@ export class ImportWriter implements HealthSink {
     this.scope.merge(delta);
   }
 
+  /** Latest start of a type's records stored before this import (looked up once per type, O(log n)). */
+  private lastStartBefore(typeId: number): number | null {
+    let t = this.lastBefore.get(typeId);
+    if (t === undefined) {
+      t =
+        get<{ t: number }>(
+          this.db,
+          'SELECT start_ts AS t FROM records WHERE athlete_id = ? AND type_id = ? ORDER BY start_ts DESC LIMIT 1',
+          [this.athleteId, typeId],
+        )?.t ?? null;
+      this.lastBefore.set(typeId, t);
+    }
+    return t;
+  }
+
+  /**
+   * Multi-row inserts only take runs of one record type, and never mix rows from before and after the type's latest
+   * stored record: INSERT OR IGNORE reports how many rows of a statement were new, not which, so a chunk spanning a
+   * type boundary (or the end of what a re-imported export already brought) would mark the type as changed from its
+   * oldest rows of the chunk on (export.xml lists each type's records in time order). Shorter runs go row by row,
+   * which is exact.
+   */
   private flushRecords(): void {
     const n = this.recCount;
     if (!n) return;
@@ -409,41 +433,62 @@ export class ImportWriter implements HealthSink {
     const chunk = this.chunk;
     const W = MULTI * COLS;
     let r = 0;
-    for (; r + MULTI <= n; r += MULTI) {
-      const base = r * COLS;
-      for (let j = 0; j < W; j++) chunk[j] = p[base + j]!;
-      const changes = Number(multi.run(...chunk).changes);
-      if (changes) this.noteRecords(r, r + MULTI, changes);
-    }
-    for (; r < n; r++) {
-      const b = r * COLS;
-      const changes = Number(
-        single.run(
-          p[b]!,
-          p[b + 1]!,
-          p[b + 2]!,
-          p[b + 3]!,
-          p[b + 4]!,
-          p[b + 5]!,
-          p[b + 6]!,
-          p[b + 7]!,
-          p[b + 8]!,
-          p[b + 9]!,
-          p[b + 10]!,
-          p[b + 11]!,
-        ).changes,
-      );
-      if (changes) this.noteRecords(r, r + 1, changes);
+    while (r < n) {
+      const type = p[r * COLS + 1] as number;
+      const last = this.lastStartBefore(type) ?? -Infinity;
+      const after = (p[r * COLS + 2] as number) > last;
+      let end = r + 1;
+      while (
+        end < n &&
+        end - r < MULTI &&
+        p[end * COLS + 1] === type &&
+        (p[end * COLS + 2] as number) > last === after
+      )
+        end++;
+      if (end - r === MULTI) {
+        const base = r * COLS;
+        for (let j = 0; j < W; j++) chunk[j] = p[base + j]!;
+        const changes = Number(multi.run(...chunk).changes);
+        if (changes) this.noteRecords(r, end, changes);
+      } else {
+        for (let k = r; k < end; k++) {
+          const b = k * COLS;
+          const changes = Number(
+            single.run(
+              p[b]!,
+              p[b + 1]!,
+              p[b + 2]!,
+              p[b + 3]!,
+              p[b + 4]!,
+              p[b + 5]!,
+              p[b + 6]!,
+              p[b + 7]!,
+              p[b + 8]!,
+              p[b + 9]!,
+              p[b + 10]!,
+              p[b + 11]!,
+            ).changes,
+          );
+          if (changes) this.noteRecords(k, k + 1, changes);
+        }
+      }
+      r = end;
     }
     // drop references to strings of the processed chunk
     p.fill(null, 0, n * COLS);
     this.recCount = 0;
   }
 
+  /** Rows from..to (one record type) inserted `changes` new records: note the type from their earliest start. */
   private noteRecords(from: number, to: number, changes: number): void {
     this.stats.recordsInserted += changes;
     const p = this.recParams;
-    for (let r = from; r < to; r++) this.delta.noteRecord(p[r * COLS + 1] as number, p[r * COLS + 2] as number);
+    let min = Infinity;
+    for (let r = from; r < to; r++) {
+      const ts = p[r * COLS + 2] as number;
+      if (ts < min) min = ts;
+    }
+    this.delta.noteRecord(p[from * COLS + 1] as number, min);
   }
 
   private flushCorrelations(): void {
