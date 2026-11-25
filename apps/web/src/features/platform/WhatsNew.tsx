@@ -57,7 +57,7 @@ export function WhatsNewCard({ job }: { job: ImportJob & { stats: { summary: Imp
                     <SportIcon sport={x.sport} size={11} strokeWidth={2.5} />
                   </span>
                   <span className="font-medium text-fg">
-                    {x.count} × {sportLabel(x.sport, lang)}
+                    {fmt.int(x.count)} × {sportLabel(x.sport, lang)}
                   </span>
                   <span className="tabular text-fg-3">
                     {x.distanceM > 0 ? `${fmt.distance(x.distanceM)} · ` : ''}
