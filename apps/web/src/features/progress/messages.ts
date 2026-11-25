@@ -170,6 +170,7 @@ export const messages: Dictionary = {
         time: 'Time',
         date: 'Date',
         attempts: 'Attempts',
+        attemptsAllTime: 'Attempts (all time)',
         allTimePr: 'All-time PR',
         select: 'Show progression',
       },
@@ -187,6 +188,7 @@ export const messages: Dictionary = {
         title: 'Top 10 · {distance}',
         rank: '#',
         avgHr: 'Avg HR',
+        emptyScope: 'No attempts at this distance in this period',
       },
       highlights: {
         title: 'Highlights',
@@ -558,6 +560,7 @@ export const messages: Dictionary = {
         time: 'Zeit',
         date: 'Datum',
         attempts: 'Versuche',
+        attemptsAllTime: 'Versuche (gesamt)',
         allTimePr: 'Allzeit-Rekord',
         select: 'Entwicklung anzeigen',
       },
@@ -575,6 +578,7 @@ export const messages: Dictionary = {
         title: 'Top 10 · {distance}',
         rank: '#',
         avgHr: 'Ø HF',
+        emptyScope: 'Keine Versuche über diese Distanz in diesem Zeitraum',
       },
       highlights: {
         title: 'Highlights',

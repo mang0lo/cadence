@@ -24,9 +24,10 @@ import { sportColorVar, sportLabel } from '@/lib/sports';
 import { todayKey } from '@/lib/time';
 import { chartLegend, clockAxis, dayMs, hitLayer, localMs, timeAxisLabel } from '../chart';
 import { speedLabel } from '../format';
+import { scopedTop, type RecordScope } from '../periods';
 import { ActivityLink, ChartSkeleton } from './common';
 
-export type RecordScope = 'allTime' | 'thisYear' | 'last12m';
+export type { RecordScope };
 
 export function effortLabel(sport: string, effort: string, lang: Lang): string {
   return BEST_EFFORTS[sport]?.find((d) => d.key === effort)?.label[lang] ?? effort;
@@ -70,7 +71,8 @@ export function EffortsCard({
               <TH numeric>{t('progress.records.table.time')}</TH>
               <TH numeric>{speedLabel(t, sport)}</TH>
               <TH>{t('progress.records.table.date')}</TH>
-              <TH numeric>{t('progress.records.table.attempts')}</TH>
+              {/* /records counts the attempts of all time only */}
+              <TH numeric>{t(scope === 'allTime' ? 'progress.records.table.attempts' : 'progress.records.table.attemptsAllTime')}</TH>
             </tr>
           </thead>
           <tbody>
@@ -282,20 +284,32 @@ export function TopTenCard({
   sport,
   effort,
   history,
+  scope,
   error,
 }: {
   sport: string;
   effort: string | null;
   history: ProgressEffortHistory | undefined;
+  /** The page's period: the fastest attempts of this scope. */
+  scope: RecordScope;
   /** The request failed: say so instead of skeleton rows that never end. */
   error: unknown;
 }) {
   const t = useT();
   const fmt = useFormat();
   const { lang } = useI18n();
+  // the server ranks all time; a period ranks its own attempts (with the same tie rule)
+  const top = useMemo(
+    () => (!history ? [] : scope === 'allTime' ? history.top : scopedTop(history.attempts, scope, todayKey())),
+    [history, scope],
+  );
   return (
     <Card className="min-w-0">
-      <CardHeader title={t('progress.records.top.title', { distance: effort ? effortLabel(sport, effort, lang) : '' })} icon={ListOrdered} />
+      <CardHeader
+        title={t('progress.records.top.title', { distance: effort ? effortLabel(sport, effort, lang) : '' })}
+        subtitle={t(`progress.records.scope.${scope}`)}
+        icon={ListOrdered}
+      />
       {error ? (
         <ErrorState error={error} />
       ) : !history ? (
@@ -304,8 +318,8 @@ export function TopTenCard({
             <Skeleton key={i} className="h-7 w-full" />
           ))}
         </div>
-      ) : !history.top.length ? (
-        <EmptyState title={t('progress.records.progression.empty')} />
+      ) : !top.length ? (
+        <EmptyState title={t(scope === 'allTime' ? 'progress.records.progression.empty' : 'progress.records.top.emptyScope')} />
       ) : (
         <Table>
           <thead>
@@ -318,7 +332,7 @@ export function TopTenCard({
             </tr>
           </thead>
           <tbody>
-            {history.top.map((r) => (
+            {top.map((r) => (
               <tr key={`${r.workoutId}-${r.rank}`}>
                 <TD className="text-fg">
                   {r.rank === 1 ? <Medal size={15} className="text-accent-fg" aria-label="1" /> : r.rank}
@@ -378,7 +392,8 @@ export function HighlightsCard({ sport, highlights }: { sport: string; highlight
     <Card className="min-w-0">
       <CardHeader
         title={t('progress.records.highlights.title')}
-        subtitle={t('progress.records.highlights.subtitle', { sport: sportLabel(sport, lang) })}
+        // the highlights are all-time bests whatever period the page shows
+        subtitle={`${t('progress.records.highlights.subtitle', { sport: sportLabel(sport, lang) })} · ${t('progress.records.scope.allTime')}`}
         icon={Medal}
       />
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
