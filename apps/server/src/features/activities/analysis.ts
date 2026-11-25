@@ -18,6 +18,7 @@ import {
   type ActivityPower,
   type WorkoutStreams,
   stitchElevation,
+  trackParts,
 } from '@cadence/shared';
 import { smooth } from '../../derive/streams';
 
@@ -499,12 +500,60 @@ function meanBetween(s: Series, a: Float64Array | null, t0: number, t1: number):
   return w > 0 ? sum / w : null;
 }
 
-export function climbsOf(s: Series, grid: ElevationGrid, o: ClimbOptions = DEFAULT_CLIMB_OPTIONS): ActivityClimb[] {
+/** Grid indices [from, to] of one track part and the shift stitchElevation applied to its elevation. */
+export interface GridPart {
+  from: number;
+  to: number;
+  offset: number;
+}
+
+/**
+ * The track parts on the elevation grid (the jump while paused has no distance, so a part ends at the last grid point
+ * at or before the break and the next one starts after it), with the elevation shift of each part (stitched − real).
+ */
+export function gridParts(s: Series, grid: ElevationGrid, stitched: Float64Array | null): GridPart[] {
+  const last = grid.ele.length - 1;
+  if (!s.breaks.length || !s.dist) return [{ from: 0, to: last, offset: 0 }];
+  const out: GridPart[] = [];
+  let from = 0;
+  for (const [a, b] of trackParts(s.n, s.breaks)) {
+    let offset = 0;
+    if (stitched && s.ele) {
+      for (let i = a; i < b; i++) {
+        if (isNum(s.ele[i]!) && isNum(stitched[i]!)) {
+          offset = stitched[i]! - s.ele[i]!;
+          break;
+        }
+      }
+    }
+    const end = s.dist[b - 1]!;
+    const to = b < s.n && isNum(end) ? Math.min(last, Math.floor(end / grid.step)) : last;
+    if (to >= from) out.push({ from, to, offset });
+    from = Math.max(from, to + 1);
+  }
+  return out;
+}
+
+/**
+ * Climbs on the elevation grid, detected within each track part (`parts`, default: one part) so a climb never spans
+ * a ride travelled while paused. Start and end elevations are the real (unstitched) ones.
+ */
+export function climbsOf(
+  s: Series,
+  grid: ElevationGrid,
+  o: ClimbOptions = DEFAULT_CLIMB_OPTIONS,
+  parts: GridPart[] = [{ from: 0, to: grid.ele.length - 1, offset: 0 }],
+): ActivityClimb[] {
   if (!s.dist) return [];
   const step = grid.step;
   const e = grid.ele;
   const w = Math.max(1, Math.round(100 / step));
-  return detectClimbRanges(e, step, o).map(([a, b]) => {
+  const ranges = parts.flatMap((p) =>
+    p.to - p.from >= 2
+      ? detectClimbRanges(e.subarray(p.from, p.to + 1), step, o).map(([a, b]) => [a + p.from, b + p.from, p.offset] as const)
+      : [],
+  );
+  return ranges.map(([a, b, offset]) => {
     const startDistM = a * step;
     const endDistM = b * step;
     const lengthM = endDistM - startDistM;
@@ -522,8 +571,8 @@ export function climbsOf(s: Series, grid: ElevationGrid, o: ClimbOptions = DEFAU
       endDistM,
       lengthM,
       gainM,
-      startEleM: e[a]!,
-      endEleM: e[b]!,
+      startEleM: e[a]! - offset,
+      endEleM: e[b]! - offset,
       avgGrade,
       maxGrade,
       durationS,
@@ -598,6 +647,8 @@ export function statsBetween(s: Series, t0: number, t1: number): RangeStats {
     for (let i = 0; i < s.n; i++) {
       const ti = s.t[i]!;
       if (ti < t0 || ti > t1) continue;
+      // a new track part: the height difference to the previous one was travelled while paused, no climbing
+      if (s.breaks.length && s.breaks.includes(i)) ref = NaN;
       const e = s.ele[i]!;
       if (!isNum(e)) continue;
       if (!isNum(ref)) ref = e;
@@ -704,7 +755,8 @@ export function analyzeActivity(inp: AnalysisInput): AnalysisResult {
   const totalDist = s.dist ? s.dist[s.n - 1]! : null;
   const avgSpeed = totalDist !== null && movingS > 0 ? totalDist / movingS : null;
   // the height difference between track parts (travelled while paused) is no climb
-  const grid = s.dist && s.ele ? elevationGrid(s.dist, s.breaks.length ? stitchElevation(s.ele, s.breaks) : s.ele) : null;
+  const stitched = s.ele && s.breaks.length ? stitchElevation(s.ele, s.breaks) : null;
+  const grid = s.dist && s.ele ? elevationGrid(s.dist, stitched ?? s.ele) : null;
   const footSport = (GAP_SPORTS as readonly string[]).includes(sport);
   const gapSpeed = footSport && grid ? gradeAdjustedSpeed(s, grid, sport) : null;
   const power = powerAnalysis(s);
@@ -728,7 +780,7 @@ export function analyzeActivity(inp: AnalysisInput): AnalysisResult {
     gapSpeed,
     efficiency,
     decoupling,
-    climbs: grid && totalDist !== null && totalDist >= 500 ? climbsOf(s, grid) : [],
+    climbs: grid && totalDist !== null && totalDist >= 500 ? climbsOf(s, grid, DEFAULT_CLIMB_OPTIONS, gridParts(s, grid, stitched)) : [],
     laps,
     segments,
     power,

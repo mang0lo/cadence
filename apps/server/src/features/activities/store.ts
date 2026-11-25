@@ -5,8 +5,11 @@ import type { DeriveContext } from '../types';
 import { gunzipJson, gzipJson } from '../../lib/gzip';
 import { analyzeActivity, withFtp, type AnalysisEvent } from './analysis';
 
-/** Bump when the analysis algorithm changes: cached rows with an older key are recomputed on access. */
-export const ANALYSIS_VERSION = 1;
+/**
+ * Bump when the analysis algorithm changes: cached rows with an older key are recomputed on access.
+ * 2: climbs and lap climbing never across a track break.
+ */
+export const ANALYSIS_VERSION = 2;
 
 interface WorkoutRow {
   id: number;
