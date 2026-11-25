@@ -73,10 +73,12 @@ export function getEffectiveHr(db: Db, athleteId: number): EffectiveHr {
     maxHr = settings.maxHr;
     maxHrSource = 'settings';
   } else {
-    // 3rd highest workout max HR ignores the odd optical-sensor spike.
+    // 3rd highest workout max HR ignores the odd optical-sensor spike; hidden workouts do not count (a bad strap
+    // reading is a reason to hide one)
     const top = all<{ max_hr: number }>(
       db,
-      `SELECT max_hr FROM workouts WHERE athlete_id = ? AND max_hr BETWEEN 120 AND 225 AND duplicate_of IS NULL
+      `SELECT max_hr FROM workouts
+       WHERE athlete_id = ? AND max_hr BETWEEN 120 AND 225 AND duplicate_of IS NULL AND hidden = 0
        ORDER BY max_hr DESC LIMIT 3`,
       [athleteId],
     );

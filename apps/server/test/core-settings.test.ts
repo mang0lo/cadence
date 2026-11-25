@@ -1,8 +1,8 @@
 import { DEFAULT_SETTINGS } from '@cadence/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { migrateAll } from '../src/app';
-import { getSetting, getSettings, updateSettings } from '../src/core/settings';
-import { openDb, type Db } from '../src/db/db';
+import { getEffectiveHr, getSetting, getSettings, updateSettings } from '../src/core/settings';
+import { openDb, run, type Db } from '../src/db/db';
 
 let db: Db;
 
@@ -30,5 +30,22 @@ describe('settings', () => {
   it('keeps values of earlier versions that stored every key', () => {
     updateSettings(db, 1, { ...DEFAULT_SETTINGS, maxHr: 182 });
     expect(updateSettings(db, 1, { theme: 'light' })).toEqual({ ...DEFAULT_SETTINGS, maxHr: 182, theme: 'light' });
+  });
+});
+
+describe('effective heart rate', () => {
+  const workout = (n: number, maxHr: number, hidden = 0) =>
+    run(
+      db,
+      `INSERT INTO workouts (athlete_id, ext_key, activity_type, sport, start_ts, end_ts, duration_s, max_hr, hidden)
+       VALUES (1, ?, 'HKWorkoutActivityTypeRunning', 'run', ?, ?, 1800, ?, ?)`,
+      [`w${n}`, 1_700_000_000 + n * 86_400, 1_700_001_800 + n * 86_400, maxHr, hidden],
+    );
+
+  it('observes the max HR in workouts that count, not in hidden ones (sensor spikes are a reason to hide)', () => {
+    [180, 182, 184, 185].forEach((hr, i) => workout(i, hr));
+    expect(getEffectiveHr(db, 1)).toMatchObject({ maxHr: 182, maxHrSource: 'observed' });
+    [210, 215, 220].forEach((hr, i) => workout(10 + i, hr, 1));
+    expect(getEffectiveHr(db, 1)).toMatchObject({ maxHr: 182, maxHrSource: 'observed' });
   });
 });
