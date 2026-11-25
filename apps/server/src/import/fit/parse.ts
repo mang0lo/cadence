@@ -424,7 +424,9 @@ export function parseFit(buf: Uint8Array): FitActivity {
 
   let track: Track | null = null;
   const gpsIdx: number[] = [];
-  for (let i = 0; i < n; i++) if (lat[i] === lat[i]) gpsIdx.push(i);
+  // a virtual ride or run (Zwift, MyWhoosh …) maps a game world onto real coordinates: no route, places or tiles
+  // from it; speed and distance come from the sensor samples as on a trainer
+  if (subSport !== 'virtualActivity') for (let i = 0; i < n; i++) if (lat[i] === lat[i]) gpsIdx.push(i);
   if (gpsIdx.length >= 2) {
     const pick32 = (a: Float32Array) => {
       const out = Float32Array.from(gpsIdx, (i) => a[i]!);

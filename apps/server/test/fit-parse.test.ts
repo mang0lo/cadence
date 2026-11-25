@@ -34,3 +34,17 @@ describe('FIT parsing input', () => {
     expect(parseFit(Buffer.from(fit))).toEqual(a);
   });
 });
+
+describe('FIT parsing: virtual activities', () => {
+  it('drops the game-world GPS track of a virtual ride (Zwift, MyWhoosh …) and keeps the sensor data', () => {
+    const a = parseFit(buildFit({ start: START, sport: 'cycling', subSport: 'virtualActivity', duration: 600 }));
+    expect(a.sport).toBe('ride');
+    expect(a.meta.FitSport).toBe('cycling/virtualActivity');
+    expect(a.indoor).toBe(true);
+    expect(a.track).toBeNull();
+    expect(a.samples?.dist?.[600]).toBe(1800);
+    expect(a.samples?.power).not.toBeNull();
+    // an outdoor ride keeps its track
+    expect(parseFit(buildFit({ start: START, sport: 'cycling', duration: 600 })).track).not.toBeNull();
+  });
+});
