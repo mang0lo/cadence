@@ -2,10 +2,10 @@
  * Database loaders of the consistency feature. Everything is scoped by athlete and excludes hidden and
  * duplicate workouts (daily_activity already does). Queries hit primary keys / indexes only.
  */
-import { all, get, json, type Db } from '../../db/db';
+import { all, get, type Db } from '../../db/db';
 import { getSettings } from '../../core/settings';
-import { localDay, today as serverToday } from '../../lib/time';
-import { DAY_RE, minDay, TZ_MARGIN_S, utcMidnight } from './days';
+import { localDay } from '../../lib/time';
+import { TZ_MARGIN_S, utcMidnight } from './days';
 import type { DailyRow } from './goals';
 
 export interface RingRow {
@@ -110,42 +110,11 @@ export function loadWorkoutsByDay(db: Db, athleteId: number, from: string, to: s
   );
 }
 
-/** Day of the newest export (import job stats), e.g. "2026-11-02 08:00:00 +0100" → 2026-11-02. */
-function lastExportDay(db: Db, athleteId: number): string | null {
-  const row = get<{ stats: string | null }>(
-    db,
-    `SELECT stats FROM import_jobs WHERE athlete_id = ? AND kind = 'import' AND status = 'done'
-     ORDER BY finished_at DESC LIMIT 1`,
-    [athleteId],
-  );
-  const d = json<{ exportDate?: string | null }>(row?.stats, {}).exportDate?.slice(0, 10) ?? null;
-  return d && DAY_RE.test(d) ? d : null;
-}
-
-/** The last day the imported data covers (rings and steps are written every day). */
-export function dataHorizon(db: Db, athleteId: number): string | null {
-  const r = get<{ d: string | null }>(
-    db,
-    `SELECT MAX(d) AS d FROM (
-       SELECT MAX(day) AS d FROM activity_summaries WHERE athlete_id = ?
-       UNION ALL SELECT MAX(day) FROM daily_activity WHERE athlete_id = ?
-       UNION ALL SELECT MAX(day) FROM daily_metrics WHERE athlete_id = ? AND metric = 'HKQuantityTypeIdentifierStepCount'
-       UNION ALL SELECT MAX(day) FROM daily_metrics WHERE athlete_id = ? AND metric = 'HKQuantityTypeIdentifierActiveEnergyBurned'
-     )`,
-    [athleteId, athleteId, athleteId, athleteId],
-  );
-  const exp = lastExportDay(db, athleteId);
-  const d = r?.d ?? null;
-  if (d && exp) return d > exp ? d : exp;
-  return d ?? exp;
-}
-
-/** today = the client's day (or the server's); asOf = today, or the data horizon when the data is older. */
-export function resolveDays(db: Db, athleteId: number, today?: string): { today: string; asOf: string } {
-  const t = today && DAY_RE.test(today) ? today : serverToday();
-  const horizon = dataHorizon(db, athleteId);
-  return { today: t, asOf: horizon ? minDay(t, horizon) : t };
-}
+/**
+ * The last day the data covers (every source: records of Apple Health and COROS, workouts, rings, the export date)
+ * and today / asOf of a request — shared with the health feature, see core/coverage.ts.
+ */
+export { dataHorizon, resolveDays } from '../../core/coverage';
 
 /** First day with an activity or ring data. */
 export function firstDataDay(db: Db, athleteId: number): string | null {

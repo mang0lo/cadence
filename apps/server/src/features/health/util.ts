@@ -1,9 +1,9 @@
 import { z } from 'zod';
 import { DEFAULT_HEALTH_SETTINGS, type HealthSettings, type RecordTypeInfo } from '@cadence/shared';
 import { get, type Db } from '../../db/db';
+import { firstRecord, lastRecord } from '../../core/coverage';
 import { getSetting, setSetting } from '../../core/settings';
 import { HttpError, notFound } from '../../lib/http';
-import { localDay, nowSec } from '../../lib/time';
 
 export const dayParam = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'expected YYYY-MM-DD');
 
@@ -46,31 +46,12 @@ export function aggregationOfMetric(db: Db, metric: string): RecordTypeInfo['agg
   return row?.aggregation ?? null;
 }
 
-/** Earliest / latest local day with any health record (anchor for "last 30 days" style ranges). */
+/**
+ * Earliest / latest local day with a health record of any source (Apple Health, COROS daily values): the anchor for
+ * "last 30 days" style ranges. Same records as the data horizon of the consistency pages (core/coverage.ts).
+ */
 export function dataRange(db: Db, athleteId: number): { firstDay: string | null; asOf: string | null } {
-  const limit = nowSec() + 86_400;
-  const tzAt = (typeId: number, ts: number) =>
-    get<{ tz_min: number }>(db, 'SELECT tz_min FROM records WHERE athlete_id = ? AND type_id = ? AND start_ts = ? LIMIT 1', [
-      athleteId,
-      typeId,
-      ts,
-    ])?.tz_min ?? 0;
-  const last = get<{ type_id: number; last_ts: number }>(
-    db,
-    `SELECT type_id, last_ts FROM record_type_stats WHERE athlete_id = ? AND last_ts IS NOT NULL AND last_ts <= ?
-     ORDER BY last_ts DESC LIMIT 1`,
-    [athleteId, limit],
-  );
-  const first = get<{ type_id: number; first_ts: number }>(
-    db,
-    `SELECT type_id, first_ts FROM record_type_stats WHERE athlete_id = ? AND first_ts IS NOT NULL AND first_ts >= 946684800
-     ORDER BY first_ts ASC LIMIT 1`,
-    [athleteId],
-  );
-  return {
-    asOf: last ? localDay(last.last_ts, tzAt(last.type_id, last.last_ts)) : null,
-    firstDay: first ? localDay(first.first_ts, tzAt(first.type_id, first.first_ts)) : null,
-  };
+  return { asOf: lastRecord(db, athleteId)?.day ?? null, firstDay: firstRecord(db, athleteId)?.day ?? null };
 }
 
 const SETTINGS_KEY = 'health.settings';
