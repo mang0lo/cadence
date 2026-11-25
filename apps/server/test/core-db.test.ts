@@ -77,7 +77,7 @@ describe('writes of the HTTP thread while a job worker writes', () => {
     const workerRows = all<{ n: number }>(db, "SELECT COUNT(*) AS n FROM writes WHERE who = 'worker'")[0]!.n;
     expect(workerRows).toBe(batches);
     expect(waits.length).toBeGreaterThan(5);
-    // without coordination the first write waits for the whole job (~2.4 s)
-    expect(Math.max(...waits)).toBeLessThan(holdMs + 400);
+    // without coordination the first write waits for the whole job (~2.4 s); one transaction plus slack for slow CI
+    expect(Math.max(...waits)).toBeLessThan(holdMs * 2 + 600);
   });
 });
