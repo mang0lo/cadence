@@ -412,7 +412,10 @@ export interface Achievement {
   progress: number;
   earned: boolean;
   earnedDay: string | null;
-  /** Activity that earned it (null for ring / streak-of-weeks achievements without a single activity). */
+  /**
+   * Activity that earned it: for streaks the first activity of the day (or week) that completed them; null for ring
+   * achievements and when no single activity applies.
+   */
   workout: AchievementWorkout | null;
   /** Earned since the last few imports (within 14 days of being detected). */
   isNew: boolean;

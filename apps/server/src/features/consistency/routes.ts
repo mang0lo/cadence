@@ -16,7 +16,7 @@ import {
   type YearReview,
 } from '@cadence/shared';
 import { badRequest, notFound } from '../../lib/http';
-import { dayString, parseDay } from '../../lib/time';
+import { parseDay } from '../../lib/time';
 import { resolveDays, weekStartOfAthlete } from './data';
 import { DAY_RE, daysBetween, plusDays, weekStartOf } from './days';
 import { isFeasible, metricFits, PERIOD_DAYS_MAX } from './goals';
@@ -25,14 +25,11 @@ import { calendar, dayDetail, getPrefs, overview, punchcard, setPrefs, streakSum
 import { trophiesResponse } from './trophies';
 import { yearReview } from './year';
 
-// lib/time parseDay accepts e.g. 2026-02-30 (only checks day ≤ 31): require a round trip
+// a day of the calendar (lib/time parseDay rejects 2026-02-30)
 const day = z
   .string()
   .regex(DAY_RE, 'Expected YYYY-MM-DD')
-  .refine((d) => {
-    const e = parseDay(d);
-    return e !== null && dayString(e) === d;
-  }, 'Invalid day');
+  .refine((d) => parseDay(d) !== null, 'Invalid day');
 const todayQuery = z.object({ today: day.optional() });
 const year = z.coerce.number().int().min(1970).max(2200);
 const idParam = z.object({ id: z.coerce.number().int().positive() });
