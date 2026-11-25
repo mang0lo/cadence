@@ -252,6 +252,7 @@ export function PaceAtHrCard({ sport, range }: { sport: string; range: RangePara
             />
             {activeKey === 'custom' && (
               <div className="flex items-center gap-1.5">
+                {/* h-8! — Input sets h-9 itself and cn does not merge conflicting utilities (h-9 comes later in the CSS) */}
                 <Input
                   inputMode="numeric"
                   aria-label={t('progress.paceAtHr.from')}
@@ -259,7 +260,7 @@ export function PaceAtHrCard({ sport, range }: { sport: string; range: RangePara
                   onChange={(e) => setLo(e.target.value)}
                   onBlur={onBlurGroup}
                   onKeyDown={(e) => e.key === 'Enter' && applyCustom()}
-                  className="h-8 w-16 text-xs"
+                  className="h-8! w-16 text-xs"
                 />
                 <span className="text-xs text-fg-3">–</span>
                 <Input
@@ -269,7 +270,7 @@ export function PaceAtHrCard({ sport, range }: { sport: string; range: RangePara
                   onChange={(e) => setHi(e.target.value)}
                   onBlur={onBlurGroup}
                   onKeyDown={(e) => e.key === 'Enter' && applyCustom()}
-                  className="h-8 w-16 text-xs"
+                  className="h-8! w-16 text-xs"
                 />
                 <span className="text-xs text-fg-3">bpm</span>
               </div>
