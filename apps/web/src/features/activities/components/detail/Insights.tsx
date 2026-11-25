@@ -5,7 +5,7 @@ import { Badge, Card, CardHeader, Delta, KeyValues, Table, TD, TH, cn } from '@/
 import { useFormat } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
 import { useSettings } from '@/lib/settings';
-import { isPaceSport } from '../../lib/display';
+import { isCycling, isPaceSport } from '../../lib/display';
 import { indexAtDist, type Prepared } from '../../lib/streams';
 
 type OnSelect = (s: [number, number] | null) => void;
@@ -104,7 +104,7 @@ function Power({ p, ride }: { p: NonNullable<ActivityAnalysis['power']>; ride: b
   const { t } = useI18n();
   const fmt = useFormat();
   const { settings } = useSettings();
-  const peakLabel = (s: number) => (s < 60 ? `${s} s` : `${s / 60} min`);
+  const peakLabel = (s: number) => fmt.durationShort(s);
   return (
     <InsightCard
       title={t('activities.analysis.power')}
@@ -138,7 +138,7 @@ export function Insights({ w, analysis, similar }: { w: WorkoutDetail; analysis:
   if (analysis.efficiency) cards.push(<Efficiency key="ef" a={analysis.efficiency} similar={similar} />);
   if (analysis.gapSpeed && isPaceSport(w.sport))
     cards.push(<Gap key="gap" gap={analysis.gapSpeed} actual={analysis.avgSpeed ?? w.avgSpeed} sport={w.sport} />);
-  if (analysis.power) cards.push(<Power key="pw" p={analysis.power} ride={w.sport === 'ride' || w.sport === 'handcycle'} />);
+  if (analysis.power) cards.push(<Power key="pw" p={analysis.power} ride={isCycling(w.sport)} />);
   if (!cards.length) return null;
   return <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{cards}</div>;
 }

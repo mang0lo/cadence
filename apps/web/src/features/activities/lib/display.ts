@@ -1,5 +1,5 @@
-import { BEST_EFFORTS, sportInfo, type WorkoutSummary } from '@cadence/shared';
-import type { Formatter } from '@/lib/format';
+import { BEST_EFFORTS, M_PER_KM, M_PER_MI, sportInfo, type WorkoutSummary } from '@cadence/shared';
+import { clock, type Formatter } from '@/lib/format';
 import type { Lang, TFunction } from '@/lib/i18n';
 
 /** "UTC+01:00" for an offset in minutes. */
@@ -44,6 +44,50 @@ export const isPaceSport = (sport: string) => {
 /** Label for the speed metric of a sport: "Pace" or "Speed". */
 export function speedLabel(sport: string, t: TFunction): string {
   return isPaceSport(sport) ? t('common.pace') : t('common.speed');
+}
+
+/** Cycling sports (ride, handcycle): cadence in rpm, power with an FTP. */
+export const isCycling = (sport: string) => sportInfo(sport).group === 'cycle';
+
+/** Cadence unit of a sport (the same rule as fmt.cadence). */
+export const cadenceUnit = (sport: string) => (isCycling(sport) ? 'rpm' : 'spm');
+
+/** Meters per pace unit: 100 m / 100 yd for swims (pace100), else 1 km / 1 mi. */
+export function paceUnitM(sport: string, units: Formatter['units']): number {
+  const imperial = units === 'imperial';
+  if (sportInfo(sport).speedMode === 'pace100') return imperial ? 91.44 : 100;
+  return imperial ? M_PER_MI : M_PER_KM;
+}
+
+/**
+ * The number charts, axes and legends show for a speed (m/s), in the unit of fmt.paceParts(·, sport): seconds per
+ * km / mi (per 100 m / 100 yd for swims) for pace sports, km/h or mph otherwise. NaN without a speed.
+ */
+export function paceValue(mps: number, sport: string, units: Formatter['units']): number {
+  if (!(mps > 0)) return NaN;
+  if (isPaceSport(sport)) return paceUnitM(sport, units) / mps;
+  return units === 'imperial' ? mps / (M_PER_MI / 3600) : mps * 3.6;
+}
+
+/**
+ * A − B of two speeds (m/s) as the compare pages show it: the pace difference for pace sports ("+0:12 /km", positive
+ * = A slower), else the speed difference ("−1.2 km/h"). From the speeds themselves (also below the walking speed the
+ * charts hide); null unless both are known. `value` is the shown difference (rounded), for its direction.
+ */
+export function speedDiff(a: number, b: number, sport: string, fmt: Formatter): { value: number; text: string } | null {
+  const d = paceValue(a, sport, fmt.units) - paceValue(b, sport, fmt.units);
+  if (!Number.isFinite(d)) return null;
+  const unit = fmt.paceParts(1, sport).unit;
+  if (isPaceSport(sport)) {
+    const s = Math.round(d);
+    return { value: s, text: `${s > 0 ? '+' : s < 0 ? '−' : '±'}${clock(Math.abs(s))} ${unit}` };
+  }
+  return { value: Math.round(d * 10) / 10, text: `${fmt.signed(d, 1)} ${unit}` };
+}
+
+/** Axis tick of a duration in minutes: "0", "30m", "2h" (en) / "30 Min.", "2 Std." (de). */
+export function minutesTick(min: number, fmt: Formatter): string {
+  return min === 0 ? '0' : fmt.durationShort(min * 60);
 }
 
 /** Sport-specific key stats of a workout for cards and list rows. */

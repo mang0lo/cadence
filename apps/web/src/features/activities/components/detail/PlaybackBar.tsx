@@ -3,7 +3,7 @@ import { clock, useFormat } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
 import type { Playback } from '../../lib/playback';
 import { useThrottledStore } from '../../lib/store';
-import { isPaceSport } from '../../lib/display';
+import { cadenceUnit, isPaceSport } from '../../lib/display';
 import { zoneOf } from '../../lib/route';
 import { buckets, bucketMean, indexAtTime, valueAt, type Prepared } from '../../lib/streams';
 import { ReplayTransport } from '../ReplayTransport';
@@ -157,7 +157,7 @@ const LiveReadout = memo(function LiveReadout({
   }
   if (P.cadence) {
     const c = valueAt(P.cadence, fi);
-    items.push({ key: 'c', label: t('activities.charts.cadence'), value: c === c ? fmt.int(c) : '–', unit: sport === 'ride' ? 'rpm' : 'spm' });
+    items.push({ key: 'c', label: t('activities.charts.cadence'), value: c === c ? fmt.int(c) : '–', unit: cadenceUnit(sport) });
   }
   if (P.power) {
     const w = valueAt(P.power, fi);

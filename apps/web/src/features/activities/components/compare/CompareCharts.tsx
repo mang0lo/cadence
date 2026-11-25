@@ -9,7 +9,7 @@ import { useChartTheme, type ChartTheme } from '@/components/charts/theme';
 import { clock, useFormat, type Formatter } from '@/lib/format';
 import { useI18n, type TFunction } from '@/lib/i18n';
 import { gridValue, sideSeries, smoothGrid, type Alignment, type SideSeries } from '../../lib/compare';
-import { isPaceSport } from '../../lib/display';
+import { isPaceSport, paceValue, speedDiff } from '../../lib/display';
 import type { Store } from '../../lib/store';
 import { quantile, type Prepared } from '../../lib/streams';
 import { SIDE_VAR } from './CompareMap';
@@ -276,12 +276,10 @@ export function CompareCharts({ A, B, al, sport, hover, names }: CompareChartsPr
 
   const metrics = useMemo<Metric[]>(() => {
     const out: Metric[] = [];
-    const signed = (v: number, text: string) => `${v > 0 ? '+' : v < 0 ? '−' : '±'}${text}`;
     if (sa.speed || sb.speed) {
       const pace = isPaceSport(sport);
-      const unitP = sport === 'swim' ? (imperial ? 91.44 : 100) : unitM;
-      const conv = (mps: number) => (mps > 0.3 ? (pace ? unitP / mps : imperial ? mps / (M_PER_MI / 3600) : mps * 3.6) : null);
-      const unit = fmt.paceParts(1, sport).unit;
+      // standing still is left out of the chart (not of the differences)
+      const conv = (mps: number) => (mps > 0.3 ? paceValue(mps, sport, fmt.units) : null);
       out.push({
         key: 'pace',
         title: pace ? t('activities.compare.charts.pace') : t('activities.compare.charts.speed'),
@@ -298,10 +296,7 @@ export function CompareCharts({ A, B, al, sport, hover, names }: CompareChartsPr
         },
         axisLabel: (v) => (pace ? clock(v) : fmt.num(v)),
         format: (mps) => fmt.pace(mps, sport),
-        diff: (a, b) => {
-          const d = conv(a)! - conv(b)!;
-          return pace ? `${signed(Math.round(d), clock(Math.abs(d)))} ${unit}` : `${fmt.signed(d, 1)} ${unit}`;
-        },
+        diff: (a, b) => speedDiff(a, b, sport, fmt)?.text ?? '–',
       });
     }
     if (sa.hr || sb.hr) {
@@ -342,7 +337,7 @@ export function CompareCharts({ A, B, al, sport, hover, names }: CompareChartsPr
       });
     }
     return out;
-  }, [sa, sb, sport, imperial, unitM, fmt, t]);
+  }, [sa, sb, sport, imperial, fmt, t]);
 
   const options = useMemo(
     () => metrics.map((m) => pairOption(theme, axis, m, al, names, t('activities.compare.charts.difference'))),

@@ -14,7 +14,7 @@ import { useStoredState } from '@/lib/storage';
 import { useResolvedTheme } from '@/lib/theme';
 import { dayKey } from '@/lib/time';
 import { useStreams } from '../../api';
-import { isPaceSport, shortDistanceParts } from '../../lib/display';
+import { cadenceUnit, isPaceSport, shortDistanceParts } from '../../lib/display';
 import {
   MAX_SHARE_CHARTS,
   MAX_SHARE_STATS,
@@ -64,7 +64,7 @@ function statCatalog(w: WorkoutDetail, fmt: Formatter, t: TFunction): Partial<Re
   if (w.maxHr) out.maxHr = { label: t('common.maxHr'), value: fmt.int(w.maxHr), unit: 'bpm' };
   if (w.avgPower) out.avgPower = { label: t('activities.stats.avgPower'), value: fmt.int(w.avgPower), unit: 'W' };
   if (w.avgCadence)
-    out.cadence = { label: t('activities.stats.avgCadence'), value: fmt.int(w.avgCadence), unit: info.group === 'cycle' ? 'rpm' : 'spm' };
+    out.cadence = { label: t('activities.stats.avgCadence'), value: fmt.int(w.avgCadence), unit: cadenceUnit(w.sport) };
   if (w.energyKcal) out.calories = { label: t('common.calories'), value: fmt.int(w.energyKcal), unit: 'kcal' };
   if (w.effort !== null) out.effort = { label: t('common.effort'), value: fmt.int(w.effort) };
   return out;

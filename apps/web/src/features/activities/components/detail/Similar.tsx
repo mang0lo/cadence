@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { GitCompareArrows, Route, Trophy } from 'lucide-react';
-import { M_PER_KM, M_PER_MI, workoutTitle, type ActivitySimilar, type ActivitySimilarItem, type WorkoutDetail } from '@cadence/shared';
+import { workoutTitle, type ActivitySimilar, type ActivitySimilarItem, type WorkoutDetail } from '@cadence/shared';
 import { ChartCard, type TableView } from '@/components/charts/ChartCard';
 import { EChart, type EChartsOption } from '@/components/charts/EChart';
 import { itemTooltip, legend, lineSeries, scatterSeries, timeAxis, tooltipHtml, valueAxis } from '@/components/charts/options';
@@ -10,7 +10,7 @@ import { Badge, Delta, EmptyState, ErrorState, Skeleton } from '@/components/ui'
 import { clock, useFormat } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
 import { sportLabel } from '@/lib/sports';
-import { isPaceSport } from '../../lib/display';
+import { isPaceSport, paceValue } from '../../lib/display';
 import { ToggleChip } from '../ToggleChip';
 
 interface Pt {
@@ -132,10 +132,7 @@ export function Similar({
     () => (similar?.items ?? []).filter((x) => !routeOnly || x.sameRoute),
     [similar, routeOnly],
   );
-  const imperial = fmt.units === 'imperial';
-  const unitM = w.sport === 'swim' ? (imperial ? 91.44 : 100) : imperial ? M_PER_MI : M_PER_KM;
-  const speedValue = (x: ActivitySimilarItem) =>
-    x.avgSpeed ? (pace ? unitM / x.avgSpeed : imperial ? x.avgSpeed / (M_PER_MI / 3600) : x.avgSpeed * 3.6) : null;
+  const speedValue = (x: ActivitySimilarItem) => (x.avgSpeed ? paceValue(x.avgSpeed, w.sport, fmt.units) : null);
   const names = { others: t('activities.similar.others'), current: t('activities.similar.thisActivity'), trend: t('activities.similar.trend') };
   const dateLabel = (ms: number) => fmt.date(ms / 1000, 0, 'day');
   const pts = (value: (x: ActivitySimilarItem) => number | null): Pt[] =>

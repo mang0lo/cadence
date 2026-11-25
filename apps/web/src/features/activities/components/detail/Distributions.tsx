@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { BarChart3, Heart } from 'lucide-react';
 import type { BarSeriesOption } from 'echarts';
-import { M_PER_KM, M_PER_MI, type WorkoutDetail } from '@cadence/shared';
+import type { WorkoutDetail } from '@cadence/shared';
 import { ChartCard, type TableView } from '@/components/charts/ChartCard';
 import { EChart } from '@/components/charts/EChart';
 import { barSeries, categoryAxis, itemTooltip, legend, tooltipHtml, valueAxis } from '@/components/charts/options';
@@ -9,7 +9,7 @@ import { useChartTheme } from '@/components/charts/theme';
 import { clock, useFormat } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
 import { useSettings } from '@/lib/settings';
-import { isPaceSport } from '../../lib/display';
+import { isPaceSport, minutesTick, paceValue } from '../../lib/display';
 import { zoneOf } from '../../lib/route';
 import { quantile, timeHistogram, type Prepared } from '../../lib/streams';
 
@@ -106,13 +106,10 @@ export function PaceHistogram({ P, sport }: { P: Prepared; sport: string }) {
   const pace = isPaceSport(sport);
   const data = useMemo(() => {
     if (!P.speed || !P.dist) return null;
-    const imperial = fmt.units === 'imperial';
-    const unitM = sport === 'swim' ? (imperial ? 91.44 : 100) : imperial ? M_PER_MI : M_PER_KM;
-    const conv = (mps: number) => (pace ? unitM / mps : imperial ? mps / (M_PER_MI / 3600) : mps * 3.6);
     const values = new Float64Array(P.n);
     for (let i = 0; i < P.n; i++) {
       const v = P.speed[i]!;
-      values[i] = v > 0.3 && P.moving[i] ? conv(v) : NaN;
+      values[i] = v > 0.3 && P.moving[i] ? paceValue(v, sport, fmt.units) : NaN;
     }
     const lo0 = quantile(values, 0.02);
     const hi0 = quantile(values, 0.98);
@@ -134,7 +131,7 @@ export function PaceHistogram({ P, sport }: { P: Prepared; sport: string }) {
     return {
       grid: { left: 4, right: 8, top: 12, bottom: 4, containLabel: true },
       xAxis: categoryAxis(theme, cats),
-      yAxis: valueAxis(theme, { axisLabel: { color: theme.muted, fontSize: 11, formatter: (v: number) => `${v}′` } }),
+      yAxis: valueAxis(theme, { minInterval: 1, axisLabel: { color: theme.muted, fontSize: 11, formatter: (v: number) => minutesTick(v, fmt) } }),
       tooltip: itemTooltip(theme, (p: unknown) => {
         const i = (p as { dataIndex: number }).dataIndex;
         return tooltipHtml(
@@ -207,11 +204,13 @@ export function HrHistogram({ P, zoneBounds }: { P: Prepared; zoneBounds: number
       grid: { left: 4, right: 8, top: 34, bottom: 4, containLabel: true },
       legend: legend(theme, 'rect'),
       xAxis: categoryAxis(theme, cats),
-      yAxis: valueAxis(theme, { axisLabel: { color: theme.muted, fontSize: 11, formatter: (v: number) => `${v}′` } }),
+      yAxis: valueAxis(theme, { minInterval: 1, axisLabel: { color: theme.muted, fontSize: 11, formatter: (v: number) => minutesTick(v, fmt) } }),
       tooltip: itemTooltip(theme, (p: unknown) => {
         const i = (p as { dataIndex: number }).dataIndex;
         return tooltipHtml(
-          data.edges[i + 1]! - data.edges[i]! > 1 ? `${data.edges[i]}–${data.edges[i + 1]! - 1} bpm` : `${data.edges[i]} bpm`,
+          data.edges[i + 1]! - data.edges[i]! > 1
+            ? `${fmt.int(data.edges[i]!)}–${fmt.hr(data.edges[i + 1]! - 1)}`
+            : fmt.hr(data.edges[i]!),
           [
             {
               color: theme.zones[data.zones[i]!]!,
