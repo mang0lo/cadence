@@ -101,7 +101,7 @@ export function medianWindowFor(n: number): number {
   return Math.max(5, Math.min(15, Math.round(n / 10)));
 }
 
-/** Least-squares trend over time; needs ≥ 5 points over ≥ 14 days. */
+/** Least-squares trend over time; needs ≥ 3 points over ≥ 14 days (callers may require more). */
 export function trendFit(ts: readonly number[], values: readonly number[], weights?: readonly number[]): ProgressTrendFit | null {
   if (ts.length < 3) return null;
   const t0 = ts[0]!;

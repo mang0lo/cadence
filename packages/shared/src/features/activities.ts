@@ -5,11 +5,14 @@
  * Endpoints (mounted under /api/activities):
  *   GET /summary?today=&weekStart=   → ActivitiesSummary   (athlete card on the dashboard)
  *   GET /list?…                      → ActivityListPage    (feed + activities list, with medals and totals)
+ *   GET /export.csv?…&lang=&units=   → text/csv attachment (every activity matching the list filters, no paging)
  *   GET /:id/nav                     → ActivityNav         (previous / next activity)
  *   GET /:id/analysis                → ActivityAnalysis    (computed from the streams, cached)
- *   GET /:id/similar                 → ActivitySimilar     (similar efforts for the comparison chart)
+ *   GET /:id/similar?limit=          → ActivitySimilar     (similar efforts for the comparison chart)
  *
- * All values are canonical units (m, s, m/s, bpm, W); never localised on the server.
+ * All JSON values are canonical units (m, s, m/s, bpm, W); never localised on the server. The one exception is the
+ * CSV export: a spreadsheet for people, with headers in `lang` ('en' | 'de') and values in `units` ('metric' |
+ * 'imperial', default: the athlete's setting).
  */
 import type { Page, WorkoutSummary } from '../core';
 
@@ -82,13 +85,20 @@ export interface ActivityListItem extends WorkoutSummary {
 
 export type ActivitySort = 'start' | 'distance' | 'time' | 'pace' | 'elevation' | 'hr' | 'effort';
 
-/** GET /api/activities/list query (same filters as GET /api/workouts plus more sort keys). */
+/**
+ * GET /api/activities/list (and /export.csv) query. Duplicates are always left out; limit ≤ 200.
+ */
 export interface ActivityListQuery {
   /** Comma separated sport keys. */
   sport?: string;
   /** Start time range, unix seconds (from inclusive, to exclusive). */
   from?: number;
   to?: number;
+  /**
+   * Search: name, notes and source; the places the activity starts, ends at or passes (also by their German names,
+   * e.g. "Wien" → Vienna); the countries it passes (English or German name); and the localized default names of
+   * unnamed activities by time of day ("Morning Run", "Lauf am Morgen").
+   */
   q?: string;
   hasRoute?: boolean;
   includeHidden?: boolean;

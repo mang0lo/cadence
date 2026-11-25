@@ -308,7 +308,7 @@ export interface ProgressHighlight {
 /** GET /api/progress/records?sport=&today= */
 export interface ProgressRecordsResponse {
   sport: string | null;
-  /** Sports with best efforts, most workouts first. */
+  /** Sports with visible workouts, most workouts first (their efforts can be empty). */
   sports: { sport: string; workouts: number }[];
   /** One row per BEST_EFFORTS distance of the sport (also without attempts). */
   efforts: ProgressEffortRow[];
