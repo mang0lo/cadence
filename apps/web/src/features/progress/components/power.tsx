@@ -47,6 +47,7 @@ import {
   KEY_DURATIONS,
   POWER_TICKS,
   powerValue,
+  withBorrowedMass,
   type PowerUnit,
 } from '../power';
 import { ActivityLink, ChartSkeleton } from './common';
@@ -384,7 +385,14 @@ export function PowerCurveCard({
   const theme = useChartTheme();
   const { lang } = useI18n();
   const navigate = useNavigate();
-  const series = useMemo(() => curveSeries(data, theme, t, fmt), [data, theme, t, fmt]);
+  // W/kg: a comparison without a weight of its own (weighing started later) uses the period's weight instead of
+  // vanishing from the chart; the footer says so
+  const borrowed = unit === 'wkg' && !!data.comparison && !data.comparison.bodyMass && !!data.current.bodyMass;
+  const shown = useMemo(
+    () => (borrowed && data.comparison ? { ...data, comparison: withBorrowedMass(data.comparison, data.current.bodyMass) } : data),
+    [data, borrowed],
+  );
+  const series = useMemo(() => curveSeries(shown, theme, t, fmt), [shown, theme, t, fmt]);
   const any = series.some((s) => s.curve.points.length > 0);
   const built = useMemo(
     () =>
@@ -433,6 +441,7 @@ export function PowerCurveCard({
           ? t('progress.power.curve.mass', { kg: fmt.weight(mass.kg), date: fmt.day(mass.day, 'day') })
           : t('progress.power.curve.noMass')}
       </p>
+      {borrowed && series[1] && <p>{t('progress.power.curve.borrowedMass', { name: series[1].name })}</p>}
       <p>{t('progress.power.curve.method')}</p>
     </div>
   );

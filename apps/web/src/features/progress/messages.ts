@@ -240,6 +240,7 @@ export const messages: Dictionary = {
         activity: 'Activity',
         mass: 'W/kg with your weight of {kg} on {date}.',
         noMass: 'Log your weight in Apple Health to see W/kg.',
+        borrowedMass: 'No weight is logged for “{name}”: its W/kg use the same weight.',
         method:
           'Each value is the best average within one activity. Seconds without power data count as 0 W, and parts of a track separated by a break are never joined.',
       },
@@ -627,6 +628,7 @@ export const messages: Dictionary = {
         activity: 'Aktivität',
         mass: 'W/kg mit deinem Gewicht von {kg} am {date}.',
         noMass: 'Trage dein Gewicht in Apple Health ein, um W/kg zu sehen.',
+        borrowedMass: 'Für „{name}“ ist kein Gewicht eingetragen: Die W/kg nutzen dasselbe Gewicht.',
         method:
           'Jeder Wert ist der beste Durchschnitt innerhalb einer Aktivität. Sekunden ohne Leistungsdaten zählen als 0 W, durch eine Unterbrechung getrennte Streckenteile werden nie verbunden.',
       },

@@ -6,8 +6,10 @@ import {
   PROGRESS_POWER_COMPARES,
   PROGRESS_POWER_PERIODS,
   sportInfo,
+  type ProgressBodyMass,
   type ProgressDayRange,
   type ProgressPowerCompare,
+  type ProgressPowerCurve,
   type ProgressPowerEffort,
   type ProgressPowerPeriod,
 } from '@cadence/shared';
@@ -44,6 +46,16 @@ export function durationLabel(t: TFunction, fmt: Formatter, s: number): string {
 /** Value of an effort in the chosen unit (null when W/kg is asked for but no body mass is known). */
 export const powerValue = (p: ProgressPowerEffort, unit: PowerUnit): number | null =>
   unit === 'wkg' ? p.wkg : p.watts;
+
+/**
+ * A curve without a body mass of its own (weighing started after its period) with W/kg from `mass`, the period's
+ * body mass, so a comparison does not silently vanish from the W/kg chart. The curve keeps `bodyMass: null` (no W/kg
+ * column of its own in the table); the card says which weight was used. Other curves are returned as they are.
+ */
+export function withBorrowedMass(curve: ProgressPowerCurve, mass: ProgressBodyMass | null): ProgressPowerCurve {
+  if (curve.bodyMass || !mass) return curve;
+  return { ...curve, points: curve.points.map((p) => ({ ...p, wkg: Math.round((p.watts / mass.kg) * 100) / 100 })) };
+}
 
 /** "255 W" / "3.5 W/kg". */
 export function formatPower(fmt: Formatter, v: number, unit: PowerUnit, wkgDigits = 1): string {
