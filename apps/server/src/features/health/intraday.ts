@@ -1,5 +1,6 @@
 import type { IntradayBucket, IntradayResponse } from '@cadence/shared';
 import { all, type Db } from '../../db/db';
+import { badRequest } from '../../lib/http';
 import { parseDay } from '../../lib/time';
 import type { TypeRow } from './util';
 
@@ -69,7 +70,7 @@ export function buildIntraday(
   fallbackTzMin: number,
 ): IntradayResponse {
   const dn = parseDay(day);
-  if (dn === null) throw new Error(`Invalid day ${day}`);
+  if (dn === null) throw badRequest(`Invalid day ${day}`);
   // generous UTC window, then the exact local-day filter (offsets of samples may differ while travelling)
   const lo = dn * 86400 - 15 * 3600;
   const hi = (dn + 1) * 86400 + 15 * 3600;

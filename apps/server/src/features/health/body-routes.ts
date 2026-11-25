@@ -2,8 +2,8 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { BloodPressureReading } from '@cadence/shared';
 import { all } from '../../db/db';
-import { localDay, parseDay } from '../../lib/time';
-import { checkDayOrder, dayParam } from './util';
+import { localDay } from '../../lib/time';
+import { checkDayOrder, dayParam, localDayRange, localDaySql } from './util';
 
 const bpQuery = z.object({
   fromDay: dayParam.optional(),
@@ -38,23 +38,24 @@ export function readBloodPressureItems(
 }
 
 export function registerBodyRoutes(app: FastifyInstance): void {
-  // Blood pressure readings: from <Correlation> elements; without any, systolic/diastolic records of the same instant are paired
+  // Blood pressure readings (the newest `limit` of the range, oldest first): from <Correlation> elements; without any,
+  // systolic/diastolic records of the same instant are paired
   app.get('/body/blood-pressure', async (req): Promise<BloodPressureReading[]> => {
     const q = bpQuery.parse(req.query);
     checkDayOrder(q.fromDay, q.toDay);
-    const lo = q.fromDay ? (parseDay(q.fromDay) ?? 0) * 86400 - 15 * 3600 : -1e12;
-    const hi = q.toDay ? ((parseDay(q.toDay) ?? 0) + 1) * 86400 + 15 * 3600 : 1e12;
+    const range = localDayRange(q.fromDay, q.toDay);
     const inRange = (day: string) => (!q.fromDay || day >= q.fromDay) && (!q.toDay || day <= q.toDay);
 
     const out: BloodPressureReading[] = [];
+    const c = localDaySql('c', range);
     const rows = all<{ start_ts: number; tz_min: number; items: string; source: string | null }>(
       app.db,
       `SELECT c.start_ts, c.tz_min, c.items, s.name AS source
        FROM correlations c LEFT JOIN sources s ON s.id = c.source_id
-       WHERE c.athlete_id = ? AND c.type = ? AND c.start_ts >= ? AND c.start_ts < ?
-       ORDER BY c.start_ts LIMIT ?`,
-      [req.athleteId, BP_CORRELATION, lo, hi, q.limit],
-    );
+       WHERE c.athlete_id = ? AND c.type = ? AND ${c.sql}
+       ORDER BY c.start_ts DESC LIMIT ?`,
+      [req.athleteId, BP_CORRELATION, ...c.params, q.limit],
+    ).reverse();
     for (const r of rows) {
       let items: CorrelationItem[] = [];
       try {
@@ -76,7 +77,7 @@ export function registerBodyRoutes(app: FastifyInstance): void {
        FROM records r JOIN record_types t ON t.id = r.type_id LEFT JOIN sources s ON s.id = r.source_id
        WHERE r.athlete_id = ? AND t.identifier IN (?, ?) AND r.start_ts >= ? AND r.start_ts < ? AND r.value IS NOT NULL
        ORDER BY r.start_ts`,
-      [req.athleteId, SYS, DIA, lo, hi],
+      [req.athleteId, SYS, DIA, range.lo, range.hi],
     );
     const pairs = new Map<number, { sys?: number; dia?: number; tz: number; source: string | null }>();
     for (const r of rec) {
@@ -90,6 +91,6 @@ export function registerBodyRoutes(app: FastifyInstance): void {
       if (p.sys === undefined || p.dia === undefined || !inRange(day)) continue;
       out.push({ ts, tzMin: p.tz, day, systolic: p.sys, diastolic: p.dia, pulse: null, source: p.source });
     }
-    return out.slice(0, q.limit);
+    return out.slice(-q.limit);
   });
 }
