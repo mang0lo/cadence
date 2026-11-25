@@ -6,6 +6,7 @@ import { migrateAll } from '../src/app';
 import { updateSettings } from '../src/core/settings';
 import { all, get, openDb, run, type Db } from '../src/db/db';
 import { DERIVE_VERSION } from '../src/derive/context';
+import { recomputeDailyMetrics, refreshTypeStats } from '../src/derive/daily';
 import { runDerive } from '../src/derive/run';
 
 let dir: string;
@@ -121,5 +122,67 @@ describe('relative effort', () => {
     // time in zones stays what was measured
     const zones = (id: number) => (JSON.parse(row(id).hr_zones) as number[]).reduce((a, b) => a + b, 0);
     expect(zones(gap)).toBeLessThan(zones(full) * 0.7);
+  });
+});
+
+describe('record type stats', () => {
+  it('stays exact when only the records after the checkpoint are counted again', () => {
+    run(db, "INSERT INTO record_types (id, identifier, kind, unit, aggregation) VALUES (7, 'HKQuantityTypeIdentifierStepCount', 'quantity', 'count', 'sum')");
+    run(db, "INSERT INTO sources (id, name) VALUES (1, 'iPhone')");
+    let hash = 1;
+    const add = (start: number, n: number, step = 3600) => {
+      for (let i = 0; i < n; i++)
+        run(
+          db,
+          'INSERT INTO records (athlete_id, type_id, start_ts, hash, end_ts, tz_min, value, source_id) VALUES (1, 7, ?, ?, ?, 60, 10, 1)',
+          [start + i * step, hash++, start + i * step + 600],
+        );
+    };
+    const stats = () => get<{ count: number; first_ts: number; last_ts: number }>(db, 'SELECT count, first_ts, last_ts FROM record_type_stats WHERE type_id = 7');
+    const truth = () => get(db, 'SELECT COUNT(*) AS count, MIN(start_ts) AS first_ts, MAX(start_ts) AS last_ts FROM records WHERE type_id = 7');
+    add(T0, 24 * 100); // 100 days, hourly
+    refreshTypeStats(db, 1, 7);
+    expect(stats()).toEqual(truth());
+
+    // an import of the next days: only the recent records are counted
+    add(T0 + 100 * 86400, 24 * 3);
+    refreshTypeStats(db, 1, 7, T0 + 100 * 86400);
+    expect(stats()).toEqual(truth());
+    add(T0 + 103 * 86400, 24 * 40);
+    refreshTypeStats(db, 1, 7, T0 + 103 * 86400);
+    expect(stats()).toEqual(truth());
+
+    // a late sync of old data (before the checkpoint) is counted in full
+    add(T0 - 10 * 86400, 5, 60);
+    refreshTypeStats(db, 1, 7, T0 - 10 * 86400);
+    expect(stats()).toEqual(truth());
+    add(T0 + 5 * 86400 + 30, 7, 60);
+    refreshTypeStats(db, 1, 7, T0 + 5 * 86400 + 30);
+    expect(stats()).toEqual(truth());
+
+    // no records left: no stats
+    run(db, 'DELETE FROM records WHERE type_id = 7');
+    refreshTypeStats(db, 1, 7, T0 + 200 * 86400);
+    expect(stats()).toBeUndefined();
+  });
+
+  it('finds the last day of a type from its latest records', () => {
+    run(db, "INSERT INTO record_types (id, identifier, kind, unit, aggregation) VALUES (8, 'HKCategoryTypeIdentifierSleepAnalysis', 'category', NULL, 'duration')");
+    run(db, "INSERT INTO sources (id, name) VALUES (1, 'Watch')");
+    const sleep = (bed: number, wake: number, hash: number) =>
+      run(
+        db,
+        "INSERT INTO records (athlete_id, type_id, start_ts, hash, end_ts, tz_min, text, source_id) VALUES (1, 8, ?, ?, ?, 0, 'AsleepCore', 1)",
+        [bed, hash, wake],
+      );
+    const night = Math.floor(T0 / 86400) * 86400;
+    sleep(night - 30 * 86400 - 3600, night - 30 * 86400 + 6 * 3600, 1);
+    // the last session starts before midnight and ends on the next day (sleep counts for the day it ends)
+    sleep(night - 3600, night + 7 * 3600, 2);
+    recomputeDailyMetrics(db, 1, { id: 8, identifier: 'HKCategoryTypeIdentifierSleepAnalysis', kind: 'category', aggregation: 'duration' }, null);
+    expect(all(db, "SELECT day, value FROM daily_metrics WHERE metric = 'HKCategoryTypeIdentifierSleepAnalysis:AsleepCore' ORDER BY day")).toEqual([
+      { day: new Date((night - 30 * 86400) * 1000).toISOString().slice(0, 10), value: 420 },
+      { day: new Date(night * 1000).toISOString().slice(0, 10), value: 480 },
+    ]);
   });
 });

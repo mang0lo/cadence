@@ -360,4 +360,10 @@ export const coreMigrations: Migration[] = [
     id: 'core_005_workout_tags',
     up: 'ALTER TABLE workouts ADD COLUMN countries TEXT; ALTER TABLE workouts ADD COLUMN hard_reps INTEGER;',
   },
+  {
+    // Checkpoint of record_type_stats: cp_count = records of the type that start before cp_ts. After an import of
+    // new data only the records from cp_ts on are counted again (derive/daily.ts refreshTypeStats).
+    id: 'core_006_type_stats_checkpoint',
+    up: 'ALTER TABLE record_type_stats ADD COLUMN cp_ts INTEGER; ALTER TABLE record_type_stats ADD COLUMN cp_count INTEGER;',
+  },
 ];
