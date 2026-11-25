@@ -74,6 +74,17 @@ export function bucketLabel(fmt: Formatter, key: string, style: 'short' | 'long'
 }
 
 /**
+ * Fixed palette slots of the health measures the progress pages chart: the slots of the Health pages
+ * (features/health/lib/colors.ts), so resting HR, HRV and VO2max keep their color on every page (never by rank).
+ * A test keeps both in step until that registry moves to components/charts.
+ */
+const MEASURE_SLOTS = { restingHr: 8, hrv: 7, vo2max: 2 } as const;
+
+export function measureColor(theme: ChartTheme, key: keyof typeof MEASURE_SLOTS): string {
+  return theme.series[MEASURE_SLOTS[key] - 1]!;
+}
+
+/**
  * Invisible scatter on top of the visible dots: a ≥ 24 px hit target per point so tooltips do not need
  * pixel-perfect aim. Exclude it from the legend (legend.data lists the visible series only).
  */

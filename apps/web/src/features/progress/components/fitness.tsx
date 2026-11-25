@@ -40,7 +40,7 @@ import { useChartTheme, type ChartTheme } from '@/components/charts/theme';
 import { Badge, Card, EmptyState, ErrorState, Hint, Stat } from '@/components/ui';
 import { useFormat, type Formatter } from '@/lib/format';
 import { useT, type TFunction } from '@/lib/i18n';
-import { bucketLabel, chartLegend, dayMs, timeAxisLabel } from '../chart';
+import { bucketLabel, chartLegend, dayMs, measureColor, timeAxisLabel } from '../chart';
 import { signedRounded } from '../format';
 import { ChartSkeleton } from './common';
 import { FormZoneBadge, type BadgeTone } from './FormZoneBadge';
@@ -444,7 +444,7 @@ export function Vo2Card({ data, loading, error }: { data: ProgressPhysiology | u
         const i = ps[0]?.dataIndex ?? 0;
         const rows = [{ color: theme.muted, label: names.readings, value: fmt.num(v.points[i]!.value, 1) }];
         const m = v.median[i];
-        if (m !== null && m !== undefined) rows.push({ color: theme.series[0]!, label: names.median, value: fmt.num(m, 1) });
+        if (m !== null && m !== undefined) rows.push({ color: measureColor(theme, 'vo2max'), label: names.median, value: fmt.num(m, 1) });
         return tooltipHtml(fmt.day(v.points[i]!.day, 'day'), rows, theme);
       }),
       series: [
@@ -455,7 +455,7 @@ export function Vo2Card({ data, loading, error }: { data: ProgressPhysiology | u
             ? { silent: true, label: { show: true, position: 'right', color: theme.muted, fontSize: 11, distance: 8 }, data: bands as never }
             : undefined,
         }),
-        lineSeries(theme, names.median, v.median.map((m, i) => [xs[i]!, m]), theme.series[0]!, { z: 4 }),
+        lineSeries(theme, names.median, v.median.map((m, i) => [xs[i]!, m]), measureColor(theme, 'vo2max'), { z: 4 }),
       ],
     } as EChartsOption;
   }, [v, theme, fmt, t, names]);
@@ -530,7 +530,8 @@ export function DailyContextCard({
   const fmt = useFormat();
   const theme = useChartTheme();
   const unit = kind === 'restingHr' ? 'bpm' : 'ms';
-  const color = theme.series[kind === 'restingHr' ? 0 : 2]!;
+  // the colors these measures have on the Health pages
+  const color = measureColor(theme, kind);
   const names = useMemo(() => ({ daily: t('progress.fitness.legend.daily'), avg: t('progress.fitness.legend.avg7') }), [t]);
   const option = useMemo<EChartsOption | null>(() => {
     if (!series || !series.points.length) return null;
