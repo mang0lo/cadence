@@ -181,8 +181,11 @@ export function PowerWidget() {
   const fmt = useFormat();
   const { lang } = useI18n();
   const ftp = useFtpEstimate(null);
+  // no waterfall: the curve asks for the same default sport as the FTP estimate (the server's defaultPowerSport:
+  // ride when it has power data) and the usual 42-day window at once; only a 90-day FTP window (no 20-minute effort in
+  // the last 42 days) needs the curve again
   const period = ftp.data?.windowDays === 90 ? '90d' : '42d';
-  const curve = usePowerCurve(ftp.data ? { sport: ftp.data.sport, period, compare: 'none' } : null);
+  const curve = usePowerCurve({ sport: null, period, compare: 'none' });
   const title = t('progress.widgets.power.title');
   const error = ftp.error ?? curve.error;
   if (error)
@@ -192,7 +195,8 @@ export function PowerWidget() {
         <ErrorState error={error} />
       </Card>
     );
-  if (!curve.data || !ftp.data) return <WidgetSkeleton title={title} icon={Zap} />;
+  // placeholder data is the 42-day curve while the 90-day one loads: not the window the note names
+  if (!curve.data || curve.isPlaceholderData || !ftp.data) return <WidgetSkeleton title={title} icon={Zap} />;
   if (!curve.data.sports.length) return null;
   const d = ftp.data;
   const peak = (s: number) => curve.data!.current.points.find((p) => p.durationS === s);
