@@ -23,6 +23,7 @@ import { useI18n, useT, type Lang, type TFunction } from '@/lib/i18n';
 import { sportColorVar, sportLabel } from '@/lib/sports';
 import { todayKey } from '@/lib/time';
 import { chartLegend, clockAxis, dayMs, hitLayer, localMs, timeAxisLabel } from '../chart';
+import { speedLabel } from '../format';
 import { ActivityLink, ChartSkeleton } from './common';
 
 export type RecordScope = 'allTime' | 'thisYear' | 'last12m';
@@ -67,7 +68,7 @@ export function EffortsCard({
             <tr>
               <TH>{t('progress.records.table.distance')}</TH>
               <TH numeric>{t('progress.records.table.time')}</TH>
-              <TH numeric>{t('progress.records.table.pace')}</TH>
+              <TH numeric>{speedLabel(t, sport)}</TH>
               <TH>{t('progress.records.table.date')}</TH>
               <TH numeric>{t('progress.records.table.attempts')}</TH>
             </tr>
@@ -175,7 +176,7 @@ function progressionOption(
       const a = h.attempts[i]!;
       const rows = [
         { color, label: t('progress.records.table.time'), value: fmt.duration(a.elapsedS) },
-        { color: 'transparent', label: t('progress.records.table.pace'), value: fmt.pace(h.distanceM / a.elapsedS, h.sport) },
+        { color: 'transparent', label: speedLabel(t, h.sport), value: fmt.pace(h.distanceM / a.elapsedS, h.sport) },
       ];
       if (a.pr) rows.push({ color: 'transparent', label: '', value: t('progress.records.progression.newPr') });
       return tooltipHtml(`${workoutTitle(a, lang)} · ${fmt.date(a.startTs, a.tzMin, 'day')}`, rows, theme);
@@ -236,7 +237,7 @@ export function ProgressionCard({
               { key: 'date', label: t('progress.records.table.date') },
               { key: 'activity', label: t('progress.common.activity') },
               { key: 'time', label: t('progress.records.table.time'), numeric: true },
-              { key: 'pace', label: t('progress.records.table.pace'), numeric: true },
+              { key: 'pace', label: speedLabel(t, h.sport), numeric: true },
               { key: 'pr', label: t('progress.records.progression.pr') },
             ],
             rows: [...h.attempts].reverse().map((a) => ({
@@ -298,7 +299,7 @@ export function TopTenCard({ sport, effort, history }: { sport: string; effort: 
             <tr>
               <TH>{t('progress.records.top.rank')}</TH>
               <TH numeric>{t('progress.records.table.time')}</TH>
-              <TH numeric>{t('progress.records.table.pace')}</TH>
+              <TH numeric>{speedLabel(t, sport)}</TH>
               <TH>{t('progress.records.table.date')}</TH>
               <TH numeric>{t('progress.records.top.avgHr')}</TH>
             </tr>

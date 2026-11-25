@@ -114,11 +114,25 @@ function numberFormat(fmt: Formatter, unit: string, digits: number, scale = 1): 
   };
 }
 
+/**
+ * A sport's speed values read as a pace (min/km, min/100 m): the rule of fmt.pace and speedFormat. Every other sport
+ * (ride, nordic ski, golf …) shows km/h or mph.
+ */
+export function showsPace(sport: string): boolean {
+  const mode = sportInfo(sport).speedMode;
+  return mode === 'pace' || mode === 'pace100';
+}
+
+/** Header or label of a sport's speed values: "Pace" or "Speed", as they are formatted. */
+export function speedLabel(t: TFunction, sport: string): string {
+  return t(showsPace(sport) ? 'common.pace' : 'common.speed');
+}
+
 /** Speed metric of a sport: pace (min/km, min/100 m) or speed (km/h, mph). */
 export function speedFormat(fmt: Formatter, sport: string): TrendFormat {
   const mode = sportInfo(sport).speedMode;
   const imperial = fmt.units === 'imperial';
-  if (mode === 'pace' || mode === 'pace100') {
+  if (showsPace(sport)) {
     const per = mode === 'pace100' ? (imperial ? 91.44 : 100) : fmt.paceSeconds(1);
     const unit = fmt.paceParts(1, sport).unit;
     const secs = (v: number) => per / v;

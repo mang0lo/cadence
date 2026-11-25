@@ -94,8 +94,6 @@ export const messages: Dictionary = {
       title: 'Per-activity trends',
       subtitle: 'Each dot is one activity · rolling median of {n} · linear trend',
       metrics: {
-        pace: 'Pace',
-        speed: 'Speed',
         hr: 'Avg heart rate',
         ef: 'Efficiency',
         cadenceFoot: 'Cadence',
@@ -168,7 +166,6 @@ export const messages: Dictionary = {
         subtitle: 'Fastest time per distance · {scope}',
         distance: 'Distance',
         time: 'Time',
-        pace: 'Pace',
         date: 'Date',
         attempts: 'Attempts',
         allTimePr: 'All-time PR',
@@ -482,8 +479,6 @@ export const messages: Dictionary = {
       title: 'Trends pro Aktivität',
       subtitle: 'Jeder Punkt ist eine Aktivität · gleitender Median über {n} · linearer Trend',
       metrics: {
-        pace: 'Pace',
-        speed: 'Geschwindigkeit',
         hr: 'Ø Herzfrequenz',
         ef: 'Effizienz',
         cadenceFoot: 'Schrittfrequenz',
@@ -556,7 +551,6 @@ export const messages: Dictionary = {
         subtitle: 'Schnellste Zeit pro Distanz · {scope}',
         distance: 'Distanz',
         time: 'Zeit',
-        pace: 'Pace',
         date: 'Datum',
         attempts: 'Versuche',
         allTimePr: 'Allzeit-Rekord',

@@ -6,7 +6,7 @@ import { useFormat, type Formatter } from '@/lib/format';
 import { useT } from '@/lib/i18n';
 import { addDays, todayKey } from '@/lib/time';
 import { useCompare } from '../api';
-import { signedRounded, speedFormat } from '../format';
+import { showsPace, signedRounded, speedFormat } from '../format';
 import { ChangeBadge } from './common';
 
 type Mode = 'rolling' | 'week' | 'month' | 'year' | 'custom';
@@ -44,7 +44,7 @@ function rowsFor(cur: ProgressCompareTotals, prev: ProgressCompareTotals, sport:
   );
   if (sport !== 'all' && sportInfo(sport).distance && (cur.avgSpeed || prev.avgSpeed)) {
     const sf = speedFormat(fmt, sport);
-    const pace = sf.inverse;
+    const pace = showsPace(sport);
     rows.push({
       key: 'speed',
       label: t(pace ? 'progress.compare.metrics.avgPace' : 'progress.compare.metrics.avgSpeed'),

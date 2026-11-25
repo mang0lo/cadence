@@ -20,13 +20,13 @@ import { useI18n, useT, type Lang, type TFunction } from '@/lib/i18n';
 import { sportLabel } from '@/lib/sports';
 import { useTrends, type RangeParams } from '../api';
 import { chartLegend, clockAxis, hitLayer, localMs, monthYearLabel, msDay, timeAxisLabel } from '../chart';
-import { formatChange, trendFormat, type TrendFormat } from '../format';
+import { formatChange, speedLabel, trendFormat, type TrendFormat } from '../format';
 import { ActivityLink, ChangeBadge, ChartSkeleton } from './common';
 
 const HEIGHT = 300;
 
 export function trendMetricLabel(t: TFunction, metric: ProgressTrendMetric, sport: string): string {
-  if (metric === 'speed') return t(sportInfo(sport).speedMode === 'speed' ? 'progress.trends.metrics.speed' : 'progress.trends.metrics.pace');
+  if (metric === 'speed') return speedLabel(t, sport);
   if (metric === 'cadence')
     return t(sportInfo(sport).group === 'cycle' ? 'progress.trends.metrics.cadenceCycle' : 'progress.trends.metrics.cadenceFoot');
   return t(`progress.trends.metrics.${metric}`);
