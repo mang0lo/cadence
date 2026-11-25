@@ -39,6 +39,20 @@ export interface JobsIo {
   get: (id: string) => Promise<ImportJob>;
 }
 
+/**
+ * Whether a poll loads the whole list: when the list was invalidated (a job was just started, settings changed …)
+ * and, while a job runs (then only that job is polled), at least every `everyMs` for jobs queued meanwhile. While
+ * nothing runs the newest job tells whether anything changed.
+ */
+export function wantsFullList(
+  prev: ImportJob[] | undefined,
+  invalidated: boolean,
+  msSinceFull: number,
+  everyMs: number,
+): boolean {
+  return invalidated || (!!prev?.some(isActive) && msSinceFull > everyMs);
+}
+
 const sameState = (a: ImportJob | undefined, b: ImportJob | undefined) =>
   a?.id === b?.id && a?.status === b?.status && a?.finishedAt === b?.finishedAt;
 

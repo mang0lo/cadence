@@ -1,7 +1,7 @@
 import { useQuery, type QueryFunctionContext } from '@tanstack/react-query';
 import type { ImportJob } from '@cadence/shared';
 import { api } from '@/lib/api';
-import { currentJob, finishedSince, isActive, loadJobs, waitingJobs, type JobsIo } from './importJobs';
+import { currentJob, finishedSince, isActive, loadJobs, waitingJobs, wantsFullList, type JobsIo } from './importJobs';
 
 export { isActive } from './importJobs';
 
@@ -26,8 +26,7 @@ let lastFullList = 0;
 async function fetchJobs({ client, queryKey }: QueryFunctionContext): Promise<ImportJob[]> {
   const query = client.getQueryCache().find({ queryKey, exact: true });
   const prev = client.getQueryData<ImportJob[]>(queryKey);
-  // invalidated (a job was just started, settings changed …) or overdue: load the whole list
-  const full = !!query?.state.isInvalidated || Date.now() - lastFullList > FULL_LIST_MS;
+  const full = wantsFullList(prev, !!query?.state.isInvalidated, Date.now() - lastFullList, FULL_LIST_MS);
   const res = await loadJobs(prev, io, full);
   if (res.full) lastFullList = Date.now();
   if (finishedSince(prev, res.jobs).length) {

@@ -12,6 +12,7 @@ import {
   loadJobs,
   stepKey,
   waitingJobs,
+  wantsFullList,
   type JobsIo,
 } from '@/features/platform/importJobs';
 import type { TFunction } from '@/lib/i18n';
@@ -140,6 +141,18 @@ describe('loading the job list', () => {
     expect(res).toEqual({ jobs: prev, full: false });
     expect(res.jobs).toBe(prev);
     expect(io.list).toHaveBeenCalledWith(1);
+  });
+
+  it('asks for the whole list only when invalidated, or now and then while a job runs', () => {
+    const idle = [job('done'), job('failed')];
+    const busy = [job('queued'), job('running')];
+    // idle: the newest job is enough, however long ago the whole list was loaded
+    expect(wantsFullList(idle, false, 60_000, 15_000)).toBe(false);
+    expect(wantsFullList(idle, true, 0, 15_000)).toBe(true);
+    // running: only that job, but the whole list at least every 15 s (jobs queued meanwhile)
+    expect(wantsFullList(busy, false, 5_000, 15_000)).toBe(false);
+    expect(wantsFullList(busy, false, 16_000, 15_000)).toBe(true);
+    expect(wantsFullList(undefined, false, 60_000, 15_000)).toBe(false);
   });
 
   it('loads the whole list when the server started a job by itself', async () => {
