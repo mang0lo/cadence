@@ -1,12 +1,18 @@
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import net from 'node:net';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Config } from '../config';
+import type { Db } from '../db/db';
+import { getSetting, setSetting } from './settings';
 
 declare module 'fastify' {
   interface FastifyContextConfig {
     /** The route answers without a login (status, login, logout). Every other route under /api needs one. */
     public?: boolean;
+  }
+  interface FastifyInstance {
+    /** Logged-in browsers of a password-protected server (null without CADENCE_PASSWORD). */
+    sessions: Sessions | null;
   }
 }
 
@@ -19,14 +25,10 @@ declare module 'fastify' {
  */
 const COOKIE = 'cadence_auth';
 
-function token(password: string): string {
-  return createHmac('sha256', password).update('cadence-session-v1').digest('hex');
-}
-
+/** Compares digests: neither the content nor the length of a secret shows in the time it takes. */
 function safeEqual(a: string, b: string): boolean {
-  const ab = Buffer.from(a);
-  const bb = Buffer.from(b);
-  return ab.length === bb.length && timingSafeEqual(ab, bb);
+  const digest = (s: string) => createHash('sha256').update(s).digest();
+  return timingSafeEqual(digest(a), digest(b));
 }
 
 function readCookie(req: FastifyRequest, name: string): string | null {
@@ -34,9 +36,63 @@ function readCookie(req: FastifyRequest, name: string): string | null {
   if (!header) return null;
   for (const part of header.split(';')) {
     const [k, ...v] = part.trim().split('=');
-    if (k === name) return decodeURIComponent(v.join('='));
+    if (k !== name) continue;
+    try {
+      return decodeURIComponent(v.join('='));
+    } catch {
+      return v.join('='); // malformed escapes: no session, not a server error
+    }
   }
   return null;
+}
+
+const SESSIONS_KEY = 'core.sessions';
+const SESSION_S = 30 * 24 * 3600;
+const MAX_SESSIONS = 100;
+
+/**
+ * Login sessions: every login gets a random cookie, so logging out ends exactly that session and a stolen cookie
+ * tells nothing about the password. Stored (settings 'core.sessions' of athlete 1, left out of backups) only as
+ * HMAC(cookie, password) with an expiry: the database holds no usable cookie, and a new password ends every session.
+ */
+export class Sessions {
+  constructor(
+    private readonly db: Db,
+    private readonly password: string,
+    private readonly now: () => number = Date.now,
+  ) {}
+
+  private key(token: string): string {
+    return createHmac('sha256', token).update(this.password).digest('hex');
+  }
+
+  private live(): { key: string; exp: number }[] {
+    const t = Math.floor(this.now() / 1000);
+    const list = getSetting<unknown>(this.db, 1, SESSIONS_KEY, []);
+    return (Array.isArray(list) ? (list as { key: string; exp: number }[]) : []).filter(
+      (s) => typeof s?.key === 'string' && typeof s.exp === 'number' && s.exp > t,
+    );
+  }
+
+  /** A new session; returns the cookie value. The oldest sessions make room beyond MAX_SESSIONS. */
+  create(): string {
+    const token = randomBytes(32).toString('base64url');
+    const list = [...this.live(), { key: this.key(token), exp: Math.floor(this.now() / 1000) + SESSION_S }];
+    setSetting(this.db, 1, SESSIONS_KEY, list.slice(-MAX_SESSIONS));
+    return token;
+  }
+
+  valid(token: string): boolean {
+    const key = this.key(token);
+    return this.live().some((s) => safeEqual(s.key, key));
+  }
+
+  end(token: string): void {
+    const key = this.key(token);
+    const list = this.live();
+    const rest = list.filter((s) => s.key !== key);
+    if (rest.length !== list.length) setSetting(this.db, 1, SESSIONS_KEY, rest);
+  }
 }
 
 /** Wrong passwords from one address before it has to wait, and how long. */
@@ -105,7 +161,7 @@ export function isAuthenticated(req: FastifyRequest, password: string | null): b
   const bearer = req.headers.authorization?.match(/^Bearer (.+)$/)?.[1];
   if (bearer && safeEqual(bearer, password)) return true;
   const cookie = readCookie(req, COOKIE);
-  return !!cookie && safeEqual(cookie, token(password));
+  return !!cookie && !!req.server.sessions?.valid(cookie);
 }
 
 const isApiPath = (p: string) => p === '/api' || p.startsWith('/api/');
@@ -189,6 +245,8 @@ export function registerAuth(
   throttle: LoginThrottle = new LoginThrottle(),
 ): void {
   const { password, allowedHosts } = config;
+  const sessions = password ? new Sessions(app.db, password) : null;
+  app.decorate('sessions', sessions);
   const tooMany = (reply: FastifyReply, waitS: number) =>
     reply
       .code(429)
@@ -242,12 +300,14 @@ export function registerAuth(
     const secure = https ? '; Secure' : '';
     reply.header(
       'set-cookie',
-      `${COOKIE}=${token(password)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${60 * 60 * 24 * 30}${secure}`,
+      `${COOKIE}=${sessions!.create()}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${SESSION_S}${secure}`,
     );
     return { ok: true };
   });
 
-  app.post('/api/auth/logout', { config: { public: true } }, async (_req, reply) => {
+  app.post('/api/auth/logout', { config: { public: true } }, async (req, reply) => {
+    const cookie = readCookie(req, COOKIE);
+    if (cookie) sessions?.end(cookie);
     reply.header('set-cookie', `${COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`);
     return { ok: true };
   });

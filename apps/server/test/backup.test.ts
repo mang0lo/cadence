@@ -82,6 +82,9 @@ describe('backup & restore', () => {
       JSON.stringify({ email: 'me@example.org', pwdMd5: secret, accessToken: 'token-123456789' }),
     ]);
     run(db, "INSERT INTO settings (athlete_id, key, value) VALUES (1, 'consistency.test', '\"kept\"')");
+    run(db, "INSERT INTO settings (athlete_id, key, value) VALUES (1, 'core.sessions', ?)", [
+      JSON.stringify([{ key: 'session-key-0123456789abcdef', exp: 9_999_999_999 }]),
+    ]);
     const payload = (await app.inject({ url: '/api/backup' })).rawPayload;
     const file = path.join(dir, 'no-secrets.db');
     fs.writeFileSync(file, payload);
@@ -90,12 +93,14 @@ describe('backup & restore', () => {
     copy.close();
     expect(keys).toContain('consistency.test');
     expect(keys).not.toContain('connect.coros');
+    expect(keys).not.toContain('core.sessions'); // a restore logs everyone out
     // not in the freed pages of the file either
     expect(payload.includes(Buffer.from(secret))).toBe(false);
     expect(payload.includes(Buffer.from('token-123456789'))).toBe(false);
+    expect(payload.includes(Buffer.from('session-key-0123456789abcdef'))).toBe(false);
     // the running database keeps the login
     expect(db.prepare("SELECT 1 AS x FROM settings WHERE key = 'connect.coros'").get()).toBeTruthy();
-    run(db, "DELETE FROM settings WHERE key IN ('connect.coros', 'consistency.test')");
+    run(db, "DELETE FROM settings WHERE key IN ('connect.coros', 'consistency.test', 'core.sessions')");
   });
 
   it('rejects files that are not Cadence databases', async () => {

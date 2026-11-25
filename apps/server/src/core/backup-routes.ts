@@ -86,12 +86,11 @@ function validateBackup(file: string): void {
 }
 
 /**
- * Remove the logins of other services (Feature.secretSettings) from a backup copy. secure_delete overwrites the
- * freed pages, so the values are not left behind in the file.
+ * Remove the logins of other services (Feature.secretSettings) and the server's own login sessions from a backup
+ * copy (a restore logs everyone out). secure_delete overwrites the freed pages, so the values are not left behind.
  */
 export function stripSecrets(file: string): void {
-  const keys = features.flatMap((f) => f.secretSettings ?? []);
-  if (!keys.length) return;
+  const keys = ['core.sessions', ...features.flatMap((f) => f.secretSettings ?? [])];
   const db = new DatabaseSync(file);
   try {
     db.exec('PRAGMA secure_delete = ON');
