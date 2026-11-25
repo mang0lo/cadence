@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { M_PER_FT, M_PER_KM, M_PER_MI, KG_PER_LB, sportInfo, type Units } from '@cadence/shared';
 import { useI18n, type Lang } from './i18n';
 import { useSettings } from './settings';
-import { dayToDate, localDate } from './time';
+import { browserTzAt, dayToDate, localDate } from './time';
 
 /** Splits a formatted quantity into value + unit for stat tiles (value large, unit small). */
 export interface Parts {
@@ -182,6 +182,11 @@ export function createFormatter(units: Units, locale: string, lang: Lang) {
     // ---- dates ------------------------------------------------------------
     /** Format a timestamp in the local time of the activity/record (`tzMin`). */
     date: (ts: number, tzMin: number, style: DateStyle = 'day') => dtf(locale, style).format(localDate(ts, tzMin)),
+    /**
+     * Format a timestamp that has no time zone of its own (import jobs, sync times, first/last record of a type) in
+     * the browser's time zone, with the offset in force at that instant.
+     */
+    browserDate: (ts: number, style: DateStyle = 'dateTime') => dtf(locale, style).format(localDate(ts, browserTzAt(ts))),
     time: (ts: number, tzMin: number) => dtf(locale, 'time').format(localDate(ts, tzMin)),
     /** Format a 'YYYY-MM-DD' day key. */
     day: (day: string, style: DateStyle = 'day') => dtf(locale, style).format(dayToDate(day)),

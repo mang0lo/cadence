@@ -118,6 +118,11 @@ export const commonMessages: Dictionary = {
     zones: { z1: 'Z1 Recovery', z2: 'Z2 Endurance', z3: 'Z3 Tempo', z4: 'Z4 Threshold', z5: 'Z5 Anaerobic' },
     notFound: 'Page not found',
     backHome: 'Back to dashboard',
+    chunkError: {
+      title: 'This page could not be loaded',
+      hint: 'Cadence was probably updated in the meantime, or the connection dropped. Reload to continue.',
+      reload: 'Reload',
+    },
   },
   de: {
     appName: 'Cadence',
@@ -235,5 +240,10 @@ export const commonMessages: Dictionary = {
     zones: { z1: 'Z1 Regeneration', z2: 'Z2 Grundlage', z3: 'Z3 Tempo', z4: 'Z4 Schwelle', z5: 'Z5 Anaerob' },
     notFound: 'Seite nicht gefunden',
     backHome: 'Zurück zum Dashboard',
+    chunkError: {
+      title: 'Diese Seite konnte nicht geladen werden',
+      hint: 'Wahrscheinlich wurde Cadence inzwischen aktualisiert, oder die Verbindung ist abgebrochen. Lade neu, um weiterzumachen.',
+      reload: 'Neu laden',
+    },
   },
 };

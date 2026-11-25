@@ -23,7 +23,7 @@ export function WhatsNewCard({ job }: { job: ImportJob & { stats: { summary: Imp
         ? fmt.day(s.fromDay, 'day')
         : `${fmt.day(s.fromDay, 'day')} – ${fmt.day(s.toDay, 'day')}`
       : null;
-  const finished = job.finishedAt ? fmt.date(job.finishedAt, -new Date().getTimezoneOffset(), 'dateTime') : '';
+  const finished = job.finishedAt ? fmt.browserDate(job.finishedAt, 'dateTime') : '';
   const sections = featureModules.flatMap((f) => {
     const items = s.highlights.filter((h) => h.feature === f.name);
     return f.whatsNew && items.length ? [{ name: f.name, Component: f.whatsNew, items }] : [];

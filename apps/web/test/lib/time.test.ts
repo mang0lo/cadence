@@ -1,5 +1,15 @@
-import { describe, expect, it } from 'vitest';
-import { addDays, dayKey, dayStartTs, diffDays, eachDay, periodKey, startOfWeek, weekday } from '@/lib/time';
+import { afterAll, describe, expect, it } from 'vitest';
+import {
+  addDays,
+  browserTzAt,
+  dayKey,
+  dayStartTs,
+  diffDays,
+  eachDay,
+  periodKey,
+  startOfWeek,
+  weekday,
+} from '@/lib/time';
 
 describe('lib/time', () => {
   it('reads the local day of a timestamp from its own offset', () => {
@@ -35,5 +45,23 @@ describe('lib/time', () => {
   it('gives local midnight for a day at an offset', () => {
     expect(dayStartTs('2024-05-01', 120)).toBe(Date.UTC(2024, 3, 30, 22, 0) / 1000);
     expect(dayStartTs('2024-05-01', 0)).toBe(Date.UTC(2024, 4, 1) / 1000);
+  });
+});
+
+describe('browser-local times across DST', () => {
+  const saved = process.env.TZ;
+  afterAll(() => {
+    if (saved === undefined) delete process.env.TZ;
+    else process.env.TZ = saved;
+  });
+
+  it('uses the offset of the instant / day, not today', () => {
+    process.env.TZ = 'Europe/Vienna';
+    expect(browserTzAt(Date.UTC(2026, 6, 1, 12) / 1000)).toBe(120); // summer time
+    expect(browserTzAt(Date.UTC(2026, 0, 15, 12) / 1000)).toBe(60); // winter time
+    expect(dayStartTs('2026-07-01')).toBe(Date.UTC(2026, 5, 30, 22) / 1000);
+    expect(dayStartTs('2026-01-15')).toBe(Date.UTC(2026, 0, 14, 23) / 1000);
+    // the day DST starts is 23 hours long
+    expect(dayStartTs('2026-03-30') - dayStartTs('2026-03-29')).toBe(23 * 3600);
   });
 });

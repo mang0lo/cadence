@@ -7,6 +7,7 @@ import { cn } from '@/components/ui';
 import { useT } from '@/lib/i18n';
 import { useSettings } from '@/lib/settings';
 import { useResolvedTheme } from '@/lib/theme';
+import { isStyleReady, markStyleReady } from './layers';
 import { FALLBACK_STYLE, MAP_STYLE_KEYS, mapStyleFor, TERRAIN_SOURCE, TERRAIN_SOURCE_ID } from './styles';
 
 // MapLibre 6 resolves its worker relative to its own module, which bundlers relocate — point it at
@@ -36,7 +37,9 @@ export interface BaseMapProps {
   onReady?: (map: Map) => void;
   /**
    * Called after EVERY style load (initial and after switching style/theme). Add your sources and
-   * layers here — switching the basemap removes them.
+   * layers here — switching the basemap removes them. Effects that change overlays later must check
+   * `isStyleReady(map)` (components/map/layers.ts), not `map.isStyleLoaded()`, and rely on this callback to
+   * re-apply them after a style switch.
    */
   onStyleLoad?: (map: Map) => void;
   /** Overlay UI (absolutely positioned children). */
@@ -72,6 +75,7 @@ export function BaseMap({
   styleLoadRef.current = onStyleLoad;
   const terrainRef = useRef(terrain);
   terrainRef.current = terrain;
+  const scaleRef = useRef<ScaleControl | null>(null);
 
   useEffect(() => setPref(styleKey ?? settings.mapStyle), [styleKey, settings.mapStyle]);
   useEffect(() => setTerrain(terrainProp), [terrainProp]);
@@ -105,18 +109,22 @@ export function BaseMap({
       fadeDuration: 150,
     });
     mapRef.current = map;
+    markStyleReady(map, false);
     if (controls && interactive) {
       map.addControl(new NavigationControl({ visualizePitch: true }), 'bottom-right');
-      map.addControl(new ScaleControl({ unit: settings.units === 'imperial' ? 'imperial' : 'metric' }), 'bottom-left');
+      scaleRef.current = new ScaleControl({ unit: settings.units === 'imperial' ? 'imperial' : 'metric' });
+      map.addControl(scaleRef.current, 'bottom-left');
     }
+    // registered first, so it runs before every other 'style.load' listener (e.g. whenStyleReady)
     map.on('style.load', () => {
+      markStyleReady(map, true);
       applyTerrain(map, terrainRef.current);
       styleLoadRef.current?.(map);
     });
     map.on('error', (e) => {
       // a style that cannot be loaded (e.g. renamed upstream) falls back to the light map instead of a blank one
       const url = (e.error as { url?: string } | undefined)?.url;
-      if (url && url !== FALLBACK_STYLE && /\/styles?\//.test(url) && !map.isStyleLoaded()) map.setStyle(FALLBACK_STYLE);
+      if (url && url !== FALLBACK_STYLE && /\/styles?\//.test(url) && !isStyleReady(map)) map.setStyle(FALLBACK_STYLE);
       console.warn('[map]', e.error?.message ?? e);
     });
     if (import.meta.env.DEV) (window as unknown as { __map: Map }).__map = map;
@@ -127,6 +135,7 @@ export function BaseMap({
       ro.disconnect();
       map.remove();
       mapRef.current = null;
+      scaleRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -138,12 +147,23 @@ export function BaseMap({
       first.current = false;
       return;
     }
-    mapRef.current?.setStyle(mapStyleFor(pref, theme), { diff: false });
+    const map = mapRef.current;
+    if (!map) return;
+    // overlays must wait for 'style.load' (their effects check isStyleReady and onStyleLoad re-adds them)
+    markStyleReady(map, false);
+    map.setStyle(mapStyleFor(pref, theme), { diff: false });
   }, [pref, theme]);
+
+  // the scale bar follows the unit setting
+  useEffect(() => {
+    scaleRef.current?.setUnit(settings.units === 'imperial' ? 'imperial' : 'metric');
+  }, [settings.units]);
 
   useEffect(() => {
     const map = mapRef.current;
-    if (map?.isStyleLoaded()) applyTerrain(map, terrain);
+    // not isStyleLoaded(): that is false while tiles load and would drop the toggle; while a new style loads,
+    // the 'style.load' handler applies terrainRef.current
+    if (map && isStyleReady(map)) applyTerrain(map, terrain);
     if (map && terrain && map.getPitch() < 30) map.easeTo({ pitch: 55, duration: 800 });
     if (map && !terrain && map.getPitch() > 0) map.easeTo({ pitch: 0, duration: 600 });
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -23,8 +23,6 @@ import { identifierColor } from '../lib/colors';
 import { useRange } from '../lib/hooks';
 import { useMetricFormat } from '../lib/metrics';
 
-const browserTz = () => -new Date().getTimezoneOffset();
-
 /** Sensible default grouping for the length of the range. */
 function autoAgg(days: number | null): MetricAgg {
   if (days === null) return 'month';
@@ -75,8 +73,8 @@ export default function MetricPage() {
           info && info.firstTs !== null && info.lastTs !== null
             ? `${identifier} · ${t('health.metric.typeInfo', {
                 count: fmt.int(info.count),
-                from: fmt.date(info.firstTs, browserTz(), 'day'),
-                to: fmt.date(info.lastTs, browserTz(), 'day'),
+                from: fmt.browserDate(info.firstTs, 'day'),
+                to: fmt.browserDate(info.lastTs, 'day'),
               })}`
             : identifier
         }

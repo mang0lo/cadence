@@ -3,6 +3,43 @@ import type { GeoJSONSource, LngLatBoundsLike, Map, ExpressionSpecification } fr
 
 export type LngLat = [number, number];
 
+// ---- style readiness ------------------------------------------------------------------------------------------
+// map.isStyleLoaded() is false not only while a new style loads but also whenever tiles or a GeoJSON update are
+// pending, so guarding overlay updates with it silently drops them (a palette or route-color change made while tiles
+// load is never applied). What overlays need to know is whether the style JSON is loaded, i.e. whether sources and
+// layers can be added: false between setStyle() and 'style.load', true otherwise. BaseMap keeps that state.
+
+const styleReady = new WeakMap<Map, boolean>();
+
+/** Called by BaseMap: false right before setStyle / at creation, true on 'style.load'. */
+export function markStyleReady(map: Map, ready: boolean): void {
+  styleReady.set(map, ready);
+}
+
+/**
+ * True when the current style is loaded, so sources and layers can be added or changed (tiles may still be loading).
+ * Gate overlay effects with it and re-apply them from BaseMap's `onStyleLoad`, which runs after every style load.
+ */
+export function isStyleReady(map: Map): boolean {
+  return styleReady.get(map) ?? Boolean(map.isStyleLoaded());
+}
+
+/**
+ * Runs `fn` now when the style is ready, otherwise once after the next style load. Returns a function that cancels
+ * the deferred call (use it as an effect cleanup).
+ */
+export function whenStyleReady(map: Map, fn: (map: Map) => void): () => void {
+  if (isStyleReady(map)) {
+    fn(map);
+    return () => {};
+  }
+  const run = () => fn(map);
+  map.once('style.load', run);
+  return () => {
+    map.off('style.load', run);
+  };
+}
+
 export function lineFeature(coords: LngLat[], properties: Record<string, unknown> = {}): Feature<LineString> {
   return { type: 'Feature', properties, geometry: { type: 'LineString', coordinates: coords } };
 }

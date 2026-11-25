@@ -150,7 +150,6 @@ function CorosCard() {
       void qc.invalidateQueries({ queryKey: ['core', 'import-jobs'] });
     }
   };
-  const tz = -new Date().getTimezoneOffset();
   const syncing = running(status);
   const { settings } = useSettings();
 
@@ -186,7 +185,7 @@ function CorosCard() {
               [t('connect.coros.region'), t(`connect.coros.regions.${status.region}`)],
               [
                 t('connect.coros.lastSync'),
-                status.lastSyncAt ? fmt.date(status.lastSyncAt, tz, 'dateTime') : t('connect.coros.never'),
+                status.lastSyncAt ? fmt.browserDate(status.lastSyncAt, 'dateTime') : t('connect.coros.never'),
               ],
               [t('connect.coros.fetched'), fmt.int(status.activities.fetched)],
               ...(status.activities.failed
@@ -205,10 +204,9 @@ function CorosCard() {
                   ] as [string, string][])
                 : []),
               ...(status.activities.lastStartTs
-                ? ([[t('connect.coros.newest'), fmt.date(status.activities.lastStartTs, tz, 'dateTime')]] as [
-                    string,
-                    string,
-                  ][])
+                ? ([
+                    [t('connect.coros.newest'), fmt.browserDate(status.activities.lastStartTs, 'dateTime')],
+                  ] as [string, string][])
                 : []),
             ]}
           />

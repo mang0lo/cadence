@@ -8,7 +8,6 @@ import { useFormat } from '@/lib/format';
 import { useT } from '@/lib/i18n';
 import { assignSlots } from '../../lib/colors';
 
-const browserTz = () => -new Date().getTimezoneOffset();
 const MAX_SEGMENTS = 6;
 
 /** Which sources / devices wrote the samples of a type: thin segmented share bar + table (swatches replace a legend). */
@@ -82,8 +81,8 @@ export function SourcesCard({ type, fromDay, toDay, enabled = true }: { type: st
                   </TD>
                   <TD numeric>{fmt.int(s.count)}</TD>
                   <TD numeric>{fmt.pct(s.count / d.total, 1)}</TD>
-                  <TD className="hidden whitespace-nowrap text-xs sm:table-cell">{fmt.date(s.firstTs, browserTz(), 'day')}</TD>
-                  <TD className="hidden whitespace-nowrap text-xs sm:table-cell">{fmt.date(s.lastTs, browserTz(), 'day')}</TD>
+                  <TD className="hidden whitespace-nowrap text-xs sm:table-cell">{fmt.browserDate(s.firstTs, 'day')}</TD>
+                  <TD className="hidden whitespace-nowrap text-xs sm:table-cell">{fmt.browserDate(s.lastTs, 'day')}</TD>
                 </tr>
               ))}
             </tbody>

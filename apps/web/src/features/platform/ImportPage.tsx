@@ -300,7 +300,7 @@ export default function ImportPage() {
                 <tbody>
                   {history.map((j) => (
                     <tr key={j.id}>
-                      <TD>{fmt.date(j.createdAt, -new Date().getTimezoneOffset(), 'dateTime')}</TD>
+                      <TD>{fmt.browserDate(j.createdAt, 'dateTime')}</TD>
                       <TD className="max-w-48 truncate">{j.kind === 'rederive' ? t('platform.import.rederive') : j.sourceName}</TD>
                       <TD>
                         <JobStatus job={j} />
