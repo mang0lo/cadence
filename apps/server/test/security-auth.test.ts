@@ -95,6 +95,16 @@ describe('password check on every /api route, however the path is spelled', () =
     }
   });
 
+  it('tells clients that are not logged in nothing about the data or the version', async () => {
+    const anon = (await app.inject({ url: '/api/status' })).json();
+    expect(anon).toMatchObject({ ok: true, authRequired: true, authenticated: false, version: '', localImport: false });
+    expect(anon.counts).toEqual({ workouts: 0, records: 0, recordTypes: 0 });
+    expect(anon.lastImportAt).toBeNull();
+    const authed = (await app.inject({ url: '/api/status', headers: bearer })).json();
+    expect(authed).toMatchObject({ authRequired: true, authenticated: true });
+    expect(authed.version).not.toBe('');
+  });
+
   it('keeps status, login, logout, the web app and unknown API paths as before', async () => {
     for (const url of ['/api/status', '/api/status?x=1', '/%61pi/status']) {
       const res = await app.inject({ url });

@@ -185,7 +185,7 @@ const forbidden = (reply: FastifyReply, code: string, message: string) =>
  */
 export function registerAuth(
   app: FastifyInstance,
-  config: Pick<Config, 'password' | 'allowedHosts'>,
+  config: Pick<Config, 'password' | 'allowedHosts' | 'trustProxy'>,
   throttle: LoginThrottle = new LoginThrottle(),
 ): void {
   const { password, allowedHosts } = config;
@@ -194,8 +194,17 @@ export function registerAuth(
       .code(429)
       .header('retry-after', waitS)
       .send({ error: { code: 'too_many_attempts', message: `Too many wrong passwords. Try again in ${Math.ceil(waitS / 60)} min.` } });
+  // behind a proxy that is not trusted every client has the proxy's address: say once how to fix that
+  let proxyHint = !!password && !config.trustProxy;
 
   app.addHook('onRequest', async (req: FastifyRequest, reply: FastifyReply) => {
+    if (proxyHint && req.headers['x-forwarded-for'] !== undefined) {
+      proxyHint = false;
+      req.log.warn(
+        'Requests come through a reverse proxy (X-Forwarded-For), but CADENCE_TRUST_PROXY is not set: the login ' +
+          "throttle counts every client as the proxy's address. Set CADENCE_TRUST_PROXY to the proxy's address.",
+      );
+    }
     if (allowedHosts && !hostAllowed(req.host, allowedHosts)) {
       return forbidden(
         reply,
@@ -227,8 +236,10 @@ export function registerAuth(
       return reply.code(401).send({ error: { code: 'invalid_password', message: 'Wrong password' } });
     }
     throttle.succeed(key);
-    // with CADENCE_TRUST_PROXY, https at the proxy (X-Forwarded-Proto) counts too
-    const secure = req.protocol === 'https' ? '; Secure' : '';
+    // https: the socket, with CADENCE_TRUST_PROXY the proxy's X-Forwarded-Proto, or the page itself (the browser's
+    // Origin, also behind a TLS proxy that is not configured as trusted)
+    const https = req.protocol === 'https' || /^https:\/\//i.test(req.headers.origin ?? '');
+    const secure = https ? '; Secure' : '';
     reply.header(
       'set-cookie',
       `${COOKIE}=${token(password)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${60 * 60 * 24 * 30}${secure}`,
