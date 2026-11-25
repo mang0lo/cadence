@@ -3,7 +3,7 @@ import { Card, EmptyState, ErrorState, FilterBar, Page, PageHeader, SegmentedCon
 import { useT } from '@/lib/i18n';
 import { useFitness, useOverview, usePhysiology } from '../api';
 import { CardSkeleton, SportSelect } from '../components/common';
-import { AcwrCard, DailyContextCard, FitnessStats, LoadCharts, RampCard, Vo2Card, WeeklyLoadCard } from '../components/fitness';
+import { AcwrCard, DailyContextCard, FitnessStats, LoadCharts, RampCard, Vo2Card, WeeklyLoadCard, useAcwrTable } from '../components/fitness';
 import { PERIOD_PRESETS } from '../periods';
 import { useProgressFilters } from '../useFilters';
 import { NoDataCard } from './ProgressPage';
@@ -16,6 +16,8 @@ export default function FitnessPage() {
   const fitness = useFitness(f.sport, f.range);
   const physiology = usePhysiology(f.range);
   const data = fitness.data;
+  // one table for the ACWR and ramp cards
+  const acwrTable = useAcwrTable(data);
 
   return (
     <Page>
@@ -51,8 +53,8 @@ export default function FitnessPage() {
           <LoadCharts data={data} loading={fitness.isFetching} />
           <div className="grid gap-4 xl:grid-cols-3">
             <WeeklyLoadCard data={data} loading={fitness.isFetching} />
-            <AcwrCard data={data} loading={fitness.isFetching} />
-            <RampCard data={data} loading={fitness.isFetching} />
+            <AcwrCard data={data} loading={fitness.isFetching} table={acwrTable} />
+            <RampCard data={data} loading={fitness.isFetching} table={acwrTable} />
           </div>
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
             <Vo2Card data={physiology.data} loading={physiology.isFetching} error={physiology.error} />

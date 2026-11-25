@@ -21,7 +21,7 @@ import type {
   ProgressRampStatus,
   ProgressVo2Level,
 } from '@cadence/shared';
-import { ChartCard } from '@/components/charts/ChartCard';
+import { ChartCard, type TableView } from '@/components/charts/ChartCard';
 import { EChart } from '@/components/charts/EChart';
 import {
   areaSeries,
@@ -306,7 +306,7 @@ export function WeeklyLoadCard({ data, loading }: { data: ProgressFitnessRespons
   );
 }
 
-export function AcwrCard({ data, loading }: { data: ProgressFitnessResponse; loading: boolean }) {
+export function AcwrCard({ data, loading, table }: { data: ProgressFitnessResponse; loading: boolean; table: TableView | undefined }) {
   const t = useT();
   const fmt = useFormat();
   const theme = useChartTheme();
@@ -343,14 +343,24 @@ export function AcwrCard({ data, loading }: { data: ProgressFitnessResponse; loa
       title={t('progress.fitness.charts.acwr')}
       subtitle={t('progress.fitness.charts.acwrSubtitle', { low: fmt.num(th.acwrLow, 1), high: fmt.num(th.acwrHigh, 1) })}
       icon={Waves}
-      table={dayTableAcwr(data, fmt, t)}
+      table={table}
     >
       <EChart option={option} height={200} loading={loading} ariaLabel={t('progress.fitness.charts.acwr')} />
     </ChartCard>
   );
 }
 
-function dayTableAcwr(data: ProgressFitnessResponse, fmt: Formatter, t: TFunction) {
+/**
+ * The day table of the ACWR and ramp cards (both show the same columns): built once per response for both cards,
+ * not on every render of each (about 4 ms for ten years of days).
+ */
+export function useAcwrTable(data: ProgressFitnessResponse | undefined): TableView | undefined {
+  const t = useT();
+  const fmt = useFormat();
+  return useMemo(() => (data ? dayTableAcwr(data, fmt, t) : undefined), [data, fmt, t]);
+}
+
+function dayTableAcwr(data: ProgressFitnessResponse, fmt: Formatter, t: TFunction): TableView {
   return {
     columns: [
       { key: 'day', label: t('progress.common.date') },
@@ -365,7 +375,7 @@ function dayTableAcwr(data: ProgressFitnessResponse, fmt: Formatter, t: TFunctio
   };
 }
 
-export function RampCard({ data, loading }: { data: ProgressFitnessResponse; loading: boolean }) {
+export function RampCard({ data, loading, table }: { data: ProgressFitnessResponse; loading: boolean; table: TableView | undefined }) {
   const t = useT();
   const fmt = useFormat();
   const theme = useChartTheme();
@@ -399,7 +409,7 @@ export function RampCard({ data, loading }: { data: ProgressFitnessResponse; loa
     } as EChartsOption;
   }, [data, theme, fmt, t, th]);
   return (
-    <ChartCard title={t('progress.fitness.charts.ramp')} subtitle={t('progress.fitness.charts.rampSubtitle')} icon={TrendingUp} table={dayTableAcwr(data, fmt, t)}>
+    <ChartCard title={t('progress.fitness.charts.ramp')} subtitle={t('progress.fitness.charts.rampSubtitle')} icon={TrendingUp} table={table}>
       <EChart option={option} height={200} loading={loading} ariaLabel={t('progress.fitness.charts.ramp')} />
     </ChartCard>
   );
