@@ -8,7 +8,7 @@ import type { Goal, GoalInput, GoalMetric, GoalPeriod, GoalsResponse, GoalWithPr
 import { all, get, run, tx, type Db } from '../../db/db';
 import { getSetting, setSetting } from '../../core/settings';
 import { firstDataDay, loadDaily, resolveDays, weekStartOfAthlete } from './data';
-import { periodRange } from './days';
+import { periodRange, plusDays } from './days';
 import {
   bucketByPeriod,
   defaultGoals,
@@ -80,7 +80,8 @@ export function loadChecks(db: Db, athleteId: number): Map<number, string[]> {
 
 /**
  * Check a goal off by hand for the period containing `day` (or remove the check mark). Returns the period, or null
- * when the goal does not exist.
+ * when the goal does not exist. The mark is stored on the first day of the period, for weeks on its middle (the
+ * fourth day): that day lies in the week the mark was set for with either week start (Sunday or Monday).
  */
 export function setGoalCheck(
   db: Db,
@@ -94,7 +95,11 @@ export function setGoalCheck(
     if (!goal) return null;
     const { start, end } = periodRange(day, goal.period, weekStartOfAthlete(db, athleteId));
     run(db, 'DELETE FROM consistency_goal_checks WHERE goal_id = ? AND day >= ? AND day <= ?', [id, start, end]);
-    if (done) run(db, 'INSERT INTO consistency_goal_checks (goal_id, day) VALUES (?, ?)', [id, start]);
+    if (done)
+      run(db, 'INSERT INTO consistency_goal_checks (goal_id, day) VALUES (?, ?)', [
+        id,
+        goal.period === 'week' ? plusDays(start, 3) : start,
+      ]);
     writeBackup(db, athleteId);
     return { start, end, done };
   });
