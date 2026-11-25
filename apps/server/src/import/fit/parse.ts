@@ -273,7 +273,8 @@ function stat(
 
 /** Parse one FIT activity file. Throws FitError when the file is not a readable FIT activity. */
 export function parseFit(buf: Uint8Array): FitActivity {
-  const stream = Stream.fromByteArray(Array.from(buf));
+  // one copy of the bytes (no array with a number per byte)
+  const stream = Stream.fromBuffer(buf);
   if (!Decoder.isFIT(stream)) throw new FitError('Not a FIT file');
   const decoder = new Decoder(stream);
   const { messages, errors } = decoder.read({
