@@ -23,6 +23,20 @@ export const connectMigrations: Migration[] = [
     `,
   },
   {
+    id: 'connect_002_activity_retries',
+    up: /* sql */ `
+      -- Fetched: the import job that got the cached file ('imported' = its workout exists). A file whose job failed
+      -- or was cancelled, or that never reached a job (sync cut off), goes into the next sync's job again.
+      ALTER TABLE connect_activities ADD COLUMN job_id TEXT;
+      ALTER TABLE connect_activities ADD COLUMN import_attempts INTEGER NOT NULL DEFAULT 0;
+      -- Failed: downloads tried in a row; normal syncs retry from next_retry_at on (backoff), a full sync always.
+      ALTER TABLE connect_activities ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE connect_activities ADD COLUMN next_retry_at INTEGER;
+      -- earlier versions never retried them: once more with the next sync
+      UPDATE connect_activities SET attempts = 1, next_retry_at = 0 WHERE status = 'failed';
+    `,
+  },
+  {
     // COROS' daily steps, calories and active minutes are totals: weeks and months add up, today is incomplete
     id: 'connect_003_daily_totals',
     up: /* sql */ `

@@ -3,7 +3,8 @@ import path from 'node:path';
 import type { ConnectSyncProgress, CorosRegion, CorosStatus } from '@cadence/shared';
 import { getSetting, setSetting, updateSettings } from '../../core/settings';
 import { addDays } from '../../lib/time';
-import { get, run, type Db } from '../../db/db';
+import { all, get, prepare, run, tx, type Db } from '../../db/db';
+import { fitHeaderComplete } from '../../import/fit/parse';
 import type { JobManager } from '../../import/jobs';
 import {
   CorosApiError,
@@ -24,6 +25,10 @@ const AUTO_FIRST_MS = 90_000;
 const AUTO_EVERY_MS = 3 * 3600_000;
 /** Incremental sync stops after this many pages in a row without anything new. */
 const KNOWN_PAGES_STOP = 1;
+/** When normal syncs try a failed download again (after the 1st, 2nd … failure); then only a full sync does. */
+const RETRY_AFTER_S = [3 * 3600, 12 * 3600, 86_400, 3 * 86_400, 7 * 86_400];
+/** Import jobs a cached file goes into (failed or cancelled ones) before it counts as failed. */
+const MAX_IMPORT_ATTEMPTS = 3;
 
 /** Stored in settings (never sent to the browser): the token and the MD5 of the password COROS expects. */
 interface CorosAccount {
@@ -59,6 +64,39 @@ function errorText(e: unknown): string {
     return `COROS keeps rejecting the login (${e.message}) – the next sync continues`;
   return (e as Error)?.message ?? String(e);
 }
+
+/** A cached FIT file that arrived complete (fitHeaderComplete). */
+function cachedFit(file: string): boolean {
+  let fd: number | undefined;
+  try {
+    const size = fs.statSync(file).size;
+    fd = fs.openSync(file, 'r');
+    const head = Buffer.alloc(14);
+    const n = fs.readSync(fd, head, 0, head.length, 0);
+    return fitHeaderComplete(head.subarray(0, n), size);
+  } catch {
+    return false;
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd);
+  }
+}
+
+interface ActivityRow {
+  remote_id: string;
+  start_ts: number | null;
+  sport_type: number | null;
+  name: string | null;
+  device: string | null;
+}
+
+/** An activity known from an earlier sync, as the download step takes it. */
+const activityOf = (r: ActivityRow): CorosActivity => ({
+  labelId: r.remote_id,
+  sportType: r.sport_type ?? 100,
+  ...(r.start_ts !== null ? { startTime: r.start_ts } : {}),
+  name: r.name,
+  ...(r.device ? { device: r.device } : {}),
+});
 
 export interface CorosSyncDeps {
   db: Db;
@@ -205,6 +243,70 @@ export class CorosSync {
     return promise;
   }
 
+  /**
+   * Activities earlier syncs left unfinished. Fetched files whose import job failed or was cancelled, or that never
+   * reached a job (the sync was cut off), go into this sync's job again – unless their workout exists after all;
+   * after MAX_IMPORT_ATTEMPTS they count as failed. Failed downloads come back once their retry is due (a full sync
+   * lists everything anyway).
+   */
+  private pending(athleteId: number, full: boolean): { files: Map<string, string>; retry: CorosActivity[] } {
+    const db = this.deps.db;
+    const files = new Map<string, string>();
+    const retry: CorosActivity[] = [];
+    const rows = all<ActivityRow & { file: string | null; import_attempts: number; job_error: string | null }>(
+      db,
+      `SELECT a.remote_id, a.start_ts, a.sport_type, a.name, a.device, a.file, a.import_attempts, j.error AS job_error
+       FROM connect_activities a LEFT JOIN import_jobs j ON j.id = a.job_id
+       WHERE a.athlete_id = ? AND a.provider = ? AND a.status = 'fetched'
+         AND (a.job_id IS NULL OR j.status IN ('failed', 'cancelled'))`,
+      [athleteId, PROVIDER],
+    );
+    if (rows.length) {
+      // a cancelled or interrupted job keeps the workouts it wrote before it stopped
+      const imported = this.importedFiles(athleteId);
+      const done = prepare(
+        db,
+        "UPDATE connect_activities SET job_id = 'imported' WHERE athlete_id = ? AND provider = ? AND remote_id = ?",
+      );
+      const giveUp = prepare(
+        db,
+        `UPDATE connect_activities SET status = 'failed', error = ?, attempts = ?, next_retry_at = NULL
+         WHERE athlete_id = ? AND provider = ? AND remote_id = ?`,
+      );
+      tx(db, () => {
+        for (const r of rows) {
+          if (r.file && imported.has(path.basename(r.file))) done.run(athleteId, PROVIDER, r.remote_id);
+          else if (r.import_attempts >= MAX_IMPORT_ATTEMPTS) {
+            const error = `Import did not finish${r.job_error ? `: ${r.job_error}` : ''}`.slice(0, 500);
+            giveUp.run(error, RETRY_AFTER_S.length + 1, athleteId, PROVIDER, r.remote_id);
+          } else if (r.file && cachedFit(r.file)) files.set(r.remote_id, r.file);
+          else retry.push(activityOf(r)); // the cached file is gone: download it again
+        }
+      });
+    }
+    if (!full)
+      for (const r of all<ActivityRow>(
+        db,
+        `SELECT remote_id, start_ts, sport_type, name, device FROM connect_activities
+         WHERE athlete_id = ? AND provider = ? AND status = 'failed' AND next_retry_at <= ?`,
+        [athleteId, PROVIDER, now()],
+      ))
+        retry.push(activityOf(r));
+    return { files, retry };
+  }
+
+  /** Names of the cached files whose workout exists (a FIT workout keeps its file name in meta.FitFile). */
+  private importedFiles(athleteId: number): Set<string> {
+    return new Set(
+      all<{ f: string }>(
+        this.deps.db,
+        `SELECT json_extract(meta, '$.FitFile') AS f FROM workouts
+         WHERE athlete_id = ? AND ext_key LIKE 'fit:%' AND json_extract(meta, '$.FitFile') IS NOT NULL`,
+        [athleteId],
+      ).map((r) => r.f),
+    );
+  }
+
   private async sync(athleteId: number, p: ConnectSyncProgress): Promise<void> {
     const a = this.account(athleteId);
     if (!a) throw new Error('Not connected to COROS');
@@ -227,12 +329,16 @@ export class CorosSync {
     });
     const call = <T>(fn: () => Promise<T>): Promise<T> => session.run(fn);
 
+    const { files, retry } = this.pending(athleteId, p.full);
+
     // ---- list (newest first) ----
-    const state = new Map<string, string>();
-    for (const r of db
-      .prepare('SELECT remote_id, status FROM connect_activities WHERE athlete_id = ? AND provider = ?')
-      .all(athleteId, PROVIDER) as { remote_id: string; status: string }[])
-      state.set(r.remote_id, r.status);
+    const state = new Map<string, { status: string; attempts: number }>();
+    for (const r of all<{ remote_id: string; status: string; attempts: number }>(
+      db,
+      'SELECT remote_id, status, attempts FROM connect_activities WHERE athlete_id = ? AND provider = ?',
+      [athleteId, PROVIDER],
+    ))
+      state.set(r.remote_id, { status: r.status, attempts: r.attempts });
     const todo: CorosActivity[] = [];
     let knownPages = 0;
     for (let page = 1; page <= 500; page++) {
@@ -241,9 +347,8 @@ export class CorosSync {
       p.listed += items.length;
       let fresh = 0;
       for (const it of items) {
-        const s = state.get(String(it.labelId));
-        if (s === 'fetched' && !p.full) continue;
-        if (s === 'failed' && !p.full) continue; // retried by a full sync
+        // known (fetched, or failed: retried when due) – a full sync takes everything again
+        if (state.has(String(it.labelId)) && !p.full) continue;
         fresh++;
         todo.push(it);
       }
@@ -251,39 +356,56 @@ export class CorosSync {
       if (!items.length || page >= (res.totalPage ?? 0)) break;
       if (!p.full && knownPages >= KNOWN_PAGES_STOP) break;
     }
+    const listed = new Set(todo.map((it) => String(it.labelId)));
+    for (const it of retry) if (!listed.has(String(it.labelId))) todo.push(it);
     p.toDownload = todo.length;
 
     // ---- download FIT files (oldest first, so an interrupted sync resumes in order) ----
     p.state = 'downloading';
     fs.mkdirSync(this.folder, { recursive: true });
-    const upsert = db.prepare(
-      `INSERT INTO connect_activities (athlete_id, provider, remote_id, start_ts, sport_type, name, device, file, status, error, fetched_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, unixepoch())
+    const fetched = prepare(
+      db,
+      `INSERT INTO connect_activities (athlete_id, provider, remote_id, start_ts, sport_type, name, device, file, status,
+         error, fetched_at, attempts, next_retry_at, job_id, import_attempts)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'fetched', NULL, unixepoch(), 0, NULL, ?, 0)
        ON CONFLICT (athlete_id, provider, remote_id) DO UPDATE SET start_ts = excluded.start_ts,
          sport_type = excluded.sport_type, name = excluded.name, device = excluded.device, file = excluded.file,
-         status = excluded.status, error = excluded.error, fetched_at = excluded.fetched_at`,
+         status = 'fetched', error = NULL, fetched_at = excluded.fetched_at, attempts = 0, next_retry_at = NULL,
+         job_id = excluded.job_id, import_attempts = 0`,
     );
-    const files: string[] = [];
+    const failed = prepare(
+      db,
+      `INSERT INTO connect_activities (athlete_id, provider, remote_id, start_ts, sport_type, name, device, file, status,
+         error, fetched_at, attempts, next_retry_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, NULL, 'failed', ?, unixepoch(), ?, ?)
+       ON CONFLICT (athlete_id, provider, remote_id) DO UPDATE SET start_ts = excluded.start_ts,
+         sport_type = excluded.sport_type, name = excluded.name, device = excluded.device, file = NULL,
+         status = 'failed', error = excluded.error, fetched_at = excluded.fetched_at, attempts = excluded.attempts,
+         next_retry_at = excluded.next_retry_at`,
+    );
+    // a full sync goes through every activity: a file whose workout exists needs no import (it would change nothing)
+    const imported = p.full ? this.importedFiles(athleteId) : null;
     todo.sort((x, y) => (x.startTime ?? 0) - (y.startTime ?? 0));
     for (const it of todo) {
-      const id = String(it.labelId).replace(/[^\w-]/g, '_');
-      const file = path.join(this.folder, `${id}.fit`);
+      const remoteId = String(it.labelId);
+      const file = path.join(this.folder, `${remoteId.replace(/[^\w-]/g, '_')}.fit`);
       const name = typeof it.name === 'string' ? it.name.trim() : '';
       const device = typeof it.device === 'string' ? it.device.trim() : '';
       const meta = [
         athleteId,
         PROVIDER,
-        String(it.labelId),
+        remoteId,
         it.startTime ?? null,
         it.sportType ?? null,
         name || null,
         device || null,
       ] as const;
       try {
-        const cached = fs.statSync(file, { throwIfNoEntry: false });
-        if (!cached?.size || p.full) {
-          const bytes = await call(() => c.downloadFit(String(it.labelId), Number(it.sportType ?? 100)));
+        // a complete cached file is never downloaded again
+        if (!cachedFit(file)) {
+          const bytes = await call(() => c.downloadFit(remoteId, Number(it.sportType ?? 100)));
           if (bytes.length < 12) throw new Error('COROS returned an empty FIT file');
+          if (!fitHeaderComplete(bytes, bytes.length)) throw new Error('COROS returned an incomplete FIT file');
           fs.writeFileSync(`${file}.part`, bytes);
           fs.renameSync(`${file}.part`, file);
         }
@@ -291,23 +413,27 @@ export class CorosSync {
           `${file}.json`,
           JSON.stringify({ ...(name ? { name } : {}), ...(device ? { device } : {}) }),
         );
-        upsert.run(...meta, file, 'fetched', null);
-        files.push(file);
+        const done = imported?.has(path.basename(file)) ?? false;
+        fetched.run(...meta, file, done ? 'imported' : null);
+        if (!done) files.set(remoteId, file);
         p.downloaded++;
       } catch (e) {
         // the login no longer works, rate limited even after the retries, or COROS cannot be reached: stop here,
         // the rest stays new for the next sync
         if (isAuthFailure(e) || (e instanceof CorosHttpError && (e.rateLimited || e.status === 0))) {
-          if (files.length) this.enqueue(athleteId, files, p);
+          if (files.size) this.enqueue(athleteId, files, p);
           throw e;
         }
-        upsert.run(...meta, null, 'failed', errorText(e).slice(0, 500));
+        const prev = state.get(remoteId);
+        const attempts = (prev?.status === 'failed' ? prev.attempts : 0) + 1;
+        const wait = RETRY_AFTER_S[attempts - 1];
+        failed.run(...meta, errorText(e).slice(0, 500), attempts, wait === undefined ? null : now() + wait);
         p.failed++;
       }
     }
 
     // ---- import ----
-    if (files.length) this.enqueue(athleteId, files, p);
+    if (files.size) this.enqueue(athleteId, files, p);
 
     // ---- daily health values (resting HR, HRV, training load …) ----
     p.state = 'health';
@@ -383,13 +509,23 @@ export class CorosSync {
     this.save(athleteId, { mobileData: on });
   }
 
-  private enqueue(athleteId: number, files: string[], p: ConnectSyncProgress): void {
+  /** One import job for the files (remote id → cached file); each row remembers the job, see pending(). */
+  private enqueue(athleteId: number, files: Map<string, string>, p: ConnectSyncProgress): void {
+    const list = [...files.values()];
     const job = this.deps.jobs.enqueueImport(athleteId, this.folder, {
-      sourceName: `COROS (${files.length} ${files.length === 1 ? 'activity' : 'activities'})`,
+      sourceName: `COROS (${list.length} ${list.length === 1 ? 'activity' : 'activities'})`,
       sizeBytes: null,
-      options: { origin: 'connect', deleteAfter: false, files },
+      options: { origin: 'connect', deleteAfter: false, files: list },
     });
     p.jobId = job.id;
+    const mark = prepare(
+      this.deps.db,
+      `UPDATE connect_activities SET job_id = ?, import_attempts = import_attempts + 1
+       WHERE athlete_id = ? AND provider = ? AND remote_id = ?`,
+    );
+    tx(this.deps.db, () => {
+      for (const remoteId of files.keys()) mark.run(job.id, athleteId, PROVIDER, remoteId);
+    });
   }
 
   /** One auto sync round: connected athletes with auto sync on, unless COROS refused their stored login. */

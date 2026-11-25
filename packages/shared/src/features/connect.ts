@@ -73,9 +73,15 @@ export interface CorosLoginRequest {
   region: CorosRegion;
 }
 
-/** POST /api/connect/coros/sync */
+/**
+ * POST /api/connect/coros/sync. A normal sync fetches new activities, imports again what an earlier import job did
+ * not finish, and retries failed downloads with a growing delay.
+ */
 export interface CorosSyncRequest {
-  /** Also fetch activities that failed before or are older than the newest known one. */
+  /**
+   * Go through every activity: download what is not cached (failed ones included), import every cached file whose
+   * workout is missing and fetch the whole health history.
+   */
   full?: boolean;
 }
 

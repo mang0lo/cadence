@@ -10,6 +10,7 @@ import { all, get, openDb, run, type Db } from '../src/db/db';
 import { CorosClient, CorosHttpError, md5Hex } from '../src/features/connect/coros-client';
 import { CorosMobileClient } from '../src/features/connect/coros-mobile';
 import { CorosSync } from '../src/features/connect/coros-sync';
+import { resetAthleteData } from '../src/import/reset';
 import { executeJob } from '../src/import/run-job';
 import { buildFit } from './fit-fixture';
 
@@ -74,6 +75,8 @@ function fakeCoros(activities: FakeActivity[], health: FakeDay[] = []) {
     password: md5Hex('secret'),
     /** Runs on every accepted download request (e.g. a Training Hub login in a browser replaces the token). */
     onDownload: null as null | ((labelId: string) => void),
+    /** Files the storage host fails to deliver: HTTP 503, or cut off after 100 bytes. */
+    fileFaults: new Map<string, 'unavailable' | 'truncated'>(),
   };
   const ok = (data: unknown) => new Response(JSON.stringify({ result: '0000', message: 'OK', data }));
   const fail = (result: string, message: string) => new Response(JSON.stringify({ result, message }));
@@ -132,7 +135,10 @@ function fakeCoros(activities: FakeActivity[], health: FakeDay[] = []) {
     }
     if (url.hostname === 'files.example') {
       const a = activities.find((x) => x.labelId === url.searchParams.get('id'))!;
-      return new Response(buildFit({ start: a.startTime, serial: Number(a.labelId) }));
+      const fault = state.fileFaults.get(a.labelId);
+      if (fault === 'unavailable') return new Response('Service Unavailable', { status: 503 });
+      const bytes = buildFit({ start: a.startTime, serial: Number(a.labelId) });
+      return new Response(fault === 'truncated' ? bytes.slice(0, 100) : bytes);
     }
     const headers = (init?.headers ?? {}) as Record<string, string>;
     switch (url.pathname) {
@@ -211,6 +217,28 @@ function setup(activities: FakeActivity[], health: FakeDay[] = []) {
   });
   return { fake, sync, enqueued, derives };
 }
+
+/** Run the import job of `files` (as the job worker does), e.g. the part of a job that ran before it stopped. */
+const importFiles = (files: string[]) =>
+  executeJob(
+    db,
+    { id: 'j', kind: 'import', athleteId: 1, sourcePath: path.join(dir, 'connect', 'coros'), options: { files } },
+    { progress: () => {}, checkCancelled: () => {}, log: () => {} },
+  );
+/** The job's row as the job manager leaves it. */
+const jobRow = (id: string, status: 'done' | 'failed' | 'cancelled', error: string | null = null) =>
+  run(db, "INSERT INTO import_jobs (id, athlete_id, kind, status, error) VALUES (?, 1, 'import', ?, ?)", [
+    id,
+    status,
+    error,
+  ]);
+const activity = (remoteId: string) =>
+  get<{ status: string; job_id: string | null; attempts: number; next_retry_at: number | null; error: string | null }>(
+    db,
+    'SELECT status, job_id, attempts, next_retry_at, error FROM connect_activities WHERE remote_id = ?',
+    [remoteId],
+  );
+const names = (files: string[]) => files.map((f) => path.basename(f)).sort();
 
 const act = (i: number, extra: Partial<FakeActivity> = {}): FakeActivity => ({
   labelId: String(1000 + i),
@@ -407,6 +435,133 @@ describe('COROS sync', () => {
     expect(enqueued[0]!.files).toHaveLength(3);
     fake.state.onDownload = null;
     expect(await sync.start(1)).toMatchObject({ state: 'done', toDownload: 1, downloaded: 1 });
+  });
+});
+
+describe('COROS sync: unfinished imports and failed downloads', () => {
+  const workouts = () => get<{ n: number }>(db, 'SELECT COUNT(*) AS n FROM workouts')!.n;
+
+  it('imports again what a cancelled or interrupted import job did not finish', async () => {
+    const { fake, sync, enqueued } = setup(Array.from({ length: 5 }, (_, i) => act(i)));
+    await sync.connect(1, 'me@example.com', 'secret', 'eu');
+    expect(await sync.start(1)).toMatchObject({ downloaded: 5, jobId: 'job-1' });
+    // the job was cancelled after the first 2 files (Import page → Cancel)
+    await importFiles(enqueued[0]!.files.slice(0, 2));
+    jobRow('job-1', 'cancelled');
+    fake.state.downloads = [];
+    expect(await sync.start(1)).toMatchObject({ state: 'done', toDownload: 0, jobId: 'job-2' });
+    expect(fake.state.downloads).toEqual([]); // straight from the cache
+    expect(names(enqueued[1]!.files)).toEqual(['1002.fit', '1003.fit', '1004.fit']);
+    // this time the server stopped while the job ran
+    jobRow('job-2', 'failed', 'Interrupted: the server stopped');
+    expect(await sync.start(1)).toMatchObject({ jobId: 'job-3' });
+    expect(names(enqueued[2]!.files)).toEqual(['1002.fit', '1003.fit', '1004.fit']);
+    await importFiles(enqueued[2]!.files);
+    jobRow('job-3', 'done');
+    // done: nothing is imported again
+    expect(await sync.start(1)).toMatchObject({ toDownload: 0, jobId: null });
+    expect(workouts()).toBe(5);
+    expect(sync.status(1).activities).toMatchObject({ fetched: 5, failed: 0 });
+  });
+
+  it('imports the files of a sync that was cut off before its import job', async () => {
+    const { fake, sync, enqueued } = setup(Array.from({ length: 4 }, (_, i) => act(i)));
+    await sync.connect(1, 'me@example.com', 'secret', 'eu');
+    await sync.start(1);
+    // the app quit after the downloads: rows fetched, no job (as every row of an earlier version)
+    run(db, 'UPDATE connect_activities SET job_id = NULL');
+    enqueued.length = 0;
+    fake.state.downloads = [];
+    expect(await sync.start(1)).toMatchObject({ toDownload: 0, jobId: 'job-1' });
+    expect(fake.state.downloads).toEqual([]);
+    expect(enqueued[0]!.files).toHaveLength(4);
+    // rows whose workout exists are left alone
+    await importFiles(enqueued[0]!.files);
+    run(db, 'UPDATE connect_activities SET job_id = NULL');
+    expect(await sync.start(1)).toMatchObject({ jobId: null });
+    expect(activity('1000')).toMatchObject({ status: 'fetched', job_id: 'imported' });
+  });
+
+  it('gives up on a file after three import jobs that did not finish (a full sync tries again)', async () => {
+    const { sync, enqueued } = setup([act(1)]);
+    await sync.connect(1, 'me@example.com', 'secret', 'eu');
+    for (let i = 1; i <= 3; i++) {
+      expect(await sync.start(1)).toMatchObject({ jobId: `job-${i}` });
+      jobRow(`job-${i}`, 'failed', 'Worker crashed');
+    }
+    expect(await sync.start(1)).toMatchObject({ jobId: null });
+    expect(activity('1001')).toMatchObject({ status: 'failed', error: 'Import did not finish: Worker crashed' });
+    expect(sync.status(1).activities).toMatchObject({ fetched: 0, failed: 1 });
+    expect(await sync.start(1)).toMatchObject({ toDownload: 0, jobId: null });
+    expect(await sync.start(1, true)).toMatchObject({ toDownload: 1, jobId: 'job-4' });
+    expect(enqueued[3]!.files).toHaveLength(1);
+    expect(activity('1001')).toMatchObject({ status: 'fetched', job_id: 'job-4' });
+  });
+
+  it('retries a failed download with a growing delay in normal syncs', async () => {
+    const { fake, sync } = setup([act(1), act(2)]);
+    await sync.connect(1, 'me@example.com', 'secret', 'eu');
+    fake.state.fileFaults.set('1002', 'unavailable');
+    const t0 = Math.floor(Date.now() / 1000);
+    expect(await sync.start(1)).toMatchObject({ downloaded: 1, failed: 1 });
+    expect(activity('1002')).toMatchObject({ status: 'failed', attempts: 1 });
+    expect(activity('1002')!.next_retry_at! - t0).toBeGreaterThanOrEqual(3 * 3600);
+    // not due yet
+    fake.state.downloads = [];
+    expect(await sync.start(1)).toMatchObject({ toDownload: 0 });
+    // three hours later, still failing: the next try waits longer
+    run(db, "UPDATE connect_activities SET next_retry_at = 0 WHERE remote_id = '1002'");
+    expect(await sync.start(1)).toMatchObject({ toDownload: 1, failed: 1 });
+    expect(activity('1002')).toMatchObject({ status: 'failed', attempts: 2 });
+    expect(activity('1002')!.next_retry_at! - t0).toBeGreaterThanOrEqual(12 * 3600);
+    // then COROS delivers it: one download, nothing else
+    fake.state.fileFaults.clear();
+    run(db, "UPDATE connect_activities SET next_retry_at = 0 WHERE remote_id = '1002'");
+    fake.state.downloads = [];
+    expect(await sync.start(1)).toMatchObject({ toDownload: 1, downloaded: 1, failed: 0 });
+    expect(fake.state.downloads).toEqual(['1002']);
+    expect(sync.status(1)).toMatchObject({ activities: { fetched: 2, failed: 0 }, lastError: null });
+  });
+
+  it('rejects a cut-off file instead of importing it', async () => {
+    const { fake, sync } = setup([act(1)]);
+    await sync.connect(1, 'me@example.com', 'secret', 'eu');
+    fake.state.fileFaults.set('1001', 'truncated');
+    expect(await sync.start(1)).toMatchObject({ downloaded: 0, failed: 1, jobId: null });
+    expect(activity('1001')).toMatchObject({ status: 'failed', error: 'COROS returned an incomplete FIT file' });
+    expect(fs.existsSync(path.join(dir, 'connect', 'coros', '1001.fit'))).toBe(false);
+  });
+
+  it('full sync downloads only what is not cached and imports only what is missing', async () => {
+    const { fake, sync, enqueued } = setup([act(1), act(2), act(3)]);
+    await sync.connect(1, 'me@example.com', 'secret', 'eu');
+    await sync.start(1);
+    await importFiles(enqueued[0]!.files);
+    fs.rmSync(path.join(dir, 'connect', 'coros', '1002.fit'));
+    fake.state.downloads = [];
+    // every workout exists: nothing to import
+    expect(await sync.start(1, true)).toMatchObject({ state: 'done', toDownload: 3, downloaded: 3, jobId: null });
+    expect(fake.state.downloads).toEqual(['1002']);
+    expect(enqueued).toHaveLength(1);
+    expect(activity('1002')).toMatchObject({ status: 'fetched', job_id: 'imported' });
+    // a workout that is missing is imported again
+    run(db, "DELETE FROM workouts WHERE json_extract(meta, '$.FitFile') = '1003.fit'");
+    expect(await sync.start(1, true)).toMatchObject({ jobId: 'job-2' });
+    expect(names(enqueued[1]!.files)).toEqual(['1003.fit']);
+  });
+
+  it('imports everything from the cache again after "Delete all data", without downloading', async () => {
+    const { fake, sync, enqueued } = setup([act(1), act(2), act(3)]);
+    await sync.connect(1, 'me@example.com', 'secret', 'eu');
+    await sync.start(1);
+    await importFiles(enqueued[0]!.files);
+    resetAthleteData(db, 1);
+    expect(workouts()).toBe(0);
+    fake.state.downloads = [];
+    expect(await sync.start(1)).toMatchObject({ toDownload: 3, jobId: 'job-2' });
+    expect(fake.state.downloads).toEqual([]);
+    await importFiles(enqueued[1]!.files);
+    expect(workouts()).toBe(3);
   });
 });
 

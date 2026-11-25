@@ -37,6 +37,19 @@ export class FitError extends Error {}
 
 const FIT_EPOCH_S = 631065600;
 
+/**
+ * Cheap check that a FIT file arrived complete, from its header (first 12–14 bytes) and its size: the '.FIT'
+ * signature and at least header + data + CRC bytes. Catches cut-off downloads and error pages without decoding.
+ */
+export function fitHeaderComplete(head: Uint8Array, size: number): boolean {
+  if (head.length < 12) return false;
+  const headerSize = head[0]!;
+  if (headerSize !== 12 && headerSize !== 14) return false;
+  if (head[8] !== 0x2e || head[9] !== 0x46 || head[10] !== 0x49 || head[11] !== 0x54) return false; // '.FIT'
+  const dataSize = (head[4]! | (head[5]! << 8) | (head[6]! << 16) | (head[7]! << 24)) >>> 0;
+  return size >= headerSize + dataSize + 2;
+}
+
 /** FIT sport / sub sport → HKWorkoutActivityType suffix. */
 function activityTypeOf(sport: string, sub: string): string {
   switch (sport) {
