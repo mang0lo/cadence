@@ -385,7 +385,7 @@ export interface ProgressFitnessResponse {
         acwrStatus: ProgressAcwrStatus | null;
       })
     | null;
-  /** Weekly load sums in the range. */
+  /** Weekly load sums of the days in the range (the first and the last week can be partial: fromDay / toDay). */
   weeks: (ProgressDayRange & { key: string; load: number; count: number })[];
   /** TSB bounds of each zone (null = open ended). */
   zones: { key: ProgressFormZone; min: number | null; max: number | null }[];

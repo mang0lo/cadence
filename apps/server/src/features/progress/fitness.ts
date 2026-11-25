@@ -36,6 +36,9 @@ const r1 = (x: number) => Math.round(x * 10) / 10;
 /**
  * Fitness (CTL), fatigue (ATL) and form (TSB) from the daily relative effort. The model runs from the first
  * active day up to today (missing days = 0 load), then the requested range is cut out.
+ * After the last active day every load is 0: CTL and ATL only decay and the 7 / 28-day load means are 0 after
+ * 28 days, so the day by day model stops 35 days after it and later days are extrapolated exactly (a far `today`
+ * or `toDay` costs nothing).
  */
 export function fitness(
   db: Db,
@@ -61,47 +64,64 @@ export function fitness(
   );
   if (!rows.length) return { ...base, days: [], current: null, weeks: [] };
   const start = mustParseDay(rows[0]!.day);
-  const end = Math.max(mustParseDay(q.today), mustParseDay(rows.at(-1)!.day), mustParseDay(q.toDay));
-  const loads = new Array<number>(end - start + 1).fill(0);
-  const counts = new Array<number>(end - start + 1).fill(0);
+  const last = mustParseDay(rows.at(-1)!.day);
+  const end = Math.max(mustParseDay(q.today), last, mustParseDay(q.toDay));
+  const dense = Math.min(end, last + 35) - start + 1;
+  const loads = new Array<number>(dense).fill(0);
+  const counts = new Array<number>(dense).fill(0);
   for (const r of rows) {
     const i = mustParseDay(r.day) - start;
     loads[i] = r.load;
     counts[i] = r.n;
   }
   const model = trainingLoad(loads);
-  const dayAt = (i: number): ProgressFitnessDay => ({
-    day: dayString(start + i),
-    load: r1(loads[i]!),
-    ctl: r1(model[i]!.ctl),
-    atl: r1(model[i]!.atl),
-    tsb: r1(model[i]!.tsb),
-    ramp: r1(model[i]!.ramp),
-    acwr: model[i]!.acwr === null ? null : Math.round(model[i]!.acwr! * 100) / 100,
-  });
+  const D = dense - 1;
+  const ctlAt = (i: number) => (i <= D ? model[i]!.ctl : model[D]!.ctl * (1 - 1 / CTL_DAYS) ** (i - D));
+  const dayAt = (i: number): ProgressFitnessDay => {
+    if (i > D) {
+      const ctl = ctlAt(i);
+      const atl = model[D]!.atl * (1 - 1 / ATL_DAYS) ** (i - D);
+      return { day: dayString(start + i), load: 0, ctl: r1(ctl), atl: r1(atl), tsb: r1(ctl - atl), ramp: r1(ctl - ctlAt(i - 7)), acwr: null };
+    }
+    return {
+      day: dayString(start + i),
+      load: r1(loads[i]!),
+      ctl: r1(model[i]!.ctl),
+      atl: r1(model[i]!.atl),
+      tsb: r1(model[i]!.tsb),
+      ramp: r1(model[i]!.ramp),
+      acwr: model[i]!.acwr === null ? null : Math.round(model[i]!.acwr! * 100) / 100,
+    };
+  };
   const a = Math.max(0, mustParseDay(q.fromDay) - start);
-  const b = Math.min(loads.length - 1, mustParseDay(q.toDay) - start);
+  const b = mustParseDay(q.toDay) - start;
   const days: ProgressFitnessDay[] = [];
   for (let i = a; i <= b; i++) days.push(dayAt(i));
 
   const ti = mustParseDay(q.today) - start;
   let current: ProgressFitnessResponse['current'] = null;
-  if (ti >= 0 && ti < loads.length) {
+  if (ti >= 0) {
     const d = dayAt(ti);
     current = { ...d, zone: formZone(d.tsb), rampStatus: rampStatus(d.ramp), acwrStatus: acwrStatus(d.acwr) };
   }
 
   const weekStart = weekStartOf(db, athleteId);
+  // only the days of the range (the first and the last week can be partial, like the volume buckets)
+  const fromN = mustParseDay(q.fromDay);
+  const toN = mustParseDay(q.toDay);
   const weeks = bucketsBetween(q.fromDay, q.toDay, 'week', weekStart).map((w) => {
+    const ws = mustParseDay(w.fromDay);
+    const wa = Math.max(ws, fromN);
+    const wb = Math.min(ws + 6, toN);
     let load = 0;
     let count = 0;
-    for (let d = mustParseDay(w.fromDay); d <= mustParseDay(w.toDay); d++) {
+    for (let d = wa; d <= wb; d++) {
       const i = d - start;
       if (i < 0 || i >= loads.length) continue;
       load += loads[i]!;
       count += counts[i]!;
     }
-    return { ...w, load: r1(load), count };
+    return { ...w, fromDay: dayString(wa), toDay: dayString(wb), load: r1(load), count };
   });
   return { ...base, days, current, weeks };
 }
