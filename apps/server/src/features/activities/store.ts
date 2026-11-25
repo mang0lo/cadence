@@ -6,7 +6,8 @@ import { gunzipJson, gzipJson } from '../../lib/gzip';
 import { analyzeActivity, withFtp, type AnalysisEvent } from './analysis';
 
 /**
- * Bump when the analysis algorithm changes: cached rows with an older key are recomputed on access.
+ * Bump when the analysis algorithm changes: cached rows with an older key are recomputed on access, by the next
+ * derive run and right after the server starts (a background derive, see routes.ts).
  * 2: climbs and lap climbing never across a track break, power peaks from the power curve (glitches ignored),
  *    decoupling without the warm-up (one definition with Progress → Trends), efficiency basis and pace efficiency
  *    stored.
@@ -33,6 +34,9 @@ interface WorkoutRow {
 }
 
 const WORKOUT_COLS = 'id, athlete_id, sport, start_ts, end_ts, lap_length_m, derived_version, updated_at';
+const WORKOUT_COLS_W = WORKOUT_COLS.split(', ')
+  .map((c) => `w.${c}`)
+  .join(', ');
 
 interface StreamMeta {
   version: number;
@@ -147,22 +151,64 @@ export function getAnalysis(db: Db, athleteId: number, id: number): ActivityAnal
   return a;
 }
 
-/** Derive step: (re)compute the analysis of new/changed workouts (or all of them). */
+interface KeyRow extends WorkoutRow {
+  s_version: number | null;
+  s_points: number | null;
+  cache_key: string | null;
+}
+
+/** Every workout of the athlete with its expected and its stored cache key (one indexed pass). */
+function keyRows(db: Db, athleteId: number): (KeyRow & { key: string })[] {
+  return all<KeyRow>(
+    db,
+    `SELECT ${WORKOUT_COLS_W}, s.version AS s_version, s.points AS s_points, a.cache_key
+     FROM workouts w LEFT JOIN workout_streams s ON s.workout_id = w.id LEFT JOIN activities_analysis a ON a.workout_id = w.id
+     WHERE w.athlete_id = ? ORDER BY w.start_ts`,
+    [athleteId],
+  ).map((r) => ({
+    ...r,
+    key: analysisKey(r, r.s_version === null ? null : { version: r.s_version, points: r.s_points ?? 0 }),
+  }));
+}
+
+/** The key without the update time: it only differs when the algorithm, the derivation or the streams changed. */
+const keyCore = (key: string) => key.split('|').filter((_, i) => i !== 2).join('|');
+
+/**
+ * Workouts whose cached analysis is missing or computed from something else: an older algorithm, an older
+ * derivation or other streams (a cancelled import, a failed analysis step). Renaming a workout (a newer updated_at
+ * alone) does not count: the activity page refreshes such a row when it is opened.
+ */
+export function staleAnalyses(db: Db, athleteId: number): number[] {
+  return keyRows(db, athleteId)
+    .filter((r) => r.cache_key === null || keyCore(r.cache_key) !== keyCore(r.key))
+    .map((r) => r.id);
+}
+
+/** Athletes with stale analyses (checked when the server starts). */
+export function athletesWithStaleAnalyses(db: Db): number[] {
+  const ids = all<{ athlete_id: number }>(db, 'SELECT DISTINCT athlete_id FROM workouts').map((r) => r.athlete_id);
+  return ids.filter((id) => staleAnalyses(db, id).length > 0);
+}
+
+/**
+ * Derive step: (re)compute the analysis of the changed workouts plus every workout whose cached key is missing or
+ * outdated (catch-up). A full run ('all') only recomputes changed keys: the analysis depends on nothing else (HR
+ * settings, other workouts). Each batch is computed first and written in a short transaction.
+ */
 export function deriveAnalyses(ctx: DeriveContext): void {
   const { db, athleteId } = ctx;
-  const rows =
-    ctx.workoutIds === 'all'
-      ? all<WorkoutRow>(db, `SELECT ${WORKOUT_COLS} FROM workouts WHERE athlete_id = ? ORDER BY start_ts`, [athleteId])
-      : ctx.workoutIds.flatMap(
-          (id) => get<WorkoutRow>(db, `SELECT ${WORKOUT_COLS} FROM workouts WHERE id = ? AND athlete_id = ?`, [id, athleteId]) ?? [],
-        );
+  const listed = ctx.workoutIds === 'all' ? null : new Set(ctx.workoutIds);
+  const rows = keyRows(db, athleteId).filter((r) => listed?.has(r.id) || r.cache_key !== r.key);
   const BATCH = 25;
   for (let i = 0; i < rows.length; i += BATCH) {
     ctx.checkCancelled();
     const slice = rows.slice(i, i + BATCH);
+    const done = slice.map((w) => ({ w, a: computeAnalysis(db, w) }));
     tx(db, () => {
-      for (const w of slice) refreshAnalysis(db, w);
+      for (const { w, a } of done) store(db, w, w.key, a);
     });
     ctx.report(Math.min(1, (i + slice.length) / rows.length), `${Math.min(rows.length, i + slice.length)} / ${rows.length}`);
   }
+  if (!rows.length) ctx.report(1);
 }
