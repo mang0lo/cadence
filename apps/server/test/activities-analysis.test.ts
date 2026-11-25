@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import type { WorkoutStreams } from '@cadence/shared';
+import { PROGRESS_POWER_DURATIONS, type WorkoutStreams } from '@cadence/shared';
 import {
   aerobicDecoupling,
   analyzeActivity,
   efficiencyFactor,
+  POWER_PEAK_WINDOWS,
   statsBetween,
   toSeries,
 } from '../src/features/activities/analysis';
+import { bestAverages, powerParts } from '../src/features/progress/power-math';
 
 /** Streams with one sample every `step` seconds; generators get the time (s) or the distance (m). */
 function synth(
@@ -62,6 +64,33 @@ describe('heart rate coverage of sparse streams', () => {
     const s = toSeries(synth(3600, { step: 90, hr: (t) => (t < 1200 ? 150 : null) }));
     expect(efficiencyFactor(s, 3, 'speed')).toBeNull();
     expect(aerobicDecoupling(s, s.speed, 'pace')).toBeNull();
+  });
+});
+
+describe('peak power (same as the power curve)', () => {
+  it('uses the power curve best averages and ignores sensor glitches', () => {
+    const streams = synth(3600, {
+      speed: () => 8,
+      hr: () => 140,
+      power: (t) => (t === 100 ? 65535 : t >= 1000 && t < 1300 ? 320 : 200),
+    });
+    const p = run(streams, 'ride').power!;
+    expect(p.maxW).toBe(320);
+    const bests = bestAverages(powerParts({ ...streams, power: streams.power!.map((w) => (w! > 3000 ? null : w)) }), POWER_PEAK_WINDOWS);
+    expect(p.peaks).toEqual(bests.map((b) => ({ durationS: b.durationS, watts: b.watts })));
+    expect(p.peaks.find((x) => x.durationS === 5)!.watts).toBe(320);
+    expect(p.peaks.find((x) => x.durationS === 300)!.watts).toBe(320);
+    for (const w of POWER_PEAK_WINDOWS) expect(PROGRESS_POWER_DURATIONS).toContain(w);
+  });
+
+  it('never averages across a track break', () => {
+    // two 10-minute parts at 300 W, a paused train ride between them: no 20-minute best
+    const t: number[] = [];
+    const power: number[] = [];
+    for (let i = 0; i <= 600; i++) (t.push(i), power.push(300));
+    for (let i = 0; i <= 600; i++) (t.push(4200 + i), power.push(300));
+    const a = run({ t, power, breaks: [601], moving: t.map((_, i) => (i === 0 || i === 601 ? 0 : 1)) }, 'ride');
+    expect(a.power!.peaks.map((x) => x.durationS)).toEqual([5, 60, 300]);
   });
 });
 

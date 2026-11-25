@@ -21,6 +21,7 @@ import {
   trackParts,
 } from '@cadence/shared';
 import { smooth } from '../../derive/streams';
+import { bestAverages, MAX_PLAUSIBLE_W, powerParts } from '../progress/power-math';
 
 export interface Series {
   n: number;
@@ -64,13 +65,14 @@ export const GRID_STEP_M = 10;
 
 const isNum = (x: number) => x === x;
 
-function floatArray(a: (number | null)[] | undefined, n: number): Float64Array | null {
+/** Typed copy of a stream array; values outside [lo, hi] count as missing (NaN). */
+function floatArray(a: (number | null)[] | undefined, n: number, lo = -Infinity, hi = Infinity): Float64Array | null {
   if (!a || a.length !== n) return null;
   const out = new Float64Array(n);
   let any = false;
   for (let i = 0; i < n; i++) {
     const v = a[i];
-    if (v === null || v === undefined || !Number.isFinite(v)) out[i] = NaN;
+    if (v === null || v === undefined || !Number.isFinite(v) || v < lo || v > hi) out[i] = NaN;
     else {
       out[i] = v;
       any = true;
@@ -79,7 +81,10 @@ function floatArray(a: (number | null)[] | undefined, n: number): Float64Array |
   return any ? out : null;
 }
 
-/** Typed arrays from the stream DTO (missing/mismatched arrays become null). */
+/**
+ * Typed arrays from the stream DTO (missing/mismatched arrays become null). Power outside 0 … MAX_PLAUSIBLE_W is a
+ * sensor glitch and counts as missing, as in the power curve.
+ */
 export function toSeries(s: WorkoutStreams): Series {
   const n = s.t.length;
   const t = Float64Array.from(s.t);
@@ -94,7 +99,7 @@ export function toSeries(s: WorkoutStreams): Series {
     speed: floatArray(s.speed, n),
     hr: floatArray(s.hr, n),
     cadence: floatArray(s.cadence, n),
-    power: floatArray(s.power, n),
+    power: floatArray(s.power, n, 0, MAX_PLAUSIBLE_W),
     moving,
     breaks: s.breaks ?? [],
   };
@@ -376,8 +381,14 @@ export function normalizedPower(p: Float64Array): number | null {
   return k >= W ? (acc / k) ** 0.25 : null;
 }
 
+/** Peak power durations of the activity page (a subset of PROGRESS_POWER_DURATIONS: the same bests as the curve). */
 export const POWER_PEAK_WINDOWS = [5, 60, 300, 1200, 3600];
 
+/**
+ * Average, max and normalized power plus the peaks. The peaks are the power curve's best averages (power-math:
+ * 1 Hz per track part, never across a break, unmeasured seconds count as 0 W), so the activity page and Progress →
+ * Power show the same numbers.
+ */
 export function powerAnalysis(s: Series): ActivityPower | null {
   const p = powerPerSecond(s);
   if (!p || !s.power) return null;
@@ -398,10 +409,10 @@ export function powerAnalysis(s: Series): ActivityPower | null {
   }
   const avgW = sum / cnt;
   const np = normalizedPower(p);
-  const peaks = POWER_PEAK_WINDOWS.flatMap((w) => {
-    const v = peakPower(p, w);
-    return v === null ? [] : [{ durationS: w, watts: v }];
-  });
+  const peaks = bestAverages(powerParts({ t: s.t, power: s.power, breaks: s.breaks }), POWER_PEAK_WINDOWS).map((b) => ({
+    durationS: b.durationS,
+    watts: b.watts,
+  }));
   return {
     avgW,
     maxW,

@@ -7,7 +7,7 @@ import { analyzeActivity, withFtp, type AnalysisEvent } from './analysis';
 
 /**
  * Bump when the analysis algorithm changes: cached rows with an older key are recomputed on access.
- * 2: climbs and lap climbing never across a track break.
+ * 2: climbs and lap climbing never across a track break, power peaks from the power curve (glitches ignored).
  */
 export const ANALYSIS_VERSION = 2;
 
