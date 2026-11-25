@@ -2,7 +2,7 @@ import type { IntradayBucket, IntradayResponse } from '@cadence/shared';
 import { all, type Db } from '../../db/db';
 import { badRequest } from '../../lib/http';
 import { parseDay } from '../../lib/time';
-import type { TypeRow } from './util';
+import { localDayRange, localDaySql, type TypeRow } from './util';
 
 export interface IntradayRow {
   start_ts: number;
@@ -71,15 +71,14 @@ export function buildIntraday(
 ): IntradayResponse {
   const dn = parseDay(day);
   if (dn === null) throw badRequest(`Invalid day ${day}`);
-  // generous UTC window, then the exact local-day filter (offsets of samples may differ while travelling)
-  const lo = dn * 86400 - 15 * 3600;
-  const hi = (dn + 1) * 86400 + 15 * 3600;
+  // the samples of the local day, each by its own offset (offsets of samples may differ while travelling)
+  const w = localDaySql('r', localDayRange(day, day));
   const rows = all<IntradayRow>(
     db,
-    `SELECT start_ts, tz_min, value, source_id FROM records
-     WHERE athlete_id = ? AND type_id = ? AND start_ts >= ? AND start_ts < ? AND value IS NOT NULL ORDER BY start_ts`,
-    [athleteId, type.id, lo, hi],
-  ).filter((r) => Math.floor((r.start_ts + r.tz_min * 60) / 86400) === dn);
+    `SELECT r.start_ts, r.tz_min, r.value, r.source_id FROM records r
+     WHERE r.athlete_id = ? AND r.type_id = ? AND ${w.sql} AND r.value IS NOT NULL ORDER BY r.start_ts`,
+    [athleteId, type.id, ...w.params],
+  );
   const tzMin = rows.length ? rows[0]!.tz_min : fallbackTzMin;
   const tzEnd = rows.length ? rows[rows.length - 1]!.tz_min : tzMin;
   const dayStartTs = dn * 86400 - tzMin * 60;

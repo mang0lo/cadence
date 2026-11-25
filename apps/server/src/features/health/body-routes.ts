@@ -71,13 +71,14 @@ export function registerBodyRoutes(app: FastifyInstance): void {
     if (out.length) return out;
 
     // fallback: separate systolic and diastolic records that share their start time
+    const w = localDaySql('r', range);
     const rec = all<{ start_ts: number; tz_min: number; value: number; ident: string; source: string | null }>(
       app.db,
       `SELECT r.start_ts, r.tz_min, r.value, t.identifier AS ident, s.name AS source
        FROM records r JOIN record_types t ON t.id = r.type_id LEFT JOIN sources s ON s.id = r.source_id
-       WHERE r.athlete_id = ? AND t.identifier IN (?, ?) AND r.start_ts >= ? AND r.start_ts < ? AND r.value IS NOT NULL
+       WHERE r.athlete_id = ? AND t.identifier IN (?, ?) AND ${w.sql} AND r.value IS NOT NULL
        ORDER BY r.start_ts`,
-      [req.athleteId, SYS, DIA, range.lo, range.hi],
+      [req.athleteId, SYS, DIA, ...w.params],
     );
     const pairs = new Map<number, { sys?: number; dia?: number; tz: number; source: string | null }>();
     for (const r of rec) {

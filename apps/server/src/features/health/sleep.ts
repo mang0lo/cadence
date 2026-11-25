@@ -6,7 +6,7 @@ import { addDays, parseDay } from '../../lib/time';
 import { tzOffsetMinutes } from '../../lib/tz';
 import type { DeriveStep } from '../types';
 import { buildSleepNights, type BuiltSleep, type RawSleepRecord } from './sleep-builder';
-import { typeIdByIdentifier } from './util';
+import { localDayRange, typeIdByIdentifier } from './util';
 
 interface SleepRecordRow {
   start_ts: number;
@@ -66,8 +66,8 @@ export function rebuildSleepNights(db: Db, athleteId: number, sinceDay: string |
       return mergeExternalNights(db, athleteId, fromDay);
     });
   }
-  // records from well before fromDay so sessions that end on fromDay are complete (offsets reach ±14 h)
-  const lo = fromDay ? (parseDay(addDays(fromDay, -2)) ?? 0) * 86400 - 14 * 3600 : -1e12;
+  // records from well before fromDay so sessions that end on fromDay are complete
+  const lo = fromDay ? localDayRange(addDays(fromDay, -2)).lo : -1e12;
   const rows = all<SleepRecordRow>(
     db,
     `SELECT r.start_ts, r.end_ts, r.tz_min, r.text, r.source_id, s.name

@@ -12,10 +12,9 @@ import type {
 } from '@cadence/shared';
 import { all, get, type Db } from '../../db/db';
 import { getSettings } from '../../core/settings';
-import { parseDay } from '../../lib/time';
 import { buildExplorer } from './explorer';
 import { aggregatePoints, combineCategoryRows, summarize, withoutDuplicateSleep, type DailyRow } from './series';
-import { checkDayOrder, dayParam, resolveType, type TypeRow } from './util';
+import { checkDayOrder, dayParam, localDayRange, localDaySql, resolveType, type TypeRow } from './util';
 
 const seriesQuery = z.object({
   type: z.string().min(1).max(200),
@@ -41,14 +40,6 @@ const samplesQuery = z.object({
   order: z.enum(['asc', 'desc']).default('desc'),
 });
 
-/** UTC window that surely contains a local day range (offsets reach ±14 h); exact filtering happens on the local day. */
-function tsWindow(fromDay: string | undefined, toDay: string | undefined): { lo: number; hi: number } {
-  return {
-    lo: fromDay ? (parseDay(fromDay) ?? 0) * 86400 - 15 * 3600 : -1e12,
-    hi: toDay ? ((parseDay(toDay) ?? 0) + 1) * 86400 + 15 * 3600 : 1e12,
-  };
-}
-
 function typeInfo(db: Db, athleteId: number, t: TypeRow): RecordTypeInfo {
   const s = get<{ count: number; first_ts: number | null; last_ts: number | null }>(
     db,
@@ -67,30 +58,41 @@ function typeInfo(db: Db, athleteId: number, t: TypeRow): RecordTypeInfo {
   };
 }
 
-const LOCAL_DAY = "date(r.start_ts + r.tz_min * 60, 'unixepoch')";
-
-/** WHERE clause on `records r` for one type and a range; the exact local-day predicates only exist when days are given. */
+/**
+ * WHERE clause on `records r` for one type and a range: the UTC window of the local days (narrowed by `from` / `to`)
+ * for the primary key, plus the exact local days as integer arithmetic (only when days are given).
+ */
 function recordWhere(
   athleteId: number,
   typeId: number,
   o: { fromDay?: string; toDay?: string; from?: number; to?: number },
-): { sql: string; params: (string | number)[] } {
-  const win = tsWindow(o.fromDay, o.toDay);
-  let sql = 'r.athlete_id = ? AND r.type_id = ? AND r.start_ts >= ? AND r.start_ts < ?';
-  const params: (string | number)[] = [athleteId, typeId, o.from ?? win.lo, o.to ?? win.hi];
-  if (o.fromDay) {
-    sql += ` AND ${LOCAL_DAY} >= ?`;
-    params.push(o.fromDay);
-  }
-  if (o.toDay) {
-    sql += ` AND ${LOCAL_DAY} <= ?`;
-    params.push(o.toDay);
-  }
-  return { sql, params };
+): { sql: string; params: number[] } {
+  const days = localDayRange(o.fromDay, o.toDay);
+  const w = localDaySql('r', {
+    ...days,
+    lo: o.from === undefined ? days.lo : Math.max(o.from, days.lo),
+    hi: o.to === undefined ? days.hi : Math.min(o.to, days.hi),
+  });
+  return { sql: `r.athlete_id = ? AND r.type_id = ? AND ${w.sql}`, params: [athleteId, typeId, ...w.params] };
 }
 
-/** /metric/sources answers per athlete, type and range; `stamp` = sample count and newest sample of the type. */
+/**
+ * Sample count and newest sample of a type (record_type_stats, refreshed when an import or sync changes the type):
+ * answers computed from its records stay valid while this stamp is unchanged.
+ */
+function typeStamp(db: Db, athleteId: number, typeId: number): { count: number; stamp: string } {
+  const s = get<{ count: number; last_ts: number | null }>(
+    db,
+    'SELECT count, last_ts FROM record_type_stats WHERE athlete_id = ? AND type_id = ?',
+    [athleteId, typeId],
+  );
+  return { count: s?.count ?? 0, stamp: `${s?.count ?? 0}|${s?.last_ts ?? 0}` };
+}
+
+/** /metric/sources answers per athlete, type and range, validated against the type's stamp. */
 const sourcesCache = new Map<string, { stamp: string; value: MetricSources }>();
+/** Sample counts of ranged /metric/samples requests (every page of a range needs it), validated the same way. */
+const totalsCache = new Map<string, { stamp: string; total: number }>();
 
 export function registerMetricRoutes(app: FastifyInstance): void {
   app.get('/explorer', async (req): Promise<ExplorerResponse> => buildExplorer(app.db, req.athleteId));
@@ -159,13 +161,8 @@ export function registerMetricRoutes(app: FastifyInstance): void {
     const w = recordWhere(req.athleteId, t.id, q);
     // Millions of samples for heart rate: the answer only changes with an import, so it is kept per type and range
     // (validated against the type's sample count and newest sample).
-    const stat = get<{ count: number; last_ts: number | null }>(
-      app.db,
-      'SELECT count, last_ts FROM record_type_stats WHERE athlete_id = ? AND type_id = ?',
-      [req.athleteId, t.id],
-    );
+    const { stamp } = typeStamp(app.db, req.athleteId, t.id);
     const cacheKey = `${req.athleteId}|${t.id}|${q.fromDay ?? ''}|${q.toDay ?? ''}`;
-    const stamp = `${stat?.count ?? 0}|${stat?.last_ts ?? 0}`;
     const cached = sourcesCache.get(cacheKey);
     if (cached && cached.stamp === stamp) return cached.value;
     // group on the two integer ids first, then name the few groups (joining and concatenating per sample is slow)
@@ -215,10 +212,20 @@ export function registerMetricRoutes(app: FastifyInstance): void {
     const t = resolveType(app.db, q.type);
     const w = recordWhere(req.athleteId, t.id, q);
     const unbounded = q.from === undefined && q.to === undefined && !q.fromDay && !q.toDay;
-    // the whole history is already counted in record_type_stats (a COUNT(*) over millions of rows would block the loop)
-    const total = unbounded
-      ? (get<{ count: number }>(app.db, 'SELECT count FROM record_type_stats WHERE athlete_id = ? AND type_id = ?', [req.athleteId, t.id])?.count ?? 0)
-      : (get<{ n: number }>(app.db, `SELECT COUNT(*) AS n FROM records r WHERE ${w.sql}`, w.params)?.n ?? 0);
+    // the whole history is already counted in record_type_stats, a range is counted once for all its pages (a COUNT(*)
+    // over a year of heart rate blocks the event loop for every page otherwise)
+    const { count, stamp } = typeStamp(app.db, req.athleteId, t.id);
+    let total = count;
+    if (!unbounded) {
+      const key = `${req.athleteId}|${t.id}|${q.fromDay ?? ''}|${q.toDay ?? ''}|${q.from ?? ''}|${q.to ?? ''}`;
+      const cached = totalsCache.get(key);
+      if (cached && cached.stamp === stamp) total = cached.total;
+      else {
+        total = get<{ n: number }>(app.db, `SELECT COUNT(*) AS n FROM records r WHERE ${w.sql}`, w.params)?.n ?? 0;
+        if (totalsCache.size >= 200) totalsCache.clear();
+        totalsCache.set(key, { stamp, total });
+      }
+    }
     const items = all<MetricSample>(
       app.db,
       `SELECT r.start_ts AS startTs, r.end_ts AS endTs, r.tz_min AS tzMin, r.value, r.text, s.name AS source,

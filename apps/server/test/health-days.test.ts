@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { BloodPressureReading } from '@cadence/shared';
+import type { BloodPressureReading, HeartEvent, IntradayResponse, MetricSample, MetricSources, Page } from '@cadence/shared';
 import { run } from '../src/db/db';
 import { addDays } from '../src/lib/time';
 import { buildIntraday } from '../src/features/health/intraday';
@@ -39,6 +39,7 @@ beforeAll(async () => {
   fx.T.hr = fx.addType(1, 'HKQuantityTypeIdentifierHeartRate', 'quantity', 'count/min', 'avg');
   fx.T.sys = fx.addType(2, SYS, 'quantity', 'mmHg', 'avg');
   fx.T.dia = fx.addType(3, DIA, 'quantity', 'mmHg', 'avg');
+  fx.T.high = fx.addType(4, 'HKCategoryTypeIdentifierHighHeartRateEvent', 'category', null, 'duration');
   for (let i = 0; i < DAYS; i++) {
     const day = addDays(FIRST, i);
     bp(`${day}T07:00:00+01:00`, 100 + i, 70); // systolic numbers the day: 100 … 139 in the morning
@@ -79,6 +80,52 @@ describe('blood pressure: the newest readings of a range', () => {
     }
     expect(times(await readings('?limit=2'))).toEqual(['2026-03-04 123', '2026-03-05 124']);
     expect(times(await readings('?toDay=2026-03-02&limit=1'))).toEqual(['2026-03-02 121']);
+  });
+});
+
+describe('health routes: samples of local days', () => {
+  // 2026-02-10 locally: 10:00 and 23:30 at +01:00 (23:30 is still the 10th, 22:30 UTC) and 21:00 at −05:00 (02:00 UTC
+  // on the 11th); 00:30 at +01:00 on the 11th is 23:30 UTC on the 10th but belongs to the 11th
+  const DAY = '2026-02-10';
+  const samples = (offset = 0) =>
+    fx.getJson<Page<MetricSample>>(`/api/health/metric/samples?type=HeartRate&fromDay=${DAY}&toDay=${DAY}&limit=2&offset=${offset}`);
+
+  beforeAll(() => {
+    fx.rec(fx.T.hr!, `${DAY}T23:30:00+01:00`, `${DAY}T23:30:00+01:00`, { value: 61 });
+    fx.rec(fx.T.hr!, `${DAY}T21:00:00-05:00`, `${DAY}T21:00:00-05:00`, { value: 62, tz: -300 });
+    fx.rec(fx.T.hr!, '2026-02-11T00:30:00+01:00', '2026-02-11T00:30:00+01:00', { value: 70 });
+    fx.refreshStats();
+  });
+
+  it('finds the samples of a local day by their own offsets, on every page and in the sources', async () => {
+    const first = await samples();
+    expect(first.total).toBe(3);
+    expect(first.items.map((x) => x.value)).toEqual([62, 61]); // newest first: 02:00 UTC, then 22:30 UTC
+    const second = await samples(2);
+    expect(second).toMatchObject({ total: 3, offset: 2 });
+    expect(second.items.map((x) => x.value)).toEqual([60]);
+    const src = await fx.getJson<MetricSources>(`/api/health/metric/sources?type=HeartRate&fromDay=${DAY}&toDay=${DAY}`);
+    expect(src.total).toBe(3);
+    const day = await fx.getJson<IntradayResponse>(`/api/health/intraday?type=HeartRate&day=${DAY}`);
+    expect(day.sampleCount).toBe(3);
+    const next = await fx.getJson<Page<MetricSample>>('/api/health/metric/samples?type=HeartRate&fromDay=2026-02-11&toDay=2026-02-11');
+    expect(next.items.map((x) => x.value)).toEqual([70]);
+  });
+
+  it('counts a range again once its type has new samples', async () => {
+    expect((await samples()).total).toBe(3);
+    fx.rec(fx.T.hr!, `${DAY}T12:00:00+01:00`, `${DAY}T12:00:00+01:00`, { value: 63 });
+    fx.refreshStats();
+    expect((await samples()).total).toBe(4);
+    expect((await samples(2)).total).toBe(4);
+  });
+
+  it('limits heart notifications after keeping only the days asked for', async () => {
+    fx.rec(fx.T.high!, `${DAY}T18:00:00+01:00`, `${DAY}T18:10:00+01:00`, { text: 'NotApplicable' });
+    fx.rec(fx.T.high!, '2026-02-11T00:30:00+01:00', '2026-02-11T00:40:00+01:00', { text: 'NotApplicable' });
+    const ev = await fx.getJson<HeartEvent[]>(`/api/health/heart/events?fromDay=${DAY}&toDay=${DAY}&limit=1`);
+    expect(ev).toHaveLength(1);
+    expect(ev[0]).toMatchObject({ type: 'high', ts: ts(`${DAY}T18:00:00+01:00`) });
   });
 });
 
