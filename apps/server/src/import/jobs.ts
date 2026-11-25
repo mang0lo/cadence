@@ -12,6 +12,24 @@ import { athletesWithPendingChanges, pendingScope } from './scope';
 import type { JobWorkerData, WorkerMessage } from './worker';
 import { emptyStats } from './writer';
 
+/** Options of two derive requests run as one job: 'all' absorbs the other, otherwise their scopes are united. */
+export function mergeDeriveOptions(a: JobOptions, b: JobOptions): JobOptions {
+  const ids = (o: JobOptions) => o.workoutIds ?? 'all';
+  const ia = ids(a);
+  const ib = ids(b);
+  if (ia === 'all' || ib === 'all') return { ...a, workoutIds: 'all', sinceDay: null, records: undefined };
+  const records = a.records !== false || b.records !== false;
+  const days = [a, b].filter((o) => o.records !== false || o.sinceDay).map((o) => o.sinceDay ?? null);
+  // without a day, a request with records means every day (scope.ts); one without records only names workouts
+  const sinceDay = days.includes(null) ? null : (days.filter((d): d is string => d !== null).sort()[0] ?? null);
+  return {
+    ...a,
+    workoutIds: [...new Set([...ia, ...ib])].sort((x, y) => x - y),
+    sinceDay,
+    records: records ? undefined : false,
+  };
+}
+
 declare module 'fastify' {
   interface FastifyInstance {
     /** Import / derive job queue (one job at a time). */
@@ -152,13 +170,28 @@ export class JobManager {
     );
   }
 
-  /** Queue a derive run: workoutIds 'all' (default) rebuilds every derived table. */
+  /**
+   * Queue a derive run: workoutIds 'all' (default) rebuilds every derived table. While a derive of the athlete is
+   * still waiting in the queue, a new request joins it (rapid settings changes or workout edits run one derive, not
+   * one each); a running derive is never changed.
+   */
   enqueueDerive(athleteId: number, options: JobOptions = {}): ImportJob {
-    return this.insert(athleteId, 'rederive', null, null, null, {
-      workoutIds: 'all',
-      sinceDay: null,
-      ...options,
-    });
+    const opts: JobOptions = { workoutIds: 'all', sinceDay: null, ...options };
+    const waiting = get<JobRow>(
+      this.db,
+      `SELECT * FROM import_jobs WHERE athlete_id = ? AND kind = 'rederive' AND status = 'queued'
+       ORDER BY created_at, rowid LIMIT 1`,
+      [athleteId],
+    );
+    if (waiting) {
+      const merged = mergeDeriveOptions(json<JobOptions>(waiting.options, {}), opts);
+      run(this.db, "UPDATE import_jobs SET options = ? WHERE id = ? AND status = 'queued'", [
+        JSON.stringify(merged),
+        waiting.id,
+      ]);
+      return this.get(athleteId, waiting.id)!;
+    }
+    return this.insert(athleteId, 'rederive', null, null, null, opts);
   }
 
   /** Derive what earlier jobs left underived (the athlete's pending changes, scope.ts) and nothing else. */

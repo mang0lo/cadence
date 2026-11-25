@@ -5,7 +5,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { migrateAll } from '../src/app';
 import { get, openDb, run, type Db } from '../src/db/db';
 import { DERIVE_VERSION } from '../src/derive/context';
-import { JobManager } from '../src/import/jobs';
+import { JobManager, mergeDeriveOptions } from '../src/import/jobs';
+import type { JobOptions } from '../src/import/run-job';
 import { startImportWatcher } from '../src/import/watch';
 
 let dir: string;
@@ -70,6 +71,51 @@ describe('job manager', () => {
     expect(jobs.get(1, 'gone')).toMatchObject({ status: 'failed', error: 'Source file is gone' });
     expect(jobs.busy(1)).toBe(false);
     await jobs.close();
+  });
+
+  it('runs derive requests that pile up in the queue as one job', async () => {
+    const jobs = new JobManager(
+      db,
+      { dbPath: path.join(dir, 'cadence.db'), uploadsDir: path.join(dir, 'uploads') },
+      'inline',
+    );
+    // not started: the jobs stay queued
+    const a = jobs.enqueueDerive(1, { origin: 'workout', workoutIds: [7], sinceDay: '2026-05-02', records: false });
+    const b = jobs.enqueueDerive(1, { origin: 'workout', workoutIds: [3], sinceDay: '2026-04-20', records: false });
+    expect(b.id).toBe(a.id);
+    const options = () =>
+      (db.prepare("SELECT options FROM import_jobs WHERE kind = 'rederive'").all() as { options: string }[]).map((r) =>
+        JSON.parse(r.options),
+      );
+    expect(options()).toEqual([{ origin: 'workout', workoutIds: [3, 7], sinceDay: '2026-04-20', records: false }]);
+    // a settings change (every record type from today) widens it, a full rebuild absorbs everything
+    jobs.enqueueDerive(1, { origin: 'settings', workoutIds: [], sinceDay: '2026-05-10' });
+    expect(options()).toEqual([{ origin: 'workout', workoutIds: [3, 7], sinceDay: '2026-04-20' }]);
+    expect(jobs.enqueueDerive(1, { origin: 'settings' }).id).toBe(a.id);
+    expect(options()).toEqual([{ origin: 'workout', workoutIds: 'all', sinceDay: null }]);
+    // another athlete, or an import in between, gets its own job
+    run(db, 'INSERT INTO athletes (id) VALUES (2)');
+    expect(jobs.enqueueDerive(2).id).not.toBe(a.id);
+    expect(jobs.list(1)).toHaveLength(1);
+    await jobs.close();
+  });
+
+  it('merges derive requests without losing any of their scope', () => {
+    const merge = (a: JobOptions, b: JobOptions) => mergeDeriveOptions(a, b);
+    // a request with records but no day means every day
+    expect(merge({ workoutIds: [1], sinceDay: '2026-05-01', records: false }, { workoutIds: [2], sinceDay: null })).toEqual({
+      workoutIds: [1, 2],
+      sinceDay: null,
+    });
+    // one without records and without a day only names its workouts
+    expect(merge({ workoutIds: [1], sinceDay: null, records: false }, { workoutIds: [2], sinceDay: '2026-05-01' })).toEqual({
+      workoutIds: [1, 2],
+      sinceDay: '2026-05-01',
+    });
+    expect(
+      merge({ workoutIds: [1], sinceDay: null, records: false }, { workoutIds: [2], sinceDay: '2026-05-01', records: false }),
+    ).toEqual({ workoutIds: [1, 2], sinceDay: '2026-05-01', records: false });
+    expect(merge({ workoutIds: [1], sinceDay: '2026-05-03' }, { workoutIds: 'all' })).toEqual({ workoutIds: 'all', sinceDay: null });
   });
 
   it('cancels queued jobs', async () => {
