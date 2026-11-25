@@ -34,6 +34,8 @@ export async function buildApp(config: Config, db: Db, opts: BuildAppOptions = {
   const app = Fastify({
     logger: { level: config.logLevel },
     bodyLimit: 25 * 1024 * 1024,
+    // opt-in (CADENCE_TRUST_PROXY): client address and https from the proxy's X-Forwarded-* headers
+    trustProxy: config.trustProxy,
   });
 
   app.decorate('config', config);
@@ -74,7 +76,8 @@ export async function buildApp(config: Config, db: Db, opts: BuildAppOptions = {
 
   await app.register(compress, { global: true, threshold: 2048 });
   await app.register(multipart, { limits: { fileSize: 64 * 1024 ** 3, files: 1 } });
-  registerAuth(app, config.password);
+  // Host / Origin / password checks: on the root, before any route, so every route below inherits them
+  registerAuth(app, config);
 
   await app.register(coreRoutes, { prefix: '/api' });
   await app.register(workoutRoutes, { prefix: '/api' });

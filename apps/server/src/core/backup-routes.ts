@@ -16,17 +16,47 @@ export const RESTART_EXIT_CODE = 75;
 
 const restorePath = (dbPath: string) => `${dbPath}.restore`;
 
+const stamp = () => new Date().toISOString().replace(/[:.]/g, '-');
+
+/** Renames a database file together with its -wal / -shm files. */
+function moveDb(from: string, to: string): void {
+  fs.renameSync(from, to);
+  for (const ext of ['-wal', '-shm']) if (fs.existsSync(from + ext)) fs.renameSync(from + ext, to + ext);
+}
+
 /** Called on startup before the database is opened: swaps in a pending restore, keeping the old file. */
 export function applyPendingRestore(dbPath: string): boolean {
   const pending = restorePath(dbPath);
   if (!fs.existsSync(pending)) return false;
-  if (fs.existsSync(dbPath)) {
-    const old = `${dbPath}.before-restore-${new Date().toISOString().replace(/[:.]/g, '-')}`;
-    fs.renameSync(dbPath, old);
-    for (const ext of ['-wal', '-shm']) if (fs.existsSync(dbPath + ext)) fs.renameSync(dbPath + ext, old + ext);
-  }
+  if (fs.existsSync(dbPath)) moveDb(dbPath, `${dbPath}.before-restore-${stamp()}`);
   fs.renameSync(pending, dbPath);
   return true;
+}
+
+/**
+ * Opens the database on startup (`open` opens and migrates it), applying a pending restore first. A restored file
+ * that cannot be opened or migrated is kept aside as <db>.failed-restore-<time> and the database from before the
+ * restore comes back: a bad backup must never keep the app from starting.
+ */
+export function openWithPendingRestore<T>(dbPath: string, open: (file: string) => T, log: (msg: string) => void = console.log): T {
+  if (!applyPendingRestore(dbPath)) return open(dbPath);
+  try {
+    const db = open(dbPath);
+    log('Restored the database from an uploaded backup');
+    return db;
+  } catch (e) {
+    log(`The uploaded backup could not be opened (${(e as Error).message}); the previous database is used again`);
+    moveDb(dbPath, `${dbPath}.failed-restore-${stamp()}`);
+    const dir = path.dirname(dbPath);
+    const prefix = `${path.basename(dbPath)}.before-restore-`;
+    const previous = fs
+      .readdirSync(dir)
+      .filter((f) => f.startsWith(prefix) && !/-(wal|shm)$/.test(f))
+      .sort()
+      .pop();
+    if (previous) moveDb(path.join(dir, previous), dbPath);
+    return open(dbPath);
+  }
 }
 
 function validateBackup(file: string): void {
@@ -40,6 +70,9 @@ function validateBackup(file: string): void {
       )
       .get() as { n: number };
     if (n !== 4) throw badRequest('This file is not a Cadence backup');
+    // written by Cadence's own migrations, not just four tables with the right names
+    if (!db.prepare("SELECT 1 FROM _migrations WHERE id = 'core_001_init'").get())
+      throw badRequest('This file is not a Cadence backup');
     const check = Object.values(db.prepare('PRAGMA quick_check').get() as Record<string, unknown>)[0];
     if (check !== 'ok') throw badRequest('The backup file is damaged');
   } catch (e) {

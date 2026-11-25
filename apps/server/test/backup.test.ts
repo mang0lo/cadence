@@ -6,8 +6,29 @@ import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp, migrateAll } from '../src/app';
 import { loadConfig, type Config } from '../src/config';
-import { applyPendingRestore } from '../src/core/backup-routes';
+import { applyPendingRestore, openWithPendingRestore } from '../src/core/backup-routes';
 import { openDb, run, type Db } from '../src/db/db';
+
+/** Four empty tables with the right names: what a web page could post to /api/backup/restore. */
+function craftedDb(file: string): Buffer {
+  const d = new DatabaseSync(file);
+  d.exec(`CREATE TABLE _migrations(id TEXT PRIMARY KEY, applied_at INTEGER NOT NULL);
+          CREATE TABLE athletes(x); CREATE TABLE workouts(x); CREATE TABLE records(x);`);
+  d.close();
+  return fs.readFileSync(file);
+}
+
+/** What server.ts does on startup. */
+function openMigrated(file: string): Db {
+  const d = openDb(file);
+  try {
+    migrateAll(d);
+    return d;
+  } catch (e) {
+    d.close();
+    throw e;
+  }
+}
 
 let dir: string;
 let config: Config;
@@ -81,6 +102,39 @@ describe('backup & restore', () => {
     const res = await app.inject({ method: 'POST', url: '/api/backup/restore', ...multipart('x.db', Buffer.from('not sqlite')) });
     expect(res.statusCode).toBe(400);
     expect(fs.existsSync(`${config.dbPath}.restore`)).toBe(false);
+    // the right table names alone do not make a backup
+    const crafted = craftedDb(path.join(dir, 'crafted.db'));
+    const res2 = await app.inject({ method: 'POST', url: '/api/backup/restore', ...multipart('c.db', crafted) });
+    expect(res2.statusCode).toBe(400);
+    expect(fs.existsSync(`${config.dbPath}.restore`)).toBe(false);
+  });
+
+  it('goes back to the previous database when a restored one cannot be opened', () => {
+    for (const bad of ['crafted', 'garbage'] as const) {
+      const folder = path.join(dir, `bad-restore-${bad}`);
+      fs.mkdirSync(folder, { recursive: true });
+      const file = path.join(folder, 'cadence.db');
+      const before = openMigrated(file);
+      run(before, "UPDATE athletes SET name = 'Before' WHERE id = 1");
+      before.close();
+      if (bad === 'crafted') craftedDb(`${file}.restore`);
+      else fs.writeFileSync(`${file}.restore`, 'this is not a database file at all, just text '.repeat(200));
+      const logs: string[] = [];
+      const reopened = openWithPendingRestore(file, openMigrated, (m) => logs.push(m));
+      try {
+        expect((reopened.prepare('SELECT name FROM athletes WHERE id = 1').get() as { name: string }).name).toBe('Before');
+      } finally {
+        reopened.close();
+      }
+      const files = fs.readdirSync(folder);
+      expect(files.some((f) => f.startsWith('cadence.db.failed-restore-')), bad).toBe(true);
+      expect(files.some((f) => f.startsWith('cadence.db.before-restore-')), bad).toBe(false);
+      expect(files).not.toContain('cadence.db.restore');
+      expect(logs.join(' ')).toMatch(/could not be opened/);
+      // the next start is a normal one
+      const again = openWithPendingRestore(file, openMigrated, () => {});
+      again.close();
+    }
   });
 
   it('stages a valid backup and swaps it in on the next start', async () => {

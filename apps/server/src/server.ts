@@ -1,24 +1,41 @@
 import fs from 'node:fs';
 import type { AddressInfo } from 'node:net';
 import { buildApp, migrateAll } from './app';
-import { loadConfig } from './config';
-import { applyPendingRestore, RESTART_EXIT_CODE } from './core/backup-routes';
+import { isLoopbackHost, loadConfig } from './config';
+import { openWithPendingRestore, RESTART_EXIT_CODE } from './core/backup-routes';
 import { openDb } from './db/db';
 
 export async function startServer(): Promise<void> {
   const config = loadConfig();
   fs.mkdirSync(config.dataDir, { recursive: true });
-  if (applyPendingRestore(config.dbPath)) console.log('Restored the database from an uploaded backup');
-  const db = openDb(config.dbPath);
-  migrateAll(db);
+  const db = openWithPendingRestore(config.dbPath, (file) => {
+    const db = openDb(file);
+    try {
+      migrateAll(db);
+      return db;
+    } catch (e) {
+      db.close();
+      throw e;
+    }
+  });
 
   const app = await buildApp(config, db);
   await app.listen({ host: config.host, port: config.port });
   const { port } = app.server.address() as AddressInfo;
-  const url = `http://${config.host === '0.0.0.0' ? 'localhost' : config.host}:${port}`;
+  const anyHost = config.host === '0.0.0.0' || config.host === '::';
+  const url = `http://${anyHost ? 'localhost' : config.host.includes(':') ? `[${config.host}]` : config.host}:${port}`;
   // Machine readable line: the macOS shell starts us with PORT=0 and reads the chosen port from here.
   console.log(`CADENCE_LISTENING ${JSON.stringify({ url, port })}`);
-  if (config.mode !== 'desktop') console.log(`Cadence ${config.version} (${config.mode}) → ${url}  data: ${config.dataDir}`);
+  if (config.mode !== 'desktop') {
+    const where = anyHost ? `  (all network interfaces, ${config.host}:${port})` : '';
+    console.log(`Cadence ${config.version} (${config.mode}) → ${url}${where}  data: ${config.dataDir}`);
+  }
+  if (!config.password && !isLoopbackHost(config.host)) {
+    console.warn(
+      `WARNING: Cadence listens on ${config.host}:${port} without a password. Everyone who can reach this port can ` +
+        'read, change and delete all data. Set CADENCE_PASSWORD, or HOST=127.0.0.1 to stay on this machine.',
+    );
+  }
 
   let closing = false;
   const shutdown = async (code = 0) => {
