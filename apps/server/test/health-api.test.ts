@@ -237,8 +237,8 @@ describe('health feature: overview', () => {
       daily('HKQuantityTypeIdentifierRestingHeartRate', day, i < 30 ? 52 : 56);
       daily('HKQuantityTypeIdentifierStepCount', day, i < 30 ? 12000 : 8000);
     }
-    // records so that asOf = 2026-03-30
-    rec(T.steps, '2026-03-30T10:00:00+02:00', '2026-03-30T10:05:00+02:00', { value: 100, tz: 120 });
+    // records so that asOf = 2026-03-30 (reaching into its last hour: the 30th is a complete day)
+    rec(T.steps, '2026-03-30T23:30:00+02:00', '2026-03-30T23:35:00+02:00', { value: 100, tz: 120 });
     refreshStats();
     const o = await getJson<HealthOverview>('/api/health/overview');
     expect(o.asOf).toBe('2026-03-30');
