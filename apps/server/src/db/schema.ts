@@ -1,4 +1,5 @@
 import { computePlaces } from '../core/workouts';
+import { convertLateVolumeUnits } from '../import/unit-fix';
 import { placesAlong, placesColumn } from '../lib/places';
 import type { Migration } from './migrate';
 
@@ -365,5 +366,10 @@ export const coreMigrations: Migration[] = [
     // new data only the records from cp_ts on are counted again (derive/daily.ts refreshTypeStats).
     id: 'core_006_type_stats_checkpoint',
     up: 'ALTER TABLE record_type_stats ADD COLUMN cp_ts INTEGER; ALTER TABLE record_type_stats ADD COLUMN cp_count INTEGER;',
+  },
+  {
+    // Imperial (UK) and other volume units that were stored as exported are converted to litres (import/unit-fix.ts)
+    id: 'core_007_late_volume_units',
+    up: convertLateVolumeUnits,
   },
 ];

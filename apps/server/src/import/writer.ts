@@ -137,7 +137,9 @@ export class ImportWriter implements HealthSink {
         id: r.id,
         identifier: r.identifier,
         kind: r.kind,
-        rawUnit: r.unit,
+        // fast path only for a canonical unit: a stored raw unit (e.g. one a newer version converts) goes through
+        // typeFor with the first record, which sets up the conversion
+        rawUnit: canonicalUnit(r.unit) === r.unit ? r.unit : '\0',
         canonical: r.unit,
         a: 1,
         b: 0,
