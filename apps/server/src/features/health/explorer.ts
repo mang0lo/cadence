@@ -105,9 +105,10 @@ export function buildExplorer(db: Db, athleteId: number): ExplorerResponse {
     [athleteId],
   );
   push('workouts', workouts?.n, workouts?.lo ?? null, workouts?.hi ?? null);
+  // visible workouts with a GPS track (has_route is kept by the derive step; the route blobs are not read)
   const routes = get<{ n: number }>(
     db,
-    `SELECT COUNT(*) AS n FROM workout_routes r JOIN workouts w ON w.id = r.workout_id WHERE w.athlete_id = ?`,
+    'SELECT COUNT(*) AS n FROM workouts WHERE athlete_id = ? AND hidden = 0 AND duplicate_of IS NULL AND has_route = 1',
     [athleteId],
   );
   push('routes', routes?.n, workouts?.lo ?? null, workouts?.hi ?? null);
