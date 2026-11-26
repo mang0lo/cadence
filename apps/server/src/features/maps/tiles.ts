@@ -32,6 +32,7 @@ export function tileCover(
   const breaks = new Set(Array.from(opts.breaks ?? []));
   const out = new Set<number>();
   const n = Math.min(lat.length, lon.length);
+  const size = 2 ** z;
   let pu = NaN;
   let pv = NaN;
   let pLat = NaN;
@@ -43,9 +44,12 @@ export function tileCover(
     const [u, v] = lonLatToTile(la, lo, z);
     const cx = Math.floor(u);
     const cy = Math.floor(v);
-    out.add(tileKey(cx, cy));
+    out.add(tileKey(wrapX(cx, size), cy));
     if (pu === pu && !breaks.has(i) && (Math.floor(pu) !== cx || Math.floor(pv) !== cy)) {
-      if (haversine(pLat, pLon, la, lo) <= maxGapM) walk(out, pu, pv, u, v);
+      // across the 180th meridian the short way leaves the grid on one side and comes back on the other
+      const du = u - pu;
+      const to = du > size / 2 ? u - size : du < -size / 2 ? u + size : u;
+      if (haversine(pLat, pLon, la, lo) <= maxGapM) walk(out, pu, pv, to, v, size);
     }
     pu = u;
     pv = v;
@@ -55,8 +59,14 @@ export function tileCover(
   return out;
 }
 
-/** Add every tile on the straight line (u0,v0) → (u1,v1) (fractional tile coordinates), 4-connected. */
-function walk(out: Set<number>, u0: number, v0: number, u1: number, v1: number): void {
+/** Tile column `x` wrapped into the grid of `size` columns (x = size is the meridian 180°, i.e. column 0). */
+const wrapX = (x: number, size: number): number => ((x % size) + size) % size;
+
+/**
+ * Add every tile on the straight line (u0,v0) → (u1,v1) (fractional tile coordinates, u may leave the grid of `size`
+ * columns across the 180th meridian), 4-connected.
+ */
+function walk(out: Set<number>, u0: number, v0: number, u1: number, v1: number, size: number): void {
   let x = Math.floor(u0);
   let y = Math.floor(v0);
   const ex = Math.floor(u1);
@@ -83,7 +93,7 @@ function walk(out: Set<number>, u0: number, v0: number, u1: number, v1: number):
       ty += ddy;
       stepsY--;
     }
-    out.add(tileKey(x, y));
+    out.add(tileKey(wrapX(x, size), y));
   }
 }
 
