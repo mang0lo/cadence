@@ -16,6 +16,7 @@ import type {
 import { api, useApi, type QueryParams } from '@/lib/api';
 import { useSettings } from '@/lib/settings';
 import { todayKey } from '@/lib/time';
+import { patchOutdates, rederives } from './lib/invalidation';
 
 /** Data hooks of the activities feature. Query keys start with 'activities'. */
 
@@ -98,21 +99,20 @@ export function useSportActivities(sport: string, q: string, enabled = true) {
 }
 
 /**
- * PATCH /api/workouts/:id. Updates the cached detail, refreshes every non-core query (other features show titles,
- * sports and totals too) and the import job list — sport and hidden changes start a background re-derivation.
+ * PATCH /api/workouts/:id. Updates the cached detail and refreshes the queries the change shows up in (see
+ * patchOutdates) without waiting for them, so dialogs close as soon as the PATCH returns. Sport and hidden changes
+ * start a background re-derivation: the import job list is refreshed first, so its end is observed and useImportJobs
+ * refreshes everything again with the derived data.
  */
 export function usePatchWorkout() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, patch }: { id: number; patch: WorkoutPatch }) => api.patch<WorkoutDetail>(`/workouts/${id}`, patch),
-    onSuccess: async (detail, { patch }) => {
+    onSuccess: (detail, { patch }) => {
       qc.setQueryData(['activities', 'detail', detail.id, null], detail);
-      await qc.invalidateQueries({
-        predicate: (q) =>
-          q.queryKey[0] !== 'core' &&
-          !(q.queryKey[0] === 'activities' && (q.queryKey[1] === 'streams' || (q.queryKey[1] === 'detail' && q.queryKey[2] === detail.id))),
-      });
-      if (patch.sport !== undefined || patch.hidden !== undefined) await qc.invalidateQueries({ queryKey: ['core', 'import-jobs'] });
+      if (rederives(patch)) void qc.invalidateQueries({ queryKey: ['core', 'import-jobs'] });
+      const outdated = patchOutdates(patch, detail.id);
+      void qc.invalidateQueries({ predicate: (q) => outdated(q.queryKey) });
     },
   });
 }

@@ -1,16 +1,15 @@
-import { useEffect, useMemo, useRef, type PointerEvent as ReactPointerEvent } from 'react';
-import { Pause, Play, RotateCcw } from 'lucide-react';
-import { Button, IconButton, Select } from '@/components/ui';
+import { memo, useEffect, useMemo, useRef, type PointerEvent as ReactPointerEvent } from 'react';
 import { clock, useFormat } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
-import { SPEEDS, type Playback, type Speed } from '../../lib/playback';
-import { useStore, useThrottledStore } from '../../lib/store';
-import { isPaceSport } from '../../lib/display';
+import type { Playback } from '../../lib/playback';
+import { useThrottledStore } from '../../lib/store';
+import { cadenceUnit, isPaceSport } from '../../lib/display';
 import { zoneOf } from '../../lib/route';
 import { buckets, bucketMean, indexAtTime, valueAt, type Prepared } from '../../lib/streams';
+import { ReplayTransport } from '../ReplayTransport';
 
 /** Timeline with pauses (hatched), the elevation profile as a silhouette and a draggable thumb. */
-function Scrubber({ P, playback }: { P: Prepared; playback: Playback }) {
+const Scrubber = memo(function Scrubber({ P, playback }: { P: Prepared; playback: Playback }) {
   const { t } = useI18n();
   const track = useRef<HTMLDivElement>(null);
   const fill = useRef<HTMLDivElement>(null);
@@ -94,7 +93,7 @@ function Scrubber({ P, playback }: { P: Prepared; playback: Playback }) {
       </div>
     </div>
   );
-}
+});
 
 function Readout({ label, value, unit, extra }: { label: string; value: string; unit?: string; extra?: string }) {
   return (
@@ -110,7 +109,17 @@ function Readout({ label, value, unit, extra }: { label: string; value: string; 
 }
 
 /** Live values at the replay position. */
-function LiveReadout({ P, playback, sport, zoneBounds }: { P: Prepared; playback: Playback; sport: string; zoneBounds: number[] }) {
+const LiveReadout = memo(function LiveReadout({
+  P,
+  playback,
+  sport,
+  zoneBounds,
+}: {
+  P: Prepared;
+  playback: Playback;
+  sport: string;
+  zoneBounds: number[];
+}) {
   const { t } = useI18n();
   const fmt = useFormat();
   const time = useThrottledStore(playback.time, 120);
@@ -148,7 +157,7 @@ function LiveReadout({ P, playback, sport, zoneBounds }: { P: Prepared; playback
   }
   if (P.cadence) {
     const c = valueAt(P.cadence, fi);
-    items.push({ key: 'c', label: t('activities.charts.cadence'), value: c === c ? fmt.int(c) : '–', unit: sport === 'ride' ? 'rpm' : 'spm' });
+    items.push({ key: 'c', label: t('activities.charts.cadence'), value: c === c ? fmt.int(c) : '–', unit: cadenceUnit(sport) });
   }
   if (P.power) {
     const w = valueAt(P.power, fi);
@@ -161,41 +170,17 @@ function LiveReadout({ P, playback, sport, zoneBounds }: { P: Prepared; playback
       ))}
     </div>
   );
-}
+});
 
-/** Play/pause, speed, timeline and live values of the replay. */
+/**
+ * Play/pause, speed, timeline and live values of the replay. Only the clock, the scrubber and the live values
+ * subscribe to the replay time (each throttled on its own); this component re-renders with the page only.
+ */
 export function PlaybackBar({ P, playback, sport, zoneBounds }: { P: Prepared; playback: Playback; sport: string; zoneBounds: number[] }) {
   const { t } = useI18n();
-  const state = useStore(playback.state);
-  const time = useThrottledStore(playback.time, 120);
-  const speedLabel = (s: Speed) => (s === 'fit' ? t('activities.playback.fit') : `${s}×`);
   return (
     <div className="grid gap-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <Button
-          variant="primary"
-          size="sm"
-          icon={state.playing ? Pause : Play}
-          onClick={() => playback.toggle()}
-          aria-keyshortcuts="Space"
-          className="w-28"
-        >
-          {state.playing ? t('activities.playback.pause') : t('activities.playback.play')}
-        </Button>
-        <IconButton icon={RotateCcw} label={t('activities.playback.restart')} onClick={() => playback.reset()} />
-        <span className="min-w-0 flex-1 text-xs tabular text-fg-2">
-          {clock(time)} / {clock(P.duration)}
-        </span>
-        <div className="w-28 shrink-0" title={state.speed === 'fit' ? t('activities.playback.fitHint') : undefined}>
-          <Select
-            value={String(state.speed)}
-            onChange={(v) => playback.setSpeed((v === 'fit' ? 'fit' : Number(v)) as Speed)}
-            options={SPEEDS.map((s) => ({ value: String(s), label: speedLabel(s) }))}
-            aria-label={t('activities.playback.speed')}
-            className="h-8"
-          />
-        </div>
-      </div>
+      <ReplayTransport playback={playback} />
       <Scrubber P={P} playback={playback} />
       <LiveReadout P={P} playback={playback} sport={sport} zoneBounds={zoneBounds} />
       <p className="hidden text-[11px] text-fg-3 sm:block">{t('activities.playback.keys')}</p>

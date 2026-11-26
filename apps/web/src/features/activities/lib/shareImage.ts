@@ -13,6 +13,7 @@ import {
   type ThumbnailBasemap,
 } from '@/components/map/tiles';
 import {
+  MAX_SHARE_TILES,
   SHARE_PALETTE,
   shareLayout,
   type ChartSeries,
@@ -23,6 +24,7 @@ import {
   type SharePalette,
   type ShareTheme,
 } from './share';
+import { LruMap } from './lru';
 
 export interface ShareStat {
   label: string;
@@ -79,28 +81,37 @@ export interface ShareResult {
 const FONT = '"Inter Variable", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
 const font = (weight: number, size: number) => `${weight} ${Math.round(size)}px ${FONT}`;
 
-const tiles = new Map<string, Promise<HTMLImageElement>>();
+/**
+ * Recently used map tiles: every tile of one image (up to 160 for a story, see MAX_SHARE_TILES), so re-rendering a
+ * preview reuses all of them, but a long session does not keep every tile it ever drew.
+ */
+const tiles = new LruMap<string, Promise<HTMLImageElement>>(MAX_SHARE_TILES);
 
-/** A map tile as a CORS-clean image (cached; a failed tile is retried next time). */
-function loadTile(url: string, timeoutMs = 10_000): Promise<HTMLImageElement> {
+/** An image as a CORS-clean element (rejects on an error or after `timeoutMs`). */
+function loadImage(url: string, timeoutMs: number): Promise<HTMLImageElement> {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    const timer = window.setTimeout(() => reject(new Error('image timeout')), timeoutMs);
+    img.onload = () => {
+      window.clearTimeout(timer);
+      resolve(img);
+    };
+    img.onerror = () => {
+      window.clearTimeout(timer);
+      reject(new Error('image failed'));
+    };
+    img.src = url;
+  });
+}
+
+/** A map tile (cached; a failed tile is retried next time). */
+function loadTile(url: string): Promise<HTMLImageElement> {
   let p = tiles.get(url);
   if (!p) {
-    p = new Promise<HTMLImageElement>((resolve, reject) => {
-      const img = new Image();
-      img.crossOrigin = 'anonymous';
-      const timer = window.setTimeout(() => reject(new Error('tile timeout')), timeoutMs);
-      img.onload = () => {
-        window.clearTimeout(timer);
-        resolve(img);
-      };
-      img.onerror = () => {
-        window.clearTimeout(timer);
-        reject(new Error('tile failed'));
-      };
-      img.src = url;
-    });
-    tiles.set(url, p);
-    p.catch(() => tiles.delete(url));
+    const loading = loadImage(url, 10_000);
+    loading.catch(() => tiles.deleteIf(url, loading));
+    tiles.set(url, (p = loading));
   }
   return p;
 }
@@ -454,7 +465,8 @@ export async function renderShareImage(c: ShareContent, o: ShareOptions): Promis
           view: { cx: fit.view.cx, cy: fit.view.cy, scale: fit.view.scale / 2 },
         });
         if (!url) throw new Error('map unavailable');
-        ctx.drawImage(await loadTile(url, 30_000), 0, 0, l.width, l.height);
+        // not cached here: mapSnapshot keeps the image file, a decoded 1080 × 1920 picture is ~8 MB
+        ctx.drawImage(await loadImage(url, 30_000), 0, 0, l.width, l.height);
       }
       ctx.getImageData(0, 0, 1, 1); // throws when a tile tainted the canvas
       map = true;

@@ -11,7 +11,7 @@ import { clock, useFormat, type Formatter } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
 import type { TFunction } from '@/lib/i18n';
 import { useStoredState } from '@/lib/storage';
-import { isPaceSport } from '../../lib/display';
+import { isPaceSport, paceValue } from '../../lib/display';
 import type { Playback } from '../../lib/playback';
 import type { Store } from '../../lib/store';
 import {
@@ -89,9 +89,7 @@ function buildMetrics(
   if (P.speed && P.dist) {
     const pace = isPaceSport(sport);
     const s = bucketMean(P.speed, B);
-    const unitM = sport === 'swim' ? (imperial ? 91.44 : 100) : imperial ? M_PER_MI : M_PER_KM;
-    const conv = (mps: number) => (pace ? unitM / mps : imperial ? mps / (M_PER_MI / 3600) : mps * 3.6);
-    const vals = Array.from(s, (v, b) => (v > 0.3 && moving[b]! >= 0.5 ? conv(v) : NaN));
+    const vals = Array.from(s, (v, b) => (v > 0.3 && moving[b]! >= 0.5 ? paceValue(v, sport, fmt.units) : NaN));
     const lo = quantile(vals, pace ? 0.02 : 0);
     const hi = quantile(vals, pace ? 0.98 : 0.995);
     const pad = (hi - lo) * 0.08 || 10;
@@ -148,7 +146,6 @@ function buildMetrics(
     const c = bucketMean(P.cadence, B);
     const lo = quantile(c, 0.01);
     const hi = quantile(c, 0.995);
-    const unit = sport === 'ride' || sport === 'handcycle' ? 'rpm' : 'spm';
     out.push({
       key: 'cadence',
       label: t('activities.charts.cadence'),
@@ -158,10 +155,10 @@ function buildMetrics(
       max: Math.ceil(hi * 1.03),
       readout: (fi) => {
         const v = valueAt(P.cadence, fi);
-        return v === v ? `${fmt.int(v)} ${unit}` : '–';
+        return v === v ? fmt.cadence(v, sport) : '–';
       },
       axis: (v) => fmt.num(v),
-      avg: `${fmt.int(quantile(c, 0.5))} ${unit}`,
+      avg: fmt.cadence(quantile(c, 0.5), sport),
       height: 72,
     });
   }

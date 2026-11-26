@@ -50,17 +50,23 @@ function Feed() {
         <FeedCardSkeleton />
       </div>
     );
-  if (feed.error) return <ErrorState error={feed.error} />;
+  // only without any loaded page: a failed "load more" or background refetch keeps the cards (TanStack keeps the pages)
+  if (feed.error && !feed.data) return <ErrorState error={feed.error} />;
   const items = feed.data?.pages.flatMap((p) => p.items) ?? [];
   return (
     <div className="grid gap-4">
       {items.map((w) => (
         <FeedCard key={w.id} w={w} />
       ))}
+      {feed.error && <ErrorState error={feed.error} />}
       <div className="flex justify-center py-2">
         {feed.hasNextPage ? (
           <Button onClick={() => void feed.fetchNextPage()} loading={feed.isFetchingNextPage}>
-            {t('activities.feed.loadMore')}
+            {feed.isFetchNextPageError ? t('common.retry') : t('activities.feed.loadMore')}
+          </Button>
+        ) : feed.error ? (
+          <Button onClick={() => void feed.refetch()} loading={feed.isRefetching}>
+            {t('common.retry')}
           </Button>
         ) : (
           items.length > 0 && <span className="text-xs text-fg-3">{t('activities.feed.allLoaded')}</span>

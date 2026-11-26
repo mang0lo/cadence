@@ -4,7 +4,7 @@ import { Camera, Palette, Split } from 'lucide-react';
 import { M_PER_KM, M_PER_MI, type MapStylePref } from '@cadence/shared';
 import { useChartTheme } from '@/components/charts/theme';
 import { BaseMap } from '@/components/map/BaseMap';
-import { addRouteLayers, featureCollection, gradientExpression, lineFeature, setGeoJSON } from '@/components/map/layers';
+import { addRouteLayers, featureCollection, gradientExpression, isStyleReady, lineFeature, setGeoJSON } from '@/components/map/layers';
 import { overlayColors } from '@/components/map/styles';
 import { SegmentedControl, cn } from '@/components/ui';
 import { clock, useFormat } from '@/lib/format';
@@ -26,7 +26,7 @@ import {
   type RouteGeometry,
 } from '../../lib/route';
 import type { Store } from '../../lib/store';
-import { headingAt, indexAtDist, indexAtTime, lerpAngle, lngLatAt, valueAt, type Prepared } from '../../lib/streams';
+import { headingAt, indexAtDist, indexAtTime, lerpAngle, positionAt, valueAt, type Prepared } from '../../lib/streams';
 
 export type CameraMode = 'overview' | 'follow' | 'flyover';
 
@@ -209,7 +209,7 @@ export function ActivityMap({ P, geo, sport, playback, hover, selection, zoneBou
     const every = Math.max(1, Math.ceil(count / 40));
     const out: { pos: [number, number]; label: string }[] = [];
     for (let k = every; k <= count; k += every) {
-      const pos = lngLatAt(P, indexAtDist(P, k * unit));
+      const pos = positionAt(P, indexAtDist(P, k * unit));
       if (pos) out.push({ pos, label: String(k) });
     }
     return out;
@@ -229,7 +229,6 @@ export function ActivityMap({ P, geo, sport, playback, hover, selection, zoneBou
   const hoverTextRef = useRef(hoverText);
   hoverTextRef.current = hoverText;
   const mapRef = useRef<Map | null>(null);
-  const styleReady = useRef(false);
   const markers = useRef<{ athlete: Marker; hover: Marker; start: Marker; finish: Marker } | null>(null);
   const frame = useRef<number | null>(null);
   /** Index of the chunk being travelled (−1 = nothing drawn); −2 forces a redraw. */
@@ -241,10 +240,19 @@ export function ActivityMap({ P, geo, sport, playback, hover, selection, zoneBou
   const dragging = useRef(false);
   /** True while one of our camera transitions runs (per-frame camera updates would cancel it). */
   const easing = useRef(false);
+  /** Number of the latest camera transition (a moveend of an earlier, interrupted one must not end `easing`). */
+  const camSeq = useRef(0);
   const camBearing = useRef(0);
   const lastFrameAt = useRef(0);
-  const cameraRef = useRef(camera);
-  cameraRef.current = camera;
+  /**
+   * Camera mode whose transition has started: one commit after `camera`. BaseMap applies its `terrain` prop (flyover)
+   * in the commit after the prop changes and eases the pitch for it; a transition started before that would be
+   * stopped by its ease (MapLibre stops the running animation when a new one starts).
+   */
+  const [camTarget, setCamTarget] = useState(camera);
+  useEffect(() => setCamTarget(camera), [camera]);
+  const cameraRef = useRef(camTarget);
+  cameraRef.current = camTarget;
   const coloringRef = useRef(coloring);
   coloringRef.current = coloring;
   /** Track part shown by the overview camera (several parts: workout continued elsewhere). */
@@ -283,13 +291,14 @@ export function ActivityMap({ P, geo, sport, playback, hover, selection, zoneBou
     const time = playback.time.get();
     const st = playback.state.get();
     const fi = indexAtTime(P, time);
-    const pos = lngLatAt(P, fi);
+    // never on the jump between two track parts (travelled while paused)
+    const pos = positionAt(P, fi);
     if (!pos) return;
     m.athlete.setLngLat(pos).setRotation(headingAt(P, fi));
     // travelled part in full color on top of the dimmed route (once the replay started)
     const done = map.getSource(SRC.done) as GeoJSONSource | undefined;
     const head = map.getSource(SRC.head) as GeoJSONSource | undefined;
-    if (done && head && styleReady.current) {
+    if (done && head && isStyleReady(map)) {
       const active = st.started && fi > 0.01;
       if (active !== dimmed.current) {
         dimmed.current = active;
@@ -352,7 +361,7 @@ export function ActivityMap({ P, geo, sport, playback, hover, selection, zoneBou
     }
     // hover marker
     const h = hover.get();
-    const hp = h === null ? null : lngLatAt(P, h);
+    const hp = h === null ? null : positionAt(P, h);
     const el = m.hover.getElement();
     const tip = tipRef.current;
     if (hp) {
@@ -489,7 +498,6 @@ export function ActivityMap({ P, geo, sport, playback, hover, selection, zoneBou
       });
       applyRoute(map);
       applySelection(map);
-      styleReady.current = true;
       request();
     },
     [geo, applyRoute, applySelection, request],
@@ -570,10 +578,11 @@ export function ActivityMap({ P, geo, sport, playback, hover, selection, zoneBou
     return () => ms.forEach((m) => m.remove());
   }, [kmPoints]);
 
-  // coloring changed (mode, theme)
+  // coloring changed (mode, theme). Not isStyleLoaded(): that is false while tiles load or a source gets new data
+  // (every frame of the replay) and would drop the change; while a new basemap loads, onStyleLoad applies it.
   useEffect(() => {
     const map = mapRef.current;
-    if (map && styleReady.current && map.isStyleLoaded()) {
+    if (map && isStyleReady(map)) {
       applyRoute(map);
       request();
     }
@@ -582,7 +591,7 @@ export function ActivityMap({ P, geo, sport, playback, hover, selection, zoneBou
   // selection changed: highlight + zoom to it in the overview
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !styleReady.current) return;
+    if (!map || !isStyleReady(map)) return;
     applySelection(map);
     if (selection && cameraRef.current === 'overview' && P.lat && P.lon) {
       const [a, b] = [Math.floor(Math.min(...selection)), Math.ceil(Math.max(...selection))];
@@ -600,7 +609,7 @@ export function ActivityMap({ P, geo, sport, playback, hover, selection, zoneBou
     }
   }, [selection, applySelection, P]);
 
-  // camera transitions
+  // camera transitions (one commit after the mode changed, see camTarget)
   const firstCamera = useRef(true);
   useEffect(() => {
     if (firstCamera.current) {
@@ -610,13 +619,9 @@ export function ActivityMap({ P, geo, sport, playback, hover, selection, zoneBou
     const map = mapRef.current;
     if (!map) return;
     const fi = indexAtTime(P, playback.time.get());
-    const pos = lngLatAt(P, fi);
-    easing.current = true;
-    map.once('moveend', () => {
-      easing.current = false;
-      request();
-    });
-    if (camera === 'overview') {
+    const pos = positionAt(P, fi);
+    const id = ++camSeq.current;
+    if (camTarget === 'overview') {
       const p = partOfVertex(geo, Math.max(0, vertexAfter(geo, fi) - 1));
       const big = bigPartsRef.current.find((x) => x.i === p);
       shownPart.current = big ? p : shownPart.current;
@@ -627,13 +632,26 @@ export function ActivityMap({ P, geo, sport, playback, hover, selection, zoneBou
         maxZoom: 16,
         duration: 900,
       });
-    } else if (camera === 'follow' && pos) {
+    } else if (camTarget === 'follow' && pos) {
       map.easeTo({ center: pos, zoom: Math.max(map.getZoom(), 15), pitch: 0, bearing: 0, duration: 900 });
-    } else if (camera === 'flyover' && pos) {
+    } else if (camTarget === 'flyover' && pos) {
       camBearing.current = headingAt(P, fi, true);
       map.easeTo({ center: pos, zoom: 15.6, pitch: 62, bearing: camBearing.current, duration: 1600 });
     }
-  }, [camera, P, geo, playback, request]);
+    // Wait for the end only after starting: starting stops the animation that ran before and fires its moveend.
+    // Nothing moving (no duration with reduced motion, no position) → per-frame updates go on right away.
+    if (map.isMoving()) {
+      easing.current = true;
+      map.once('moveend', () => {
+        if (camSeq.current !== id) return;
+        easing.current = false;
+        request();
+      });
+    } else {
+      easing.current = false;
+      request();
+    }
+  }, [camTarget, P, geo, playback, request]);
 
   return (
     <div className={cn('flex min-w-0 flex-col gap-2', className)}>

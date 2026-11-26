@@ -1,8 +1,7 @@
-import { useMemo, useState } from 'react';
+import { lazy, Suspense, useMemo, useState } from 'react';
 import { Link } from 'react-router';
 import { Activity, BarChart3, Settings, Table2, Trophy } from 'lucide-react';
 import { sportInfo, type ActivitiesSummary, type ActivityTotals } from '@cadence/shared';
-import { EChart } from '@/components/charts/EChart';
 import { barSeries, categoryAxis, itemTooltip, tooltipHtml, valueAxis } from '@/components/charts/options';
 import { sportColor, useChartTheme } from '@/components/charts/theme';
 import { Card, IconButton, SegmentedControl, Skeleton, Table, TD, TH } from '@/components/ui';
@@ -10,7 +9,12 @@ import { useFormat } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
 import { sportIcon, sportLabel, sortSports } from '@/lib/sports';
 import { todayKey } from '@/lib/time';
-import { initials } from '../lib/display';
+import { initials, minutesAxis, minutesTick, weekdayShort } from '../lib/display';
+import { WidgetBoundary } from './WidgetBoundary';
+
+// ECharts (~680 KB) is not needed to show the dashboard: the week chart loads it after the first paint
+const EChart = lazy(() => import('@/components/charts/EChart').then((m) => ({ default: m.EChart })));
+const WEEK_CHART_HEIGHT = 96;
 
 function WeekChart({ summary }: { summary: ActivitiesSummary }) {
   const theme = useChartTheme();
@@ -18,7 +22,10 @@ function WeekChart({ summary }: { summary: ActivitiesSummary }) {
   const { t, lang } = useI18n();
   const today = todayKey();
   const option = useMemo(() => {
-    const labels = summary.week.map((d) => fmt.day(d.day, 'weekdayShort').split(',')[0]!);
+    const labels = summary.week.map((d) => weekdayShort(d.day, fmt));
+    const minutes = summary.week.map((d) => Math.round(d.totals.movingS / 60));
+    // ticks of 15 / 30 min or whole hours: every label is exact
+    const axis = minutesAxis(Math.max(0, ...minutes));
     return {
       grid: { left: 0, right: 0, top: 8, bottom: 0, containLabel: true },
       xAxis: categoryAxis(theme, labels, {
@@ -26,14 +33,16 @@ function WeekChart({ summary }: { summary: ActivitiesSummary }) {
           color: theme.muted,
           fontSize: 10,
           interval: 0,
+          hideOverlap: true,
           formatter: (v: string, i: number) => (summary.week[i]?.day === today ? `{b|${v}}` : v),
           rich: { b: { color: theme.fg, fontWeight: 600, fontSize: 10 } },
         },
       }),
       yAxis: valueAxis(theme, {
-        splitNumber: 2,
-        minInterval: 30,
-        axisLabel: { color: theme.muted, fontSize: 10, formatter: (v: number) => (v >= 60 ? `${Math.round(v / 60)} h` : `${v}′`) },
+        min: 0,
+        max: axis.max,
+        interval: axis.interval,
+        axisLabel: { color: theme.muted, fontSize: 10, formatter: (v: number) => minutesTick(v, fmt) },
       }),
       tooltip: itemTooltip(theme, (p: unknown) => {
         const d = summary.week[(p as { dataIndex: number }).dataIndex]!;
@@ -50,17 +59,18 @@ function WeekChart({ summary }: { summary: ActivitiesSummary }) {
         return tooltipHtml(fmt.day(d.day, 'weekday'), rows, theme);
       }),
       series: [
-        barSeries(
-          theme,
-          t('activities.athlete.weekChart'),
-          summary.week.map((d) => Math.round(d.totals.movingS / 60)),
-          theme.accent,
-          { barMaxWidth: 16 },
-        ),
+        barSeries(theme, t('activities.athlete.weekChart'), minutes, theme.accent, { barMaxWidth: 16 }),
       ],
     };
   }, [summary, theme, fmt, t, lang, today]);
-  return <EChart option={option} height={96} ariaLabel={t('activities.athlete.weekChart')} />;
+  // the same numbers as a table when the chart cannot be loaded
+  return (
+    <WidgetBoundary fallback={<WeekTable summary={summary} />}>
+      <Suspense fallback={<div style={{ height: WEEK_CHART_HEIGHT }} aria-hidden />}>
+        <EChart option={option} height={WEEK_CHART_HEIGHT} ariaLabel={t('activities.athlete.weekChart')} />
+      </Suspense>
+    </WidgetBoundary>
+  );
 }
 
 function WeekTable({ summary }: { summary: ActivitiesSummary }) {
@@ -152,10 +162,13 @@ export function AthleteCard({ summary }: { summary: ActivitiesSummary }) {
         </span>
         <div className="min-w-0 flex-1">
           <div className="truncate text-base font-semibold text-fg">{name}</div>
-          <div className="text-xs text-fg-3">{t('activities.athlete.activities', { count: summary.allTime.count })}</div>
+          <div className="text-xs text-fg-3">
+            {t('activities.athlete.activities', { count: summary.allTime.count, n: fmt.int(summary.allTime.count) })}
+          </div>
           {summary.firstActivityTs && (
+            // the summary has no time zone for it: the browser's zone at that time, not UTC
             <div className="text-xs text-fg-3">
-              {t('activities.athlete.since', { date: fmt.date(summary.firstActivityTs, 0, 'month') })}
+              {t('activities.athlete.since', { date: fmt.browserDate(summary.firstActivityTs, 'month') })}
             </div>
           )}
         </div>

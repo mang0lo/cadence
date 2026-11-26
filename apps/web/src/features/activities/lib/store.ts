@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore } from 'react';
+import { useCallback, useSyncExternalStore } from 'react';
 
 /**
  * Minimal observable value. Used for state that changes every animation frame (playback time, hover position)
@@ -23,36 +23,47 @@ export class Store<T> {
 
 /** Re-render on every change (for rarely changing values). */
 export function useStore<T>(store: Store<T>): T {
-  return useSyncExternalStore(
-    (cb) => store.subscribe(cb),
-    () => store.get(),
-    () => store.get(),
-  );
+  // stable callbacks: a new subscribe function on every render would make React unsubscribe and subscribe again
+  const subscribe = useCallback((cb: () => void) => store.subscribe(cb), [store]);
+  const get = useCallback(() => store.get(), [store]);
+  return useSyncExternalStore(subscribe, get, get);
 }
 
-/** Re-render at most every `ms` milliseconds (for per-frame values shown as text). */
+/**
+ * Subscribe to `store`, calling `notify` at most every `ms` milliseconds: right away after a quiet period, else once
+ * when the period is over (the last change is never lost). Returns the unsubscribe function.
+ */
+export function throttledSubscribe<T>(store: Store<T>, ms: number, notify: () => void): () => void {
+  let last = -Infinity;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const unsub = store.subscribe(() => {
+    if (timer !== null) return;
+    const now = performance.now();
+    if (now - last >= ms) {
+      last = now;
+      notify();
+    } else {
+      timer = setTimeout(() => {
+        timer = null;
+        last = performance.now();
+        notify();
+      }, ms - (now - last));
+    }
+  });
+  return () => {
+    unsub();
+    if (timer !== null) clearTimeout(timer);
+    timer = null;
+  };
+}
+
+/**
+ * Re-render at most every `ms` milliseconds (for per-frame values shown as text). Always shows the value of the
+ * store passed now: a new store (e.g. a new Playback after a time-base switch) is read right away, not after its
+ * first change.
+ */
 export function useThrottledStore<T>(store: Store<T>, ms = 100): T {
-  const [v, setV] = useState(store.get());
-  useEffect(() => {
-    let last = 0;
-    let timer: number | null = null;
-    const unsub = store.subscribe((x) => {
-      const now = performance.now();
-      if (now - last >= ms) {
-        last = now;
-        setV(x);
-      } else if (timer === null) {
-        timer = window.setTimeout(() => {
-          timer = null;
-          last = performance.now();
-          setV(store.get());
-        }, ms);
-      }
-    });
-    return () => {
-      unsub();
-      if (timer !== null) window.clearTimeout(timer);
-    };
-  }, [store, ms]);
-  return v;
+  const subscribe = useCallback((notify: () => void) => throttledSubscribe(store, ms, notify), [store, ms]);
+  const get = useCallback(() => store.get(), [store]);
+  return useSyncExternalStore(subscribe, get, get);
 }

@@ -3,8 +3,7 @@
  * (for line-gradient stops) and per-mode color stops + legend.
  */
 import type { ChartTheme } from '@/components/charts/theme';
-import { clock, type Formatter } from '@/lib/format';
-import { isPaceSport } from './display';
+import type { Formatter } from '@/lib/format';
 import { haversine, quantile, rampColor, simplifyIndices, type Prepared } from './streams';
 
 export type ColorMode = 'plain' | 'pace' | 'hr' | 'grade' | 'zones';
@@ -242,8 +241,8 @@ export function routeColoring(
     if (!(hi > lo)) return null;
     const ramp = theme.seq;
     const stops = limitStops(g.frac, (a, b) => rampColor(ramp, (meanRange(v, a, b) - lo) / (hi - lo)));
-    const pace = isPaceSport(o.sport);
-    const label = (mps: number) => (pace ? `${clock(o.fmt.paceSeconds(mps))}` : o.fmt.speed(mps));
+    // in the sport's own unit: "5:12 /km", "1:45 /100m" (swims), "25.3 km/h"
+    const label = (mps: number) => o.fmt.pace(mps, o.sport);
     return {
       stops,
       legend: { kind: 'ramp', colors: ramp, from: label(lo), to: label(hi), fromLabel: o.labels.slow!, toLabel: o.labels.fast! },
@@ -257,7 +256,7 @@ export function routeColoring(
     const ramp = theme.zones;
     return {
       stops: limitStops(g.frac, (a, b) => rampColor(ramp, (meanRange(v, a, b) - lo) / (hi - lo))),
-      legend: { kind: 'ramp', colors: ramp, from: `${Math.round(lo)}`, to: `${Math.round(hi)} bpm`, fromLabel: o.labels.low!, toLabel: o.labels.high! },
+      legend: { kind: 'ramp', colors: ramp, from: o.fmt.int(lo), to: o.fmt.hr(hi), fromLabel: o.labels.low!, toLabel: o.labels.high! },
     };
   }
   if (mode === 'zones' && P.hr) {

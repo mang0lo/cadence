@@ -1,11 +1,11 @@
-import { Pause, Play, RotateCcw } from 'lucide-react';
-import { Button, IconButton, Select, Slider, cn } from '@/components/ui';
+import { Slider, cn } from '@/components/ui';
 import { clock, useFormat, type Formatter } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
 import { replayAt, type Alignment } from '../../lib/compare';
-import { SPEEDS, type Playback, type Speed } from '../../lib/playback';
-import { useStore, useThrottledStore } from '../../lib/store';
+import type { Playback } from '../../lib/playback';
+import { useThrottledStore } from '../../lib/store';
 import type { Prepared } from '../../lib/streams';
+import { ReplayTransport } from '../ReplayTransport';
 import { SIDE_VAR } from './CompareMap';
 
 /** "230 m" below a kilometer (mile), else "1.24 km". */
@@ -29,10 +29,9 @@ function Readout({ label, value, color, wrap }: { label: string; value: string; 
 export function CompareReplay({ A, B, al, playback }: { A: Prepared; B: Prepared; al: Alignment; playback: Playback }) {
   const { t } = useI18n();
   const fmt = useFormat();
-  const state = useStore(playback.state);
+  // always the time of the current Playback: a time-base switch replaces it (back at 0:00)
   const time = useThrottledStore(playback.time, 120);
   const r = replayAt(A, B, al, time);
-  const speedLabel = (s: Speed) => (s === 'fit' ? t('activities.playback.fit') : `${s}×`);
   let lead = '–';
   if (r.lead !== null) {
     if (Math.abs(r.lead) < 1) lead = t('activities.compare.level');
@@ -43,31 +42,7 @@ export function CompareReplay({ A, B, al, playback }: { A: Prepared; B: Prepared
   }
   return (
     <div className="grid gap-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <Button
-          variant="primary"
-          size="sm"
-          icon={state.playing ? Pause : Play}
-          onClick={() => playback.toggle()}
-          aria-keyshortcuts="Space"
-          className="w-28"
-        >
-          {state.playing ? t('activities.playback.pause') : t('activities.playback.play')}
-        </Button>
-        <IconButton icon={RotateCcw} label={t('activities.playback.restart')} onClick={() => playback.reset()} />
-        <span className="min-w-0 flex-1 text-xs tabular text-fg-2">
-          {clock(time)} / {clock(playback.duration)}
-        </span>
-        <div className="w-28 shrink-0" title={state.speed === 'fit' ? t('activities.playback.fitHint') : undefined}>
-          <Select
-            value={String(state.speed)}
-            onChange={(v) => playback.setSpeed((v === 'fit' ? 'fit' : Number(v)) as Speed)}
-            options={SPEEDS.map((s) => ({ value: String(s), label: speedLabel(s) }))}
-            aria-label={t('activities.playback.speed')}
-            className="h-8"
-          />
-        </div>
-      </div>
+      <ReplayTransport playback={playback} />
       <Slider
         value={Math.round(time)}
         min={0}
