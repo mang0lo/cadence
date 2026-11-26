@@ -433,13 +433,20 @@ interface SimilarRow {
   gap_speed: number | null;
 }
 
+/** A row with the workout's route of Maps → Routes (maps_workout_geo.route_id; null = none). */
+type RoutedRow = SimilarRow & { route_id: number | null };
+
 const SIMILAR_COLS = `w.id, w.name, w.sport, w.start_ts, w.tz_min, w.distance_m, w.moving_s, w.duration_s, w.avg_speed,
   w.avg_hr, w.elevation_gain_m, w.effort, w.start_lat, w.start_lon, w.end_lat, w.end_lon,
   a.efficiency AS efficiency, a.efficiency_basis AS efficiency_basis, a.pace_efficiency AS pace_efficiency,
-  a.gap_speed AS gap_speed`;
+  a.gap_speed AS gap_speed, g.route_id AS route_id`;
 
-/** Analysis values of the current algorithm only (rows of an older version are recomputed in the background). */
-const SIMILAR_FROM = `workouts w LEFT JOIN activities_analysis a ON a.workout_id = w.id AND ${currentAnalysisSql('a')}`;
+/**
+ * Analysis values of the current algorithm only (rows of an older version are recomputed in the background), and the
+ * route each workout belongs to in Maps → Routes.
+ */
+const SIMILAR_FROM = `workouts w LEFT JOIN activities_analysis a ON a.workout_id = w.id AND ${currentAnalysisSql('a')}
+  LEFT JOIN maps_workout_geo g ON g.workout_id = w.id`;
 
 /**
  * The efficiency factor of a workout on `basis`: W per bpm and m/min per bpm are different units, so rides with
@@ -451,7 +458,28 @@ function efficiencyOn(r: SimilarRow, basis: ActivityEfficiency['basis'] | null):
   return basis === 'speed' && r.efficiency_basis === 'power' ? r.pace_efficiency : null;
 }
 
-/** Same start and finish within `radiusM` and distance within ±10 %. */
+/**
+ * Rank and count of workout `id` among the visible workouts on route `routeId` of Maps → Routes, exactly as its route
+ * card on the activity page: by time (moving time, else the duration), ties → the earlier one. Rank null when the
+ * workout itself is hidden or a duplicate.
+ */
+function routeStanding(db: Db, athleteId: number, routeId: number, id: number): { rank: number | null; count: number } {
+  const members = all<{ id: number; t: number; start_ts: number }>(
+    db,
+    `SELECT w.id, COALESCE(NULLIF(w.moving_s, 0), w.duration_s) AS t, w.start_ts
+     FROM maps_workout_geo g JOIN workouts w ON w.id = g.workout_id
+     WHERE g.route_id = ? AND w.athlete_id = ? AND w.hidden = 0 AND w.duplicate_of IS NULL`,
+    [routeId, athleteId],
+  );
+  const me = members.find((m) => m.id === id);
+  const rank = me ? 1 + members.filter((m) => m.t < me.t || (m.t === me.t && m.start_ts < me.start_ts)).length : null;
+  return { rank, count: members.length };
+}
+
+/**
+ * Same start and finish within `radiusM` and distance within ±10 % — the route test for workouts that have no route
+ * in Maps → Routes (e.g. a track with breaks, or before the maps step ran).
+ */
 export function sameRoute(a: SimilarRow, b: SimilarRow, radiusM = 300): boolean {
   if (
     a.start_lat === null ||
@@ -482,7 +510,7 @@ function rankBy<T extends { id: number }>(items: T[], id: number, value: (x: T) 
 }
 
 export function similarActivities(db: Db, athleteId: number, id: number, limit = 250): ActivitySimilar | null {
-  const cur = get<SimilarRow>(
+  const cur = get<RoutedRow>(
     db,
     `SELECT ${SIMILAR_COLS} FROM ${SIMILAR_FROM} WHERE w.id = ? AND w.athlete_id = ?`,
     [id, athleteId],
@@ -494,7 +522,7 @@ export function similarActivities(db: Db, athleteId: number, id: number, limit =
   const min = ref * (byDistance ? 0.85 : 0.75);
   const max = ref * (byDistance ? 1.15 : 1.25);
   const col = byDistance ? 'w.distance_m' : 'w.duration_s';
-  const rows = all<SimilarRow>(
+  const rows = all<RoutedRow>(
     db,
     `SELECT ${SIMILAR_COLS} FROM ${SIMILAR_FROM}
      WHERE w.athlete_id = ? AND w.sport = ? AND w.hidden = 0 AND w.duplicate_of IS NULL AND w.id <> ?
@@ -509,7 +537,9 @@ export function similarActivities(db: Db, athleteId: number, id: number, limit =
     for (const r of rows) if (r.efficiency_basis) counts.set(r.efficiency_basis, (counts.get(r.efficiency_basis) ?? 0) + 1);
     efficiencyBasis = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
   }
-  const toItem = (r: SimilarRow, current: boolean): ActivitySimilarItem => ({
+  // the route of Maps → Routes when the activity has one (one definition with its route card), else start and finish
+  const onRoute = (r: RoutedRow) => (cur.route_id !== null ? r.route_id === cur.route_id : sameRoute(cur, r));
+  const toItem = (r: RoutedRow, current: boolean): ActivitySimilarItem => ({
     id: r.id,
     name: r.name,
     sport: r.sport,
@@ -524,12 +554,22 @@ export function similarActivities(db: Db, athleteId: number, id: number, limit =
     elevationGainM: r.elevation_gain_m,
     effort: r.effort,
     efficiency: efficiencyOn(r, efficiencyBasis),
-    sameRoute: current || sameRoute(cur, r),
+    sameRoute: current || onRoute(r),
     current,
   });
   const items = [...rows.map((r) => toItem(r, false)), toItem(cur, true)].sort((a, b) => a.startTs - b.startTs || a.id - b.id);
   const value = (x: ActivitySimilarItem) => (byDistance ? x.avgSpeed : x.effort);
-  const route = items.filter((x) => x.sameRoute);
+  let routeRank: number | null;
+  let routeCount: number;
+  if (cur.route_id !== null) {
+    const s = routeStanding(db, athleteId, cur.route_id, id);
+    routeRank = s.count > 1 ? s.rank : null;
+    routeCount = s.count;
+  } else {
+    const route = items.filter((x) => x.sameRoute);
+    routeRank = route.length > 1 ? rankBy(route, id, value) : null;
+    routeCount = route.length;
+  }
   return {
     workoutId: id,
     sport: cur.sport,
@@ -540,7 +580,7 @@ export function similarActivities(db: Db, athleteId: number, id: number, limit =
     items,
     rank: rankBy(items, id, value),
     count: items.length,
-    routeRank: route.length > 1 ? rankBy(route, id, value) : null,
-    routeCount: route.length,
+    routeRank,
+    routeCount,
   };
 }

@@ -17,6 +17,7 @@ afterAll(() => db?.close());
 
 beforeEach(() => {
   run(db, 'DELETE FROM workouts');
+  run(db, 'DELETE FROM maps_workout_geo');
 });
 
 let ext = 0;
@@ -82,5 +83,59 @@ describe('similar activities: efficiency factor', () => {
       [p2]: 1.6,
       [s1]: null,
     });
+  });
+});
+
+/**
+ * A visible 40 km ride on day `k` from (48.2, 16.4) to (48.21, 16.41) with the given moving time, on route
+ * `routeId` of Maps → Routes (null = none, e.g. a track with breaks).
+ */
+function routeRide(k: number, routeId: number | null, movingS: number, o: { hidden?: boolean } = {}): number {
+  const start = T0 + k * 86400;
+  const { lastInsertRowid: id } = run(
+    db,
+    `INSERT INTO workouts (athlete_id, ext_key, activity_type, sport, start_ts, end_ts, tz_min, duration_s, moving_s,
+       distance_m, avg_speed, avg_hr, start_lat, start_lon, end_lat, end_lon, hidden, derived_version)
+     VALUES (1, ?, 'HKWorkoutActivityTypeCycling', 'ride', ?, ?, 60, ?, ?, 40000, ?, 140, 48.2, 16.4, 48.21, 16.41, ?, ?)`,
+    [`r${ext++}`, start, start + movingS + 300, movingS + 300, movingS, 40000 / movingS, o.hidden ? 1 : 0, DERIVE_VERSION],
+  );
+  if (routeId !== null)
+    run(db, 'INSERT INTO maps_workout_geo (workout_id, athlete_id, length_m, sig, route_id) VALUES (?, 1, 40000, ?, ?)', [
+      id,
+      new Uint8Array(16),
+      routeId,
+    ]);
+  return id;
+}
+
+describe('similar activities: same route', () => {
+  it('uses the route of Maps → Routes and ranks on it like the route card', () => {
+    const old = routeRide(0, 7, 6000);
+    routeRide(1, 7, 4000, { hidden: true });
+    const other = routeRide(2, 8, 5300); // same start, finish and distance, but another course
+    const r3 = routeRide(3, 7, 5600);
+    const r2 = routeRide(4, 7, 5000);
+    const cur = routeRide(5, 7, 5400);
+    const s = similarActivities(db, 1, cur, 3)!;
+    expect(s.items.map((x) => x.id)).toEqual([other, r3, r2, cur]);
+    expect(s.items.filter((x) => x.sameRoute).map((x) => x.id)).toEqual([r3, r2, cur]);
+    // by time among every visible activity on the route, also those beyond `limit` (old)
+    expect({ rank: s.routeRank, count: s.routeCount }).toEqual({ rank: 2, count: 4 });
+    expect(old).toBeGreaterThan(0);
+    // alone on its route: no rank
+    const single = similarActivities(db, 1, other)!;
+    expect({ rank: single.routeRank, count: single.routeCount }).toEqual({ rank: null, count: 1 });
+    expect(single.items.filter((x) => x.sameRoute).map((x) => x.id)).toEqual([other]);
+  });
+
+  it('falls back to start, finish and distance without a route', () => {
+    routeRide(0, null, 5000);
+    routeRide(1, null, 5600);
+    const cur = routeRide(2, null, 5400);
+    routeRide(3, 9, 5200); // on a route of its own
+    const s = similarActivities(db, 1, cur)!;
+    expect(s.items.every((x) => x.sameRoute)).toBe(true);
+    // by average speed among them (5000 s, 5200 s, 5400 s, 5600 s)
+    expect({ rank: s.routeRank, count: s.routeCount }).toEqual({ rank: 3, count: 4 });
   });
 });

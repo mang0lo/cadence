@@ -280,7 +280,10 @@ export interface ActivitySimilarItem {
    * that basis.
    */
   efficiency: number | null;
-  /** Same start and finish (±300 m) and distance (±10 %) as the activity asked for. */
+  /**
+   * On the route of the activity asked for: the same route in Maps → Routes; for an activity without one there (e.g.
+   * a track with breaks) the same start and finish (±300 m) and distance (±10 %).
+   */
   sameRoute: boolean;
   /** The activity asked for. */
   current: boolean;
@@ -305,7 +308,11 @@ export interface ActivitySimilar {
   /** 1 = fastest (distance basis) / hardest effort (duration basis) among `items`. */
   rank: number | null;
   count: number;
-  /** Rank and count among `sameRoute` items (including the current one). */
+  /**
+   * On a route of Maps → Routes: rank by time and count of every visible activity on it (also those not in `items`),
+   * the same numbers as the activity's route card. Without such a route: rank (as `rank`) and count among the
+   * `sameRoute` items, including the current one. Rank null when the route has a single activity.
+   */
   routeRank: number | null;
   routeCount: number;
 }
