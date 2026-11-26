@@ -13,6 +13,7 @@ import {
   type ThumbnailBasemap,
 } from '@/components/map/tiles';
 import {
+  MAX_SHARE_TILES,
   SHARE_PALETTE,
   shareLayout,
   type ChartSeries,
@@ -81,10 +82,10 @@ const FONT = '"Inter Variable", system-ui, -apple-system, "Segoe UI", Roboto, sa
 const font = (weight: number, size: number) => `${weight} ${Math.round(size)}px ${FONT}`;
 
 /**
- * Recently used map tiles: one image needs up to about 60, so re-rendering a preview reuses them, but a long session
- * does not keep every tile it ever drew.
+ * Recently used map tiles: every tile of one image (up to 160 for a story, see MAX_SHARE_TILES), so re-rendering a
+ * preview reuses all of them, but a long session does not keep every tile it ever drew.
  */
-const tiles = new LruMap<string, Promise<HTMLImageElement>>(64);
+const tiles = new LruMap<string, Promise<HTMLImageElement>>(MAX_SHARE_TILES);
 
 /** An image as a CORS-clean element (rejects on an error or after `timeoutMs`). */
 function loadImage(url: string, timeoutMs: number): Promise<HTMLImageElement> {
