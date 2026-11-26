@@ -2,6 +2,7 @@ import { useMemo, useRef, useState, type FocusEvent, type KeyboardEvent, type Re
 import { useFormat } from '@/lib/format';
 import { useT } from '@/lib/i18n';
 import { addDays, diffDays, startOfWeek, weekday } from '@/lib/time';
+import { monthColumns } from './calendar';
 
 export type CalendarRamp = 'orange' | 'blue';
 
@@ -76,16 +77,8 @@ export function CalendarHeatmap({
   for (let d = from; d <= to; d = addDays(d, 1)) {
     days.push({ day: d, col: Math.floor(diffDays(gridStart, d) / 7), row: (weekday(d) - weekStart + 7) % 7 });
   }
-  const months: { label: string; col: number }[] = [];
   const monthNames = fmt.monthNames('short');
-  for (const d of days) {
-    if (d.day.endsWith('-01') || d === days[0]) {
-      const col = d.row === 0 || d.day.endsWith('-01') ? d.col : d.col + 1;
-      if (!months.length || col - months[months.length - 1]!.col >= 3) {
-        months.push({ label: monthNames[Number(d.day.slice(5, 7)) - 1]!, col });
-      }
-    }
-  }
+  const months = monthColumns(from, to, weekStart).map((m) => ({ label: monthNames[m.month]!, col: m.col }));
   const wdNames = fmt.weekdayNames(weekStart, 'short');
 
   const clampDay = (d: string) => (d < from ? from : d > to ? to : d);

@@ -2,6 +2,7 @@
  * UI primitives. Import from '@/components/ui'. Styling uses theme tokens only (bg-surface, text-fg-2,
  * border-border, text-accent-fg …) so everything works in light and dark mode.
  */
+import { describeError } from '@/lib/errors';
 import { useT } from '@/lib/i18n';
 import clsx, { type ClassValue } from 'clsx';
 import {
@@ -615,12 +616,20 @@ export function EmptyState({
   );
 }
 
+/**
+ * An error in the user's language: API errors are translated by their code, with the server's (English) message as
+ * a small detail below. A string is shown as it is (pass translated text).
+ */
 export function ErrorState({ error, className }: { error: unknown; className?: string }) {
-  const message = error instanceof Error ? error.message : String(error);
+  const t = useT();
+  const { message, detail } = describeError(error, t);
   return (
-    <div className={cn('flex items-center gap-2 rounded-control bg-critical/10 px-3 py-2 text-sm text-critical-fg', className)}>
-      <AlertTriangle size={16} aria-hidden />
-      <span>{message}</span>
+    <div className={cn('flex items-start gap-2 rounded-control bg-critical/10 px-3 py-2 text-sm text-critical-fg', className)}>
+      <AlertTriangle size={16} aria-hidden className="mt-0.5 shrink-0" />
+      <span className="min-w-0">
+        <span className="block">{message}</span>
+        {detail && <span className="mt-0.5 block break-words text-xs opacity-80">{detail}</span>}
+      </span>
     </div>
   );
 }
@@ -724,6 +733,7 @@ export function Dialog({
   actions?: ReactNode;
   className?: string;
 }) {
+  const t = useT();
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     const d = ref.current;
@@ -743,7 +753,7 @@ export function Dialog({
     >
       <div className="flex items-center justify-between border-b border-border px-5 py-3">
         <h2 className="text-base font-semibold">{title}</h2>
-        <IconButton icon={X} label="Close" onClick={onClose} />
+        <IconButton icon={X} label={t('common.close')} onClick={onClose} />
       </div>
       <div className="px-5 py-4">{children}</div>
       {actions && <div className="flex justify-end gap-2 border-t border-border px-5 py-3">{actions}</div>}

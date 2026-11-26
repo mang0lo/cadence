@@ -1,5 +1,4 @@
 @import 'tailwindcss';
-@import 'maplibre-gl/dist/maplibre-gl.css';
 
 /* Dark mode is driven by <html data-theme="dark"> (set before first paint in index.html). */
 @custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
@@ -214,37 +213,4 @@
 @utility scrollbar-thin {
   scrollbar-width: thin;
   scrollbar-color: var(--surface-3) transparent;
-}
-
-/* MapLibre chrome matched to the theme */
-.maplibregl-ctrl-group {
-  background: var(--surface) !important;
-  border: 1px solid var(--border) !important;
-  box-shadow: var(--shadow) !important;
-  border-radius: 10px !important;
-}
-.maplibregl-ctrl-group button + button {
-  border-top: 1px solid var(--border) !important;
-}
-[data-theme='dark'] .maplibregl-ctrl-group button .maplibregl-ctrl-icon {
-  filter: invert(0.9);
-}
-.maplibregl-ctrl-attrib {
-  font-size: 10px;
-  background: color-mix(in srgb, var(--surface) 80%, transparent) !important;
-  color: var(--fg-3);
-}
-.maplibregl-ctrl-attrib a {
-  color: var(--fg-2) !important;
-}
-.maplibregl-popup-content {
-  background: var(--surface) !important;
-  color: var(--fg);
-  border-radius: 10px !important;
-  box-shadow: var(--shadow-lg) !important;
-  padding: 8px 10px !important;
-}
-.maplibregl-popup-tip {
-  border-top-color: var(--surface) !important;
-  border-bottom-color: var(--surface) !important;
 }

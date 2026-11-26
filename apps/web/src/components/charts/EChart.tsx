@@ -2,28 +2,28 @@ import { useEffect, useRef } from 'react';
 import { BarChart, CustomChart, LineChart, ScatterChart } from 'echarts/charts';
 import {
   AxisPointerComponent,
-  DataZoomComponent,
   GridComponent,
   LegendComponent,
   MarkAreaComponent,
   MarkLineComponent,
-  MarkPointComponent,
   TooltipComponent,
   VisualMapComponent,
 } from 'echarts/components';
 import * as echarts from 'echarts/core';
-import { LabelLayout, LegacyGridContainLabel } from 'echarts/features';
+import { LegacyGridContainLabel } from 'echarts/features';
 import { CanvasRenderer } from 'echarts/renderers';
 import type { EChartsOption, ECharts } from 'echarts';
 import { cn } from '@/components/ui';
-import { baseOption } from './options';
+import { useI18n } from '@/lib/i18n';
+import { axisNumberFormatter, baseOption, chartLocale, localizeAxes } from './options';
 import { pointerInElement } from './pointer';
 
 export { pointerInElement };
 import { useChartTheme } from './theme';
 
 // Only what the app's charts use (the full build is more than twice as large). A chart type or option component
-// that is not registered here is silently ignored by ECharts: add it when a chart needs one.
+// that is not registered here is silently ignored by ECharts: add it when a chart needs one (e.g. DataZoomComponent
+// for zooming, MarkPointComponent for markPoint). Label layout is part of echarts/core.
 echarts.use([
   LineChart,
   BarChart,
@@ -35,10 +35,7 @@ echarts.use([
   LegendComponent,
   MarkLineComponent,
   MarkAreaComponent,
-  MarkPointComponent,
   VisualMapComponent,
-  DataZoomComponent,
-  LabelLayout,
   // the charts' grids use `containLabel` (see options.ts): without this feature ECharts 6 lays them out differently
   LegacyGridContainLabel,
   CanvasRenderer,
@@ -105,8 +102,17 @@ function correctPointerPositions(container: HTMLElement, chart: ECharts): () => 
   };
 }
 
-/** Theme-aware ECharts wrapper (canvas). Resizes with its container. */
-export function EChart({
+/**
+ * Theme-aware ECharts wrapper (canvas). Resizes with its container. Numeric axes without a label formatter of their
+ * own show the user's number format, time axes the month names of the user's language.
+ */
+export function EChart(props: EChartProps) {
+  const { locale } = useI18n();
+  // ECharts takes its locale (month names on time axes) when a chart is created: another language makes a new chart
+  return <ChartCanvas key={locale} locale={locale} {...props} />;
+}
+
+function ChartCanvas({
   option,
   height = 260,
   className,
@@ -116,7 +122,8 @@ export function EChart({
   onReady,
   group,
   ariaLabel,
-}: EChartProps) {
+  locale,
+}: EChartProps & { locale: string }) {
   const el = useRef<HTMLDivElement>(null);
   const chart = useRef<ECharts | null>(null);
   const theme = useChartTheme();
@@ -125,13 +132,24 @@ export function EChart({
 
   useEffect(() => {
     const node = el.current!;
-    const c = echarts.init(node, undefined, { renderer: 'canvas' });
+    // only the time names: ECharts fills in the rest from its English locale
+    const c = echarts.init(node, undefined, { renderer: 'canvas', locale: chartLocale(locale) as never });
     chart.current = c;
     const stopPointerFix = correctPointerPositions(node, c);
-    const ro = new ResizeObserver(() => c.resize());
+    // at most one resize per frame, outside the observer's callback (a resize lays out the whole chart at once; a page
+    // with many charts would do that for each of them on every callback while the window is dragged)
+    let frame = 0;
+    const ro = new ResizeObserver(() => {
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        if (!c.isDisposed()) c.resize();
+      });
+    });
     ro.observe(node);
     onReady?.(c);
     return () => {
+      cancelAnimationFrame(frame);
       stopPointerFix();
       ro.disconnect();
       c.dispose();
@@ -143,8 +161,8 @@ export function EChart({
   useEffect(() => {
     const c = chart.current;
     if (!c) return;
-    c.setOption({ ...baseOption(theme), ...option }, { notMerge });
-  }, [option, theme, notMerge]);
+    c.setOption({ ...baseOption(theme), ...localizeAxes(option, axisNumberFormatter(locale)) }, { notMerge });
+  }, [option, theme, notMerge, locale]);
 
   useEffect(() => {
     const c = chart.current;

@@ -215,25 +215,80 @@ export function legend(t: ChartTheme, kind: 'line' | 'rect' = 'rect', extra?: An
   };
 }
 
-/** Zoom slider/inside for long time series. */
-export function dataZoom(t: ChartTheme, opts: { slider?: boolean } = {}): AnyObj[] {
-  const inside = { type: 'inside', throttle: 50 };
-  if (!opts.slider) return [inside];
-  return [
-    inside,
-    {
-      type: 'slider',
-      height: 18,
-      bottom: 4,
-      borderColor: 'transparent',
-      backgroundColor: t.cellEmpty,
-      fillerColor: 'rgba(128,128,128,0.15)',
-      dataBackground: { lineStyle: { color: t.axis }, areaStyle: { color: t.grid } },
-      handleStyle: { color: t.surface, borderColor: t.axis },
-      textStyle: { color: t.muted },
-      moveHandleSize: 0,
-    },
-  ];
+// ---------------------------------------------------------------------------------------------------------------------
+// Locale: ECharts formats numbers as "1,234.5" and names months in English whatever the page language. <EChart>
+// applies these, so every chart is locale-correct without each option having to remember it.
+
+const axisFormatters = new Map<string, (v: number) => string>();
+
+/** Default label of numeric axes in the user's number format (as many decimals as the tick has, no "-0"). */
+export function axisNumberFormatter(locale: string): (v: number) => string {
+  let f = axisFormatters.get(locale);
+  if (!f) {
+    const nf = new Intl.NumberFormat(locale, { maximumFractionDigits: 6 });
+    // a value that shows as 0 at 6 decimals is 0 (Intl would print "-0" for -0 and -0.0000001)
+    f = (v: number) => nf.format(Math.abs(v) < 5e-7 ? 0 : v);
+    axisFormatters.set(locale, f);
+  }
+  return f;
+}
+
+type AxisOption = { type?: string; data?: unknown; axisLabel?: { formatter?: unknown } };
+
+const NUMERIC_AXES = new Set(['value', 'log']);
+
+function localizeAxis(axis: unknown, format: (v: number) => string): unknown {
+  if (!axis || typeof axis !== 'object') return axis;
+  const a = axis as AxisOption;
+  // the type ECharts gives an axis without one (axisModelCreator): category when it has data, value otherwise
+  const type = a.type || (a.data ? 'category' : 'value');
+  if (!NUMERIC_AXES.has(type) || a.axisLabel?.formatter != null) return axis;
+  return { ...a, axisLabel: { ...a.axisLabel, formatter: format } };
+}
+
+/**
+ * Value and log axes without a label formatter of their own get `format` (an axis without a type is a value axis
+ * unless it has `data`, as in ECharts). Returns a new option; the given one is not changed.
+ */
+export function localizeAxes(option: EChartsOption, format: (v: number) => string): EChartsOption {
+  const fix = (axes: unknown) => (Array.isArray(axes) ? axes.map((a) => localizeAxis(a, format)) : localizeAxis(axes, format));
+  const out: EChartsOption = { ...option };
+  if (option.xAxis !== undefined) out.xAxis = fix(option.xAxis) as EChartsOption['xAxis'];
+  if (option.yAxis !== undefined) out.yAxis = fix(option.yAxis) as EChartsOption['yAxis'];
+  return out;
+}
+
+export interface ChartLocale {
+  time: { month: string[]; monthAbbr: string[]; dayOfWeek: string[]; dayOfWeekAbbr: string[] };
+}
+
+const chartLocales = new Map<string, ChartLocale>();
+
+/**
+ * ECharts locale with the month and weekday names of the user's language (time axis labels such as "Mär" or "Nov";
+ * ECharts' own are English). Missing parts fall back to ECharts' English texts.
+ */
+export function chartLocale(locale: string): ChartLocale {
+  let l = chartLocales.get(locale);
+  if (!l) {
+    const names = (opts: Intl.DateTimeFormatOptions, dates: number[]) => {
+      const f = new Intl.DateTimeFormat(locale, { ...opts, timeZone: 'UTC' });
+      return dates.map((d) => f.format(new Date(d)));
+    };
+    const months = Array.from({ length: 12 }, (_, i) => Date.UTC(2024, i, 1));
+    // ECharts counts weekdays from Sunday; 2024-01-07 is a Sunday
+    const days = Array.from({ length: 7 }, (_, i) => Date.UTC(2024, 0, 7 + i));
+    l = {
+      time: {
+        month: names({ month: 'long' }, months),
+        monthAbbr: names({ month: 'short' }, months),
+        dayOfWeek: names({ weekday: 'long' }, days),
+        dayOfWeekAbbr: names({ weekday: 'short' }, days),
+      },
+    };
+    chartLocales.set(locale, l);
+  }
+  return l;
 }
 
 /** Common top-level defaults merged by <EChart>. */

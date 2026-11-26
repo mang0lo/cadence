@@ -9,6 +9,7 @@ import { useSettings } from '@/lib/settings';
 import { useResolvedTheme } from '@/lib/theme';
 import { isStyleReady, markStyleReady } from './layers';
 import { FALLBACK_STYLE, MAP_STYLE_KEYS, mapStyleFor, TERRAIN_SOURCE, TERRAIN_SOURCE_ID } from './styles';
+import './map.css';
 
 // MapLibre 6 resolves its worker relative to its own module, which bundlers relocate — point it at
 // the Vite-bundled worker instead.

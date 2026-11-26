@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { cn } from '@/components/ui';
 import { useSettings } from '@/lib/settings';
 import { useResolvedTheme } from '@/lib/theme';
-import { mapSnapshot, peekSnapshot, snapshotKey, type SnapshotRequest } from './snapshot';
+import { holdSnapshot, peekSnapshot, snapshotKey, type SnapshotRequest } from './snapshot';
 import {
   TILE_ATTRIBUTION as ATTRIBUTION,
   TILE_ATTRIBUTION_SHORT,
@@ -16,34 +16,52 @@ export { thumbnailBasemap, thumbnailLayout, tileUrl, type ThumbnailBasemap, type
 
 const devicePixelRatioOf = () => (typeof window !== 'undefined' && window.devicePixelRatio >= 1.5 ? 2 : 1);
 
-/** Object URL of the snapshot for a request (null while it renders or when it cannot be rendered). */
+/**
+ * Object URL of the snapshot for a request (null while it renders or when it cannot be rendered). The image is held
+ * while it is shown: a render that is still queued when the request changes or the preview unmounts is skipped.
+ */
 function useSnapshot(req: SnapshotRequest | null): string | null {
   const key = req ? snapshotKey(req) : null;
-  const [state, setState] = useState<{ key: string | null; url: string | null }>(() => ({
-    key,
-    url: key ? peekSnapshot(key) : null,
-  }));
+  // renders again once the image is ready; the URL itself is read from the store (also before the effect has run, so
+  // an image that is already in this page shows at once)
+  const [, ready] = useReducer((n: number) => n + 1, 0);
   useEffect(() => {
     if (!req || !key) return;
-    const known = peekSnapshot(key);
-    if (known) {
-      setState({ key, url: known });
-      return;
-    }
+    const held = holdSnapshot(req);
     let live = true;
-    void mapSnapshot(req).then((url) => live && setState({ key, url }));
+    void held.promise.then(() => live && ready());
     return () => {
       live = false;
+      held.release();
     };
     // the key identifies the request
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
-  return state.key === key ? state.url : null;
+  return key ? peekSnapshot(key) : null;
+}
+
+/** A new size is used once the layout has rested this long (a resize drag passes through every width). */
+const SETTLE_MS = 200;
+
+/**
+ * The nearest ancestor that scrolls vertically (the app's main area). It is the root of the "near" observer: measured
+ * against the window, a preview inside a scrolling area is clipped by that area, so the margin would never apply and
+ * a preview would only count as near once it is on screen (and lose its image as soon as it leaves).
+ */
+function scrollParent(el: Element): Element | null {
+  for (let p = el.parentElement; p; p = p.parentElement) {
+    const { overflowY, position } = getComputedStyle(p);
+    if ((overflowY === 'auto' || overflowY === 'scroll') && p.scrollHeight > p.clientHeight) return p;
+    // a dialog or a fixed panel is not clipped by the page's scrolling area (and would never intersect it)
+    if (p.tagName === 'DIALOG' || position === 'fixed') return null;
+  }
+  return null;
 }
 
 /**
- * Rendered size of the element (CSS px, rounded) and whether it came near the viewport. Off-screen thumbnails load no
- * tiles; the layout is computed for the real size so the map fills the box whatever its aspect ratio.
+ * Rendered size of the element (CSS px, rounded) and whether it is near the viewport. Thumbnails away from the
+ * viewport load no tiles and no map image; the layout is computed for the real size so the map fills the box
+ * whatever its aspect ratio. The first size is taken at once, later changes once they have settled.
  */
 function useBox<T extends Element>(): [React.RefObject<T | null>, { w: number; h: number } | null, boolean] {
   const ref = useRef<T | null>(null);
@@ -52,30 +70,41 @@ function useBox<T extends Element>(): [React.RefObject<T | null>, { w: number; h
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
+    let measured = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     const measure = () => {
       const r = el.getBoundingClientRect();
       const w = Math.round(r.width);
       const h = Math.round(r.height);
-      if (w > 0 && h > 0) setSize((s) => (s && s.w === w && s.h === h ? s : { w, h }));
+      if (w > 0 && h > 0) {
+        measured = true;
+        setSize((s) => (s && s.w === w && s.h === h ? s : { w, h }));
+      }
     };
     measure();
-    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null;
+    const ro =
+      typeof ResizeObserver !== 'undefined'
+        ? new ResizeObserver(() => {
+            clearTimeout(timer);
+            if (!measured) measure();
+            else timer = setTimeout(measure, SETTLE_MS);
+          })
+        : null;
     ro?.observe(el);
     let io: IntersectionObserver | null = null;
     if (typeof IntersectionObserver === 'undefined') setNear(true);
     else {
       io = new IntersectionObserver(
         (entries) => {
-          if (entries.some((e) => e.isIntersecting)) {
-            setNear(true);
-            io?.disconnect();
-          }
+          const last = entries[entries.length - 1];
+          if (last) setNear(last.isIntersecting);
         },
-        { rootMargin: '300px' },
+        { root: scrollParent(el), rootMargin: '300px' },
       );
       io.observe(el);
     }
     return () => {
+      clearTimeout(timer);
       ro?.disconnect();
       io?.disconnect();
     };
