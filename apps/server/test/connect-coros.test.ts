@@ -433,7 +433,10 @@ describe('COROS sync', () => {
     };
     expect(await sync.start(1)).toMatchObject({ state: 'done', downloaded: 1 });
     expect(enqueued).toHaveLength(1);
-    expect(sync.status(1)).toMatchObject({ lastError: expect.stringMatching(/connect the account again/), needsReconnect: true });
+    expect(sync.status(1)).toMatchObject({
+      lastError: expect.stringMatching(/connect the account again/),
+      needsReconnect: true,
+    });
     sync.autoTick();
     expect(sync.isSyncing(1)).toBe(false);
   });
