@@ -155,6 +155,21 @@ export const SORT_EXPR: Record<ActivitySort, string> = {
   effort: 'effort',
 };
 
+/** Sorts whose expression can be NULL (start_ts and duration_s are NOT NULL). */
+const NULLABLE_SORTS = new Set<ActivitySort>(['distance', 'pace', 'elevation', 'hr', 'effort']);
+
+/**
+ * ORDER BY of the list and the export: the sort expression with NULL values last in both directions, then start and
+ * id. The default sort is a plain `start_ts, id`, which SQLite reads from ix_workouts_start (id is the rowid) and
+ * stops after the page instead of sorting every match.
+ */
+export function orderBy(sort: ActivitySort, order: 'asc' | 'desc'): string {
+  const dir = order === 'asc' ? 'ASC' : 'DESC';
+  const expr = SORT_EXPR[sort];
+  const terms = sort === 'start' ? [] : [...(NULLABLE_SORTS.has(sort) ? [`(${expr}) IS NULL`] : []), `${expr} ${dir}`];
+  return [...terms, `start_ts ${dir}`, `id ${dir}`].join(', ');
+}
+
 const emptyTotals = (): ActivityTotals => ({ count: 0, distanceM: 0, movingS: 0, elevationM: 0, energyKcal: 0, effort: 0 });
 
 /**
@@ -205,12 +220,9 @@ export function listActivities(db: Db, athleteId: number, o: ListOptions): Activ
      FROM workouts WHERE ${sql}`,
     params,
   )!;
-  const expr = SORT_EXPR[o.sort];
-  const dir = o.order === 'asc' ? 'ASC' : 'DESC';
   const rows = all<WorkoutRow>(
     db,
-    `SELECT ${SUMMARY_COLS} FROM workouts WHERE ${sql}
-     ORDER BY (${expr}) IS NULL, ${expr} ${dir}, start_ts ${dir}, id ${dir} LIMIT ? OFFSET ?`,
+    `SELECT ${SUMMARY_COLS} FROM workouts WHERE ${sql} ORDER BY ${orderBy(o.sort, o.order)} LIMIT ? OFFSET ?`,
     [...params, o.limit, o.offset],
   );
   const medals = medalsFor(
