@@ -128,6 +128,15 @@ describe('overlay effects follow the style lifecycle', () => {
     expect(drawn).toEqual(['a', 'b']);
   });
 
+  it('applies a change made while tiles or sources load (map.isStyleLoaded() is false then)', () => {
+    // the heatmap palette effect used to return on !isStyleLoaded() and never ran again: the new colors were lost
+    const h = mount('hot');
+    map.fire('style.load');
+    expect(map.isStyleLoaded()).toBe(false); // tiles of the basemap or the time-lapse sources are loading
+    h.rerender({ value: 'blue' });
+    expect(drawn).toEqual(['hot', 'blue']);
+  });
+
   it('passes the map to onReady and onStyleLoad', () => {
     const ready = vi.fn();
     const loaded = vi.fn();
