@@ -9,6 +9,25 @@ export function useHealthMeta() {
   return useApi<HealthMeta>(['health', 'meta'], '/health/meta', undefined, { staleTime: 30_000 });
 }
 
+/** Apple's identifiers of the metrics the server may swap for the watch's own (`HealthMeta.metrics`). */
+export const APPLE_METRICS: HealthMeta['metrics'] = {
+  restingHr: 'HKQuantityTypeIdentifierRestingHeartRate',
+  hrv: 'HKQuantityTypeIdentifierHeartRateVariabilitySDNN',
+  vo2max: 'HKQuantityTypeIdentifierVO2Max',
+  steps: 'HKQuantityTypeIdentifierStepCount',
+  heartRate: 'HKQuantityTypeIdentifierHeartRate',
+};
+
+/**
+ * daily_metrics keys of resting HR, HRV, VO₂max, steps and heart rate: Apple's or COROS' (Settings → My watch), as the
+ * server reads them — use these instead of hard-coded HealthKit identifiers. `ready` is false while the meta loads
+ * (the keys are Apple's until then).
+ */
+export function useHeartMetrics(): HealthMeta['metrics'] & { ready: boolean } {
+  const meta = useHealthMeta();
+  return { ...(meta.data?.metrics ?? APPLE_METRICS), ready: !meta.isLoading };
+}
+
 /** Record types of the athlete (core endpoint) – tells which metrics exist at all. */
 export function useRecordTypes() {
   return useApi<RecordTypeInfo[]>(['health', 'types'], '/metrics/types', undefined, { staleTime: 60_000 });

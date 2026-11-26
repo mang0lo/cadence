@@ -10,6 +10,7 @@ import { todayKey } from '@/lib/time';
 import { Spark } from './components/Spark';
 import { useDayLabel } from './components/MetricCard';
 import { ReadinessBandBadge, ReadinessRing, ReasonList } from './components/readiness/ReadinessRing';
+import { useHeartMetrics } from './lib/hooks';
 import { useMetricFormat } from './lib/metrics';
 import { useReadiness } from './lib/readiness';
 
@@ -105,10 +106,6 @@ export function ReadinessWidget() {
 // Snapshot
 // ---------------------------------------------------------------------------------------------------------------
 
-const RHR = 'HKQuantityTypeIdentifierRestingHeartRate';
-const HRV = 'HKQuantityTypeIdentifierHeartRateVariabilitySDNN';
-const STEPS = 'HKQuantityTypeIdentifierStepCount';
-
 function Tile({
   to,
   icon: Icon,
@@ -169,8 +166,10 @@ export function HealthSnapshotCard() {
   const m = useMetricFormat();
   const dayLabel = useDayLabel();
   const q = useApi<HealthSnapshot>(['health', 'snapshot'], '/health/snapshot', undefined, { staleTime: 30_000 });
+  // the snapshot holds COROS' values when the watch is a COROS: name, format and link them as such
+  const ids = useHeartMetrics();
 
-  if (q.isLoading) {
+  if (q.isLoading || !ids.ready) {
     return (
       <Card className="@container">
         <Skeleton className="h-4 w-40" />
@@ -212,8 +211,8 @@ export function HealthSnapshotCard() {
         }
       />
       <div className="grid grid-cols-2 gap-x-6 gap-y-6 @lg:grid-cols-4">
-        {simple(d.restingHr, RHR, '/health/heart', HeartPulse, t('health.widget.restingHr'))}
-        {simple(d.hrv, HRV, '/health/heart', Activity, t('health.widget.hrv'))}
+        {simple(d.restingHr, ids.restingHr, '/health/heart', HeartPulse, t('health.widget.restingHr'))}
+        {simple(d.hrv, ids.hrv, '/health/heart', Activity, t('health.widget.hrv'))}
         {sleep && (
           <Tile
             to="/health/sleep"
@@ -239,7 +238,7 @@ export function HealthSnapshotCard() {
             spark={sleep.spark}
           />
         )}
-        {simple(d.steps, STEPS, `/health/explorer/${STEPS}`, Footprints, m.name(STEPS))}
+        {simple(d.steps, ids.steps, `/health/explorer/${encodeURIComponent(ids.steps)}`, Footprints, m.name(ids.steps))}
       </div>
     </Card>
   );
