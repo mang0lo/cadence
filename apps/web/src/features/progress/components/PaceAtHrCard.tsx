@@ -118,6 +118,9 @@ export function PaceAtHrCard({ sport, range }: { sport: string; range: RangePara
   // in an effect: the render after a sport change must not request the new sport with the old sport's band
   const [picked, setPicked] = useState<{ sport: string; band: ProgressHrBand } | null>(null);
   const [customFor, setCustomFor] = useState<string | null>(null);
+  // another sport closes the custom inputs for good (cleared while rendering, which commits nothing stale): kept, they
+  // would reopen when the sport comes back, showing the other sport's bounds that a blur or Enter would then save
+  if (customFor !== null && customFor !== sport) setCustomFor(null);
   const band = picked?.sport === sport ? picked.band : null;
   const customOpen = customFor === sport;
   const setCustomOpen = (open: boolean) => setCustomFor(open ? sport : null);
