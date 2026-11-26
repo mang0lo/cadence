@@ -31,7 +31,7 @@ import { EffortTrend } from '../components/EffortTrend';
 import { LineMap, useShownOverlayColors, type MapLine, type MapMarker } from '../components/LineMap';
 import { dateHint } from '../lib/dates';
 import { unionBox, type BBox } from '../lib/home';
-import { distanceAxisDigits, gradeAt } from '../lib/segments';
+import { distanceAxisLabel, gradeAt } from '../lib/segments';
 
 export default function SegmentPage() {
   const t = useT();
@@ -349,7 +349,6 @@ function ProfileChart({ detail }: { detail: MapsSegmentDetail }) {
       profile.ele[i] == null ? null : eleVal(profile.ele[i]!),
     ]);
     const maxDist = fmt.distanceValue(profile.dist[profile.dist.length - 1] ?? 0);
-    const digits = distanceAxisDigits(maxDist); // short segments step by 0.03 km: two decimals
     return {
       grid: grid({ top: 12, right: 30 }),
       tooltip: axisTooltip(theme, (params) => {
@@ -371,7 +370,8 @@ function ProfileChart({ detail }: { detail: MapsSegmentDetail }) {
         axisLabel: {
           color: theme.muted,
           fontSize: 11,
-          formatter: (v: number) => `${fmt.num(v, digits)} ${fmt.distanceUnit}`,
+          // short segments step by 0.03 km (two decimals); the end, the segment's length, keeps apart from the last step
+          formatter: distanceAxisLabel(fmt, maxDist),
         },
       }),
       yAxis: valueAxis(theme, {

@@ -39,3 +39,18 @@ export function gradeAt(dist: number[], ele: (number | null)[], d: number, spanM
  */
 export const distanceAxisDigits = (max: number, splitNumber = 4): number =>
   max > 0 ? Math.max(0, Math.ceil(-Math.log10(max / splitNumber))) : 0;
+
+/**
+ * Label formatter of a distance axis (km or mi) from 0 to `max`, the segment's length, with the decimals of the steps
+ * (distanceAxisDigits). With a fixed max, ECharts also labels the end of the axis when it is not on a step: it gets
+ * one decimal more, so it stays apart from the last step ('4 km, 4.4 km', not '4 km, 4 km').
+ */
+export function distanceAxisLabel(
+  fmt: { num: (v: number, digits?: number) => string; distanceUnit: string },
+  max: number,
+  splitNumber = 4,
+): (v: number) => string {
+  const digits = distanceAxisDigits(max, splitNumber);
+  const end = Number(max.toFixed(digits)) === max ? digits : digits + 1;
+  return (v) => `${fmt.num(v, v === max ? end : digits)} ${fmt.distanceUnit}`;
+}
