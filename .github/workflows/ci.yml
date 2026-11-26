@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
 
+# the jobs run npm packages and their install scripts: the token can only read
+permissions:
+  contents: read
+
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -30,6 +34,9 @@ jobs:
           file: deploy/Dockerfile
           push: false
           tags: cadence:ci
+          # npm ci and the build are reused while nothing they depend on changed
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
   # Linux and Windows desktop app (Electron): package it, start the packaged app once (smoke test: the bundled server
   # must come up and the UI render), keep the installers as artifacts of the run for a few days. The build and the
@@ -57,6 +64,16 @@ jobs:
         with:
           node-version: 26
           cache: npm
+      # the Electron runtime and tools (NSIS, AppImage, winCodeSign) that electron-builder downloads for packaging
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/electron
+            ~/.cache/electron-builder
+            ~/AppData/Local/electron/Cache
+            ~/AppData/Local/electron-builder/Cache
+          key: electron-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: electron-${{ runner.os }}-
       - run: npm ci --no-audit --no-fund
       - run: npm run ${{ matrix.dist }}
       - name: Smoke test (Linux)
@@ -72,7 +89,7 @@ jobs:
           $env:CADENCE_DATA_DIR = "$env:RUNNER_TEMP\cadence"
           $env:CADENCE_DESKTOP_SMOKE = "$env:RUNNER_TEMP\smoke.png"
           $p = Start-Process -FilePath "${{ matrix.app }}" -PassThru -Wait
-          # the app writes the screenshot only when the server started and the UI loaded
+          # the app writes the screenshot only when the server started and the app shell rendered
           if (-not (Test-Path $env:CADENCE_DESKTOP_SMOKE)) {
             Get-Content "$env:CADENCE_DATA_DIR\logs\server.log" -ErrorAction SilentlyContinue
             exit 1
@@ -111,6 +128,22 @@ jobs:
           cache: npm
       - run: npm ci --no-audit --no-fund
       - run: npm run mac -- --dmg
+      - name: Shell tests
+        run: swift test --package-path apps/macos
+      # start the built app once: its server must come up and the UI render (CADENCE_SMOKE, see SmokeTest.swift)
+      - name: Smoke test
+        timeout-minutes: 5
+        run: |
+          export CADENCE_DATA_DIR="$RUNNER_TEMP/cadence" CADENCE_SMOKE="$RUNNER_TEMP/smoke.png"
+          build/Cadence.app/Contents/MacOS/Cadence || { cat "$CADENCE_DATA_DIR/logs/server.log" || true; exit 1; }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        continue-on-error: true
+        with:
+          name: smoke-macOS
+          path: ${{ runner.temp }}/smoke.png
+          if-no-files-found: ignore
+          retention-days: 3
       - name: Disk image exists
         run: ls -l build/Cadence-*.dmg
       # like the desktop installers: kept for a few days, and a failing upload does not fail the build

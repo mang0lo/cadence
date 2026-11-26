@@ -3,6 +3,11 @@ name: Release
 # Start a release either by pushing a tag (git tag -a v0.2.0 -m … && git push origin v0.2.0) or from the Actions tab:
 # "Release" → "Run workflow" with the version. A dispatched run creates the tag on the commit it builds.
 # The version must match package.json; the release notes come from the matching CHANGELOG.md section.
+#
+# Tokens: the app builds run npm packages and their install scripts, so they get a read-only token and only produce
+# files (kept for a day as artifacts of the run). The jobs that publish run no build code: github-release and attach
+# (contents: write) and docker-image (packages: write; the build itself runs inside BuildKit). Checkouts do not keep
+# the token, and third-party actions are pinned to commits.
 on:
   push:
     tags: ['v*']
@@ -14,8 +19,7 @@ on:
         type: string
 
 permissions:
-  contents: write
-  packages: write
+  contents: read
 
 env:
   TAG: ${{ inputs.version || github.ref_name }}
@@ -24,7 +28,9 @@ jobs:
   check-version:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
       - name: Tag matches package.json
         run: |
           expected="v$(node -p "require('./package.json').version")"
@@ -33,12 +39,16 @@ jobs:
             exit 1
           fi
 
-  # The release page (tag + notes) does not wait for the app builds; mac-app and desktop attach their files to it.
+  # The release page (tag + notes) does not wait for the app builds; attach adds their files to it.
   github-release:
     needs: check-version
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
       # release notes = the "## [x.y.z]" section of CHANGELOG.md for this tag
       - name: Release notes
         run: |
@@ -48,7 +58,7 @@ jobs:
           ' CHANGELOG.md > release-notes.md
           test -s release-notes.md || echo "See CHANGELOG.md." > release-notes.md
       # creates the tag on this commit when the run was dispatched (no-op when the tag was pushed)
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           tag_name: ${{ env.TAG }}
           target_commitish: ${{ github.sha }}
@@ -56,71 +66,144 @@ jobs:
           body_path: release-notes.md
 
   mac-app:
-    needs: github-release
+    needs: check-version
     runs-on: macos-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 26
           cache: npm
       - run: npm ci --no-audit --no-fund
       - run: npm run mac -- --dmg
-      # attach the DMG to the release created above (keeps its name and notes)
-      - uses: softprops/action-gh-release@v2
+      - name: Shell tests
+        run: swift test --package-path apps/macos
+      # started once before it ships, like the desktop apps: its server must come up and the UI render
+      - name: Smoke test
+        timeout-minutes: 5
+        run: |
+          export CADENCE_DATA_DIR="$RUNNER_TEMP/cadence" CADENCE_SMOKE="$RUNNER_TEMP/smoke.png"
+          build/Cadence.app/Contents/MacOS/Cadence || { cat "$CADENCE_DATA_DIR/logs/server.log" || true; exit 1; }
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          tag_name: ${{ env.TAG }}
-          files: build/Cadence-*.dmg
+          name: release-macOS
+          path: build/Cadence-*.dmg
+          if-no-files-found: error
+          retention-days: 1
 
-  # Linux (AppImage + .deb) and Windows (installer + portable .exe) desktop apps, attached to the release
+  # Linux (AppImage + .deb) and Windows (installer + portable .exe) desktop apps; each is started once before it ships
   desktop:
-    needs: github-release
+    needs: check-version
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
             dist: desktop:dist
+            app: build/desktop/linux-unpacked/cadence
             files: |
               build/desktop/*.AppImage
               build/desktop/*.deb
           - os: windows-latest
             dist: desktop:win
+            app: build/desktop/win-unpacked/Cadence.exe
             files: build/desktop/*.exe
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 26
           cache: npm
+      # the Electron runtime and tools electron-builder downloads for packaging, from the main branch's CI runs
+      # (a release writes no cache)
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ~/.cache/electron
+            ~/.cache/electron-builder
+            ~/AppData/Local/electron/Cache
+            ~/AppData/Local/electron-builder/Cache
+          key: electron-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: electron-${{ runner.os }}-
       - run: npm ci --no-audit --no-fund
       - run: npm run ${{ matrix.dist }}
-      - uses: softprops/action-gh-release@v2
+      - name: Smoke test (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          export CADENCE_DATA_DIR="$RUNNER_TEMP/cadence" CADENCE_DESKTOP_SMOKE="$RUNNER_TEMP/smoke.png"
+          xvfb-run -a ${{ matrix.app }} --no-sandbox | tee smoke.log
+          test -s "$CADENCE_DESKTOP_SMOKE" || { cat "$CADENCE_DATA_DIR/logs/server.log"; exit 1; }
+      - name: Smoke test (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $env:CADENCE_DATA_DIR = "$env:RUNNER_TEMP\cadence"
+          $env:CADENCE_DESKTOP_SMOKE = "$env:RUNNER_TEMP\smoke.png"
+          $p = Start-Process -FilePath "${{ matrix.app }}" -PassThru -Wait
+          # the app writes the screenshot only when the server started and the app shell rendered
+          if (-not (Test-Path $env:CADENCE_DESKTOP_SMOKE)) {
+            Get-Content "$env:CADENCE_DATA_DIR\logs\server.log" -ErrorAction SilentlyContinue
+            exit 1
+          }
+          Write-Output "smoke test passed (exit code $($p.ExitCode))"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-${{ runner.os }}
+          path: ${{ matrix.files }}
+          if-no-files-found: error
+          retention-days: 1
+
+  # puts the built apps on the release page (whatever was built: one failing platform does not hold back the others)
+  attach:
+    needs: [github-release, mac-app, desktop]
+    if: ${{ !cancelled() && needs.github-release.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: release-*
+          path: assets
+          merge-multiple: true
+      - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           tag_name: ${{ env.TAG }}
-          files: ${{ matrix.files }}
+          files: assets/*
 
   docker-image:
     needs: check-version
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
       # image names must be lowercase (GitHub owners may contain capitals)
       - name: Image name
         run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/cadence" >> "$GITHUB_ENV"
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: .
           file: deploy/Dockerfile
           push: true
+          # layers of the main branch's CI builds (dependencies, build) when nothing they depend on changed
+          cache-from: type=gha
           tags: |
             ${{ env.IMAGE }}:latest
             ${{ env.IMAGE }}:${{ env.TAG }}

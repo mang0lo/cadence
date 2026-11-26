@@ -1,8 +1,21 @@
+# Not part of the build context (deploy/Dockerfile copies package files, packages/, apps/server and apps/web).
+# Dependencies, build output, tests:
 **/node_modules
 **/dist
-data
+**/test
 build
 apps/macos/.build
+apps/macos/.swiftpm
 .git
 .claude
-*.zip
+# Health data and secrets, wherever they lie (as in .gitignore):
+**/data
+**/*.zip
+**/*.db
+**/*.db-wal
+**/*.db-shm
+**/export.xml
+**/export_cda.xml
+**/apple_health_export
+**/.env
+**/.env.*

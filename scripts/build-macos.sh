@@ -92,6 +92,26 @@ cat >"$APP/Contents/Info.plist" <<PLIST
       <key>LSItemContentTypes</key>
       <array><string>public.zip-archive</string><string>public.xml</string></array>
     </dict>
+    <dict>
+      <key>CFBundleTypeName</key><string>FIT Activity</string>
+      <key>CFBundleTypeRole</key><string>Viewer</string>
+      <key>LSHandlerRank</key><string>Alternate</string>
+      <key>LSItemContentTypes</key>
+      <array><string>com.garmin.fit</string></array>
+    </dict>
+  </array>
+  <!-- macOS has no type for FIT files (Garmin, COROS, Wahoo …): without it they could not be dropped on the Dock icon -->
+  <key>UTImportedTypeDeclarations</key>
+  <array>
+    <dict>
+      <key>UTTypeIdentifier</key><string>com.garmin.fit</string>
+      <key>UTTypeDescription</key><string>FIT Activity</string>
+      <key>UTTypeConformsTo</key><array><string>public.data</string></array>
+      <key>UTTypeTagSpecification</key>
+      <dict>
+        <key>public.filename-extension</key><array><string>fit</string></array>
+      </dict>
+    </dict>
   </array>
 </dict>
 </plist>

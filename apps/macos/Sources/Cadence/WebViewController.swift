@@ -92,6 +92,10 @@ final class WebViewController: NSViewController, WKNavigationDelegate, WKUIDeleg
     private(set) var webView: WKWebView!
     private let overlay = StatusOverlay()
     private(set) var baseURL: URL?
+    /// The origins of the server's pages (ShellPolicy): baseURL's, and where the server sent the app's own load.
+    private var appOrigins: [ShellPolicy.Origin] = []
+    /// The app's own load of baseURL, to learn where a server redirect took it.
+    private var appLoad: WKNavigation?
     /// Called by the web UI through the bridge or by menu items; implemented by the app delegate.
     var onRestartRequested: (() -> Void)?
     /// Settings → Server in the web UI: use this server from now on (nil = the one built into the app).
@@ -117,7 +121,8 @@ final class WebViewController: NSViewController, WKNavigationDelegate, WKUIDeleg
         let config = WKWebViewConfiguration()
         config.userContentController.add(WeakScriptHandler(self), name: "cadence")
         config.preferences.setValue(true, forKey: "developerExtrasEnabled")
-        config.websiteDataStore = .default()
+        // a smoke run keeps nothing (and does not touch what the app keeps for the user)
+        config.websiteDataStore = SmokeTest.isActive ? .nonPersistent() : .default()
 
         webView = WKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = self
@@ -129,7 +134,8 @@ final class WebViewController: NSViewController, WKNavigationDelegate, WKUIDeleg
         webView.translatesAutoresizingMaskIntoConstraints = false
         overlay.translatesAutoresizingMaskIntoConstraints = false
 
-        let root = NSView()
+        // the window takes this size when the view becomes its content (first launch, smoke runs)
+        let root = NSView(frame: NSRect(x: 0, y: 0, width: 1380, height: 900))
         root.addSubview(webView)
         root.addSubview(overlay)
         NSLayoutConstraint.activate([
@@ -165,9 +171,24 @@ final class WebViewController: NSViewController, WKNavigationDelegate, WKUIDeleg
 
     func load(_ url: URL) {
         baseURL = url
+        appOrigins = ShellPolicy.Origin(url).map { [$0] } ?? []
         pageLoaded = false
         overlay.hide()
-        webView.load(URLRequest(url: url))
+        let first = pendingPath.flatMap { URL(string: $0, relativeTo: url) } ?? url
+        pendingPath = nil
+        appLoad = webView.load(URLRequest(url: first))
+    }
+
+    /// Until the built-in server kept its port, every launch gave the page a new origin (http://127.0.0.1:<port>)
+    /// and left what it had stored under the old one behind for good. Removes all of it once, before the page first
+    /// loads on its lasting port (WebKit keeps one record per host, for all ports).
+    func removeLocalWebsiteData(then done: @escaping () -> Void) {
+        let store = webView.configuration.websiteDataStore
+        let types = WKWebsiteDataStore.allWebsiteDataTypes()
+        store.fetchDataRecords(ofTypes: types) { records in
+            let local = records.filter { $0.displayName == "127.0.0.1" }
+            if local.isEmpty { done() } else { store.removeData(ofTypes: types, for: local, completionHandler: done) }
+        }
     }
 
     /// A remote server that does not answer: try again or go back to the built-in server.
@@ -183,8 +204,15 @@ final class WebViewController: NSViewController, WKNavigationDelegate, WKUIDeleg
         )
     }
 
+    /// A page asked for before the first load (e.g. an export dropped on the Dock icon launched the app): shown first.
+    private var pendingPath: String?
+
     func navigate(to path: String) {
-        guard let base = baseURL, let url = URL(string: path, relativeTo: base) else { return }
+        guard let base = baseURL else {
+            pendingPath = path
+            return
+        }
+        guard let url = URL(string: path, relativeTo: base) else { return }
         webView.load(URLRequest(url: url))
     }
 
@@ -197,12 +225,12 @@ final class WebViewController: NSViewController, WKNavigationDelegate, WKUIDeleg
     func pickImportFile() {
         guard let window = view.window else { return }
         let panel = NSOpenPanel()
-        panel.message = "Choose your Apple Health export (export.zip, export.xml or the unzipped folder)"
+        panel.message = "Choose your Apple Health export (export.zip, export.xml or the unzipped folder) or FIT files (a .fit file, or a zip or folder of them)"
         panel.prompt = "Import"
         panel.canChooseFiles = true
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
-        panel.allowedContentTypes = [.zip, .xml, .folder]
+        panel.allowedContentTypes = ImportFiles.contentTypes
         panel.beginSheetModal(for: window) { [weak self] response in
             guard response == .OK, let url = panel.url else { return }
             self?.startLocalImport(path: url.path)
@@ -235,13 +263,18 @@ final class WebViewController: NSViewController, WKNavigationDelegate, WKUIDeleg
     // MARK: - WKScriptMessageHandler
 
     func userContentController(_ c: WKUserContentController, didReceive message: WKScriptMessage) {
-        guard let body = message.body as? [String: Any], let type = body["type"] as? String else { return }
-        switch type {
-        case "pickImportFile": pickImportFile()
-        case "openDataFolder": NSWorkspace.shared.open(ServerProcess.dataDirectory)
-        case "saveFile": saveFile(body)
-        case "connectServer": connectServer(body)
-        default: break
+        // only the app's own page reaches the bridge, not another site that ended up in the window (ShellPolicy)
+        let frame = message.frameInfo
+        let origin = ShellPolicy.Origin(scheme: frame.securityOrigin.protocol, host: frame.securityOrigin.host,
+                                        port: frame.securityOrigin.port)
+        guard ShellPolicy.acceptsMessage(isMainFrame: frame.isMainFrame, from: origin, appOrigins: appOrigins) else { return }
+        guard let body = message.body as? [String: Any], let type = body["type"] as? String,
+              let kind = ShellContract.Message(rawValue: type) else { return }
+        switch kind {
+        case .pickImportFile: pickImportFile() // the panel picks files and folders: `folder` needs no answer here
+        case .openDataFolder: NSWorkspace.shared.open(ServerProcess.dataDirectory)
+        case .saveFile: saveFile(body)
+        case .connectServer: connectServer(body)
         }
     }
 
@@ -251,10 +284,26 @@ final class WebViewController: NSViewController, WKNavigationDelegate, WKUIDeleg
         if text.isEmpty {
             onConnectServer?(nil)
         } else if let url = URL(string: text), ["http", "https"].contains(url.scheme?.lowercased() ?? ""), url.host != nil {
-            onConnectServer?(url)
+            confirmServer(url) { [weak self] ok in
+                if ok { self?.onConnectServer?(url) } else { self?.webView.reload() } // the page waits for the switch
+            }
         } else {
             NSSound.beep()
         }
+    }
+
+    /// Showing another server from now on is confirmed here, in a sheet no page can draw, so a page cannot switch the
+    /// app to a server of its choosing. Going back to the built-in server needs no confirmation.
+    private func confirmServer(_ url: URL, then done: @escaping (Bool) -> Void) {
+        guard let window = view.window else { return done(false) }
+        let host = url.host.map { h in url.port.map { "\(h):\($0)" } ?? h } ?? url.absoluteString
+        let alert = NSAlert()
+        alert.messageText = "Show the Cadence server at \(host)?"
+        alert.informativeText = "From now on, Cadence shows \(url.absoluteString) instead of the server built into this app."
+            + (url.scheme?.lowercased() == "http" ? " The connection to it is not encrypted (http): use it only on a network you trust." : "")
+        alert.addButton(withTitle: "Connect")
+        alert.addButton(withTitle: "Cancel")
+        alert.beginSheetModal(for: window) { done($0 == .alertFirstButtonReturn) }
     }
 
     /// A file the web UI created itself (share images): blob downloads are unreliable in WKWebView, so the page
@@ -306,10 +355,10 @@ final class WebViewController: NSViewController, WKNavigationDelegate, WKUIDeleg
         }
     }
 
-    /// target=_blank / window.open → default browser.
+    /// target=_blank / window.open → default browser (http, https and mailto only: ShellPolicy).
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
                  for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
-        if let url = navigationAction.request.url { NSWorkspace.shared.open(url) }
+        if let url = navigationAction.request.url, ShellPolicy.isExternal(url) { NSWorkspace.shared.open(url) }
         return nil
     }
 
@@ -338,16 +387,22 @@ final class WebViewController: NSViewController, WKNavigationDelegate, WKUIDeleg
             decisionHandler(.download)
             return
         }
-        // Links to other sites open in the default browser.
-        if let url = navigationAction.request.url, let base = baseURL,
-           navigationAction.navigationType == .linkActivated,
-           url.scheme?.hasPrefix("http") == true,
-           url.host != base.host || url.port != base.port {
-            NSWorkspace.shared.open(url)
-            decisionHandler(.cancel)
+        // Links to other sites open in the default browser (ShellPolicy). New windows (no target frame) go to
+        // createWebViewWith; frames inside the page load as they are (they never reach the bridge).
+        guard navigationAction.targetFrame?.isMainFrame == true, let url = navigationAction.request.url else {
+            decisionHandler(.allow)
             return
         }
-        decisionHandler(.allow)
+        let userAction = navigationAction.navigationType == .linkActivated || navigationAction.navigationType == .formSubmitted
+        switch ShellPolicy.navigation(to: url, userAction: userAction, appOrigins: appOrigins) {
+        case .allow:
+            decisionHandler(.allow)
+        case .openExternally:
+            NSWorkspace.shared.open(url)
+            decisionHandler(.cancel)
+        case .cancel:
+            decisionHandler(.cancel)
+        }
     }
 
     func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse,
@@ -373,6 +428,13 @@ final class WebViewController: NSViewController, WKNavigationDelegate, WKUIDeleg
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
         if (error as NSError).code == NSURLErrorCancelled { return }
         onLoadFailed?(error)
+    }
+
+    func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        // the server may have sent the app elsewhere (e.g. from http to https): the page there is the app as well
+        guard navigation != nil, navigation === appLoad, let landed = ShellPolicy.Origin(webView.url),
+              !appOrigins.contains(landed) else { return }
+        appOrigins.append(landed)
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {

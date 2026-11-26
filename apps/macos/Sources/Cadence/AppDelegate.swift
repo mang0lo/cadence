@@ -7,6 +7,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let server = ServerProcess()
     /// CFBundleShortVersionString (set from package.json by scripts/build-macos.sh); nil in `swift run` builds.
     private let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+    /// CADENCE_SMOKE (CI): start once, check that the UI renders, quit.
+    private var smoke: SmokeTest?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.mainMenu = buildMenu()
@@ -23,10 +25,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.contentViewController = web
         window.delegate = self
         window.tabbingMode = .disallowed
-        if !window.setFrameUsingName("CadenceMain") { window.center() }
-        window.setFrameAutosaveName("CadenceMain")
-        window.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        if SmokeTest.isActive {
+            // nothing to see and nothing to keep (window position, restorable state)
+            window.isRestorable = false
+        } else {
+            if !window.setFrameUsingName("CadenceMain") { window.center() }
+            window.setFrameAutosaveName("CadenceMain")
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+        }
 
         web.onRestartRequested = { [weak self] in self?.startBackend() }
         web.onConnectServer = { [weak self] url in
@@ -39,22 +46,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             self?.web.showServerUnreachable(remote, error)
         }
         server.onUnexpectedExit = { [weak self] code in
-            // 75 = the server restarts itself on purpose (e.g. to apply a restored backup)
-            if code == 75 {
+            // the server restarts itself on purpose (e.g. to apply a restored backup)
+            if code == ShellContract.restartExitCode {
                 self?.startBackend()
             } else {
+                self?.smoke?.fail(ServerError.exited(code).localizedDescription)
                 self?.web.showError(ServerError.exited(code))
             }
         }
+        if SmokeTest.isActive {
+            Preferences.remoteServerURL = nil // only in memory: the smoke run checks the built-in server
+            smoke = SmokeTest(webView: web.webView) { [weak self] code in
+                self?.server.stop()
+                exit(code)
+            }
+        }
         startBackend()
+        smoke?.start()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 
-    /// export.zip dropped on the Dock icon or opened with Cadence → import it.
+    /// An export or FIT file dropped on the Dock icon or opened with Cadence → import it.
     func application(_ application: NSApplication, open urls: [URL]) {
-        guard let url = urls.first(where: { ["zip", "xml"].contains($0.pathExtension.lowercased()) || $0.hasDirectoryPath }) else { return }
-        web.startLocalImport(path: url.path)
+        guard let url = urls.first(where: ImportFiles.accepts) else { return }
+        // a remote server cannot read files on this Mac (and should not learn their paths): its import page uploads
+        if Preferences.remoteServerURL != nil { web.navigate(to: "/import") } else { web.startLocalImport(path: url.path) }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -64,11 +81,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// Remote server (Preferences) → dev server (CADENCE_DEV_URL) → bundled local server.
     private func startBackend() {
         server.stop()
-        web.shellInfo = [
-            "app": "macos",
-            "version": version ?? "dev",
-            "remote": Preferences.remoteServerURL?.absoluteString ?? NSNull(),
-        ]
+        web.shellInfo = ShellContract.shellInfo(version: version ?? "dev", remote: Preferences.remoteServerURL)
         if let remote = Preferences.remoteServerURL {
             window.subtitle = remote.host ?? ""
             web.load(remote)
@@ -80,10 +93,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             return
         }
         web.showStarting()
+        let firstOnLastingPort = Preferences.serverPort == nil
         server.start { [weak self] result in
             switch result {
-            case .success(let url): self?.web.load(url)
-            case .failure(let error): self?.web.showError(error)
+            case .success(let url):
+                if firstOnLastingPort {
+                    self?.web.removeLocalWebsiteData { self?.web.load(url) }
+                } else {
+                    self?.web.load(url)
+                }
+            case .failure(let error):
+                self?.smoke?.fail(error.localizedDescription)
+                self?.web.showError(error)
             }
         }
     }

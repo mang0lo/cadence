@@ -11,5 +11,11 @@ let package = Package(
             name: "Cadence",
             path: "Sources/Cadence"
         ),
+        // `swift test --package-path apps/macos`: the shell's rules that need no window (ShellPolicy)
+        .testTarget(
+            name: "CadenceTests",
+            dependencies: ["Cadence"],
+            path: "Tests/CadenceTests"
+        ),
     ]
 )
