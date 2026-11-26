@@ -45,14 +45,15 @@ interface EffortRow {
   time_s: number;
   distance_m: number | null;
   avg_hr: number | null;
+  /** Only with `tracks` (the route page draws them; lists do not need them). */
   polyline: string | null;
 }
 
-function effortRows(db: Db, athleteId: number, routeIds: number[] | null): EffortRow[] {
+function effortRows(db: Db, athleteId: number, routeIds: number[] | null, tracks = false): EffortRow[] {
   return all<EffortRow>(
     db,
     `SELECT g.route_id, w.id AS workout_id, w.name, w.sport, w.start_ts, w.end_ts, w.tz_min, ${ROUTE_TIME} AS time_s,
-            w.distance_m, w.avg_hr, w.polyline
+            w.distance_m, w.avg_hr, ${tracks ? 'w.polyline' : 'NULL AS polyline'}
      FROM maps_workout_geo g JOIN workouts w ON w.id = g.workout_id
      WHERE g.athlete_id = ? AND g.route_id IS NOT NULL AND ${visible()}${routeIds ? ` AND g.route_id IN ${IN_LIST}` : ''}
      ORDER BY g.route_id, w.start_ts, w.id`,
@@ -151,7 +152,7 @@ export function registerRouteRoutes(app: FastifyInstance): void {
     const { id } = idParam.parse(req.params);
     const [route] = routeSummaries(app.db, req.athleteId, { min: 1, ids: [id] });
     if (!route) throw notFound('Route');
-    const rows = effortRows(app.db, req.athleteId, [id]);
+    const rows = effortRows(app.db, req.athleteId, [id], true);
     // rank by time (ties: the earlier effort first)
     const ranked = [...rows].sort((a, b) => a.time_s - b.time_s || a.start_ts - b.start_ts);
     const rank = new Map(ranked.map((e, i) => [e.workout_id, i + 1]));
