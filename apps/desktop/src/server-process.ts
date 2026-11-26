@@ -16,9 +16,7 @@ import { spawn as nodeSpawn, type ChildProcess } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import path from 'node:path';
-
-/** Exit code of the server when it restarts itself on purpose (e.g. to apply a restored backup). */
-export const RESTART_EXIT_CODE = 75;
+import { parseListening, RESTART_EXIT_CODE, shellServerEnv } from './shell-contract';
 
 /**
  * The first port the built-in server tries: outside the ranges the system hands out to other programs (Linux
@@ -147,13 +145,12 @@ export class LocalServer extends EventEmitter<LocalServerEvents> {
         env: {
           ...process.env,
           ...opts.env,
-          CADENCE_MODE: 'desktop',
-          PORT: String(port),
-          HOST: '127.0.0.1',
-          CADENCE_DATA_DIR: opts.dataDir,
-          CADENCE_WEB_DIR: opts.webDir,
-          CADENCE_PARENT_PID: String(opts.parentPid ?? process.pid),
-          NODE_ENV: 'production',
+          ...shellServerEnv({
+            port,
+            dataDir: opts.dataDir,
+            webDir: opts.webDir,
+            parentPid: opts.parentPid ?? process.pid,
+          }),
         },
         stdio: ['ignore', 'pipe', 'pipe'],
         windowsHide: true,
@@ -187,9 +184,9 @@ export class LocalServer extends EventEmitter<LocalServerEvents> {
         log.write(chunk);
         if (run.started) return;
         output += chunk.toString('utf8');
-        const m = /CADENCE_LISTENING (\{.*\})/.exec(output);
-        if (!m || !current()) return;
-        const { url, port: listening } = JSON.parse(m[1]!) as { url: string; port: number };
+        const address = parseListening(output);
+        if (!address || !current()) return;
+        const { url, port: listening } = address;
         run.started = true;
         output = '';
         this.currentUrl = url;

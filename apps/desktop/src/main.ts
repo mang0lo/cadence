@@ -13,9 +13,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { app, BrowserWindow, dialog, ipcMain, Menu, session, shell, type MenuItemConstructorOptions } from 'electron';
-import { importDialogOptions, importPickOf, type ImportPick } from './import-picker';
+import { importDialogOptions, type ImportPick } from './import-picker';
 import { allowsPermission, isAppFrame, isAppUrl, isExternalUrl, navigationTarget, originOf } from './policy';
 import { DEFAULT_PORT, LocalServer, ServerStopped } from './server-process';
+import { parseBridgeMessage, shellInfo } from './shell-contract';
 
 const APP_NAME = 'Cadence';
 app.setName(APP_NAME);
@@ -377,39 +378,43 @@ async function saveFile(filename: string, base64: string): Promise<void> {
   await fs.promises.writeFile(r.filePath, Buffer.from(base64, 'base64'));
 }
 
-/** What the web UI posts through the bridge (apps/web/src/lib/native.ts postNative). */
-interface BridgeMessage {
-  type?: string;
-  filename?: string;
-  base64?: string;
-  url?: string;
-  folder?: unknown;
-}
-
-ipcMain.on('cadence', (event, msg: BridgeMessage) => {
+ipcMain.on('cadence', (event, raw: unknown) => {
   // only the app's own page reaches the bridge, not another site that ended up in the window (policy.ts)
   if (!win || event.sender !== win.webContents || !isAppFrame(event.senderFrame, appOrigins)) return;
-  if (msg?.type === 'pickImportFile') void pickImportFile(importPickOf(msg));
-  else if (msg?.type === 'openDataFolder') void shell.openPath(dataDir);
-  else if (msg?.type === 'saveFile' && msg.filename && msg.base64) void saveFile(msg.filename, msg.base64);
-  else if (msg?.type === 'connectServer') {
-    const text = (msg.url ?? '').trim();
-    const url = text ? serverUrlOf(text) : null;
-    if (text && !url) return;
-    void confirmServer(url)
-      .then((ok) => {
-        if (ok) return connectServer(url);
-        win?.webContents.reload(); // the page waits for the switch: start it afresh
-      })
-      .catch((e: Error) => {
-        if (!(e instanceof ServerStopped)) dialog.showErrorBox(APP_NAME, e.message);
-      });
+  const msg = parseBridgeMessage(raw);
+  if (!msg) return;
+  switch (msg.type) {
+    case 'pickImportFile':
+      void pickImportFile(msg.folder ? 'folder' : 'file');
+      break;
+    case 'openDataFolder':
+      void shell.openPath(dataDir);
+      break;
+    case 'saveFile':
+      void saveFile(msg.filename, msg.base64);
+      break;
+    case 'connectServer': {
+      const text = msg.url.trim();
+      const url = text ? serverUrlOf(text) : null;
+      if (text && !url) return;
+      void confirmServer(url)
+        .then((ok) => {
+          if (ok) return connectServer(url);
+          win?.webContents.reload(); // the page waits for the switch: start it afresh
+        })
+        .catch((e: Error) => {
+          if (!(e instanceof ServerStopped)) dialog.showErrorBox(APP_NAME, e.message);
+        });
+      break;
+    }
+    default:
+      msg satisfies never;
   }
 });
 
 // what the web UI shows in Settings → Server (window.cadenceNative.info)
 ipcMain.on('cadence-info', (e) => {
-  e.returnValue = { app: 'desktop', version: app.getVersion(), remote: remoteServer() };
+  e.returnValue = shellInfo('desktop', app.getVersion(), remoteServer());
 });
 
 if (!app.requestSingleInstanceLock()) {

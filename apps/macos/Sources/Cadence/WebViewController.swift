@@ -266,13 +266,13 @@ final class WebViewController: NSViewController, WKNavigationDelegate, WKUIDeleg
         let origin = ShellPolicy.Origin(scheme: frame.securityOrigin.protocol, host: frame.securityOrigin.host,
                                         port: frame.securityOrigin.port)
         guard ShellPolicy.acceptsMessage(isMainFrame: frame.isMainFrame, from: origin, appOrigins: appOrigins) else { return }
-        guard let body = message.body as? [String: Any], let type = body["type"] as? String else { return }
-        switch type {
-        case "pickImportFile": pickImportFile()
-        case "openDataFolder": NSWorkspace.shared.open(ServerProcess.dataDirectory)
-        case "saveFile": saveFile(body)
-        case "connectServer": connectServer(body)
-        default: break
+        guard let body = message.body as? [String: Any], let type = body["type"] as? String,
+              let kind = ShellContract.Message(rawValue: type) else { return }
+        switch kind {
+        case .pickImportFile: pickImportFile() // the panel picks files and folders: `folder` needs no answer here
+        case .openDataFolder: NSWorkspace.shared.open(ServerProcess.dataDirectory)
+        case .saveFile: saveFile(body)
+        case .connectServer: connectServer(body)
         }
     }
 

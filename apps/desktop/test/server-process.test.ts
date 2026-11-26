@@ -4,7 +4,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { PassThrough } from 'node:stream';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { LocalServer, portUnavailable, RESTART_EXIT_CODE, ServerStopped, type LocalServerOptions } from '../src/server-process';
+import { LocalServer, portUnavailable, ServerStopped, type LocalServerOptions } from '../src/server-process';
+import { RESTART_EXIT_CODE } from '../src/shell-contract';
 
 /** Stands in for the server process: the test decides what it prints and when it ends. */
 class FakeChild extends EventEmitter {

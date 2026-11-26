@@ -39,8 +39,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             self?.web.showServerUnreachable(remote, error)
         }
         server.onUnexpectedExit = { [weak self] code in
-            // 75 = the server restarts itself on purpose (e.g. to apply a restored backup)
-            if code == 75 {
+            // the server restarts itself on purpose (e.g. to apply a restored backup)
+            if code == ShellContract.restartExitCode {
                 self?.startBackend()
             } else {
                 self?.web.showError(ServerError.exited(code))
@@ -65,11 +65,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// Remote server (Preferences) → dev server (CADENCE_DEV_URL) → bundled local server.
     private func startBackend() {
         server.stop()
-        web.shellInfo = [
-            "app": "macos",
-            "version": version ?? "dev",
-            "remote": Preferences.remoteServerURL?.absoluteString ?? NSNull(),
-        ]
+        web.shellInfo = ShellContract.shellInfo(version: version ?? "dev", remote: Preferences.remoteServerURL)
         if let remote = Preferences.remoteServerURL {
             window.subtitle = remote.host ?? ""
             web.load(remote)

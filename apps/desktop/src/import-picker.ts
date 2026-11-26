@@ -8,12 +8,8 @@
  */
 import type { OpenDialogOptions } from 'electron';
 
+/** The page asks for a folder with `{ type: 'pickImportFile', folder: true }` (shell-contract.ts). */
 export type ImportPick = 'file' | 'folder';
-
-/** The page's `{ type: 'pickImportFile', folder: true }` asks for a folder; anything else for a file. */
-export function importPickOf(msg: { folder?: unknown } | null | undefined): ImportPick {
-  return msg?.folder === true ? 'folder' : 'file';
-}
 
 export function importDialogOptions(pick: ImportPick): OpenDialogOptions {
   if (pick === 'folder') {

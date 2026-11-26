@@ -88,14 +88,10 @@ final class ServerProcess {
     }
 
     private func launch(_ paths: Paths, port: Int, completion: @escaping (Result<URL, Error>) -> Void) {
-        var env = ProcessInfo.processInfo.environment
-        env["CADENCE_MODE"] = "desktop"
-        env["PORT"] = String(port)
-        env["HOST"] = "127.0.0.1"
-        env["CADENCE_DATA_DIR"] = Self.dataDirectory.path
-        env["CADENCE_WEB_DIR"] = paths.web.path
-        env["CADENCE_PARENT_PID"] = String(ProcessInfo.processInfo.processIdentifier)
-        env["NODE_ENV"] = "production"
+        let env = ProcessInfo.processInfo.environment.merging(
+            ShellContract.serverEnvironment(port: port, dataDirectory: Self.dataDirectory, webDirectory: paths.web,
+                                            parentPid: ProcessInfo.processInfo.processIdentifier)
+        ) { _, server in server }
 
         let run = ServerRun(paths: paths, environment: env, directory: Self.dataDirectory, log: Self.logFile)
         self.run = run
@@ -225,12 +221,7 @@ private final class ServerRun: @unchecked Sendable {
             guard !announced else { return nil }
             buffer.append(chunk)
             guard let text = String(data: buffer, encoding: .utf8),
-                  let range = text.range(of: "CADENCE_LISTENING ") else { return nil }
-            let rest = text[range.upperBound...]
-            guard let nl = rest.firstIndex(of: "\n"),
-                  let json = String(rest[..<nl]).data(using: .utf8),
-                  let obj = try? JSONSerialization.jsonObject(with: json) as? [String: Any],
-                  let port = obj["port"] as? Int else { return nil }
+                  let port = ShellContract.listeningPort(in: text) else { return nil }
             announced = true
             buffer = Data()
             return port

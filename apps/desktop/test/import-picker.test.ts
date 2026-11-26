@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { importDialogOptions, importPickOf } from '../src/import-picker';
+import { importDialogOptions } from '../src/import-picker';
 
 describe('importDialogOptions', () => {
   it('picks what the importer reads: Apple Health exports and FIT files', () => {
@@ -13,17 +13,5 @@ describe('importDialogOptions', () => {
     const o = importDialogOptions('folder');
     expect(o.properties).toEqual(['openDirectory']);
     expect(o.filters).toBeUndefined();
-  });
-});
-
-describe('importPickOf', () => {
-  it('asks for a folder only when the page says so', () => {
-    const messages: [Record<string, unknown>, string][] = [
-      [{ type: 'pickImportFile', folder: true }, 'folder'],
-      [{ type: 'pickImportFile' }, 'file'],
-      [{ type: 'pickImportFile', folder: 'yes' }, 'file'],
-    ];
-    for (const [msg, pick] of messages) expect(importPickOf(msg)).toBe(pick);
-    expect(importPickOf(null)).toBe('file');
   });
 });
