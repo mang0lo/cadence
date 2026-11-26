@@ -1,24 +1,29 @@
 import { useRef, useState } from 'react';
 import { DatabaseBackup, Download, FolderOpen, Upload } from 'lucide-react';
 import { Button, Card, CardHeader, ErrorState, ProgressBar } from '@/components/ui';
+import { ApiError, UNAUTHORIZED_EVENT } from '@/lib/api';
 import { useT } from '@/lib/i18n';
 import { isNativeShell, postNative } from '@/lib/native';
 
-function uploadBackup(file: File, onProgress: (f: number) => void): Promise<{ restarting: boolean }> {
+/** Fails with an ApiError like the api helpers; `failed` is the message when the server gave none. */
+function uploadBackup(file: File, onProgress: (f: number) => void, failed: string): Promise<{ restarting: boolean }> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open('POST', '/api/backup/restore');
     xhr.upload.onprogress = (e) => e.lengthComputable && onProgress(e.loaded / e.total);
     xhr.onload = () => {
+      let body: { restarting?: boolean; error?: { code?: string; message?: string } } | null = null;
       try {
-        const body = JSON.parse(xhr.responseText);
-        if (xhr.status >= 200 && xhr.status < 300) resolve(body);
-        else reject(new Error(body?.error?.message ?? `Restore failed (${xhr.status})`));
+        body = JSON.parse(xhr.responseText);
       } catch {
-        reject(new Error(`Restore failed (${xhr.status})`));
+        /* not JSON */
       }
+      if (xhr.status === 401) window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
+      if (xhr.status >= 200 && xhr.status < 300 && body) resolve({ restarting: !!body.restarting });
+      else
+        reject(new ApiError(xhr.status, body?.error?.code ?? 'http_error', body?.error?.message ?? `${failed} (${xhr.status})`));
     };
-    xhr.onerror = () => reject(new Error('Restore failed'));
+    xhr.onerror = () => reject(new ApiError(0, 'network', failed));
     const form = new FormData();
     form.append('file', file, file.name);
     xhr.send(form);
@@ -48,14 +53,14 @@ export function BackupSection() {
   const input = useRef<HTMLInputElement>(null);
   const [progress, setProgress] = useState<number | null>(null);
   const [message, setMessage] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
 
   const restore = async (file: File) => {
     if (!window.confirm(t('platform.settings.restoreConfirm'))) return;
     setError(null);
     setProgress(0);
     try {
-      const res = await uploadBackup(file, setProgress);
+      const res = await uploadBackup(file, setProgress, t('platform.settings.restoreFailed'));
       if (res.restarting) {
         setMessage(t('platform.settings.restarting'));
         void waitForRestart();
@@ -63,7 +68,7 @@ export function BackupSection() {
         setMessage(t('platform.settings.restoredDev'));
       }
     } catch (e) {
-      setError((e as Error).message);
+      setError(e);
     } finally {
       setProgress(null);
     }
@@ -99,7 +104,7 @@ export function BackupSection() {
       />
       {progress !== null && <ProgressBar className="mt-4" value={progress} />}
       {message && <div className="mt-4 rounded-control bg-surface-2 px-3 py-2 text-sm text-fg-2">{message}</div>}
-      {error && <ErrorState className="mt-4" error={error} />}
+      {error ? <ErrorState className="mt-4" error={error} /> : null}
     </Card>
   );
 }

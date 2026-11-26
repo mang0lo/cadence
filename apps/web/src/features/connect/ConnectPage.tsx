@@ -1,8 +1,7 @@
 import { useState } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router';
 import { AlertTriangle, FileArchive, LogOut, RefreshCw, Upload, Watch } from 'lucide-react';
-import { COROS_REGIONS, type CorosRegion, type CorosStatus } from '@cadence/shared';
+import { COROS_REGIONS, type CorosLoginRequest, type CorosRegion, type CorosStatus } from '@cadence/shared';
 import {
   Badge,
   Button,
@@ -19,16 +18,13 @@ import {
   Skeleton,
   Switch,
 } from '@/components/ui';
-import { api, useApi } from '@/lib/api';
+import { ApiError } from '@/lib/api';
 import { useFormat } from '@/lib/format';
 import { useT } from '@/lib/i18n';
 import { useSettings } from '@/lib/settings';
+import { corosErrorText, syncRunning as running, useCorosMutations, useCorosStatus } from './api';
 
-const KEY = ['connect', 'coros'] as const;
-const running = (s: CorosStatus | undefined) =>
-  !!s?.sync && (s.sync.state === 'listing' || s.sync.state === 'downloading' || s.sync.state === 'health');
-
-function LoginForm({ onDone }: { onDone: (s: CorosStatus) => void }) {
+function LoginForm({ login }: { login: (body: CorosLoginRequest) => Promise<void> }) {
   const t = useT();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -43,9 +39,8 @@ function LoginForm({ onDone }: { onDone: (s: CorosStatus) => void }) {
         setBusy(true);
         setError(null);
         try {
-          const s = await api.post<CorosStatus>('/connect/coros/login', { email, password, region });
+          await login({ email, password, region });
           setPassword('');
-          onDone(s);
         } catch (err) {
           setError(err);
         } finally {
@@ -81,7 +76,17 @@ function LoginForm({ onDone }: { onDone: (s: CorosStatus) => void }) {
         />
       </Field>
       <p className="text-xs text-fg-3">{t('connect.coros.passwordHint')}</p>
-      {error ? <ErrorState error={error} /> : null}
+      {error ? (
+        <ErrorState
+          error={
+            error instanceof ApiError && error.code === 'coros_login_failed'
+              ? t('connect.coros.errors.login')
+              : error instanceof ApiError && error.code === 'coros_unreachable'
+                ? t('connect.coros.errors.unreachable')
+                : error
+          }
+        />
+      ) : null}
       <div>
         <Button type="submit" variant="primary" loading={busy} disabled={!email || !password}>
           {t('connect.coros.connect')}
@@ -108,7 +113,7 @@ function SyncProgress({ status }: { status: CorosStatus }) {
         {s.state === 'failed' && <Badge tone="critical">{t('connect.coros.states.failed')}</Badge>}
       </div>
       {active && <ProgressBar value={fraction} />}
-      {s.state === 'failed' && s.error && <div className="text-xs text-critical-fg">{s.error}</div>}
+      {s.state === 'failed' && s.error && <div className="text-xs text-critical-fg">{corosErrorText(t, s.error)}</div>}
       {!active && s.state === 'done' && (
         <div className="flex flex-wrap items-center gap-3 text-fg-2">
           {s.downloaded
@@ -130,24 +135,18 @@ function SyncProgress({ status }: { status: CorosStatus }) {
 function CorosCard() {
   const t = useT();
   const fmt = useFormat();
-  const qc = useQueryClient();
-  const q = useApi<CorosStatus>(KEY, '/connect/coros', undefined, {
-    refetchInterval: (query) => (running(query.state.data) ? 1500 : false),
-    staleTime: 5_000,
-  });
+  // the status reacts to the sync itself (its import job, its end); the mutations to what they change elsewhere
+  const q = useCorosStatus();
+  const m = useCorosMutations();
   const [error, setError] = useState<unknown>(null);
   const status = q.data;
-  const set = (s: CorosStatus) => qc.setQueryData([...KEY, null], s);
   const act = async (fn: () => Promise<unknown>) => {
     setError(null);
     try {
       await fn();
     } catch (e) {
       setError(e);
-    } finally {
-      await q.refetch();
-      // a sync starts an import job: let the import screen pick it up
-      void qc.invalidateQueries({ queryKey: ['core', 'import-jobs'] });
+      void q.refetch();
     }
   };
   const syncing = running(status);
@@ -176,7 +175,7 @@ function CorosCard() {
       ) : q.error ? (
         <ErrorState error={q.error} />
       ) : !status?.connected ? (
-        <LoginForm onDone={set} />
+        <LoginForm login={m.login} />
       ) : (
         <div className="flex flex-col gap-4">
           <KeyValues
@@ -218,14 +217,14 @@ function CorosCard() {
               </Link>
             </div>
           )}
-          {status.lastError && !syncing && <ErrorState error={status.lastError} />}
+          {status.lastError && !syncing && <ErrorState error={corosErrorText(t, status.lastError)} />}
           <SyncProgress status={status} />
           <div className="flex flex-wrap items-center gap-2">
             <Button
               variant="primary"
               icon={RefreshCw}
               loading={syncing}
-              onClick={() => act(() => api.post('/connect/coros/sync', {}))}
+              onClick={() => act(() => m.sync(false))}
             >
               {t('connect.coros.syncNow')}
             </Button>
@@ -233,7 +232,7 @@ function CorosCard() {
               icon={RefreshCw}
               disabled={syncing}
               title={t('connect.coros.fullSyncHint')}
-              onClick={() => act(() => api.post('/connect/coros/sync', { full: true }))}
+              onClick={() => act(() => m.sync(true))}
             >
               {t('connect.coros.fullSync')}
             </Button>
@@ -244,7 +243,7 @@ function CorosCard() {
               className="text-critical-fg"
               onClick={() => {
                 if (window.confirm(t('connect.coros.disconnectConfirm')))
-                  void act(() => api.delete('/connect/coros'));
+                  void act(m.disconnect);
               }}
             >
               {t('connect.coros.disconnect')}
@@ -253,13 +252,13 @@ function CorosCard() {
           <div className="flex flex-col gap-1">
             <Switch
               checked={status.mobileData}
-              onChange={(v) => act(() => api.patch('/connect/coros', { mobileData: v }))}
+              onChange={(v) => act(() => m.prefs({ mobileData: v }))}
               label={t('connect.coros.mobileData')}
             />
             <span className="mb-2 text-xs text-fg-3">{t('connect.coros.mobileDataHint')}</span>
             <Switch
               checked={status.autoSync}
-              onChange={(v) => act(() => api.patch('/connect/coros', { autoSync: v }))}
+              onChange={(v) => act(() => m.prefs({ autoSync: v }))}
               label={t('connect.coros.autoSync')}
             />
             <span className="text-xs text-fg-3">{t('connect.coros.autoSyncHint')}</span>

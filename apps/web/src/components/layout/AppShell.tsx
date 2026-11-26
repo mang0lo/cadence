@@ -4,6 +4,7 @@ import { ArrowUpDown, ChevronDown, ChevronUp, GripVertical, Menu, Moon, Sparkles
 import { featureModules } from '@/features/registry';
 import type { NavGroup, NavItem } from '@/features/types';
 import { useImportJobs } from '@/features/platform/useImportJobs';
+import { jobPhaseLabel, jobStepLabel } from '@/features/platform/importJobs';
 import {
   latestSummaryJob,
   markSummarySeen,
@@ -143,16 +144,18 @@ function WhatsNewNote() {
 
 function ImportIndicator() {
   const t = useT();
-  const { active } = useImportJobs();
-  if (!active) return <WhatsNewNote />;
+  const fmt = useFormat();
+  // the job the server works on (not the newest queued one); its English message is not shown
+  const { current } = useImportJobs();
+  if (!current) return <WhatsNewNote />;
   return (
     <Link to="/import" className="block rounded-control border border-border bg-surface-2 p-2.5 text-xs">
       <div className="mb-1.5 flex items-center justify-between font-medium text-fg">
         <span>{t('common.importRunning')}</span>
-        <span className="tabular text-fg-3">{Math.round(active.progress * 100)}%</span>
+        <span className="tabular text-fg-3">{fmt.pct(current.progress)}</span>
       </div>
-      <ProgressBar value={active.progress} height={5} />
-      {active.message && <div className="mt-1.5 truncate text-fg-3">{active.message}</div>}
+      <ProgressBar value={current.progress} height={5} />
+      <div className="mt-1.5 truncate text-fg-3">{jobStepLabel(t, fmt.lang, current) ?? jobPhaseLabel(t, current)}</div>
     </Link>
   );
 }
