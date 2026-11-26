@@ -75,6 +75,47 @@ describe('job manager', () => {
     await jobs.close();
   });
 
+  it('resumes queued imports only from its own folders where local imports are disabled (restored backups)', async () => {
+    const file = (rel: string) => {
+      const f = path.join(dir, rel);
+      fs.mkdirSync(path.dirname(f), { recursive: true });
+      fs.writeFileSync(f, 'PK');
+      return f;
+    };
+    const queue = (id: string, source: string) =>
+      run(
+        db,
+        "INSERT INTO import_jobs (id, athlete_id, kind, status, progress, source_path, options) VALUES (?, 1, 'import', 'queued', 0, ?, '{}')",
+        [id, source],
+      );
+    queue('upload', file('uploads/a.zip'));
+    queue('watch', file('inbox/export.zip'));
+    file('connect/coros/1.fit');
+    queue('connect', path.join(dir, 'connect', 'coros'));
+    queue('outside', file('elsewhere/export.zip'));
+    queue('climb', path.join(dir, 'uploads', '..', 'elsewhere', 'export.zip'));
+    const server = {
+      dbPath: path.join(dir, 'cadence.db'),
+      uploadsDir: path.join(dir, 'uploads'),
+      dataDir: dir,
+      importWatchDir: path.join(dir, 'inbox'),
+      allowLocalImport: false,
+    };
+    let jobs = new JobManager(db, server, 'inline');
+    jobs.start();
+    void jobs.close(); // keep the queue from running
+    const status = (id: string) => jobs.get(1, id)?.status;
+    expect(['upload', 'watch', 'connect'].map(status)).toEqual(['queued', 'queued', 'queued']);
+    expect(jobs.get(1, 'outside')).toMatchObject({ status: 'failed', error: expect.stringMatching(/^Not resumed/) });
+    expect(jobs.get(1, 'climb')).toMatchObject({ status: 'failed', error: expect.stringMatching(/^Not resumed/) });
+    // the desktop app may import from anywhere
+    queue('desktop', file('elsewhere/export.zip'));
+    jobs = new JobManager(db, { ...server, allowLocalImport: true }, 'inline');
+    jobs.start();
+    void jobs.close();
+    expect(status('desktop')).toBe('queued');
+  });
+
   it('runs derive requests that pile up in the queue as one job', async () => {
     const jobs = new JobManager(
       db,

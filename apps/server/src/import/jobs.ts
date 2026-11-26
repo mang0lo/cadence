@@ -116,7 +116,8 @@ export class JobManager {
 
   constructor(
     private readonly db: Db,
-    private readonly config: Pick<Config, 'dbPath' | 'uploadsDir'>,
+    private readonly config: Pick<Config, 'dbPath' | 'uploadsDir'> &
+      Partial<Pick<Config, 'dataDir' | 'allowLocalImport' | 'importWatchDir'>>,
     private readonly mode: JobRunnerMode = 'worker',
   ) {}
 
@@ -134,12 +135,16 @@ export class JobManager {
       this.db,
       "SELECT * FROM import_jobs WHERE status = 'queued' AND kind = 'import'",
     )) {
-      if (r.source_path && !fs.existsSync(r.source_path))
-        run(
-          this.db,
-          "UPDATE import_jobs SET status = 'failed', error = 'Source file is gone', finished_at = unixepoch() WHERE id = ?",
-          [r.id],
-        );
+      const error = !this.mayResume(r)
+        ? 'Not resumed: local imports are disabled on this server'
+        : r.source_path && !fs.existsSync(r.source_path)
+          ? 'Source file is gone'
+          : null;
+      if (error)
+        run(this.db, "UPDATE import_jobs SET status = 'failed', error = ?, finished_at = unixepoch() WHERE id = ?", [
+          error,
+          r.id,
+        ]);
     }
     this.cleanupUploads();
     // After an app update that changed the derivation (DERIVE_VERSION), rebuild the analysis in the background
@@ -155,6 +160,19 @@ export class JobManager {
     for (const athleteId of athletesWithPendingChanges(this.db))
       if (!this.busy(athleteId)) this.enqueueRecovery(athleteId);
     queueMicrotask(() => this.pump());
+  }
+
+  /**
+   * Whether a queued import may run after a restart. Where local imports are disabled (server mode) only when it
+   * reads from a folder the server manages itself: uploads, the watch folder, the connect downloads – a queued job
+   * in a restored backup could otherwise import any path the server can read.
+   */
+  private mayResume(r: JobRow): boolean {
+    if (this.config.allowLocalImport !== false) return true;
+    const { uploadsDir, importWatchDir, dataDir } = this.config;
+    const roots = [uploadsDir, importWatchDir, dataDir ? path.join(dataDir, 'connect') : null];
+    const file = r.source_path ? path.resolve(r.source_path) : null;
+    return !!file && roots.some((d) => !!d && file.startsWith(path.resolve(d) + path.sep));
   }
 
   /** Called with every job update (progress, status changes). */
