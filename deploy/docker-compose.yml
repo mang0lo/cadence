@@ -1,5 +1,8 @@
 # Self-hosting Cadence (e.g. on a home server / NAS):
-#   cd deploy && CADENCE_PASSWORD=choose-one docker compose up -d
+#   cd deploy && CADENCE_PASSWORD=choose-one TZ=America/New_York docker compose up -d
+# (or put both lines, CADENCE_PASSWORD=… and TZ=…, into deploy/.env, which git ignores).
+# TZ is your IANA time zone: the server places FIT workouts without a local time, sleep nights, the intraday heart
+# rate and "today" in it. Without TZ it runs on UTC.
 # Then open http://<server>:8787 — or point the Mac app at it (Cadence → Connect to Server…).
 # Drop new export.zip files into ./import and they are imported automatically.
 services:
@@ -14,7 +17,7 @@ services:
     environment:
       CADENCE_PASSWORD: ${CADENCE_PASSWORD:?set CADENCE_PASSWORD}
       CADENCE_IMPORT_DIR: /import
-      TZ: ${TZ:-Europe/Vienna}
+      TZ: ${TZ:-UTC}
     volumes:
       - cadence-data:/data
       - ./import:/import
