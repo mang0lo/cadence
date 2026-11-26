@@ -90,6 +90,13 @@ export function identifierColor(theme: ChartTheme, identifier: string): string {
   return theme.series[slot - 1]!;
 }
 
+/** Palette slot (1..8) from a hash of the name. */
+function hashSlot(name: string): number {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+  return (h % 8) + 1;
+}
+
 /**
  * Stable color slot (1..8) per name, so a source keeps its color across charts; collisions inside one set of names are
  * resolved by moving on to the next free slot (names given in rank order).
@@ -98,12 +105,75 @@ export function assignSlots(names: string[]): Map<string, number> {
   const used = new Set<number>();
   const out = new Map<string, number>();
   for (const name of names) {
-    let h = 0;
-    for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
-    let slot = (h % 8) + 1;
+    let slot = hashSlot(name);
     for (let tries = 0; tries < 8 && used.has(slot); tries++) slot = (slot % 8) + 1;
     used.add(slot);
     out.set(name, slot);
   }
+  return out;
+}
+
+/**
+ * Category values of the catalogue in a fixed order, the values of one type next to each other (ordinal scales from
+ * low to high): the stack and legend order of category charts, and — by position — the color of each value.
+ */
+const CATEGORY_VALUE_ORDER = [
+  // stand hours
+  'Stood',
+  'Idle',
+  // sessions without a value (mindfulness …)
+  'NotApplicable',
+  // menstrual flow
+  'Unspecified',
+  'None',
+  'Light',
+  'Medium',
+  'Heavy',
+  // symptom severity
+  'SeverityMild',
+  'SeverityModerate',
+  'SeveritySevere',
+  'NotPresent',
+  'Present',
+  // test results
+  'Negative',
+  'Positive',
+  'Indeterminate',
+  // cervical mucus
+  'Dry',
+  'Sticky',
+  'Creamy',
+  'Watery',
+  'EggWhite',
+];
+
+/** Fixed order of category values (stacks, legends, tables): the catalogue order, then unknown values alphabetically. */
+export function compareCategoryValues(a: string, b: string): number {
+  const ia = CATEGORY_VALUE_ORDER.indexOf(a);
+  const ib = CATEGORY_VALUE_ORDER.indexOf(b);
+  if (ia >= 0 && ib >= 0) return ia - ib;
+  if (ia >= 0 || ib >= 0) return ia >= 0 ? -1 : 1;
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+/**
+ * Palette slot (1..8) per category value, by identity and never by rank: a known value by its place in the fixed order
+ * (so it keeps its color whatever else the range holds), others by a hash of the name; a taken slot moves on to the next
+ * free one.
+ */
+export function categorySlots(values: string[]): Map<string, number> {
+  const out = new Map<string, number>();
+  const used = new Set<number>();
+  const take = (value: string, slot: number) => {
+    for (let tries = 0; tries < 8 && used.has(slot); tries++) slot = (slot % 8) + 1;
+    used.add(slot);
+    out.set(value, slot);
+  };
+  const sorted = [...new Set(values)].sort(compareCategoryValues);
+  for (const v of sorted) {
+    const i = CATEGORY_VALUE_ORDER.indexOf(v);
+    if (i >= 0) take(v, (i % 8) + 1);
+  }
+  for (const v of sorted) if (!out.has(v)) take(v, hashSlot(v));
   return out;
 }

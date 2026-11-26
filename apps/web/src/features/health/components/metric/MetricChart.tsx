@@ -12,7 +12,7 @@ import { useT } from '@/lib/i18n';
 import { useSettings } from '@/lib/settings';
 import { numAxisLabel } from '../../lib/chart';
 import { stageColor } from '../../lib/sleep';
-import { identifierColor } from '../../lib/colors';
+import { categorySlots, compareCategoryValues, identifierColor } from '../../lib/colors';
 import { useMetricFormat } from '../../lib/metrics';
 import { fillPeriods, periodValue, seriesKeys } from '../../lib/periods';
 import { TrendChart } from '../TrendChart';
@@ -113,6 +113,9 @@ export function MetricChart({ series, mode, loading }: Props) {
           }
         other = { value: '__other', total: rest.reduce((s, c) => s + c.total, 0), points: [...byKey.values()] };
       }
+      // the server sends the values by total: stack, legend and colors follow the values themselves instead
+      if (identifier !== SLEEP) folded = [...folded].sort((a, b) => compareCategoryValues(a.value, b.value));
+      const slots = categorySlots(folded.map((c) => c.value));
       const all = other ? [...folded, other] : folded;
       const byValue = all.map((c) => ({ c, byKey: new Map(c.points.map((p) => [p.key, p])) }));
       const valueOf = (c: { byKey: Map<string, MetricPoint> }, key: string): number => {
@@ -138,12 +141,14 @@ export function MetricChart({ series, mode, loading }: Props) {
         keys,
         labels,
         names: slotNames,
-        colors: byValue.map(({ c }, i) =>
+        colors: byValue.map(({ c }) =>
           c.value === '__other'
             ? theme.other
             : identifier === SLEEP && SLEEP_STAGE[c.value]
               ? stageColor(theme, SLEEP_STAGE[c.value]!)
-              : theme.series[i % 8]!,
+              : c.value === 'NotApplicable'
+                ? color // sessions and events without a value: the color of the measure
+                : theme.series[(slots.get(c.value) ?? 1) - 1]!,
         ),
         values: byValue.map((c) => keys.map((k) => valueOf(c, k) / div)),
         raw: byValue.map((c) => keys.map((k) => valueOf(c, k))),
