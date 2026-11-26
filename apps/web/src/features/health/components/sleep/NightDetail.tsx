@@ -448,7 +448,10 @@ export function NightDetail({
             />
           }
         />
-        {q.error ? (
+        {q.error?.status === 404 ? (
+          // the date field allows every day; untracked nights (watch charging …) are common
+          <p className="py-2 text-sm text-fg-3">{t('health.sleep.night.notRecorded')}</p>
+        ) : q.error ? (
           <ErrorState error={q.error} />
         ) : !n ? (
           <div className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-3 lg:grid-cols-4">

@@ -77,6 +77,7 @@ export const sleep: Dictionary = {
       duration: 'Duration',
       stage: 'Stage',
       none: 'No night selected',
+      notRecorded: 'No sleep was recorded for this night.',
     },
     physiology: {
       title: 'During this night',
@@ -187,6 +188,7 @@ export const sleep: Dictionary = {
       duration: 'Dauer',
       stage: 'Phase',
       none: 'Keine Nacht ausgewählt',
+      notRecorded: 'Für diese Nacht wurde kein Schlaf aufgezeichnet.',
     },
     physiology: {
       title: 'Während dieser Nacht',
