@@ -132,3 +132,58 @@ describe('trophies: what counts as new', () => {
     expect(all(db, 'SELECT 1 FROM consistency_achievements WHERE athlete_id = 1').length).toBe(t.achievements.length);
   });
 });
+
+describe('trophies: a changed week start', () => {
+  // runs on Sunday 10 May and the Mondays 18 May, 25 May and 1 June 2026: four weeks in a row in Sunday weeks, three
+  // in Monday weeks
+  let dir2: string;
+  let db2: Db;
+  let app2: FastifyInstance;
+  const run2 = (day: string, distanceM: number): number => {
+    const start = Date.parse(`${day}T07:00:00+02:00`) / 1000;
+    return Number(
+      run(
+        db2,
+        `INSERT INTO workouts (athlete_id, ext_key, activity_type, sport, start_ts, end_ts, tz_min, duration_s, distance_m, derived_version)
+         VALUES (1, ?, 'HKWorkoutActivityTypeRunning', 'run', ?, ?, 120, 1800, ?, ?)`,
+        [`w${day}`, start, start + 1800, distanceM, DERIVE_VERSION],
+      ).lastInsertRowid,
+    );
+  };
+  const derive2 = async (ids: number[]) => {
+    refreshDailyActivity(db2, 1);
+    await achievementsStep.run({ db: db2, athleteId: 1, workoutIds: ids, sinceDay: null, report: () => {}, checkCancelled: () => {}, log: () => {} });
+  };
+  const streak4 = async () => {
+    const res = await app2.inject({ url: '/api/consistency/trophies?today=2026-06-20' });
+    expect(res.statusCode).toBe(200);
+    return res.json<TrophiesResponse>().achievements.find((a) => a.key === 'weekly_streak.4')!;
+  };
+
+  beforeAll(async () => {
+    dir2 = fs.mkdtempSync(path.join(os.tmpdir(), 'cadence-trophies-week-'));
+    const config = loadConfig({ CADENCE_DATA_DIR: path.join(dir2, 'data'), CADENCE_MODE: 'dev', LOG_LEVEL: 'silent' });
+    db2 = openDb(config.dbPath);
+    migrateAll(db2);
+    app2 = await buildApp(config, db2, { jobRunner: 'inline' });
+    await app2.ready();
+  });
+
+  afterAll(async () => {
+    await app2?.close();
+    db2?.close();
+    fs.rmSync(dir2, { recursive: true, force: true });
+  });
+
+  it('is not news, also when an import runs before the trophies are opened again', async () => {
+    await derive2(['2026-05-10', '2026-05-18', '2026-05-25', '2026-06-01'].map((d) => run2(d, 6_000)));
+    expect(await streak4()).toMatchObject({ earned: false });
+    expect((await app2.inject({ method: 'PATCH', url: '/api/settings', payload: { weekStart: 0 } })).statusCode).toBe(200);
+    // the next import (a short run in a week that changes no streak) comes before anyone opens the trophies
+    const since = nowSec() - 1;
+    const later = run2('2026-06-17', 1_000);
+    await derive2([later]);
+    expect(await streak4()).toMatchObject({ earned: true, isNew: false });
+    expect(consistencyWhatsNew({ db: db2, athleteId: 1, since, initial: false, workoutIds: [later] })).toEqual([]);
+  });
+});

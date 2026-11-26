@@ -120,9 +120,9 @@ export interface RecomputeResult {
 
 /**
  * Evaluate and store all achievements of an athlete. Trophies earned since the previous computation are stamped
- * as new (first_seen_at), except on an initial computation: no cache yet (first import, after a data reset), a
- * changed rule version, or `initial` set by the caller (the first import, a changed week start). Those only repeat
- * the history; nothing there is news.
+ * as new (first_seen_at), except on an initial computation: no cache yet (first import, after a data reset), a cache
+ * of another rule version or week start (also when an import runs before anyone opened the trophies after the
+ * change), or `initial` set by the caller (the first import). Those only repeat the history; nothing there is news.
  */
 export function recomputeAchievements(
   db: Db,
@@ -137,7 +137,7 @@ export function recomputeAchievements(
   );
   const catalog = buildCatalog({ sports: h.sports, hasRings: h.hasRings });
   const results = evaluateAchievements(catalog, h.input);
-  const meta = getSetting<{ version?: number } | null>(db, athleteId, META_KEY, null);
+  const meta = getSetting<{ version?: number; weekStart?: number } | null>(db, athleteId, META_KEY, null);
   let earned = 0;
   let newlyEarned = 0;
   tx(db, () => {
@@ -148,7 +148,12 @@ export function recomputeAchievements(
         [athleteId],
       ).map((r) => [r.key, r]),
     );
-    const initial = !!o.initial || !meta || meta.version !== ACHIEVEMENTS_VERSION || prev.size === 0;
+    const initial =
+      !!o.initial ||
+      !meta ||
+      meta.version !== ACHIEVEMENTS_VERSION ||
+      meta.weekStart !== h.input.weekStart ||
+      prev.size === 0;
     run(db, 'DELETE FROM consistency_achievements WHERE athlete_id = ?', [athleteId]);
     catalog.forEach((d, i) => {
       const r = results[i]!;
