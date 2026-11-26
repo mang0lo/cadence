@@ -21,7 +21,6 @@ import {
   setSquare,
   setTileData,
   tilesCollection,
-  visitSteps,
   type ExplorerColorBy,
   type FirstBuckets,
 } from '../lib/explorerLayers';
@@ -33,6 +32,8 @@ export interface ExplorerMapProps {
   zoom: 14 | 17;
   tiles: MapsExplorerTile[];
   buckets: FirstBuckets;
+  /** Visit-count buckets of the tiles (visitSteps), shared with the legend. */
+  steps: number[];
   /** Visited zoom-17 tiles (keys), drawn for the current viewport only. */
   detail: Set<number> | null;
   square: { x: number; y: number; size: number } | null;
@@ -55,6 +56,7 @@ export function ExplorerMap({
   zoom,
   tiles,
   buckets,
+  steps,
   detail,
   square,
   next,
@@ -74,7 +76,6 @@ export function ExplorerMap({
   );
   const colorsRef = useRef(colors);
   colorsRef.current = colors;
-  const steps = useMemo(() => visitSteps(Math.max(1, ...tiles.map((t) => t.visits))), [tiles]);
   const stepsRef = useRef(steps);
   stepsRef.current = steps;
   const detailRef = useRef(detail);

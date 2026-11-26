@@ -44,6 +44,7 @@ import {
   RAMPS,
   detailKeys,
   firstVisitBuckets,
+  maxVisits,
   nextSquare,
   visitLabels,
   visitSteps,
@@ -95,6 +96,7 @@ export default function ExplorerPage() {
 
   const tiles = data14?.tiles;
   const buckets = useMemo(() => firstVisitBuckets(tiles ?? []), [tiles]);
+  const steps = useMemo(() => visitSteps(maxVisits(tiles ?? [])), [tiles]);
   const visited = useMemo(() => new Set((tiles ?? []).map((x) => tileKey(x.x, x.y))), [tiles]);
   const detail = useMemo(
     () => (q17.data?.compact ? detailKeys(q17.data.compact.x, q17.data.compact.y) : null),
@@ -293,6 +295,7 @@ export default function ExplorerPage() {
               zoom={z}
               tiles={data14.tiles}
               buckets={buckets}
+              steps={steps}
               detail={detail}
               square={square}
               next={z === 14 && next ? next.missing : []}
@@ -313,7 +316,7 @@ export default function ExplorerPage() {
                     ramp={(colorBy === 'visits' ? RAMPS.orange : RAMPS.blue)[base0 ? 'dark' : 'light']}
                     labels={
                       colorBy === 'visits'
-                        ? visitLabels(visitSteps(Math.max(1, ...data14.tiles.map((x) => x.visits))))
+                        ? visitLabels(steps)
                         : buckets.ranges.map((r) => {
                             const a = fmt.date(r.fromTs, r.fromTz, 'monthYearShort');
                             const b = fmt.date(r.toTs, r.toTz, 'monthYearShort');

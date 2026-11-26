@@ -48,6 +48,13 @@ export interface ExplorerColors {
   next: string;
 }
 
+/** Visits of the busiest tile (a loop: Math.max(...tiles) throws for very many tiles). */
+export function maxVisits(tiles: { visits: number }[]): number {
+  let max = 1;
+  for (const t of tiles) if (t.visits > max) max = t.visits;
+  return max;
+}
+
 /**
  * Lower bounds of the 2nd..5th visit-count bucket: geometric steps up to the busiest tile, so a tile visited 3 times and
  * one visited 300 times both stay distinguishable (e.g. max 47 → 1 | 2–4 | 5–9 | 10–21 | 22+).
