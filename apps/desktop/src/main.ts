@@ -13,6 +13,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { app, BrowserWindow, dialog, ipcMain, Menu, session, shell, type MenuItemConstructorOptions } from 'electron';
+import { allowsPermission, isAppFrame, isAppUrl, isExternalUrl, navigationTarget, originOf } from './policy';
 import { DEFAULT_PORT, LocalServer, ServerStopped } from './server-process';
 
 const APP_NAME = 'Cadence';
@@ -23,6 +24,8 @@ const dataDir = process.env.CADENCE_DATA_DIR || path.join(app.getPath('appData')
 const smoke = process.env.CADENCE_DESKTOP_SMOKE || null;
 const logDir = path.join(dataDir, 'logs');
 let serverUrl: string | null = null;
+/** The origins of the server's pages (policy.ts): its URL's, and where the server sent the app's own load. */
+let appOrigins: string[] = [];
 let win: BrowserWindow | null = null;
 let quitting = false;
 
@@ -93,11 +96,8 @@ localServer.on('restart', () => {
   if (quitting) return;
   localServer
     .start()
-    .then((url) => {
-      serverUrl = url;
-      // the page reloads itself as soon as the server answers again (BackupSection): either load may abort the other
-      void win?.loadURL(url).catch(() => undefined);
-    })
+    // the page reloads itself as soon as the server answers again (BackupSection): either load may abort the other
+    .then((url) => loadApp(url))
     .catch((e: Error) => {
       if (e instanceof ServerStopped) return;
       dialog.showErrorBox(APP_NAME, e.message);
@@ -109,6 +109,18 @@ localServer.on('crash', (code) => {
   dialog.showErrorBox(APP_NAME, `The Cadence server stopped unexpectedly (exit code ${code}). See ${logDir}.`);
   app.quit();
 });
+
+/** Shows the Cadence server at `url` in the window. A failed load is handled by did-fail-load. */
+async function loadApp(url: string): Promise<void> {
+  serverUrl = url;
+  const origin = originOf(url);
+  appOrigins = origin ? [origin] : [];
+  if (!win) return;
+  await win.loadURL(url).catch(() => undefined);
+  // the server may have sent the app elsewhere (e.g. from http to https): the page there is the app as well
+  const landed = originOf(win?.webContents.getURL());
+  if (serverUrl === url && landed && !appOrigins.includes(landed)) appOrigins = [...appOrigins, landed];
+}
 
 /** The built-in server's URL, starting it when it does not run. `keep`: a remote server that was just left. */
 async function ensureLocalServer(keep: string | null = null): Promise<string> {
@@ -241,7 +253,9 @@ async function createWindow(): Promise<void> {
   // a remote server that does not answer: try again or go back to the built-in one
   win.webContents.on('did-fail-load', (_e, code, description, url, isMainFrame) => {
     const remote = remoteServer();
-    if (!isMainFrame || !remote || code === -3 /* aborted */ || !url.startsWith(remote)) return;
+    if (!isMainFrame || !remote || serverUrl !== remote || code === -3 /* aborted */ || !isAppUrl(url, appOrigins)) {
+      return;
+    }
     void dialog
       .showMessageBox(win!, {
         type: 'warning',
@@ -253,26 +267,25 @@ async function createWindow(): Promise<void> {
         cancelId: 2,
       })
       .then(({ response }) => {
-        if (response === 0) void win?.loadURL(remote);
+        if (response === 0) void loadApp(remote);
         else if (response === 1) void connectServer(null);
         else app.quit();
       });
   });
-  // links to other sites (map attributions, COROS, docs) open in the browser
+  // links to other sites (map attributions, COROS, docs) open in the browser; other schemes never reach the OS
   win.webContents.setWindowOpenHandler(({ url }) => {
-    void shell.openExternal(url);
+    if (isExternalUrl(url)) void shell.openExternal(url);
     return { action: 'deny' };
   });
   win.webContents.on('will-navigate', (e, url) => {
-    if (serverUrl && !url.startsWith(serverUrl)) {
-      e.preventDefault();
-      void shell.openExternal(url);
-    }
+    const target = navigationTarget(url, appOrigins);
+    if (target === 'app') return;
+    e.preventDefault();
+    if (target === 'external') void shell.openExternal(url);
   });
 
   try {
-    serverUrl = process.env.CADENCE_DEV_URL || remoteServer() || (await ensureLocalServer());
-    await win.loadURL(serverUrl).catch(() => undefined); // a failed load is handled by did-fail-load
+    await loadApp(process.env.CADENCE_DEV_URL || remoteServer() || (await ensureLocalServer()));
     if (smoke) {
       await new Promise((r) => setTimeout(r, 4000));
       const img = await win.webContents.capturePage();
@@ -298,15 +311,31 @@ async function connectServer(url: string | null): Promise<void> {
   if (!win) return;
   const previous = remoteServer();
   writePrefs({ ...readPrefs(), remoteServerUrl: url });
-  if (url) {
-    // the built-in server is not needed while another one is shown
-    void localServer.stop();
-    serverUrl = url;
-  } else {
-    serverUrl = process.env.CADENCE_DEV_URL || (await ensureLocalServer(previous));
-  }
+  // the built-in server is not needed while another one is shown
+  if (url) void localServer.stop();
+  const next = url ?? (process.env.CADENCE_DEV_URL || (await ensureLocalServer(previous)));
   win.setTitle(url ? `${WINDOW_TITLE} – ${new URL(url).host}` : WINDOW_TITLE);
-  await win.loadURL(serverUrl).catch(() => undefined);
+  await loadApp(next);
+}
+
+/**
+ * Settings → Server asks to show another server from now on: the user confirms it here, in a dialog no page can
+ * draw, so a page cannot switch the app to a server of its choosing. Going back to the built-in server needs none.
+ */
+async function confirmServer(url: string | null): Promise<boolean> {
+  if (!url || !win) return !!win;
+  const { response } = await dialog.showMessageBox(win, {
+    type: 'question',
+    title: APP_NAME,
+    message: `Show the Cadence server at ${new URL(url).host}?`,
+    detail:
+      `From now on, ${APP_NAME} shows ${url} instead of the server built into the app.` +
+      (url.startsWith('http:') ? ' The connection to it is not encrypted (http): use it only on a network you trust.' : ''),
+    buttons: ['Connect', 'Cancel'],
+    defaultId: 0,
+    cancelId: 1,
+  });
+  return response === 0;
 }
 
 /** Save a file the web UI made (share image): blob downloads are unreliable in embedded views, like on macOS. */
@@ -319,7 +348,9 @@ async function saveFile(filename: string, base64: string): Promise<void> {
   await fs.promises.writeFile(r.filePath, Buffer.from(base64, 'base64'));
 }
 
-ipcMain.on('cadence', (_e, msg: { type?: string; filename?: string; base64?: string; url?: string }) => {
+ipcMain.on('cadence', (event, msg: { type?: string; filename?: string; base64?: string; url?: string }) => {
+  // only the app's own page reaches the bridge, not another site that ended up in the window (policy.ts)
+  if (!win || event.sender !== win.webContents || !isAppFrame(event.senderFrame, appOrigins)) return;
   if (msg?.type === 'pickImportFile') void pickImportFile();
   else if (msg?.type === 'openDataFolder') void shell.openPath(dataDir);
   else if (msg?.type === 'saveFile' && msg.filename && msg.base64) void saveFile(msg.filename, msg.base64);
@@ -327,9 +358,14 @@ ipcMain.on('cadence', (_e, msg: { type?: string; filename?: string; base64?: str
     const text = (msg.url ?? '').trim();
     const url = text ? serverUrlOf(text) : null;
     if (text && !url) return;
-    void connectServer(url).catch((e: Error) => {
-      if (!(e instanceof ServerStopped)) dialog.showErrorBox(APP_NAME, e.message);
-    });
+    void confirmServer(url)
+      .then((ok) => {
+        if (ok) return connectServer(url);
+        win?.webContents.reload(); // the page waits for the switch: start it afresh
+      })
+      .catch((e: Error) => {
+        if (!(e instanceof ServerStopped)) dialog.showErrorBox(APP_NAME, e.message);
+      });
   }
 });
 
@@ -349,6 +385,13 @@ if (!app.requestSingleInstanceLock()) {
   });
   app.whenReady().then(() => {
     fs.mkdirSync(dataDir, { recursive: true });
+    // camera, microphone, location, notifications, opening other apps …: only what the app's own pages use
+    session.defaultSession.setPermissionRequestHandler((_wc, permission, callback, details) =>
+      callback(allowsPermission(permission, details.requestingUrl, appOrigins)),
+    );
+    session.defaultSession.setPermissionCheckHandler((_wc, permission, requestingOrigin) =>
+      allowsPermission(permission, requestingOrigin, appOrigins),
+    );
     buildMenu();
     void createWindow();
   });
