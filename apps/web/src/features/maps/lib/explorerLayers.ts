@@ -1,6 +1,7 @@
 import type { Feature, FeatureCollection, Polygon } from 'geojson';
 import type { ExpressionSpecification, GeoJSONSource, Map as MapLibreMap } from 'maplibre-gl';
 import { lonLatToTile, tileBounds, tileKey, type MapsExplorerTile } from '@cadence/shared';
+import { firstSymbolLayer } from './layerOrder';
 
 export type ExplorerColorBy = 'visits' | 'first';
 
@@ -180,9 +181,10 @@ function fillExpression(colorBy: ExplorerColorBy, ramp: string[], steps: number[
   ] as unknown as ExpressionSpecification;
 }
 
-/** Create sources and layers (idempotent – call again after every basemap style switch). */
+/** Create sources and layers (idempotent – call again after every basemap style switch; cheap once they exist). */
 export function ensureExplorerLayers(map: MapLibreMap, c: ExplorerColors, steps: number[]): void {
-  const before = map.getStyle().layers.find((l) => l.type === 'symbol')?.id;
+  if (map.getLayer(ID.square)) return; // added last: everything exists
+  const before = firstSymbolLayer(map); // below the basemap labels
   for (const id of Object.values(SRC))
     if (!map.getSource(id)) map.addSource(id, { type: 'geojson', data: empty });
   const add = (spec: Parameters<MapLibreMap['addLayer']>[0]) => {

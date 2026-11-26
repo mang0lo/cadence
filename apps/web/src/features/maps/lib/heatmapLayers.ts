@@ -2,6 +2,7 @@ import type { ExpressionSpecification, GeoJSONSource, Map as MapLibreMap } from 
 import type { Feature, FeatureCollection, LineString, Point } from 'geojson';
 import { decodePolylineParts } from '@/lib/polyline';
 import { homeRegion, type BBox } from './home';
+import { firstSymbolLayer } from './layerOrder';
 import type { MapsHeatmapActivity } from '@cadence/shared';
 
 export type HeatTheme = 'hot' | 'blue' | 'purple';
@@ -237,13 +238,13 @@ const LINE_LAYERS = [LAYER.glow, LAYER.mid, LAYER.core, LAYER.hot, LAYER.hit];
 const zoomWidth = (a: number, b: number, c: number): ExpressionSpecification =>
   ['interpolate', ['linear'], ['zoom'], 8, a, 12, b, 16, c] as unknown as ExpressionSpecification;
 
-/** First symbol (label) layer of the basemap – the glow is inserted below it so labels stay readable. */
-function firstSymbolLayer(map: MapLibreMap): string | undefined {
-  return map.getStyle().layers.find((l) => l.type === 'symbol')?.id;
-}
-
-/** Create the sources and layers (idempotent – call again after every basemap style switch). */
+/**
+ * Create the sources and layers (idempotent – call again after every basemap style switch). Cheap once they exist:
+ * the time-lapse calls it on every frame.
+ */
 export function ensureHeatLayers(map: MapLibreMap, palette: HeatPalette): void {
+  if (map.getLayer(LAYER.hit)) return; // added last: everything exists
+  // the glow goes below the basemap labels so they stay readable
   const before = firstSymbolLayer(map);
   if (!map.getSource(SRC.lines)) map.addSource(SRC.lines, { type: 'geojson', data: emptyLines });
   if (!map.getSource(SRC.head)) map.addSource(SRC.head, { type: 'geojson', data: emptyLines });
