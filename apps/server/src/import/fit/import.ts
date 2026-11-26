@@ -3,12 +3,13 @@ import path from 'node:path';
 import yauzl from 'yauzl';
 import type { ImportStats } from '@cadence/shared';
 import { prepare, tx } from '../../db/db';
-import { dayString } from '../../lib/time';
 import { tzOffsetMinutes } from '../../lib/tz';
 import type { ImportResult, RunImportOptions } from '../importer';
 import { encodeSamples } from '../samples';
-import { ImportInputError } from '../source';
+import { ChangeScope, notePending } from '../scope';
+import { ImportInputError, READ_CAP } from '../source';
 import { encodeTrack } from '../track';
+import { WarningCollector } from '../warnings';
 import { emptyStats } from '../writer';
 import { FitError, parseFit, type FitActivity } from './parse';
 
@@ -127,6 +128,9 @@ export async function openFitSource(input: string, only?: string[]): Promise<Fit
     return null;
   }
   const readEntry = async (e: yauzl.Entry) => {
+    // yauzl stops at the size the zip declares, but that size is only a claim: a crafted zip could declare gigabytes
+    if (e.uncompressedSize > READ_CAP)
+      throw new FitError(`File too large (${Math.round(e.uncompressedSize / 1048576)} MB)`);
     const s = await zip.openReadStreamPromise(e);
     const chunks: Buffer[] = [];
     for await (const c of s) chunks.push(c as Buffer);
@@ -150,12 +154,7 @@ export async function runFitImport(o: RunImportOptions & { source: FitSource }):
   const check = o.checkCancelled ?? (() => {});
   const src = o.source;
   const { db, athleteId } = o;
-  const warnCounts = new Map<string, number>();
-  const warn = (msg: string, key = msg) => {
-    const n = (warnCounts.get(key) ?? 0) + 1;
-    warnCounts.set(key, n);
-    if (n === 1 && stats.warnings.length < 200) stats.warnings.push(msg);
-  };
+  const warnings = new WarningCollector(stats.warnings);
   if (!src.files.length) throw new ImportInputError('No FIT files to import');
   stats.bytesTotal = src.files.length;
 
@@ -182,7 +181,8 @@ export async function runFitImport(o: RunImportOptions & { source: FitSource }):
   );
 
   const changed: number[] = [];
-  let minTs = Infinity;
+  const scope = new ChangeScope();
+  let delta = new ChangeScope();
   const write = (a: FitActivity, file: FitFile, side: FitSidecar | null) => {
     const by = new Map(a.stats.map((s) => [s.type.replace('HKQuantityTypeIdentifier', ''), s]));
     const pick = (...types: string[]) => types.map((t) => by.get(t)).find(Boolean);
@@ -230,7 +230,7 @@ export async function runFitImport(o: RunImportOptions & { source: FitSource }):
     const id = Number(r.lastInsertRowid);
     stats.workoutsInserted++;
     changed.push(id);
-    if (a.startTs < minTs) minTs = a.startTs;
+    delta.noteWorkout(id, a.startTs);
     a.events.forEach((e, idx) => insEvent.run(id, idx, e.type, e.ts, null));
     if (a.track) {
       const n = a.track.t.length;
@@ -252,9 +252,13 @@ export async function runFitImport(o: RunImportOptions & { source: FitSource }):
   const pending: { a: FitActivity; file: FitFile; side: FitSidecar | null }[] = [];
   const flush = () => {
     if (!pending.length) return;
+    delta = new ChangeScope();
     tx(db, () => {
       for (const p of pending) write(p.a, p.file, p.side);
+      // the new workouts are noted for the derive in the same transaction (see scope.ts)
+      notePending(db, athleteId, delta);
     });
+    scope.merge(delta);
     pending.length = 0;
   };
   o.onProgress?.({ phase: 'parse', fraction: 0, message: `Reading ${src.files.length} FIT files`, stats });
@@ -266,7 +270,7 @@ export async function runFitImport(o: RunImportOptions & { source: FitSource }):
         pending.push({ a, file, side: await file.sidecar() });
       } catch (e) {
         const msg = e instanceof FitError ? e.message : `Unreadable FIT file (${(e as Error).message})`;
-        warn(`${path.basename(file.path)}: ${msg}`, msg);
+        warnings.add(`${path.basename(file.path)}: ${msg}`, msg);
       }
       done++;
       stats.bytesProcessed = done;
@@ -286,18 +290,12 @@ export async function runFitImport(o: RunImportOptions & { source: FitSource }):
   } finally {
     src.close();
   }
-  stats.warnings = stats.warnings.map((w) => {
-    const key = [...warnCounts.keys()].find((k) => w.endsWith(k));
-    const n = key ? warnCounts.get(key)! : 1;
-    return n > 1 ? `${w} (×${n})` : w;
-  });
+  stats.warnings = warnings.finish();
   o.onProgress?.({ phase: 'finalize', fraction: 1, message: 'Import finished', stats });
   return {
     stats,
-    changedWorkoutIds: changed.sort((a, b) => a - b),
-    newWorkoutIds: [...changed],
-    sinceDay: Number.isFinite(minTs) ? dayString(Math.floor(minTs / 86400) - 1) : null,
-    typeSince: new Map(),
+    scope,
+    newWorkoutIds: changed.sort((a, b) => a - b),
     elapsedMs: Date.now() - t0,
   };
 }

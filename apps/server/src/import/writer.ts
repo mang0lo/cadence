@@ -13,7 +13,9 @@ import {
   type RecordMeta,
   type XmlNode,
 } from './parser';
+import { ChangeScope, notePending } from './scope';
 import type { Track } from './track';
+import { WarningCollector } from './warnings';
 import { parseWorkout, type ParsedWorkout } from './workout';
 import type { XmlAttrs } from './xml';
 
@@ -86,6 +88,7 @@ export function emptyStats(): ImportStats {
  * multi-row INSERT OR IGNORE, cached prepared statements). Re-importing a newer export only adds new rows:
  * records dedupe on (type, start, FNV-1a(end|source|value|text)), workouts on ext_key, correlations on
  * (type, start, end, source), ECGs on recorded time, everything else on a content hash.
+ * What each flush changed is persisted as the athlete's pending derive scope in the same transaction.
  */
 export class ImportWriter implements HealthSink {
   private types = new Map<string, TypeInfo>();
@@ -103,7 +106,10 @@ export class ImportWriter implements HealthSink {
   private items: XmlNode[] = [];
   private meNode: XmlAttrs | null = null;
   private warnedUnit = new Set<string>();
-  private warnCounts = new Map<string, number>();
+  /** Changes of the flush in progress. */
+  private delta = new ChangeScope();
+  /** Per record type id: latest start of the athlete's records before this import (null = none). */
+  private lastBefore = new Map<number, number | null>();
 
   /** Workouts inserted by this import. */
   readonly newWorkoutIds = new Set<number>();
@@ -111,16 +117,16 @@ export class ImportWriter implements HealthSink {
   readonly routeRefs: RouteRef[] = [];
   readonly inlineTracks: { workoutId: number; track: Track }[] = [];
   readonly clinicalRefs: { hash: number; path: string }[] = [];
-  /** Earliest start of newly inserted records per type id (drives incremental daily metrics). */
-  readonly typeMinTs = new Map<number, number>();
-  /** Earliest timestamp of any new data (records, workouts, summaries, correlations). */
-  minChangedTs = Infinity;
+  /** What this import changed so far (already persisted as pending derive scope). */
+  readonly scope = new ChangeScope();
+  readonly warnings: WarningCollector;
 
   constructor(
     private readonly db: Db,
     private readonly athleteId: number,
     readonly stats: ImportStats,
   ) {
+    this.warnings = new WarningCollector(stats.warnings);
     for (const r of db.prepare('SELECT id, identifier, kind, unit FROM record_types').all() as {
       id: number;
       identifier: string;
@@ -131,7 +137,9 @@ export class ImportWriter implements HealthSink {
         id: r.id,
         identifier: r.identifier,
         kind: r.kind,
-        rawUnit: r.unit,
+        // fast path only for a canonical unit: a stored raw unit (e.g. one a newer version converts) goes through
+        // typeFor with the first record, which sets up the conversion
+        rawUnit: canonicalUnit(r.unit) === r.unit ? r.unit : '\0',
         canonical: r.unit,
         a: 1,
         b: 0,
@@ -141,17 +149,12 @@ export class ImportWriter implements HealthSink {
   }
 
   warn(msg: string, key = msg): void {
-    const n = (this.warnCounts.get(key) ?? 0) + 1;
-    this.warnCounts.set(key, n);
-    if (n === 1 && this.stats.warnings.length < 200) this.stats.warnings.push(msg);
+    this.warnings.add(msg, key);
   }
 
   /** Summarise repeated warnings ("… (×1234)"). */
   finishWarnings(): void {
-    this.stats.warnings = this.stats.warnings.map((w) => {
-      const n = this.warnCounts.get(w);
-      return n && n > 1 ? `${w} (×${n})` : w;
-    });
+    this.stats.warnings = this.warnings.finish();
   }
 
   // ---------------------------------------------------------------------------
@@ -237,7 +240,7 @@ export class ImportWriter implements HealthSink {
   }
 
   private noteChange(ts: number): void {
-    if (ts < this.minChangedTs) this.minChangedTs = ts;
+    this.delta.noteDay(ts);
   }
 
   // ---------------------------------------------------------------------------
@@ -271,7 +274,7 @@ export class ImportWriter implements HealthSink {
     if (start !== start) {
       const p = parseAppleDate(sd);
       if (!p) {
-        this.warn(`Record with unparseable date skipped (${type})`, 'bad-date');
+        this.warn(`Record with unparseable date skipped (${type})`, `bad-date:${type}`);
         return;
       }
       start = p.ts;
@@ -387,6 +390,7 @@ export class ImportWriter implements HealthSink {
 
   flush(): void {
     if (!this.pending && !this.meNode) return;
+    const delta = (this.delta = new ChangeScope());
     tx(this.db, () => {
       this.flushRecords();
       this.flushCorrelations();
@@ -394,9 +398,34 @@ export class ImportWriter implements HealthSink {
       this.flushSummaries();
       this.flushItems();
       this.flushMe();
+      // what this flush changed commits together with the data (a cancelled import loses nothing to derive)
+      notePending(this.db, this.athleteId, delta);
     });
+    this.scope.merge(delta);
   }
 
+  /** Latest start of a type's records stored before this import (looked up once per type, O(log n)). */
+  private lastStartBefore(typeId: number): number | null {
+    let t = this.lastBefore.get(typeId);
+    if (t === undefined) {
+      t =
+        get<{ t: number }>(
+          this.db,
+          'SELECT start_ts AS t FROM records WHERE athlete_id = ? AND type_id = ? ORDER BY start_ts DESC LIMIT 1',
+          [this.athleteId, typeId],
+        )?.t ?? null;
+      this.lastBefore.set(typeId, t);
+    }
+    return t;
+  }
+
+  /**
+   * Multi-row inserts only take runs of one record type, and never mix rows from before and after the type's latest
+   * stored record: INSERT OR IGNORE reports how many rows of a statement were new, not which, so a chunk spanning a
+   * type boundary (or the end of what a re-imported export already brought) would mark the type as changed from its
+   * oldest rows of the chunk on (export.xml lists each type's records in time order). Shorter runs go row by row,
+   * which is exact.
+   */
   private flushRecords(): void {
     const n = this.recCount;
     if (!n) return;
@@ -406,47 +435,62 @@ export class ImportWriter implements HealthSink {
     const chunk = this.chunk;
     const W = MULTI * COLS;
     let r = 0;
-    for (; r + MULTI <= n; r += MULTI) {
-      const base = r * COLS;
-      for (let j = 0; j < W; j++) chunk[j] = p[base + j]!;
-      const changes = Number(multi.run(...chunk).changes);
-      if (changes) this.noteRecords(r, r + MULTI, changes);
-    }
-    for (; r < n; r++) {
-      const b = r * COLS;
-      const changes = Number(
-        single.run(
-          p[b]!,
-          p[b + 1]!,
-          p[b + 2]!,
-          p[b + 3]!,
-          p[b + 4]!,
-          p[b + 5]!,
-          p[b + 6]!,
-          p[b + 7]!,
-          p[b + 8]!,
-          p[b + 9]!,
-          p[b + 10]!,
-          p[b + 11]!,
-        ).changes,
-      );
-      if (changes) this.noteRecords(r, r + 1, changes);
+    while (r < n) {
+      const type = p[r * COLS + 1] as number;
+      const last = this.lastStartBefore(type) ?? -Infinity;
+      const after = (p[r * COLS + 2] as number) > last;
+      let end = r + 1;
+      while (
+        end < n &&
+        end - r < MULTI &&
+        p[end * COLS + 1] === type &&
+        (p[end * COLS + 2] as number) > last === after
+      )
+        end++;
+      if (end - r === MULTI) {
+        const base = r * COLS;
+        for (let j = 0; j < W; j++) chunk[j] = p[base + j]!;
+        const changes = Number(multi.run(...chunk).changes);
+        if (changes) this.noteRecords(r, end, changes);
+      } else {
+        for (let k = r; k < end; k++) {
+          const b = k * COLS;
+          const changes = Number(
+            single.run(
+              p[b]!,
+              p[b + 1]!,
+              p[b + 2]!,
+              p[b + 3]!,
+              p[b + 4]!,
+              p[b + 5]!,
+              p[b + 6]!,
+              p[b + 7]!,
+              p[b + 8]!,
+              p[b + 9]!,
+              p[b + 10]!,
+              p[b + 11]!,
+            ).changes,
+          );
+          if (changes) this.noteRecords(k, k + 1, changes);
+        }
+      }
+      r = end;
     }
     // drop references to strings of the processed chunk
     p.fill(null, 0, n * COLS);
     this.recCount = 0;
   }
 
+  /** Rows from..to (one record type) inserted `changes` new records: note the type from their earliest start. */
   private noteRecords(from: number, to: number, changes: number): void {
     this.stats.recordsInserted += changes;
     const p = this.recParams;
+    let min = Infinity;
     for (let r = from; r < to; r++) {
-      const typeId = p[r * COLS + 1] as number;
       const ts = p[r * COLS + 2] as number;
-      const cur = this.typeMinTs.get(typeId);
-      if (cur === undefined || ts < cur) this.typeMinTs.set(typeId, ts);
-      if (ts < this.minChangedTs) this.minChangedTs = ts;
+      if (ts < min) min = ts;
     }
+    this.delta.noteRecord(p[from * COLS + 1] as number, min);
   }
 
   private flushCorrelations(): void {
@@ -560,7 +604,7 @@ export class ImportWriter implements HealthSink {
         id = Number(r.lastInsertRowid);
         this.stats.workoutsInserted++;
         this.newWorkoutIds.add(id);
-        this.noteChange(w.startTs);
+        this.delta.noteWorkout(id, w.startTs);
         w.events.forEach((e, idx) =>
           insEvent.run(id, idx, e.type, e.ts, e.durationS, e.meta ? JSON.stringify(e.meta) : null),
         );

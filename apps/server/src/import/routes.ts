@@ -8,6 +8,7 @@ import type { ImportJob } from '@cadence/shared';
 import { invalidateStatusCounts } from '../core/routes';
 import { HttpError, badRequest, notFound } from '../lib/http';
 import { resetAthleteData } from './reset';
+import { isClinicalDocument } from './source';
 
 const localBody = z.object({ path: z.string().min(1).max(4096) });
 const rederiveBody = z
@@ -43,7 +44,7 @@ export default async function importRoutes(app: FastifyInstance) {
     const file = await req.file();
     if (!file) throw badRequest('No file in upload');
     const name = safeName(file.filename);
-    if (!/\.(zip|xml|fit)$/i.test(name)) {
+    if (!/\.(zip|xml|fit)$/i.test(name) || isClinicalDocument(name)) {
       file.file.resume();
       throw badRequest(
         'Upload the export.zip (or export.xml) from the Health app, or FIT files (.fit / .zip)',

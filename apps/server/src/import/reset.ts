@@ -1,5 +1,6 @@
 import { all, get, run, tx, type Db } from '../db/db';
 import { features } from '../features';
+import { clearScopes } from './scope';
 
 /**
  * Tables that survive a reset: schema bookkeeping, the athlete row, preferences, the job log, and the tables
@@ -58,6 +59,8 @@ export function resetAthleteData(db: Db, athleteId: number): Record<string, numb
     }
     for (const f of features) f.onReset?.(db, athleteId);
     run(db, "DELETE FROM settings WHERE athlete_id = ? AND key IN ('core.effortBasis')", [athleteId]);
+    // pending derive changes describe data that is gone (the reset's own rederive rebuilds everything)
+    clearScopes(db, athleteId);
     run(db, "DELETE FROM import_jobs WHERE athlete_id = ? AND status NOT IN ('queued', 'running')", [
       athleteId,
     ]);

@@ -50,8 +50,14 @@ const CONVERSIONS: Record<string, Conversion> = {
   'mi/hr': { to: 'm/s', f: mul(M_PER_MI / 3600) },
   'ft/s': { to: 'm/s', f: mul(M_PER_FT) },
   mL: { to: 'L', f: mul(0.001) },
+  dL: { to: 'L', f: mul(0.1) },
   'fl_oz_us': { to: 'L', f: mul(0.0295735295625) },
   'cup_us': { to: 'L', f: mul(0.2365882365) },
+  'pt_us': { to: 'L', f: mul(0.473176473) },
+  // imperial (UK) volumes, e.g. water in "fl oz" with a British region
+  'fl_oz_imp': { to: 'L', f: mul(0.0284130625) },
+  'cup_imp': { to: 'L', f: mul(0.284130625) },
+  'pt_imp': { to: 'L', f: mul(0.56826125) },
 };
 
 /** Normalise a value exported by Apple Health into the canonical unit. */

@@ -1,7 +1,7 @@
 import { parentPort, workerData } from 'node:worker_threads';
 import { openDb } from '../db/db';
 import { CancelledError } from '../derive/context';
-import { executeJob, type JobSpec } from './run-job';
+import { executeJob, progressSaver, type JobSpec } from './run-job';
 import { emptyStats } from './writer';
 
 /** workerData of an import / derive worker (see jobs.ts). */
@@ -37,12 +37,17 @@ export async function runWorker(): Promise<void> {
   const db = openDb(data.dbPath);
   // the importer benefits from a bigger page cache than the HTTP connection
   db.exec('PRAGMA cache_size = -131072');
+  // the job row's progress is saved here, between (or inside) the job's own transactions, not by the HTTP thread
+  const save = progressSaver(db, data.job.id);
   try {
     await executeJob(
       db,
       data.job,
       {
-        progress: (p) => post({ type: 'progress', ...p, stats: p.stats }),
+        progress: (p) => {
+          post({ type: 'progress', ...p, stats: p.stats });
+          save(p);
+        },
         checkCancelled: () => {
           if (Atomics.load(flag, 0)) throw new CancelledError();
         },

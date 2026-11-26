@@ -1,8 +1,9 @@
 import { parseAppleDate } from './dates';
 
 /**
- * electrocardiograms/ecg_YYYY-MM-DD.csv: a key,value header (English or German, depending on the phone's
- * language), a blank line, then one sample (µV) per line. The Name / Date of Birth lines are never stored.
+ * electrocardiograms/ecg_YYYY-MM-DD.csv: a key,value header (in the phone's language), a blank line, then one
+ * sample (µV) per line. The Name / Date of Birth lines are never stored. English and German keys are known; in any
+ * other language the recording date is recognised by its format and the lines after it by their fixed order.
  *
  *   Name,Jane Doe                       | Name,Max Mustermann
  *   Date of Birth,"Jan 1, 1990"         | Geburtsdatum,01.01.1990
@@ -60,6 +61,11 @@ const KEYS: Record<string, Field> = {
   einheit: 'unit',
 };
 
+/** The header lines after the recording date, in the order Apple writes them in every language. */
+const ORDER: Field[] = ['classification', 'symptoms', 'software', 'device', 'rate', 'lead', 'unit'];
+/** The recording date as Apple writes it in every language (a birth date has neither a time nor an offset). */
+const RECORDED = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} [+-]\d{4}$/;
+
 /** Split one CSV line into fields (RFC 4180 quoting). */
 function csvFields(line: string): string[] {
   const out: string[] = [];
@@ -114,6 +120,8 @@ export function parseEcgCsv(text: string): EcgReading | null {
   };
   const samples: number[] = [];
   let inData = false;
+  // keys in another language: position in ORDER of the next unknown line once the date was found by its format
+  let pos: number | null = null;
   for (const line of lines) {
     if (!inData) {
       if (!line.trim()) {
@@ -129,7 +137,13 @@ export function parseEcgCsv(text: string): EcgReading | null {
       const [k, ...rest] = csvFields(line);
       const key = (k ?? '').trim().toLowerCase();
       const value = rest.join(',').trim();
-      const field = KEYS[key];
+      let field: Field | undefined = KEYS[key];
+      if (field === undefined) {
+        if (!r.recorded && RECORDED.test(value)) {
+          field = 'recorded';
+          pos = 0;
+        } else if (pos !== null) field = ORDER[pos++];
+      } else if (pos !== null && ORDER.includes(field)) pos = ORDER.indexOf(field) + 1;
       switch (field) {
         case 'recorded':
           r.recorded = value;
@@ -167,6 +181,9 @@ export function parseEcgCsv(text: string): EcgReading | null {
   }
   const date = parseAppleDate(r.recorded);
   if (!date) return null;
+  // read by position: a rate in any language ("512 hercios"), else 512 Hz like every Apple Watch ECG
+  if (pos !== null && !(r.sampleRateHz !== null && r.sampleRateHz >= 100 && r.sampleRateHz <= 2000))
+    r.sampleRateHz = 512;
   return {
     recordedTs: date.ts,
     tzMin: date.tzMin,

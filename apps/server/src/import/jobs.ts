@@ -7,9 +7,36 @@ import type { Config } from '../config';
 import { invalidateStatusCounts } from '../core/routes';
 import { all, get, json, run, type Db } from '../db/db';
 import { CancelledError, DERIVE_VERSION } from '../derive/context';
-import { executeJob, type JobOptions, type JobSpec } from './run-job';
+import { executeJob, progressSaver, type JobOptions, type JobSpec } from './run-job';
+import { athletesWithPendingChanges, pendingScope } from './scope';
 import type { JobWorkerData, WorkerMessage } from './worker';
 import { emptyStats } from './writer';
+
+/**
+ * True when a failed job did not fail because of its input but because the server or its worker stopped (the error
+ * texts start() / close() / the worker handlers below write): trying again can succeed.
+ */
+export function wasInterrupted(error: string | null | undefined): boolean {
+  return !!error && /^(Interrupted|Import worker (crashed|exited unexpectedly)|Could not start the import worker)/.test(error);
+}
+
+/** Options of two derive requests run as one job: 'all' absorbs the other, otherwise their scopes are united. */
+export function mergeDeriveOptions(a: JobOptions, b: JobOptions): JobOptions {
+  const ids = (o: JobOptions) => o.workoutIds ?? 'all';
+  const ia = ids(a);
+  const ib = ids(b);
+  if (ia === 'all' || ib === 'all') return { ...a, workoutIds: 'all', sinceDay: null, records: undefined };
+  const records = a.records !== false || b.records !== false;
+  const days = [a, b].filter((o) => o.records !== false || o.sinceDay).map((o) => o.sinceDay ?? null);
+  // without a day, a request with records means every day (scope.ts); one without records only names workouts
+  const sinceDay = days.includes(null) ? null : (days.filter((d): d is string => d !== null).sort()[0] ?? null);
+  return {
+    ...a,
+    workoutIds: [...new Set([...ia, ...ib])].sort((x, y) => x - y),
+    sinceDay,
+    records: records ? undefined : false,
+  };
+}
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -46,7 +73,6 @@ interface Running {
   startedMs: number;
   cancel: Int32Array;
   worker: Worker | null;
-  lastPersist: number;
   done: boolean;
 }
 
@@ -80,20 +106,26 @@ function workerEntry(): URL {
 /**
  * One job at a time; the rest waits in the queue (persisted in import_jobs). Jobs run in a worker thread with
  * its own DB connection so the HTTP server stays responsive ('inline' runs them on the main thread – tests).
- * Live progress is kept in memory and persisted on phase changes / every few seconds.
+ * Live progress is kept in memory; the job's own connection saves it on phase changes / every few seconds
+ * (progressSaver), so this thread never waits for the worker's write transactions.
  */
 export class JobManager {
   private running: Running | null = null;
   private closed = false;
+  private cleanupTimer: NodeJS.Timeout | null = null;
   private listeners = new Set<(job: ImportJob) => void>();
 
   constructor(
     private readonly db: Db,
-    private readonly config: Pick<Config, 'dbPath' | 'uploadsDir'>,
+    private readonly config: Pick<Config, 'dbPath' | 'uploadsDir'> &
+      Partial<Pick<Config, 'dataDir' | 'allowLocalImport' | 'importWatchDir'>>,
     private readonly mode: JobRunnerMode = 'worker',
   ) {}
 
-  /** Recover after a restart: running jobs died with the old process; queued jobs are resumed. */
+  /**
+   * Recover after a restart: running jobs died with the old process; queued jobs are resumed; changes that no derive
+   * finished (an interrupted, cancelled or failed job, see scope.ts) are derived.
+   */
   start(): void {
     run(
       this.db,
@@ -104,14 +136,21 @@ export class JobManager {
       this.db,
       "SELECT * FROM import_jobs WHERE status = 'queued' AND kind = 'import'",
     )) {
-      if (r.source_path && !fs.existsSync(r.source_path))
-        run(
-          this.db,
-          "UPDATE import_jobs SET status = 'failed', error = 'Source file is gone', finished_at = unixepoch() WHERE id = ?",
-          [r.id],
-        );
+      const error = !this.mayResume(r)
+        ? 'Not resumed: local imports are disabled on this server'
+        : r.source_path && !fs.existsSync(r.source_path)
+          ? 'Source file is gone'
+          : null;
+      if (error)
+        run(this.db, "UPDATE import_jobs SET status = 'failed', error = ?, finished_at = unixepoch() WHERE id = ?", [
+          error,
+          r.id,
+        ]);
     }
     this.cleanupUploads();
+    // a server runs for months: what a restart left behind is not kept until the next one
+    this.cleanupTimer = setInterval(() => this.cleanupUploads(), 3600_000);
+    this.cleanupTimer.unref();
     // After an app update that changed the derivation (DERIVE_VERSION), rebuild the analysis in the background
     // so existing data picks up the fixes without the user pressing "Rebuild analysis".
     for (const r of all<{ athlete_id: number }>(
@@ -121,7 +160,23 @@ export class JobManager {
     )) {
       if (!this.busy(r.athlete_id)) this.enqueueDerive(r.athlete_id, { origin: 'upgrade' });
     }
+    // a queued job takes the pending changes over itself
+    for (const athleteId of athletesWithPendingChanges(this.db))
+      if (!this.busy(athleteId)) this.enqueueRecovery(athleteId);
     queueMicrotask(() => this.pump());
+  }
+
+  /**
+   * Whether a queued import may run after a restart. Where local imports are disabled (server mode) only when it
+   * reads from a folder the server manages itself: uploads, the watch folder, the connect downloads – a queued job
+   * in a restored backup could otherwise import any path the server can read.
+   */
+  private mayResume(r: JobRow): boolean {
+    if (this.config.allowLocalImport !== false) return true;
+    const { uploadsDir, importWatchDir, dataDir } = this.config;
+    const roots = [uploadsDir, importWatchDir, dataDir ? path.join(dataDir, 'connect') : null];
+    const file = r.source_path ? path.resolve(r.source_path) : null;
+    return !!file && roots.some((d) => !!d && file.startsWith(path.resolve(d) + path.sep));
   }
 
   /** Called with every job update (progress, status changes). */
@@ -145,13 +200,33 @@ export class JobManager {
     );
   }
 
-  /** Queue a derive run: workoutIds 'all' (default) rebuilds every derived table. */
+  /**
+   * Queue a derive run: workoutIds 'all' (default) rebuilds every derived table. While a derive of the athlete is
+   * still waiting in the queue, a new request joins it (rapid settings changes or workout edits run one derive, not
+   * one each); a running derive is never changed.
+   */
   enqueueDerive(athleteId: number, options: JobOptions = {}): ImportJob {
-    return this.insert(athleteId, 'rederive', null, null, null, {
-      workoutIds: 'all',
-      sinceDay: null,
-      ...options,
-    });
+    const opts: JobOptions = { workoutIds: 'all', sinceDay: null, ...options };
+    const waiting = get<JobRow>(
+      this.db,
+      `SELECT * FROM import_jobs WHERE athlete_id = ? AND kind = 'rederive' AND status = 'queued'
+       ORDER BY created_at, rowid LIMIT 1`,
+      [athleteId],
+    );
+    if (waiting) {
+      const merged = mergeDeriveOptions(json<JobOptions>(waiting.options, {}), opts);
+      run(this.db, "UPDATE import_jobs SET options = ? WHERE id = ? AND status = 'queued'", [
+        JSON.stringify(merged),
+        waiting.id,
+      ]);
+      return this.get(athleteId, waiting.id)!;
+    }
+    return this.insert(athleteId, 'rederive', null, null, null, opts);
+  }
+
+  /** Derive what earlier jobs left underived (the athlete's pending changes, scope.ts) and nothing else. */
+  private enqueueRecovery(athleteId: number): ImportJob {
+    return this.enqueueDerive(athleteId, { origin: 'recover', workoutIds: [], sinceDay: null, records: false });
   }
 
   private insert(
@@ -218,7 +293,7 @@ export class JobManager {
         [id],
       );
       const r = get<JobRow>(this.db, 'SELECT * FROM import_jobs WHERE id = ?', [id]);
-      if (r?.source_path) this.maybeDeleteSource(r.source_path, json<JobOptions>(r.options, {}), true);
+      if (r?.source_path) this.maybeDeleteSource(r.source_path, json<JobOptions>(r.options, {}));
     } else if (job.status === 'running' && this.running?.id === id) {
       Atomics.store(this.running.cancel, 0, 1);
       this.running.job.message = 'Cancelling…';
@@ -229,6 +304,7 @@ export class JobManager {
   /** Stop the running worker (server shutdown). */
   async close(): Promise<void> {
     this.closed = true;
+    if (this.cleanupTimer) clearInterval(this.cleanupTimer);
     const r = this.running;
     if (r && !r.done) {
       Atomics.store(r.cancel, 0, 1);
@@ -259,17 +335,25 @@ export class JobManager {
 
   private pump(): void {
     if (this.closed || this.running) return;
-    const next = get<JobRow>(
-      this.db,
-      "SELECT * FROM import_jobs WHERE status = 'queued' ORDER BY created_at, rowid LIMIT 1",
-    );
-    if (!next) return;
-    run(
-      this.db,
-      "UPDATE import_jobs SET status = 'running', started_at = unixepoch(), message = 'Starting' WHERE id = ?",
-      [next.id],
-    );
-    const row = get<JobRow>(this.db, 'SELECT * FROM import_jobs WHERE id = ?', [next.id])!;
+    let row: JobRow;
+    try {
+      const next = get<JobRow>(
+        this.db,
+        "SELECT * FROM import_jobs WHERE status = 'queued' ORDER BY created_at, rowid LIMIT 1",
+      );
+      if (!next) return;
+      run(
+        this.db,
+        "UPDATE import_jobs SET status = 'running', started_at = unixepoch(), message = 'Starting' WHERE id = ?",
+        [next.id],
+      );
+      row = get<JobRow>(this.db, 'SELECT * FROM import_jobs WHERE id = ?', [next.id])!;
+    } catch (e) {
+      // e.g. the database stayed busy: try again shortly instead of crashing the server (this runs from a timer)
+      console.error('Could not start the next job', e);
+      setTimeout(() => this.pump(), 2000).unref();
+      return;
+    }
     const running: Running = {
       id: row.id,
       athleteId: row.athlete_id,
@@ -279,7 +363,6 @@ export class JobManager {
       startedMs: Date.now(),
       cancel: new Int32Array(new SharedArrayBuffer(4)),
       worker: null,
-      lastPersist: Date.now(),
       done: false,
     };
     this.running = running;
@@ -295,26 +378,16 @@ export class JobManager {
     else this.runWorker(running, spec);
   }
 
+  /** In memory only: the job's own connection saves the row (progressSaver). */
   private onProgress(
     r: Running,
     m: { phase: string; progress: number; message: string | null; step: string | null; stats: unknown },
   ): void {
-    const phaseChanged = r.job.phase !== m.phase;
     r.job.phase = m.phase as ImportPhase;
     r.job.progress = Math.max(r.job.progress, Math.min(1, m.progress));
     if (!Atomics.load(r.cancel, 0)) r.job.message = m.message;
     r.job.step = m.step;
     r.job.stats = m.stats as ImportStats;
-    if (phaseChanged || Date.now() - r.lastPersist > 5000) {
-      r.lastPersist = Date.now();
-      run(this.db, 'UPDATE import_jobs SET phase = ?, progress = ?, message = ?, stats = ? WHERE id = ?', [
-        r.job.phase,
-        r.job.progress,
-        r.job.message,
-        JSON.stringify(r.job.stats),
-        r.id,
-      ]);
-    }
     this.emit(this.live({ id: r.id } as JobRow));
   }
 
@@ -353,12 +426,16 @@ export class JobManager {
 
   private async runInline(r: Running, spec: JobSpec): Promise<void> {
     const stats = emptyStats();
+    const save = progressSaver(this.db, r.id);
     try {
       await executeJob(
         this.db,
         spec,
         {
-          progress: (p) => this.onProgress(r, p),
+          progress: (p) => {
+            this.onProgress(r, p);
+            save(p);
+          },
           checkCancelled: () => {
             if (Atomics.load(r.cancel, 0)) throw new CancelledError();
           },
@@ -402,38 +479,48 @@ export class JobManager {
       console.error('Could not persist job result', e);
     }
     if (r.sourcePath)
-      this.maybeDeleteSource(r.sourcePath, r.options, status === 'done' || status === 'cancelled');
+      this.maybeDeleteSource(r.sourcePath, r.options);
     invalidateStatusCounts();
     if (this.running === r) this.running = null;
+    // An import that stopped half way (cancelled, failed) committed data the derive has not seen: derive it right
+    // away. Never after a derive, so one the user cancelled or that keeps failing is not queued again and again.
+    if (r.job.kind === 'import' && status !== 'done' && !this.closed) {
+      try {
+        if (!this.busy(r.athleteId) && !pendingScope(this.db, r.athleteId).empty) this.enqueueRecovery(r.athleteId);
+      } catch (e) {
+        console.error('Could not queue the derive of a stopped import', e);
+      }
+    }
     const final = this.get(r.athleteId, r.id);
     if (final) this.emit(final);
     if (!this.closed) setImmediate(() => this.pump());
   }
 
-  /** Uploaded files are temporary: removed after a successful (or cancelled) import. Failed uploads stay for a day
-   * (see cleanupUploads). User files (local/watch imports) are never touched. */
-  private maybeDeleteSource(file: string, options: JobOptions, success: boolean): void {
-    if (!options.deleteAfter || !success) return;
+  /** Uploaded files are temporary: removed once their import ended, failed ones too (nothing can retry an upload).
+   * User files (local/watch imports) are never touched. */
+  private maybeDeleteSource(file: string, options: JobOptions): void {
+    if (!options.deleteAfter) return;
     const uploads = path.resolve(this.config.uploadsDir);
     if (!path.resolve(file).startsWith(uploads + path.sep)) return;
     fs.rm(file, { force: true }, () => {});
   }
 
-  /** Remove stale uploads (not referenced by a queued job and older than a day). */
+  /** Remove stale uploads (not referenced by a queued job and older than a day), e.g. of jobs a restart interrupted. */
   private cleanupUploads(): void {
     const dir = this.config.uploadsDir;
     let names: string[];
+    let keep: Set<string>;
     try {
       names = fs.readdirSync(dir);
+      keep = new Set(
+        all<{ source_path: string }>(
+          this.db,
+          "SELECT source_path FROM import_jobs WHERE status IN ('queued', 'running') AND source_path IS NOT NULL",
+        ).map((r) => path.resolve(r.source_path)),
+      );
     } catch {
-      return;
+      return; // no folder yet, or the database is busy: next time
     }
-    const keep = new Set(
-      all<{ source_path: string }>(
-        this.db,
-        "SELECT source_path FROM import_jobs WHERE status IN ('queued', 'running') AND source_path IS NOT NULL",
-      ).map((r) => path.resolve(r.source_path)),
-    );
     const cutoff = Date.now() - 24 * 3600 * 1000;
     for (const n of names) {
       const f = path.resolve(dir, n);
