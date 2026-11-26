@@ -10,6 +10,22 @@ import {
   type RouteSignature,
   type ShapedWorkout,
 } from './route-shapes';
+import { IN_LIST, idList } from './sql';
+
+/**
+ * Delete the shapes of the workouts `where` (a condition on maps_workout_geo) selects. Their routes lose members and
+ * are marked for the next refresh (no representative): an incremental derive refreshes only the routes its workouts
+ * are on, and these workouts are on none any more.
+ */
+export function deleteShapes(db: Db, where: string, params: unknown[]): void {
+  run(
+    db,
+    `UPDATE maps_routes SET rep_workout_id = NULL
+     WHERE id IN (SELECT route_id FROM maps_workout_geo WHERE route_id IS NOT NULL AND ${where})`,
+    params,
+  );
+  run(db, `DELETE FROM maps_workout_geo WHERE ${where}`, params);
+}
 
 /** Store (or remove) the shape signature of a workout. Keeps its current route assignment. */
 export function storeSignature(
@@ -22,7 +38,7 @@ export function storeSignature(
 ): boolean {
   const sig = lat && lon ? makeSignature(lat, lon, dist) : null;
   if (!sig) {
-    run(db, 'DELETE FROM maps_workout_geo WHERE workout_id = ?', [workoutId]);
+    deleteShapes(db, 'workout_id = ?', [workoutId]);
     return false;
   }
   run(
@@ -89,6 +105,8 @@ export function clusterRoutes(db: Db, athleteId: number, changed: Set<number> | 
   const sportOf = new Map(rows.map((r) => [r.workout_id, r.sport]));
   const { assignment, founders } = assignRoutes([...reps.values()], todo);
 
+  // the routes whose members changed: the old and the new route of every changed workout
+  const touched = new Set<number>();
   tx(db, () => {
     const oldSport = new Map(
       all<{ id: number; sport: string }>(db, 'SELECT id, sport FROM maps_routes WHERE athlete_id = ?', [
@@ -112,10 +130,15 @@ export function clusterRoutes(db: Db, athleteId: number, changed: Set<number> | 
       );
     }
     const update = prepare(db, 'UPDATE maps_workout_geo SET route_id = ? WHERE workout_id = ?');
-    for (const [workoutId, routeId] of assignment)
-      update.run(routeId < 0 ? idOf.get(routeId)! : routeId, workoutId);
+    for (const [workoutId, routeId] of assignment) {
+      const id = routeId < 0 ? idOf.get(routeId)! : routeId;
+      update.run(id, workoutId);
+      touched.add(id);
+      const old = oldAssign.get(workoutId);
+      if (old != null) touched.add(old);
+    }
   });
-  refreshRoutes(db, athleteId);
+  refreshRoutes(db, athleteId, full ? undefined : touched);
 }
 
 const median = (v: number[]): number => {
@@ -124,41 +147,63 @@ const median = (v: number[]): number => {
   return s.length % 2 ? s[m]! : (s[m - 1]! + s[m]!) / 2;
 };
 
-/** Recompute representative, kind, area, length and display polyline of every route; drop routes without members. */
-export function refreshRoutes(db: Db, athleteId: number): void {
-  const rows = all<{
-    route_id: number;
-    length_m: number;
-    sig: Uint8Array;
-    workout_id: number;
-    polyline: string | null;
-    start_lat: number | null;
-    start_lon: number | null;
-    end_lat: number | null;
-    end_lon: number | null;
-  }>(
+/**
+ * Recompute representative (earliest member), kind, area, length and display polyline of the routes: all of them, or
+ * the routes `only` names plus the ones marked for a refresh (see deleteShapes). Drops routes without members.
+ */
+export function refreshRoutes(db: Db, athleteId: number, only?: Set<number>): void {
+  const members = all<{ route_id: number; workout_id: number; length_m: number }>(
     db,
-    `SELECT g.route_id, g.length_m, g.sig, g.workout_id, w.polyline,
-            w.start_lat, w.start_lon, w.end_lat, w.end_lon
+    `SELECT g.route_id, g.workout_id, g.length_m
      FROM maps_workout_geo g JOIN workouts w ON w.id = g.workout_id
-     WHERE g.athlete_id = ? AND g.route_id IS NOT NULL
+     WHERE g.athlete_id = ? AND g.route_id IS NOT NULL${
+       only
+         ? ` AND g.route_id IN (SELECT value FROM json_each(?)
+               UNION SELECT id FROM maps_routes WHERE athlete_id = ? AND rep_workout_id IS NULL)`
+         : ''
+     }
      ORDER BY g.route_id, w.start_ts, w.id`,
-    [athleteId],
+    only ? [athleteId, idList([...only]), athleteId] : [athleteId],
   );
-  const groups = new Map<number, typeof rows>();
-  for (const r of rows) {
-    const g = groups.get(r.route_id);
-    if (g) g.push(r);
-    else groups.set(r.route_id, [r]);
+  const lengths = new Map<number, number[]>();
+  const repOf = new Map<number, number>();
+  for (const m of members) {
+    const l = lengths.get(m.route_id);
+    if (l) l.push(m.length_m);
+    else {
+      lengths.set(m.route_id, [m.length_m]);
+      repOf.set(m.route_id, m.workout_id);
+    }
   }
+  // shape, track and ends are only needed of the representatives
+  const reps = new Map(
+    (repOf.size
+      ? all<{
+          workout_id: number;
+          length_m: number;
+          sig: Uint8Array;
+          polyline: string | null;
+          start_lat: number | null;
+          start_lon: number | null;
+          end_lat: number | null;
+          end_lon: number | null;
+        }>(
+          db,
+          `SELECT g.workout_id, g.length_m, g.sig, w.polyline, w.start_lat, w.start_lon, w.end_lat, w.end_lon
+           FROM maps_workout_geo g JOIN workouts w ON w.id = g.workout_id WHERE g.workout_id IN ${IN_LIST}`,
+          [idList([...repOf.values()])],
+        )
+      : []
+    ).map((r) => [r.workout_id, r]),
+  );
   tx(db, () => {
     const upd = prepare(
       db,
       `UPDATE maps_routes SET rep_workout_id = ?, kind = ?, area = ?, area_end = ?, distance_m = ?, start_lat = ?,
          start_lon = ?, end_lat = ?, end_lon = ?, polyline = ? WHERE id = ? AND athlete_id = ?`,
     );
-    for (const [routeId, members] of groups) {
-      const rep = members[0]!;
+    for (const [routeId, members] of lengths) {
+      const rep = reps.get(repOf.get(routeId)!)!;
       const kind = routeKind(decodeSignature(rep.sig, rep.length_m));
       // the nearest town / village / district of the start (offline gazetteer); a route from A to B names both
       const start = rep.start_lat !== null && rep.start_lon !== null ? nearestPlace(rep.start_lat, rep.start_lon) : null;
@@ -171,7 +216,7 @@ export function refreshRoutes(db: Db, athleteId: number): void {
         kind,
         start?.name ?? null,
         end && end.name !== start?.name ? end.name : null,
-        Math.round(median(members.map((m) => m.length_m))),
+        Math.round(median(members)),
         rep.start_lat,
         rep.start_lon,
         rep.end_lat,

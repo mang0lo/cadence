@@ -1,7 +1,7 @@
 import { getStreams } from '../../core/workouts';
 import { all, prepare, run, tx, type Db } from '../../db/db';
 import type { DeriveStep } from '../types';
-import { storeSignature } from './route-derive';
+import { deleteShapes, storeSignature } from './route-derive';
 import { IN_LIST, idList } from './sql';
 import { coarsen, keyX, keyY, tileCover } from './tiles';
 
@@ -55,7 +55,7 @@ export const geometryStep: DeriveStep = {
       const changed = idList(ctx.workoutIds);
       const noRoute = `workout_id IN ${IN_LIST} AND workout_id NOT IN (SELECT id FROM workouts WHERE has_route = 1)`;
       run(db, `DELETE FROM maps_workout_tiles WHERE athlete_id = ? AND ${noRoute}`, [athleteId, changed]);
-      run(db, `DELETE FROM maps_workout_geo WHERE athlete_id = ? AND ${noRoute}`, [athleteId, changed]);
+      deleteShapes(db, `athlete_id = ? AND ${noRoute}`, [athleteId, changed]);
       ids = all<{ id: number }>(
         db,
         `SELECT id FROM workouts WHERE athlete_id = ? AND has_route = 1 AND id IN ${IN_LIST} ORDER BY start_ts, id`,
@@ -72,12 +72,9 @@ export const geometryStep: DeriveStep = {
            AND workout_id NOT IN (SELECT id FROM workouts WHERE athlete_id = ? AND has_route = 1)`,
         [athleteId, athleteId],
       );
-      run(
-        db,
-        `DELETE FROM maps_workout_geo WHERE athlete_id = ?
-           AND workout_id NOT IN (SELECT id FROM workouts WHERE has_route = 1)`,
-        [athleteId],
-      );
+      deleteShapes(db, 'athlete_id = ? AND workout_id NOT IN (SELECT id FROM workouts WHERE has_route = 1)', [
+        athleteId,
+      ]);
     }
     const BATCH = 20;
     for (let i = 0; i < ids.length; i += BATCH) {
