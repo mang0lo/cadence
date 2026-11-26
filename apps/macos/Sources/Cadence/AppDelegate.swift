@@ -80,9 +80,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             return
         }
         web.showStarting()
+        let firstOnLastingPort = Preferences.serverPort == nil
         server.start { [weak self] result in
             switch result {
-            case .success(let url): self?.web.load(url)
+            case .success(let url):
+                if firstOnLastingPort {
+                    self?.web.removeLocalWebsiteData { self?.web.load(url) }
+                } else {
+                    self?.web.load(url)
+                }
             case .failure(let error): self?.web.showError(error)
             }
         }

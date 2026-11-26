@@ -170,6 +170,18 @@ final class WebViewController: NSViewController, WKNavigationDelegate, WKUIDeleg
         webView.load(URLRequest(url: url))
     }
 
+    /// Until the built-in server kept its port, every launch gave the page a new origin (http://127.0.0.1:<port>)
+    /// and left what it had stored under the old one behind for good. Removes all of it once, before the page first
+    /// loads on its lasting port (WebKit keeps one record per host, for all ports).
+    func removeLocalWebsiteData(then done: @escaping () -> Void) {
+        let store = webView.configuration.websiteDataStore
+        let types = WKWebsiteDataStore.allWebsiteDataTypes()
+        store.fetchDataRecords(ofTypes: types) { records in
+            let local = records.filter { $0.displayName == "127.0.0.1" }
+            if local.isEmpty { done() } else { store.removeData(ofTypes: types, for: local, completionHandler: done) }
+        }
+    }
+
     /// A remote server that does not answer: try again or go back to the built-in server.
     func showServerUnreachable(_ url: URL, _ error: Error) {
         overlay.show(

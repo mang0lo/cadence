@@ -18,7 +18,11 @@ enum ServerError: LocalizedError {
 }
 
 /// Runs the bundled Node.js server (Resources/node/bin/node Resources/server/index.js) as a child process.
-/// The server picks a free port (PORT=0) and announces it on stdout as `CADENCE_LISTENING {"url","port"}`.
+/// The server announces its address on stdout as `CADENCE_LISTENING {"url","port"}`.
+///
+/// It starts on the port of the last launch (`Preferences.serverPort`, first `defaultPort`): the port is part of
+/// the web UI's origin, so a new port every launch would start the page with empty browser storage each time.
+/// When that port is taken, it starts again on any free port (PORT=0) and keeps that one from then on.
 ///
 /// Every start is a `ServerRun` of its own (process, pipe, log handle, start timeout). Only the current run may
 /// report anything: the exit or the timeout of a run that was stopped or replaced is ignored, so it can neither
@@ -30,6 +34,10 @@ final class ServerProcess {
         let entry: URL
         let web: URL
     }
+
+    /// The first port the built-in server tries: outside the ranges the system hands out to other programs
+    /// (49152-65535 on macOS, 32768-60999 on Linux) and not 8787 (npm run dev, Docker).
+    nonisolated static let defaultPort = 28787
 
     private var run: ServerRun?
     /// The current run has announced its port (its exit is then an unexpected exit, not a failed start).
@@ -71,7 +79,12 @@ final class ServerProcess {
         try? fm.createDirectory(at: Self.dataDirectory, withIntermediateDirectories: true)
         try? fm.createDirectory(at: Self.logFile.deletingLastPathComponent(), withIntermediateDirectories: true)
         fm.createFile(atPath: Self.logFile.path, contents: nil) // a new log for every start
-        launch(paths, port: 0, completion: completion)
+        launch(paths, port: Preferences.serverPort ?? Self.defaultPort, completion: completion)
+    }
+
+    /// The server could not listen on the port it was given (taken by another program, or reserved).
+    nonisolated static func portUnavailable(_ output: String) -> Bool {
+        output.contains("EADDRINUSE") || output.contains("listen EACCES") || output.contains("EADDRNOTAVAIL")
     }
 
     private func launch(_ paths: Paths, port: Int, completion: @escaping (Result<URL, Error>) -> Void) {
@@ -90,13 +103,17 @@ final class ServerProcess {
         run.onListening = { [weak self, weak run] port in
             guard let self, let run, self.run === run, !self.started else { return }
             self.started = true
+            Preferences.serverPort = port
             completion(.success(URL(string: "http://127.0.0.1:\(port)/")!))
         }
-        run.onExit = { [weak self, weak run] code, _ in
+        run.onExit = { [weak self, weak run] code, output in
             guard let self, let run, self.run === run else { return }
             self.run = nil
             if self.started {
                 self.onUnexpectedExit?(code)
+            } else if port != 0 && Self.portUnavailable(output) {
+                Self.appendToLog("Cadence: port \(port) is not available, starting on a free port instead\n")
+                self.launch(paths, port: 0, completion: completion)
             } else {
                 completion(.failure(ServerError.exited(code)))
             }
@@ -112,6 +129,13 @@ final class ServerProcess {
             self.run = nil
             DispatchQueue.main.async { completion(.failure(error)) }
         }
+    }
+
+    nonisolated private static func appendToLog(_ line: String) {
+        guard let log = try? FileHandle(forWritingTo: logFile) else { return }
+        _ = try? log.seekToEnd()
+        try? log.write(contentsOf: Data(line.utf8))
+        try? log.close()
     }
 
     /// Stops the current server (if any); its exit is not reported.
