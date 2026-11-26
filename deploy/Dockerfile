@@ -10,7 +10,11 @@ COPY apps/web/package.json apps/web/
 COPY apps/desktop/package.json apps/desktop/
 # server + web only: the Electron desktop workspace is not needed for the image
 RUN npm ci --no-audit --no-fund --include-workspace-root -w @cadence/shared -w @cadence/server -w @cadence/web
-COPY . .
+# only what the build reads: a change anywhere else (docs, the desktop shells, tests) reuses the built layers
+COPY tsconfig.base.json ./
+COPY packages/ packages/
+COPY apps/server/ apps/server/
+COPY apps/web/ apps/web/
 RUN npm run build
 
 FROM node:26-slim
