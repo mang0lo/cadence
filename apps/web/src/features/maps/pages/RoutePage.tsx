@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Check, Pencil, Route as RouteIcon, Trophy, X } from 'lucide-react';
-import { sportInfo, workoutTitle, type MapsRouteDetail, type MapsRouteEffort } from '@cadence/shared';
+import { workoutTitle, type MapsRouteDetail, type MapsRouteEffort } from '@cadence/shared';
 import { useChartTheme } from '@/components/charts/theme';
 import {
   Button,
@@ -27,7 +27,9 @@ import { decodePolyline, toLngLat } from '@/lib/polyline';
 import { EffortTable, type EffortRow } from '../components/EffortTable';
 import { EffortTrend } from '../components/EffortTrend';
 import { LineMap, useShownOverlayColors, type MapLine } from '../components/LineMap';
+import { countVars } from '../lib/counts';
 import { dateRange } from '../lib/dates';
+import { speedLabelKey } from '../lib/effortSort';
 import { unionBox, type BBox } from '../lib/home';
 import { kindLabel, routeTitle } from '../lib/routeName';
 
@@ -236,7 +238,7 @@ function RouteBody({ detail }: { detail: MapsRouteDetail }) {
       />
       <EffortTable
         title={t('maps.routes.efforts')}
-        subtitle={t('maps.routes.effortsSubtitle', { count: efforts.length })}
+        subtitle={t('maps.routes.effortsSubtitle', countVars(fmt, efforts.length))}
         rows={rows}
         sport={route.sport}
         bestLabel={t('maps.routes.rankBest')}
@@ -358,10 +360,7 @@ function Compare({
       <div className="truncate text-xs text-fg-3">{workoutTitle(e, lang)}</div>
       <dl className="mt-3 space-y-1.5 text-sm">
         <Row k={t('maps.routes.time')} v={fmt.duration(e.timeS)} />
-        <Row
-          k={sportInfo(sport).speedMode === 'speed' ? t('common.speed') : t('common.pace')}
-          v={fmt.pace(e.avgSpeed, sport)}
-        />
+        <Row k={t(speedLabelKey(sport))} v={fmt.pace(e.avgSpeed, sport)} />
         <Row k={t('common.avgHr')} v={e.avgHr ? fmt.hr(e.avgHr) : '–'} />
       </dl>
     </div>

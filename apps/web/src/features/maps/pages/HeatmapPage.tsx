@@ -24,9 +24,10 @@ import { SportIcon, sortSports, sportColorVar, useSportLabel } from '@/lib/sport
 import { useStoredState } from '@/lib/storage';
 import { addDays, todayKey } from '@/lib/time';
 import { HeatmapMap } from '../components/HeatmapMap';
+import { countVars } from '../lib/counts';
 import { lapseAt, mainBounds, toHeatLines, type HeatBase, type HeatTheme } from '../lib/heatmapLayers';
 import { sameBounds } from '../lib/home';
-import { Store, useThrottledStore } from '../lib/timelapse';
+import { Store, speedLabel, useThrottledStore } from '../lib/timelapse';
 
 const THEMES: HeatTheme[] = ['hot', 'blue', 'purple'];
 const THEME_DOT: Record<HeatTheme, string> = { hot: '#ff8a1f', blue: '#2aa3ff', purple: '#b04dff' };
@@ -267,7 +268,7 @@ export default function HeatmapPage() {
           >
             <div className="pointer-events-none absolute left-3 top-3 z-10 flex flex-col items-start gap-1.5">
               <div className="rounded-lg border border-border bg-surface/90 px-2.5 py-1.5 text-xs text-fg-2 shadow-card backdrop-blur">
-                <span className="font-semibold text-fg tabular">{t('common.activities', { count })}</span> ·{' '}
+                <span className="font-semibold text-fg tabular">{t('maps.heatmap.activities', countVars(fmt, count))}</span> ·{' '}
                 <span className="font-semibold text-fg tabular">{fmt.distance(data.totalDistanceM, 0)}</span>
               </div>
               {data.privacyApplied && (
@@ -317,7 +318,7 @@ export default function HeatmapPage() {
                     label={t('maps.heatmap.speed')}
                     value={String(speed)}
                     onChange={(v) => setSpeed(Number(v))}
-                    items={SPEEDS.map((s) => ({ value: String(s), label: `${s}×` }))}
+                    items={SPEEDS.map((s) => ({ value: String(s), label: speedLabel(fmt, s) }))}
                   />
                   <IconButton icon={X} label={t('maps.heatmap.exitTimelapse')} onClick={stopLapse} />
                 </div>

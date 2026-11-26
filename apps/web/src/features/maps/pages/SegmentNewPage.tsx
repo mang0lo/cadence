@@ -34,6 +34,7 @@ import { SportBadge, sportColorVar, useSportLabel } from '@/lib/sports';
 import { LineMap, useShownOverlayColors, type MapLine, type MapMarker } from '../components/LineMap';
 import { RangeProfile } from '../components/RangeProfile';
 import { unionBox, type BBox } from '../lib/home';
+import { speedLabelKey } from '../lib/effortSort';
 import { elapsedBetween, pointAt, slicePoints } from '../lib/segments';
 
 /** /maps/segments/new?workout=:id – pick a part of an activity's route and save it as a segment. */
@@ -300,7 +301,7 @@ function EditorBody({ source }: { source: MapsSegmentSource }) {
             [t('maps.segments.elevationLoss'), hasEle ? fmt.elevation(stats.lossM) : '–'],
             [t('maps.segments.avgGrade'), stats.gradePct === null ? '–' : `${fmt.num(stats.gradePct, 1)} %`],
             [t('maps.segments.new.yourTime'), time === null ? '–' : fmt.duration(time)],
-            [t('common.pace'), speed === null ? '–' : fmt.pace(speed, source.sport)],
+            [t(speedLabelKey(source.sport)), speed === null ? '–' : fmt.pace(speed, source.sport)],
           ]}
         />
 

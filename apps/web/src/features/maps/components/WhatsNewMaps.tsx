@@ -5,6 +5,7 @@ import type { ImportHighlight, MapsRouteSummary } from '@cadence/shared';
 import { useFormat } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
 import type { WhatsNewProps } from '../../types';
+import { countVars } from '../lib/counts';
 import { routeTitle } from '../lib/routeName';
 
 function Row({ icon: Icon, to, children }: { icon: LucideIcon; to: string; children: ReactNode }) {
@@ -46,9 +47,12 @@ export default function WhatsNewMaps({ items }: WhatsNewProps) {
     if (h.kind === 'explorerTiles')
       rows.push(
         <Row key={key} icon={Grid3x3} to="/maps/explorer">
-          {strong(t('maps.whatsNew.tiles', { count: Number(h.data.count) }))}
+          {strong(t('maps.whatsNew.tiles', countVars(fmt, Number(h.data.count))))}
           {Number(h.data.squadratinhos) > 0 && (
-            <span className="text-fg-3"> · {t('maps.whatsNew.squadratinhos', { count: Number(h.data.squadratinhos) })}</span>
+            <span className="text-fg-3">
+              {' · '}
+              {t('maps.whatsNew.squadratinhos', countVars(fmt, Number(h.data.squadratinhos)))}
+            </span>
           )}
         </Row>,
       );
@@ -56,7 +60,7 @@ export default function WhatsNewMaps({ items }: WhatsNewProps) {
       rows.push(
         <Row key={key} icon={Route} to={`/maps/routes/${String(h.data.routeId)}`}>
           {t('maps.whatsNew.newRoute')} {strong(name(h))}
-          <span className="text-fg-3"> · {t('maps.whatsNew.efforts', { count: Number(h.data.efforts) })}</span>
+          <span className="text-fg-3"> · {t('maps.whatsNew.efforts', countVars(fmt, Number(h.data.efforts)))}</span>
         </Row>,
       );
     else if (h.kind === 'routeBest')
@@ -82,8 +86,8 @@ export default function WhatsNewMaps({ items }: WhatsNewProps) {
     else if (h.kind === 'segmentEfforts')
       rows.push(
         <Row key={key} icon={Waypoints} to="/maps/segments">
-          {t('maps.whatsNew.segmentEfforts', { count: Number(h.data.count) })}
-          <span className="text-fg-3"> · {t('maps.whatsNew.onSegments', { count: Number(h.data.segments) })}</span>
+          {t('maps.whatsNew.segmentEfforts', countVars(fmt, Number(h.data.count)))}
+          <span className="text-fg-3"> · {t('maps.whatsNew.onSegments', countVars(fmt, Number(h.data.segments)))}</span>
         </Row>,
       );
   }

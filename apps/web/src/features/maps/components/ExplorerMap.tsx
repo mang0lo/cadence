@@ -24,6 +24,7 @@ import {
   type ExplorerColorBy,
   type FirstBuckets,
 } from '../lib/explorerLayers';
+import { countVars } from '../lib/counts';
 import type { BBox } from '../lib/home';
 import type { HeatBase } from '../lib/heatmapLayers';
 
@@ -175,7 +176,7 @@ function TilePopup({ tile }: { tile: MapsExplorerTile }) {
     <div className="min-w-44 text-sm">
       <div className="text-xs font-medium text-fg-3">{t('maps.explorer.firstVisit')}</div>
       <div className="font-semibold text-fg">{fmt.date(tile.firstTs, tile.tzMin, 'day')}</div>
-      <div className="mt-1 text-xs text-fg-3">{t('maps.explorer.visitsCount', { count: tile.visits })}</div>
+      <div className="mt-1 text-xs text-fg-3">{t('maps.explorer.visitsCount', countVars(fmt, tile.visits))}</div>
       <Link
         to={`/activities/${tile.workoutId}`}
         className="mt-1.5 inline-block text-xs font-medium text-accent-fg hover:underline"

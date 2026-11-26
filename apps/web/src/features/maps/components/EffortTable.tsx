@@ -158,7 +158,7 @@ export function EffortTable({
       {sorted.length > PAGE && (
         <div className="flex justify-center p-3">
           <Button size="sm" variant="ghost" onClick={() => setAll((v) => !v)}>
-            {all ? t('common.less') : t('maps.routes.showAllEfforts', { count: sorted.length })}
+            {all ? t('common.less') : t('maps.routes.showAllEfforts', { count: fmt.int(sorted.length) })}
           </Button>
         </div>
       )}

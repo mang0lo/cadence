@@ -232,7 +232,7 @@ function PopupList({ ids, byId }: { ids: number[]; byId: Map<number, MapsHeatmap
       </ul>
       {items.length > shown.length && (
         <div className="mt-2 text-xs text-fg-3">
-          {t('maps.heatmap.more', { count: items.length - shown.length })}
+          {t('maps.heatmap.more', { count: fmt.int(items.length - shown.length) })}
         </div>
       )}
     </div>

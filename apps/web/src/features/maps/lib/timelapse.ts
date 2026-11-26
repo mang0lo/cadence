@@ -53,3 +53,7 @@ export function useThrottledStore<T>(store: Store<T>, ms = 100): T {
   );
   return useSyncExternalStore(subscribe, () => store.get());
 }
+
+/** Label of a time-lapse speed: '0.5×' / '0,5×', '2×'. */
+export const speedLabel = (fmt: { num: (v: number, digits?: number) => string }, speed: number): string =>
+  `${fmt.num(speed, speed % 1 ? 1 : 0)}×`;
