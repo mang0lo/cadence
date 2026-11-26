@@ -2,6 +2,7 @@ import { getStreams } from '../../core/workouts';
 import { all, prepare, run, tx, type Db } from '../../db/db';
 import type { DeriveStep } from '../types';
 import { storeSignature } from './route-derive';
+import { IN_LIST, idList } from './sql';
 import { coarsen, keyX, keyY, tileCover } from './tiles';
 
 export const TILE_ZOOMS = [14, 17] as const;
@@ -48,8 +49,20 @@ export const geometryStep: DeriveStep = {
   weight: 3,
   run(ctx) {
     const { db, athleteId } = ctx;
-    const ids = ctx.workoutIds === 'all' ? routeWorkoutIds(db, athleteId) : ctx.workoutIds;
-    if (ctx.workoutIds === 'all') {
+    let ids: number[];
+    if (ctx.workoutIds !== 'all') {
+      // only workouts with a route have tiles and a shape; the others just lose theirs, without decoding a stream
+      const changed = idList(ctx.workoutIds);
+      const noRoute = `workout_id IN ${IN_LIST} AND workout_id NOT IN (SELECT id FROM workouts WHERE has_route = 1)`;
+      run(db, `DELETE FROM maps_workout_tiles WHERE athlete_id = ? AND ${noRoute}`, [athleteId, changed]);
+      run(db, `DELETE FROM maps_workout_geo WHERE athlete_id = ? AND ${noRoute}`, [athleteId, changed]);
+      ids = all<{ id: number }>(
+        db,
+        `SELECT id FROM workouts WHERE athlete_id = ? AND has_route = 1 AND id IN ${IN_LIST} ORDER BY start_ts, id`,
+        [athleteId, changed],
+      ).map((r) => r.id);
+    } else {
+      ids = routeWorkoutIds(db, athleteId);
       // tiles are replaced per workout and signatures upserted (keeping route ids for the rebuild) below, batch by
       // batch: a cancelled or failed rebuild keeps the rows of the workouts it did not reach. Only the rows of
       // workouts without a route have to go here.
