@@ -239,22 +239,41 @@ export function matchSegment(seg: SegmentPath, track: MatchTrack, opts: MatchOpt
   if (!ends.length) return [];
 
   const segPts = sampleAlong(sx, sy, 20);
+  /** The pass from `sp` to `ep`, or null when its length, course or speed rule it out. */
+  const pass = (sp: Pass, ep: Pass): SegmentMatch | null => {
+    const len = ep.pos - sp.pos;
+    if (len < segLen * LENGTH_RATIO_MIN || len > segLen * LENGTH_RATIO_MAX) return null;
+    if (!follows(sp, ep, tx, ty, sx, sy, segPts, tol)) return null;
+    const startT = interp(track.t, sp.i, sp.u);
+    const endT = interp(track.t, ep.i, ep.u);
+    const elapsed = endT - startT;
+    if (!(elapsed > 1) || segLen / elapsed > 45) return null; // glitch: not a human speed
+    const stats = timeStats(track, sp, ep);
+    return { startT, endT, elapsedS: elapsed, movingS: stats.movingS, avgHr: stats.avgHr, trackM: len };
+  };
   const out: SegmentMatch[] = [];
   let minStart = -Infinity;
-  for (const sp of starts) {
+  for (let si = 0; si < starts.length; si++) {
+    const sp = starts[si]!;
     if (sp.pos < minStart) continue;
     for (const ep of ends) {
       if (ep.pos <= sp.pos) continue;
       const len = ep.pos - sp.pos;
       if (len < segLen * LENGTH_RATIO_MIN) continue;
       if (len > segLen * LENGTH_RATIO_MAX) break;
-      if (!follows(sp, ep, tx, ty, sx, sy, segPts, tol)) continue;
-      const startT = interp(track.t, sp.i, sp.u);
-      const endT = interp(track.t, ep.i, ep.u);
-      const elapsed = endT - startT;
-      if (!(elapsed > 1) || segLen / elapsed > 45) continue; // glitch: not a human speed
-      const stats = timeStats(track, sp, ep);
-      out.push({ startT, endT, elapsedS: elapsed, movingS: stats.movingS, avgHr: stats.avgHr, trackM: len });
+      let m = pass(sp, ep);
+      if (!m) continue;
+      // the effort starts at the LAST start crossing before this end that still makes a valid pass: waiting at the
+      // start line (GPS jitter across it), a turn back or a warm-up stride there is not part of the effort
+      for (let k = starts.length - 1; k > si; k--) {
+        if (ep.pos - starts[k]!.pos < segLen * LENGTH_RATIO_MIN) continue;
+        const later = pass(starts[k]!, ep);
+        if (later) {
+          m = later;
+          break;
+        }
+      }
+      out.push(m);
       minStart = ep.pos;
       break;
     }
