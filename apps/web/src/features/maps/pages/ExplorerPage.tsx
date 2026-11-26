@@ -57,6 +57,8 @@ import { useResolvedTheme } from '@/lib/theme';
 
 const BASES: HeatBase[] = ['streets', 'satellite', 'dark'];
 type ZoomKey = '14' | '17';
+/** Stable "no tiles" (a new [] on every render would make the map redraw its overlays). */
+const NO_TILES: { x: number; y: number }[] = [];
 
 /** Edge length in meters of a tile at a zoom level and latitude. */
 const tileEdgeM = (z: number, lat: number) => (40_075_016.686 * Math.cos((lat * Math.PI) / 180)) / 2 ** z;
@@ -77,7 +79,8 @@ export default function ExplorerPage() {
   );
   const [focus, setFocus] = useState<{ bounds: BBox; nonce: number } | null>(null);
   const [fitNonce, setFitNonce] = useState(0);
-  const [mapZoom, setMapZoom] = useState(10);
+  // only whether the map is zoomed out too far for the detail tiles: the page re-renders when that flips, not per pan
+  const [belowDetailZoom, setBelowDetailZoom] = useState(true);
 
   const sportParam = sport === 'all' ? undefined : sport;
   const q14 = useApi<MapsExplorerResponse>(['maps', 'explorer', 14], '/maps/explorer', {
@@ -145,6 +148,18 @@ export default function ExplorerPage() {
       ...order.map((s) => ({ value: s, label: sportLabel(s) })),
     ];
   }, [data14?.sports, t, sportLabel]);
+
+  const legendLabels = useMemo(
+    () =>
+      colorBy === 'visits'
+        ? visitLabels(steps)
+        : buckets.ranges.map((r) => {
+            const a = fmt.date(r.fromTs, r.fromTz, 'monthYearShort');
+            const b = fmt.date(r.toTs, r.toTz, 'monthYearShort');
+            return a === b ? a : `${a} – ${b}`;
+          }),
+    [colorBy, steps, buckets, fmt],
+  );
 
   const empty = !!data14 && data14.totals.tiles === 0 && sport === 'all';
   const mapHeight = 'h-[clamp(420px,calc(100vh-22rem),780px)]';
@@ -298,12 +313,12 @@ export default function ExplorerPage() {
               steps={steps}
               detail={detail}
               square={square}
-              next={z === 14 && next ? next.missing : []}
+              next={z === 14 && next ? next.missing : NO_TILES}
               colorBy={colorBy}
               base={base}
               bounds={bounds}
               fitNonce={(focus?.nonce ?? 0) + fitNonce}
-              onZoomChange={setMapZoom}
+              onZoomChange={(mapZoom) => setBelowDetailZoom(mapZoom < DETAIL_MIN_ZOOM)}
             >
               <div className="pointer-events-none absolute left-3 top-3 z-10 flex flex-col items-start gap-1.5">
                 {z === 14 ? (
@@ -314,19 +329,11 @@ export default function ExplorerPage() {
                         : t('maps.explorer.legend.first')
                     }
                     ramp={(colorBy === 'visits' ? RAMPS.orange : RAMPS.blue)[base0 ? 'dark' : 'light']}
-                    labels={
-                      colorBy === 'visits'
-                        ? visitLabels(steps)
-                        : buckets.ranges.map((r) => {
-                            const a = fmt.date(r.fromTs, r.fromTz, 'monthYearShort');
-                            const b = fmt.date(r.toTs, r.toTz, 'monthYearShort');
-                            return a === b ? a : `${a} – ${b}`;
-                          })
-                    }
+                    labels={legendLabels}
                     firstMode={colorBy === 'first'}
                   />
                 ) : (
-                  mapZoom < DETAIL_MIN_ZOOM && (
+                  belowDetailZoom && (
                     <div className="rounded-lg border border-border bg-surface/90 px-2.5 py-1.5 text-xs text-fg-2 shadow-card backdrop-blur">
                       {t('maps.explorer.detailHint')}
                     </div>
