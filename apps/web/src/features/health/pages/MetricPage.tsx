@@ -76,7 +76,8 @@ export default function MetricPage() {
         subtitle={
           info && info.firstTs !== null && info.lastTs !== null
             ? `${identifier} · ${t('health.metric.typeInfo', {
-                count: fmt.int(info.count),
+                count: info.count,
+                n: fmt.int(info.count),
                 from: fmt.browserDate(info.firstTs, 'day'),
                 to: fmt.browserDate(info.lastTs, 'day'),
               })}`

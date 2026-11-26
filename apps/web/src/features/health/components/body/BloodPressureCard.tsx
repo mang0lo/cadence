@@ -113,7 +113,7 @@ export function BloodPressureCard({ readings, loading }: { readings: BloodPressu
                   <b className="font-semibold text-fg">
                     {fmt.int(avgSys)}/{fmt.int(avgDia)} mmHg
                   </b>{' '}
-                  <span className="text-fg-3">({t('health.body.bp.readings', { count: readings.length })})</span>
+                  <span className="text-fg-3">({t('health.body.bp.readings', { count: readings.length, n: fmt.int(readings.length) })})</span>
                 </span>
               )}
             </div>

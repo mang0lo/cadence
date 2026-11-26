@@ -45,7 +45,7 @@ function RecordingList({ items, selected, onSelect }: { items: EcgSummary[]; sel
     <Card padded={false} className="overflow-hidden">
       <div className="flex items-baseline justify-between px-4 pb-2 pt-4">
         <h2 className="text-sm font-semibold text-fg">{t('health.ecg.recordings')}</h2>
-        <span className="text-xs text-fg-3 tabular">{t('health.ecg.count', { count: items.length })}</span>
+        <span className="text-xs text-fg-3 tabular">{t('health.ecg.count', { count: items.length, n: fmt.int(items.length) })}</span>
       </div>
       <ul className="max-h-[360px] divide-y divide-border overflow-y-auto border-t border-border scrollbar-thin xl:max-h-[720px]">
         {items.map((e) => (
