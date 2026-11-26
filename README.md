@@ -179,6 +179,11 @@ builds the DMG, the Linux and Windows apps and the `ghcr.io/mang0lo/cadence` ima
 
 ## License
 
-[MIT](LICENSE). Map data © OpenStreetMap contributors, OpenMapTiles, OpenFreeMap; imagery © Esri; terrain © Mapzen/AWS.
+Cadence is source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE): you may use, change and share
+it for any noncommercial purpose — personal training logs, hobby projects, research, teaching, charities and public
+institutions. Commercial use needs a separate license; open an issue to ask. Versions up to and including 1.0.0 were
+released under the MIT License and stay available under it.
+
+Map data © OpenStreetMap contributors, OpenMapTiles, OpenFreeMap; imagery © Esri; terrain © Mapzen/AWS.
 Place names: [GeoNames](https://www.geonames.org) (CC BY 4.0), bundled offline — positions are never sent anywhere.
 Not affiliated with Strava, Apple or COROS.
