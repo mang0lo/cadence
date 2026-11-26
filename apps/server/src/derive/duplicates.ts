@@ -1,26 +1,32 @@
 import { preferDeviceWorkouts } from '../core/sources';
-import { all, prepare, tx } from '../db/db';
+import { all, get, prepare, tx, type Db } from '../db/db';
 import type { DeriveStep } from '../features/types';
 
-interface Row {
+/** What duplicate detection needs to know about a workout (columns of `workouts`, see COLS). */
+export interface DupCandidate {
   id: number;
   start_ts: number;
   end_ts: number;
   sport: string;
   source_name: string | null;
+  hidden: number;
   has_route: number;
   has_hr: number;
   distance_m: number | null;
   energy_kcal: number | null;
-  duplicate_of: number | null;
+  /** 1 = the device's own FIT file. */
   from_device: number;
+}
+
+interface Row extends DupCandidate {
+  duplicate_of: number | null;
 }
 
 /**
  * How much data a workout carries; the richer copy of a duplicate pair wins, unless Settings → My watch says which
  * source to prefer (the watch's own FIT copy, or Apple Health's).
  */
-function score(r: Row, preferDevice: boolean): number {
+function score(r: DupCandidate, preferDevice: boolean): number {
   return (
     (!!r.from_device === preferDevice ? 100 : 0) +
     (r.has_route ? 8 : 0) +
@@ -31,76 +37,134 @@ function score(r: Row, preferDevice: boolean): number {
   );
 }
 
-const COLS = `id, start_ts, end_ts, sport, source_name, has_route, (hr_hist IS NOT NULL OR avg_hr IS NOT NULL) AS has_hr,
-  distance_m, energy_kcal, duplicate_of, (ext_key LIKE 'fit:%') AS from_device`;
+/** Length of the union of [start, end) spans. */
+function unionLength(spans: [number, number][]): number {
+  spans.sort((a, b) => a[0] - b[0]);
+  let total = 0;
+  let a = -Infinity;
+  let b = -Infinity;
+  for (const [s, e] of spans) {
+    if (s > b) {
+      if (b > a) total += b - a;
+      a = s;
+      b = e;
+    } else if (e > b) b = e;
+  }
+  return b > a ? total + b - a : total;
+}
+
+/**
+ * `duplicate_of` for every workout (null = it counts). Workouts are taken from the most to the least data (see
+ * score); one is a copy when at least half of its own time is already covered by kept workouts of the same sport
+ * from other sources, and then points to the kept workout it overlaps most. Decided per workout, never through
+ * chains of overlaps: when one source split a session in two and another recorded it whole, both halves stay.
+ * Hidden workouts are neither kept nor marked, so hiding the original lets its best visible copy count.
+ */
+export function resolveDuplicates(rows: DupCandidate[], preferDevice: boolean): Map<number, number | null> {
+  const out = new Map<number, number | null>();
+  const byStart = [...rows].sort((a, b) => a.start_ts - b.start_ts || a.id - b.id);
+  for (let i = 0; i < byStart.length; ) {
+    // a workout only competes with the workouts it overlaps: resolve each run of overlapping ones on its own
+    let j = i + 1;
+    let end = byStart[i]!.end_ts;
+    while (j < byStart.length && byStart[j]!.start_ts < end) end = Math.max(end, byStart[j++]!.end_ts);
+    const group = byStart
+      .slice(i, j)
+      .sort((x, y) => score(y, preferDevice) - score(x, preferDevice) || x.id - y.id);
+    const kept: DupCandidate[] = [];
+    for (const r of group) {
+      let original: number | null = null;
+      const dur = r.end_ts - r.start_ts;
+      if (!r.hidden && dur > 0) {
+        const spans: [number, number][] = [];
+        let most = 0;
+        for (const k of kept) {
+          if (k.sport !== r.sport || (k.source_name ?? '') === (r.source_name ?? '')) continue;
+          const a = Math.max(k.start_ts, r.start_ts);
+          const b = Math.min(k.end_ts, r.end_ts);
+          if (b <= a) continue;
+          spans.push([a, b]);
+          if (b - a > most) {
+            most = b - a;
+            original = k.id;
+          }
+        }
+        if (original !== null && unionLength(spans) < 0.5 * dur) original = null;
+      }
+      out.set(r.id, original);
+      if (original === null && !r.hidden) kept.push(r);
+    }
+    i = j;
+  }
+  return out;
+}
+
+const COLS = `id, start_ts, end_ts, sport, source_name, hidden, has_route,
+  (hr_hist IS NOT NULL OR avg_hr IS NOT NULL) AS has_hr, distance_m, energy_kcal, duplicate_of,
+  (ext_key LIKE 'fit:%') AS from_device`;
+
+/**
+ * The given workouts and every workout linked to them through a chain of overlaps: whether a workout counts can
+ * depend on one it does not overlap itself (its original's own original), so an incremental run must see the whole
+ * chain to decide exactly like a full one. `longest` (the longest workout's duration) bounds each lookup to the
+ * starts that can still reach into the window, so it walks a few index entries instead of every earlier workout.
+ */
+function loadChains(db: Db, athleteId: number, ids: number[], longest: number): Row[] {
+  const byId = new Map<number, Row>();
+  const one = prepare(db, `SELECT ${COLS} FROM workouts WHERE id = ? AND athlete_id = ?`);
+  const overlap = prepare(
+    db,
+    `SELECT ${COLS} FROM workouts WHERE athlete_id = ? AND start_ts >= ? AND start_ts < ? AND end_ts > ?`,
+  );
+  for (const id of ids) {
+    if (byId.has(id)) continue; // loaded with the chain of an earlier id
+    const w = one.get(id, athleteId) as unknown as Row | undefined;
+    if (!w) continue;
+    byId.set(w.id, w);
+    // widen the window until no workout overlapping it reaches beyond it
+    let lo = w.start_ts;
+    let hi = w.end_ts;
+    for (;;) {
+      let nlo = lo;
+      let nhi = hi;
+      for (const r of overlap.all(athleteId, lo - longest, hi, lo) as unknown as Row[]) {
+        byId.set(r.id, r);
+        if (r.start_ts < nlo) nlo = r.start_ts;
+        if (r.end_ts > nhi) nhi = r.end_ts;
+      }
+      if (nlo === lo && nhi === hi) break;
+      lo = nlo;
+      hi = nhi;
+    }
+  }
+  return [...byId.values()];
+}
 
 /**
  * Overlapping workouts of the same sport recorded by different sources (e.g. Strava wrote a copy of an
- * Apple Watch run back to Health) → `duplicate_of` is set on the copy with less data.
+ * Apple Watch run back to Health) → `duplicate_of` is set on the copy with less data (see resolveDuplicates).
  */
-export function detectDuplicates(
-  db: import('../db/db').Db,
-  athleteId: number,
-  workoutIds: number[] | 'all',
-): number {
-  let rows: Row[];
-  if (workoutIds === 'all') {
-    rows = all<Row>(db, `SELECT ${COLS} FROM workouts WHERE athlete_id = ? ORDER BY start_ts`, [athleteId]);
-  } else {
-    if (!workoutIds.length) return 0;
-    const byId = new Map<number, Row>();
-    const win = prepare(db, 'SELECT start_ts, end_ts FROM workouts WHERE id = ? AND athlete_id = ?');
-    const overlap = prepare(
+export function detectDuplicates(db: Db, athleteId: number, workoutIds: number[] | 'all'): number {
+  if (workoutIds !== 'all' && !workoutIds.length) return 0;
+  let rows: Row[] | null = null;
+  if (workoutIds !== 'all') {
+    const size = get<{ n: number; longest: number | null }>(
       db,
-      `SELECT ${COLS} FROM workouts WHERE athlete_id = ? AND start_ts < ? AND end_ts > ?`,
-    );
-    for (const id of workoutIds) {
-      const w = win.get(id, athleteId) as { start_ts: number; end_ts: number } | undefined;
-      if (!w) continue;
-      for (const r of overlap.all(athleteId, w.end_ts, w.start_ts) as unknown as Row[]) byId.set(r.id, r);
-    }
-    rows = [...byId.values()].sort((a, b) => a.start_ts - b.start_ts);
+      'SELECT COUNT(*) AS n, MAX(end_ts - start_ts) AS longest FROM workouts WHERE athlete_id = ?',
+      [athleteId],
+    )!;
+    // a first import lists (nearly) every workout: one pass over all of them beats a lookup per workout
+    if (4 * workoutIds.length < size.n) rows = loadChains(db, athleteId, workoutIds, Math.max(0, size.longest ?? 0));
   }
-  const preferDevice = preferDeviceWorkouts(db, athleteId);
-  // union-find over overlapping same-sport pairs from different sources
-  const parent = new Map<number, number>();
-  const find = (x: number): number => {
-    let p = parent.get(x) ?? x;
-    while (p !== (parent.get(p) ?? p)) p = parent.get(p) ?? p;
-    parent.set(x, p);
-    return p;
-  };
-  for (let i = 0; i < rows.length; i++) {
-    const a = rows[i]!;
-    for (let j = i + 1; j < rows.length && rows[j]!.start_ts < a.end_ts; j++) {
-      const b = rows[j]!;
-      if (a.sport !== b.sport || (a.source_name ?? '') === (b.source_name ?? '')) continue;
-      const ov = Math.min(a.end_ts, b.end_ts) - Math.max(a.start_ts, b.start_ts);
-      const shorter = Math.min(a.end_ts - a.start_ts, b.end_ts - b.start_ts);
-      if (shorter > 0 && ov >= 0.5 * shorter) parent.set(find(b.id), find(a.id));
-    }
-  }
-  const groups = new Map<number, Row[]>();
-  for (const r of rows) {
-    const g = find(r.id);
-    let list = groups.get(g);
-    if (!list) groups.set(g, (list = []));
-    list.push(r);
-  }
+  rows ??= all<Row>(db, `SELECT ${COLS} FROM workouts WHERE athlete_id = ?`, [athleteId]);
+  const want = resolveDuplicates(rows, preferDeviceWorkouts(db, athleteId));
   const upd = prepare(db, 'UPDATE workouts SET duplicate_of = ? WHERE id = ?');
   let marked = 0;
   tx(db, () => {
-    for (const list of groups.values()) {
-      if (list.length === 1) {
-        if (list[0]!.duplicate_of !== null) upd.run(null, list[0]!.id);
-        continue;
-      }
-      const primary = [...list].sort((x, y) => score(y, preferDevice) - score(x, preferDevice) || x.id - y.id)[0]!;
-      for (const r of list) {
-        const want = r.id === primary.id ? null : primary.id;
-        if (r.duplicate_of !== want) upd.run(want, r.id);
-        if (want !== null) marked++;
-      }
+    for (const r of rows) {
+      const original = want.get(r.id) ?? null;
+      if (r.duplicate_of !== original) upd.run(original, r.id);
+      if (original !== null) marked++;
     }
   });
   return marked;

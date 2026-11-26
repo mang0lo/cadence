@@ -265,8 +265,9 @@ export function cleanTrackIndices(
   pauses: [number, number][] = [],
 ): number[] {
   const vmax = maxPlausibleSpeed(sport);
-  const keep: number[] = [];
+  let keep: number[] = [];
   let rejectedInRow = 0;
+  let firstRejected = -1;
   for (let i = 0; i < tr.t.length; i++) {
     const t = tr.t[i]!;
     if (t < startTs - 30 || t > endTs + 30) continue;
@@ -278,9 +279,20 @@ export function cleanTrackIndices(
       if (dt <= 0) continue;
       const d = haversine(tr.lat[p]!, tr.lon[p]!, tr.lat[i]!, tr.lon[i]!);
       // a fix after a pause may be far away (travelled while paused): a new part of the track, not a glitch
-      if (d / dt > vmax && rejectedInRow < 8 && !inPauses(pauses, tr.t[p]! + dt / 2)) {
-        rejectedInRow++;
-        continue;
+      if (d / dt > vmax && !inPauses(pauses, tr.t[p]! + dt / 2)) {
+        if (rejectedInRow < 8) {
+          if (!rejectedInRow) firstRejected = i;
+          rejectedInRow++;
+          continue;
+        }
+        // The jump persisted. When the only fix before it is the first one, that one was a stale (cached) position:
+        // drop it and start over from the first rejected fix.
+        if (keep.length === 1) {
+          keep = [];
+          rejectedInRow = 0;
+          i = firstRejected - 1;
+          continue;
+        }
       }
     }
     rejectedInRow = 0;
@@ -384,7 +396,7 @@ export function buildStreams(inp: StreamInput): BuiltStreams | null {
       dist,
       speed,
       hr: inp.hr ? sampleAt(inp.hr, abs, 30) : null,
-      cadence: cadenceAt(inp, abs),
+      cadence: cadenceAt(inp, abs, moving),
       power: inp.power ? sampleAt(inp.power, abs, 30) : null,
       moving,
       rawDistanceM,
@@ -438,7 +450,7 @@ export function buildStreams(inp: StreamInput): BuiltStreams | null {
     dist,
     speed,
     hr: inp.hr ? sampleAt(inp.hr, abs, 30) : null,
-    cadence: cadenceAt(inp, abs),
+    cadence: cadenceAt(inp, abs, moving),
     power: inp.power ? sampleAt(inp.power, abs, 30) : null,
     moving,
     rawDistanceM: null,
@@ -447,11 +459,21 @@ export function buildStreams(inp: StreamInput): BuiltStreams | null {
   };
 }
 
-function cadenceAt(inp: StreamInput, abs: Float64Array): Float64Array | null {
+function cadenceAt(inp: StreamInput, abs: Float64Array, moving: Uint8Array): Float64Array | null {
   if (inp.cadence && inp.cadence.t.length) return sampleAt(inp.cadence, abs, 30);
   if (inp.steps && inp.steps.s.length) {
+    // Steps/min only when the step records rate at least half of the moving samples: a few background steps of the
+    // phone during part of a run say nothing about its cadence.
     const r = rateAt(inp.steps, abs);
-    return r.some((x) => x === x) ? r : null;
+    const anyMoving = moving.includes(1);
+    let n = 0;
+    let rated = 0;
+    for (let k = 0; k < r.length; k++) {
+      if (anyMoving && !moving[k]) continue;
+      n++;
+      if (r[k] === r[k]) rated++;
+    }
+    return rated > 0 && rated >= 0.5 * n ? r : null;
   }
   return null;
 }
