@@ -1,5 +1,5 @@
 import type { MetricAgg, MetricPoint, MetricSeries } from '@cadence/shared';
-import { addDays, startOfMonth, startOfWeek, weekday } from '@/lib/time';
+import { addDays, diffDays, startOfMonth, startOfWeek, weekday } from '@/lib/time';
 
 /** Start of the period a day belongs to: the day itself, its week (weekStart 1 = Monday, 0 = Sunday) or 'YYYY-MM-01'. */
 export function periodStart(day: string, agg: MetricAgg, weekStart: 0 | 1): string {
@@ -47,6 +47,17 @@ export function seriesKeys(series: Pick<MetricSeries, 'agg' | 'fromDay' | 'toDay
 export function periodValue(p: MetricPoint, agg: MetricAgg, mode: 'average' | 'total', events = false): number {
   if (events) return p.n;
   return mode === 'average' && agg !== 'day' && p.days > 0 ? p.value / p.days : p.value;
+}
+
+/**
+ * Events per calendar day of a range, with the decimals to show it: rare events keep two significant digits (one
+ * notification in a year is 0.0027 per day, not "0.00").
+ */
+export function eventsPerDay(events: number, fromDay: string | null, toDay: string | null): { value: number; digits: number } {
+  const days = fromDay && toDay && fromDay <= toDay ? diffDays(fromDay, toDay) + 1 : 0;
+  const value = days > 0 ? events / days : 0;
+  const digits = value > 0 && value < 1 ? Math.min(4, Math.max(2, 1 - Math.floor(Math.log10(value)))) : 1;
+  return { value, digits };
 }
 
 /** One point per key; periods without data get a zero point (the true value of a cumulative measure). */

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { MetricPoint, MetricSeries } from '@cadence/shared';
-import { fillPeriods, periodKeys, periodStart, periodValue, seriesKeys } from '@/features/health/lib/periods';
+import { eventsPerDay, fillPeriods, periodKeys, periodStart, periodValue, seriesKeys } from '@/features/health/lib/periods';
+import { createFormatter } from '@/lib/format';
 
 const pt = (key: string, value: number, days = 1): MetricPoint => ({ key, value, min: null, max: null, n: 1, days });
 
@@ -63,6 +64,18 @@ describe('health period values', () => {
     expect(periodValue(week, 'week', 'total')).toBe(6000);
     expect(periodValue(week, 'day', 'average')).toBe(6000);
     expect(periodValue({ ...week, value: 0, days: 0 }, 'week', 'average')).toBe(0);
+  });
+
+  it('gives the events per calendar day of the range enough decimals to stay visible', () => {
+    const de = createFormatter('metric', 'de-DE', 'de');
+    const show = (r: { value: number; digits: number }) => de.num(r.value, r.digits);
+    // one notification in a year is not "0,00"
+    expect(show(eventsPerDay(1, '2025-11-25', '2026-11-24'))).toBe('0,0027');
+    expect(show(eventsPerDay(7, '2025-11-25', '2026-11-24'))).toBe('0,019');
+    expect(show(eventsPerDay(15, '2026-10-26', '2026-11-24'))).toBe('0,50');
+    expect(show(eventsPerDay(45, '2026-10-26', '2026-11-24'))).toBe('1,5');
+    expect(show(eventsPerDay(0, '2026-10-26', '2026-11-24'))).toBe('0,0');
+    expect(eventsPerDay(3, null, '2026-11-24').value).toBe(0);
   });
 
   it('counts events per period instead of events per day with events', () => {
