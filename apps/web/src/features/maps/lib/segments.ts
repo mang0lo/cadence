@@ -32,3 +32,10 @@ export function gradeAt(dist: number[], ele: (number | null)[], d: number, spanM
   const run = Math.min(dist[dist.length - 1] ?? 0, d + spanM) - Math.max(0, d - spanM);
   return a === null || b === null || run <= 0 ? null : ((b - a) / run) * 100;
 }
+
+/**
+ * Decimals for the labels of a distance axis (km or mi) from 0 to `max`: ECharts steps it by 1, 2, 3 or 5 × 10ⁿ near
+ * max / splitNumber, so a 150 m segment steps by 0.03 km and needs two decimals, a 12 km climb none.
+ */
+export const distanceAxisDigits = (max: number, splitNumber = 4): number =>
+  max > 0 ? Math.max(0, Math.ceil(-Math.log10(max / splitNumber))) : 0;
