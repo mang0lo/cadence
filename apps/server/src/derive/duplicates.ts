@@ -9,6 +9,7 @@ export interface DupCandidate {
   end_ts: number;
   sport: string;
   source_name: string | null;
+  hidden: number;
   has_route: number;
   has_hr: number;
   distance_m: number | null;
@@ -57,6 +58,7 @@ function unionLength(spans: [number, number][]): number {
  * score); one is a copy when at least half of its own time is already covered by kept workouts of the same sport
  * from other sources, and then points to the kept workout it overlaps most. Decided per workout, never through
  * chains of overlaps: when one source split a session in two and another recorded it whole, both halves stay.
+ * Hidden workouts are neither kept nor marked, so hiding the original lets its best visible copy count.
  */
 export function resolveDuplicates(rows: DupCandidate[], preferDevice: boolean): Map<number, number | null> {
   const out = new Map<number, number | null>();
@@ -73,7 +75,7 @@ export function resolveDuplicates(rows: DupCandidate[], preferDevice: boolean): 
     for (const r of group) {
       let original: number | null = null;
       const dur = r.end_ts - r.start_ts;
-      if (dur > 0) {
+      if (!r.hidden && dur > 0) {
         const spans: [number, number][] = [];
         let most = 0;
         for (const k of kept) {
@@ -90,15 +92,16 @@ export function resolveDuplicates(rows: DupCandidate[], preferDevice: boolean): 
         if (original !== null && unionLength(spans) < 0.5 * dur) original = null;
       }
       out.set(r.id, original);
-      if (original === null) kept.push(r);
+      if (original === null && !r.hidden) kept.push(r);
     }
     i = j;
   }
   return out;
 }
 
-const COLS = `id, start_ts, end_ts, sport, source_name, has_route, (hr_hist IS NOT NULL OR avg_hr IS NOT NULL) AS has_hr,
-  distance_m, energy_kcal, duplicate_of, (ext_key LIKE 'fit:%') AS from_device`;
+const COLS = `id, start_ts, end_ts, sport, source_name, hidden, has_route,
+  (hr_hist IS NOT NULL OR avg_hr IS NOT NULL) AS has_hr, distance_m, energy_kcal, duplicate_of,
+  (ext_key LIKE 'fit:%') AS from_device`;
 
 /**
  * The given workouts and every workout linked to them through a chain of overlaps: whether a workout counts can

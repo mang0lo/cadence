@@ -28,6 +28,7 @@ function cand(id: number, s: Spec): DupCandidate {
     end_ts: T0 + s.to * MIN,
     sport: s.sport ?? 'run',
     source_name: s.source === undefined ? 'Apple Watch von Hannes' : s.source,
+    hidden: s.hidden ? 1 : 0,
     has_route: (s.route ?? true) ? 1 : 0,
     has_hr: (s.hr ?? true) ? 1 : 0,
     distance_m: 5000,
@@ -127,6 +128,20 @@ describe('resolveDuplicates', () => {
     });
   });
 
+  it('never keeps a hidden workout as the original, and never marks one', () => {
+    // the Watch copy is hidden (bad GPS): the Strava copy counts instead of disappearing with it
+    expect(resolve([{ from: 0, to: 60, hidden: true }, thirdParty(0, 60, 'Strava')])).toEqual({ 1: null, 2: null });
+    // a hidden copy stays out of the duplicates (it shows under hidden workouts)
+    expect(resolve([{ from: 0, to: 60 }, thirdParty(0, 60, 'Strava', { hidden: true })])).toEqual({
+      1: null,
+      2: null,
+    });
+    // with three copies the best visible one is kept
+    expect(
+      resolve([{ from: 0, to: 60, hidden: true }, thirdParty(0, 60, 'Strava'), thirdParty(0, 60, 'Runkeeper', { hr: true })]),
+    ).toEqual({ 1: null, 2: 3, 3: null });
+  });
+
   it('does not depend on the order of the input', () => {
     const specs: Spec[] = [
       { from: 0, to: 30 },
@@ -169,7 +184,7 @@ describe('detectDuplicates', () => {
         c.has_hr ? 140 : null,
         c.distance_m,
         c.energy_kcal,
-        s.hidden ? 1 : 0,
+        c.hidden,
       ],
     ).lastInsertRowid;
   }
@@ -198,6 +213,20 @@ describe('detectDuplicates', () => {
     updateSettings(db, 1, { watch: 'coros' });
     detectDuplicates(db, 1, 'all');
     expect(dupOf()).toEqual({ [apple]: fit, [fit]: null });
+  });
+
+  it('lets the other copy count when the original is hidden, and back when it is shown again', () => {
+    const watch = insert({ from: 0, to: 60 });
+    const strava = insert(thirdParty(0, 60, 'Strava'));
+    detectDuplicates(db, 1, [watch, strava]);
+    expect(dupOf()).toEqual({ [watch]: null, [strava]: watch });
+    // PATCH /api/workouts/:id {hidden} queues a derive of that workout
+    run(db, 'UPDATE workouts SET hidden = 1 WHERE id = ?', [watch]);
+    expect(detectDuplicates(db, 1, [watch])).toBe(0);
+    expect(dupOf()).toEqual({ [watch]: null, [strava]: null });
+    run(db, 'UPDATE workouts SET hidden = 0 WHERE id = ?', [watch]);
+    expect(detectDuplicates(db, 1, [watch])).toBe(1);
+    expect(dupOf()).toEqual({ [watch]: null, [strava]: watch });
   });
 
   it('keeps the marks of workouts the new one does not overlap itself', () => {
