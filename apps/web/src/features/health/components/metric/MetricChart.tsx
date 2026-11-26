@@ -175,6 +175,100 @@ export function MetricChart({ series, mode, loading }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [series, mode, theme, fmt, m.units, isEvent, weekStart]);
 
+  // stable inputs: the page re-renders on every intraday day change, which must not rebuild this chart
+  const trendPoints = useMemo(
+    () => (type.aggregation === 'avg' ? series.points.map((p) => ({ day: p.key, value: p.value, min: p.min, max: p.max })) : []),
+    [series, type.aggregation],
+  );
+
+  const view = useMemo(() => {
+    if (!model) return null;
+    const chart = model;
+    const option = (() => {
+      if (chart.kind === 'category') {
+        const series2: BarSeriesOption[] = stackedBarSeries(
+          theme,
+          'stack',
+          chart.names.map((name, i) => ({ name, data: chart.values[i]!, color: chart.colors[i]! })),
+        );
+        const multi = chart.names.length >= 2;
+        return {
+          grid: grid({ top: multi ? 34 : 12 }),
+          legend: multi ? legend(theme, 'rect', { data: chart.names }) : { show: false },
+          tooltip: axisTooltip(
+            theme,
+            (params) => {
+              const p = (params as { dataIndex: number }[])[0];
+              const i = p?.dataIndex ?? -1;
+              if (i < 0) return '';
+              const rows = chart.names
+                .map((name, k) => ({
+                  color: chart.colors[k]!,
+                  label: name,
+                  value: chart.isEvent ? fmt.int(chart.raw[k]![i]!) : m.value(identifier, chart.raw[k]![i]!, type.unit),
+                  v: chart.raw[k]![i]!,
+                }))
+                .filter((r) => r.v > 0)
+                .reverse();
+              return tooltipHtml(label(chart.keys[i]!, true), rows, theme);
+            },
+            { axisPointer: { type: 'shadow', shadowStyle: { color: theme.grid, opacity: 0.35 } } },
+          ),
+          xAxis: categoryAxis(theme, chart.labels, { axisLabel: { color: theme.muted, fontSize: 11, hideOverlap: true } }),
+          yAxis: valueAxis(theme, { axisLabel: { color: theme.muted, fontSize: 11, formatter: numAxisLabel(fmt) } }),
+          series: series2,
+        };
+      }
+      const s = barSeries(theme, t(titleKey), chart.values, color, { barMaxWidth: 24 });
+      return {
+        grid: grid({ top: 12 }),
+        tooltip: axisTooltip(
+          theme,
+          (params) => {
+            const p = (params as { dataIndex: number }[])[0];
+            const i = p?.dataIndex ?? -1;
+            const pt = chart.points[i];
+            if (!pt) return '';
+            const rows = [{ color, label: t(titleKey), value: m.value(identifier, chart.raw[i]!, type.unit) }];
+            const head = agg === 'day' ? label(pt.key, true) : `${label(pt.key, true)} · ${t('health.metric.chart.days', { count: pt.days })}`;
+            return tooltipHtml(head, rows, theme);
+          },
+          { axisPointer: { type: 'shadow', shadowStyle: { color: theme.grid, opacity: 0.35 } } },
+        ),
+        xAxis: categoryAxis(theme, chart.labels, { axisLabel: { color: theme.muted, fontSize: 11, hideOverlap: true } }),
+        yAxis: valueAxis(theme, { axisLabel: { color: theme.muted, fontSize: 11, formatter: numAxisLabel(fmt) } }),
+        series: [s],
+      };
+    })();
+
+    const columns =
+      chart.kind === 'category'
+        ? [{ key: 'period', label: t('health.common.date') }, ...chart.names.map((n, i) => ({ key: `c${i}`, label: n, numeric: true }))]
+        : [
+            { key: 'period', label: t('health.common.date') },
+            { key: 'value', label: unitLabel ? `${t(titleKey)} (${unitLabel})` : t(titleKey), numeric: true },
+            { key: 'days', label: t('health.common.days'), numeric: true },
+          ];
+    const rows =
+      chart.kind === 'category'
+        ? [...chart.keys].reverse().map((k) => {
+            const i = chart.keys.indexOf(k);
+            return {
+              period: label(k, false),
+              ...Object.fromEntries(
+                chart.names.map((_, c) => [`c${c}`, chart.isEvent ? fmt.int(chart.raw[c]![i]!) : m.plain(identifier, chart.raw[c]![i]!, type.unit)]),
+              ),
+            };
+          })
+        : [...chart.points].reverse().map((p) => {
+            const i = chart.points.indexOf(p);
+            return { period: label(p.key, false), value: m.plain(identifier, chart.raw[i]!, type.unit), days: fmt.int(p.days) };
+          });
+
+    return { option, columns, rows };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [model, theme, fmt, m, t, titleKey, color, unitLabel, agg, identifier, type.unit]);
+
   // line + band for discrete measures
   if (type.aggregation === 'avg') {
     return (
@@ -184,7 +278,7 @@ export function MetricChart({ series, mode, loading }: Props) {
         icon={BarChart3}
         metric={identifier}
         unit={type.unit}
-        points={series.points.map((p) => ({ day: p.key, value: p.value, min: p.min, max: p.max }))}
+        points={trendPoints}
         color={color}
         band
         agg={agg}
@@ -196,89 +290,7 @@ export function MetricChart({ series, mode, loading }: Props) {
   }
 
   const chart = model!;
-  const dimmed = loading;
-
-  const option = (() => {
-    if (chart.kind === 'category') {
-      const series2: BarSeriesOption[] = stackedBarSeries(
-        theme,
-        'stack',
-        chart.names.map((name, i) => ({ name, data: chart.values[i]!, color: chart.colors[i]! })),
-      );
-      const multi = chart.names.length >= 2;
-      return {
-        grid: grid({ top: multi ? 34 : 12 }),
-        legend: multi ? legend(theme, 'rect', { data: chart.names }) : { show: false },
-        tooltip: axisTooltip(
-          theme,
-          (params) => {
-            const p = (params as { dataIndex: number }[])[0];
-            const i = p?.dataIndex ?? -1;
-            if (i < 0) return '';
-            const rows = chart.names
-              .map((name, k) => ({
-                color: chart.colors[k]!,
-                label: name,
-                value: chart.isEvent ? fmt.int(chart.raw[k]![i]!) : m.value(identifier, chart.raw[k]![i]!, type.unit),
-                v: chart.raw[k]![i]!,
-              }))
-              .filter((r) => r.v > 0)
-              .reverse();
-            return tooltipHtml(label(chart.keys[i]!, true), rows, theme);
-          },
-          { axisPointer: { type: 'shadow', shadowStyle: { color: theme.grid, opacity: 0.35 } } },
-        ),
-        xAxis: categoryAxis(theme, chart.labels, { axisLabel: { color: theme.muted, fontSize: 11, hideOverlap: true } }),
-        yAxis: valueAxis(theme, { axisLabel: { color: theme.muted, fontSize: 11, formatter: numAxisLabel(fmt) } }),
-        series: series2,
-      };
-    }
-    const s = barSeries(theme, t(titleKey), chart.values, color, { barMaxWidth: 24 });
-    return {
-      grid: grid({ top: 12 }),
-      tooltip: axisTooltip(
-        theme,
-        (params) => {
-          const p = (params as { dataIndex: number }[])[0];
-          const i = p?.dataIndex ?? -1;
-          const pt = chart.points[i];
-          if (!pt) return '';
-          const rows = [{ color, label: t(titleKey), value: m.value(identifier, chart.raw[i]!, type.unit) }];
-          const head = agg === 'day' ? label(pt.key, true) : `${label(pt.key, true)} · ${t('health.metric.chart.days', { count: pt.days })}`;
-          return tooltipHtml(head, rows, theme);
-        },
-        { axisPointer: { type: 'shadow', shadowStyle: { color: theme.grid, opacity: 0.35 } } },
-      ),
-      xAxis: categoryAxis(theme, chart.labels, { axisLabel: { color: theme.muted, fontSize: 11, hideOverlap: true } }),
-      yAxis: valueAxis(theme, { axisLabel: { color: theme.muted, fontSize: 11, formatter: numAxisLabel(fmt) } }),
-      series: [s],
-    };
-  })();
-
-  const columns =
-    chart.kind === 'category'
-      ? [{ key: 'period', label: t('health.common.date') }, ...chart.names.map((n, i) => ({ key: `c${i}`, label: n, numeric: true }))]
-      : [
-          { key: 'period', label: t('health.common.date') },
-          { key: 'value', label: unitLabel ? `${t(titleKey)} (${unitLabel})` : t(titleKey), numeric: true },
-          { key: 'days', label: t('health.common.days'), numeric: true },
-        ];
-  const rows =
-    chart.kind === 'category'
-      ? [...chart.keys].reverse().map((k) => {
-          const i = chart.keys.indexOf(k);
-          return {
-            period: label(k, false),
-            ...Object.fromEntries(
-              chart.names.map((_, c) => [`c${c}`, chart.isEvent ? fmt.int(chart.raw[c]![i]!) : m.plain(identifier, chart.raw[c]![i]!, type.unit)]),
-            ),
-          };
-        })
-      : [...chart.points].reverse().map((p) => {
-          const i = chart.points.indexOf(p);
-          return { period: label(p.key, false), value: m.plain(identifier, chart.raw[i]!, type.unit), days: fmt.int(p.days) };
-        });
-
+  const { option, columns, rows } = view!;
   const hasData = series.points.length > 0;
   return (
     <ChartCard
@@ -305,7 +317,7 @@ export function MetricChart({ series, mode, loading }: Props) {
       ) : !hasData ? (
         <p className="py-12 text-center text-sm text-fg-3">{noData}</p>
       ) : (
-        <EChart option={option} height={280} loading={dimmed} ariaLabel={t(titleKey)} />
+        <EChart option={option} height={280} loading={loading} ariaLabel={t(titleKey)} />
       )}
     </ChartCard>
   );

@@ -171,6 +171,18 @@ export default function HeartPage() {
   const rhrOfDay = dayRhr.data?.[RHR]?.[0]?.value;
 
   const d = daily.data;
+  // stable point arrays: picking another day in the intraday card must not rebuild the trend charts
+  const pts = useMemo(
+    () => ({
+      rhr: toPoints(d?.[RHR]),
+      hrv: toPoints(d?.[HRV]),
+      hr: toPoints(d?.[HR]),
+      whr: toPoints(d?.[WHR]),
+      vo2: toPoints(d?.[VO2]),
+      rec: toPoints(d?.[REC]),
+    }),
+    [d, RHR, HRV, HR, VO2],
+  );
   const loading = daily.isLoading;
   const noRange = t('health.common.noDataRange');
 
@@ -209,7 +221,7 @@ export default function HeartPage() {
                 icon={HeartPulse}
                 metric={RHR}
                 unit="count/min"
-                points={toPoints(d?.[RHR])}
+                points={pts.rhr}
                 fromDay={fromDay}
                 color={measureColor(theme, 'restingHr')}
                 rolling={7}
@@ -225,7 +237,7 @@ export default function HeartPage() {
                 icon={Activity}
                 metric={HRV}
                 unit="ms"
-                points={toPoints(d?.[HRV])}
+                points={pts.hrv}
                 fromDay={fromDay}
                 color={measureColor(theme, 'hrv')}
                 rolling={7}
@@ -242,7 +254,7 @@ export default function HeartPage() {
                   icon={Heart}
                   metric={HR}
                   unit="count/min"
-                  points={toPoints(d?.[HR])}
+                  points={pts.hr}
                   fromDay={fromDay}
                   color={measureColor(theme, 'heartRate')}
                   band
@@ -259,7 +271,7 @@ export default function HeartPage() {
                 icon={Heart}
                 metric={WHR}
                 unit="count/min"
-                points={toPoints(d?.[WHR])}
+                points={pts.whr}
                 fromDay={fromDay}
                 color={measureColor(theme, 'walkingHr')}
                 rolling={7}
@@ -275,7 +287,7 @@ export default function HeartPage() {
                 icon={Gauge}
                 metric={VO2}
                 unit="mL/min·kg"
-                points={toPoints(d?.[VO2])}
+                points={pts.vo2}
                 fromDay={fromDay}
                 color={measureColor(theme, 'vo2max')}
                 good="up"
@@ -290,7 +302,7 @@ export default function HeartPage() {
                 icon={TrendingDown}
                 metric={REC}
                 unit="count/min"
-                points={toPoints(d?.[REC])}
+                points={pts.rec}
                 fromDay={fromDay}
                 color={measureColor(theme, 'recovery')}
                 good="up"
