@@ -128,7 +128,11 @@ async function loadApp(url: string): Promise<void> {
 async function ensureLocalServer(keep: string | null = null): Promise<string> {
   const firstOnLastingPort = readPrefs().port === undefined;
   const url = await localServer.ensure();
-  if (firstOnLastingPort) await forgetOldLocalOrigins([remoteServer(), keep]);
+  // The browser profile always stays in the app data folder. With CADENCE_DATA_DIR (smoke runs, tests) desktop.json is
+  // not that profile's, and what the profile keeps belongs to the app's own launches: nothing to remove.
+  if (firstOnLastingPort && !process.env.CADENCE_DATA_DIR) {
+    await forgetOldLocalOrigins([remoteServer(), keep]);
+  }
   return url;
 }
 
