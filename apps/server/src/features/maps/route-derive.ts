@@ -137,6 +137,13 @@ export function clusterRoutes(db: Db, athleteId: number, changed: Set<number> | 
       const old = oldAssign.get(workoutId);
       if (old != null) touched.add(old);
     }
+    // marked for the refresh (see deleteShapes) together with the new assignment: the refresh runs in a transaction
+    // of its own, and when it fails or never runs (the app quit in between) the next derive still catches up on these
+    run(
+      db,
+      `UPDATE maps_routes SET rep_workout_id = NULL WHERE athlete_id = ?${full ? '' : ` AND id IN ${IN_LIST}`}`,
+      full ? [athleteId] : [athleteId, idList([...touched])],
+    );
   });
   refreshRoutes(db, athleteId, full ? undefined : touched);
 }
