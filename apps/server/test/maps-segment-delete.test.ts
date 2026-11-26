@@ -72,4 +72,36 @@ describe('segments: one is deleted while the derive step matches', () => {
     expect(effortsOf(first)).toBe(0);
     expect(effortsOf(second)).toBe(ids.length);
   });
+
+  it('does not match a new segment that got the id of a deleted one against the old course', async () => {
+    run(ctx.db, 'DELETE FROM maps_segment_efforts');
+    const old = get<Record<string, unknown>>(ctx.db, 'SELECT * FROM maps_segments WHERE id = ?', [second])!;
+    let replaced = false;
+    const step: DeriveContext = {
+      db: ctx.db,
+      athleteId: 1,
+      workoutIds: 'all',
+      sinceDay: null,
+      // the user deletes the newest segment and creates another one, which gets the same id (SQLite reuses the
+      // highest rowid); its own creation matches it, the running step must not do so with the deleted course
+      report: () => {
+        if (replaced) return;
+        replaced = true;
+        run(ctx.db, 'DELETE FROM maps_segments WHERE id = ?', [second]);
+        const row = { ...old, name: 'Reborn', created_at: Number(old.created_at) + 1 };
+        const cols = Object.keys(row);
+        run(
+          ctx.db,
+          `INSERT INTO maps_segments (${cols.join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`,
+          Object.values(row),
+        );
+      },
+      checkCancelled: () => {},
+      log: () => {},
+    };
+    await segmentsStep.run(step);
+    expect(replaced).toBe(true);
+    expect(get(ctx.db, 'SELECT name FROM maps_segments WHERE id = ?', [second])).toEqual({ name: 'Reborn' });
+    expect(effortsOf(second)).toBe(0);
+  });
 });

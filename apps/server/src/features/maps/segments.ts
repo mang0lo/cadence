@@ -259,6 +259,7 @@ function* matchBatches(
   if (!segments.length) return 0;
   const prepared = segments.map((r) => preparePath(db, r));
   const segIds = idList(segments.map((s) => s.id));
+  const createdAt = new Map(segments.map((s) => [s.id, s.created_at]));
   // one JSON parameter for the workout ids: a first import after a reset (segments are kept) can bring more workouts
   // than SQLite takes parameters
   const some = workoutIds === 'all' ? null : idList(workoutIds);
@@ -348,9 +349,16 @@ function* matchBatches(
     const deadline = sliceMs === undefined ? Infinity : performance.now() + sliceMs;
     const next = tx(db, () => {
       // a segment deleted meanwhile (by the user: another thread or, between slices, another request) is dropped;
-      // the others are still matched
+      // the others are still matched. One created meanwhile can get the id of a deleted one (SQLite reuses the highest
+      // rowid): only the same creation time makes it the segment loaded above.
       const exists = new Set(
-        all<{ id: number }>(db, `SELECT id FROM maps_segments WHERE id IN ${IN_LIST}`, [segIds]).map((r) => r.id),
+        all<{ id: number; created_at: number }>(
+          db,
+          `SELECT id, created_at FROM maps_segments WHERE id IN ${IN_LIST}`,
+          [segIds],
+        )
+          .filter((r) => r.created_at === createdAt.get(r.id))
+          .map((r) => r.id),
       );
       if (exists.size < live.length) live = live.filter((p) => exists.has(p.row.id));
       if (!live.length) return -1;
