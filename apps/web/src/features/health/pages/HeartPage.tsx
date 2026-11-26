@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import {
   Activity,
   CheckCircle2,
@@ -36,7 +36,7 @@ import { IntradayChart } from '../components/IntradayChart';
 import { RangeSelect } from '../components/RangeSelect';
 import { TrendChart } from '../components/TrendChart';
 import { measureColor } from '../lib/colors';
-import { useDaily, useHeartMetrics, useRange } from '../lib/hooks';
+import { useDaily, useDayParam, useHeartMetrics, useRange } from '../lib/hooks';
 import { HK } from '../lib/identifiers';
 import { useMetricFormat } from '../lib/metrics';
 import { toPoints } from '../lib/series';
@@ -159,8 +159,8 @@ export default function HeartPage() {
   // a week before the range warms up the 7-day averages at the left edge
   const warmFrom = fromDay ? shiftDay(fromDay, -7) : undefined;
   const daily = useDaily([RHR, HRV, WHR, HR, VO2, REC], warmFrom, toDay, ready);
-  const [pickedDay, setPickedDay] = useState<string | null>(null);
-  const day = pickedDay ?? meta.data?.asOf ?? null;
+  // the day of the intraday chart (?day=, default: the latest day with data)
+  const { day, setDay } = useDayParam(meta.data?.asOf ?? null);
   const dayRhr = useDaily([RHR], day ?? undefined, day ?? undefined, !!day);
   const rhrOfDay = dayRhr.data?.[RHR]?.[0]?.value;
 
@@ -332,7 +332,7 @@ export default function HeartPage() {
               actions={
                 <DayNav
                   day={day}
-                  onChange={setPickedDay}
+                  onChange={setDay}
                   min={meta.data.firstDay ?? undefined}
                   max={meta.data.asOf ?? undefined}
                   prevLabel={t('health.heart.intraday.prev')}

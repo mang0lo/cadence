@@ -21,7 +21,7 @@ import { MetricChart, type MetricMode } from '../components/metric/MetricChart';
 import { SamplesCard } from '../components/metric/SamplesCard';
 import { SourcesCard } from '../components/metric/SourcesCard';
 import { identifierColor } from '../lib/colors';
-import { useRange } from '../lib/hooks';
+import { useDayParam, useRange } from '../lib/hooks';
 import { useMetricFormat } from '../lib/metrics';
 
 /** Sensible default grouping for the length of the range. */
@@ -42,7 +42,6 @@ export default function MetricPage() {
   const { range, setRange, fromDay, toDay, days, meta } = useRange('metric', '1y');
   const [aggPref, setAggPref] = useState<MetricAgg | null>(null);
   const [mode, setMode] = useState<MetricMode>('average');
-  const [pickedDay, setPickedDay] = useState<string | null>(null);
   const agg = aggPref ?? autoAgg(days);
   // the whole history needs no day filter (and no row count over millions of records)
   const listFrom = range === 'all' ? undefined : fromDay;
@@ -60,7 +59,8 @@ export default function MetricPage() {
   const cumulative = info ? info.aggregation !== 'avg' : false;
   const isEvent = !!s && info?.kind === 'category' && s.categories.length > 0 && s.categories.every((c) => c.total === 0);
   const unit = info?.unit ?? null;
-  const intradayDay = pickedDay ?? s?.stats.latestDay ?? meta.data?.asOf ?? null;
+  // the day of the intraday chart (?day=, default: the latest day of this type)
+  const { day: intradayDay, setDay: setIntradayDay } = useDayParam(s?.stats.latestDay ?? meta.data?.asOf ?? null);
 
   const stats = s?.stats;
   const parts = (v: number | null | undefined) => m.parts(identifier, v ?? undefined, unit);
@@ -187,7 +187,7 @@ export default function MetricPage() {
               actions={
                 <DayNav
                   day={intradayDay}
-                  onChange={setPickedDay}
+                  onChange={setIntradayDay}
                   min={meta.data.firstDay ?? undefined}
                   max={meta.data.asOf ?? undefined}
                   prevLabel={t('health.metric.intraday.prev')}
