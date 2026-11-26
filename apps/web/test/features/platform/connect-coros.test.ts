@@ -18,6 +18,7 @@ function status(sync: Partial<ConnectSyncProgress> | null): CorosStatus {
     mobileData: true,
     lastSyncAt: null,
     lastError: null,
+    needsReconnect: false,
     activities: { fetched: 0, failed: 0, lastStartTs: null },
     health: { days: 0, firstDay: null, lastDay: null },
     sync: sync && {

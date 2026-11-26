@@ -4,8 +4,12 @@ import type { DeriveChanges, DeriveContext } from '../features/types';
  * Bump to make the next import / rederive recompute every workout derived by an older version; the server also
  * queues that rederive by itself when it starts (JobManager.start).
  * 2: track breaks (no distance, elevation or line across a jump while paused), multi-part polylines.
+ * 3: places, countries and hard repetitions of the route (activity tags).
+ * 4: duplicates decided per workout (both halves of a split session stay, a hidden workout is never the original),
+ *    cadence from steps only with enough coverage, countries along the whole route, no stale first GPS fix as the
+ *    start, hard repetitions with standing recoveries.
  */
-export const DERIVE_VERSION = 3;
+export const DERIVE_VERSION = 4;
 /** Version of the gzip JSON stored in workout_streams. */
 export const STREAMS_VERSION = 1;
 
