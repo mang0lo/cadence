@@ -93,8 +93,9 @@ export function mapsWhatsNew({ db, athleteId, workoutIds: newIds, initial }: Wha
     };
     const old = list.filter((e) => !isNew.has(e.workout_id));
     const best = list.reduce((a, b) => (b.time_s < a.time_s ? b : a));
-    if (!old.length) out.push({ feature: 'maps', kind: 'newRoute', workoutId: best.workout_id, data: base });
-    else if (isNew.has(best.workout_id))
+    // a route is recurring (listed on the Routes page) from its second activity on: new if it got there with this import
+    if (old.length < 2) out.push({ feature: 'maps', kind: 'newRoute', workoutId: best.workout_id, data: base });
+    if (old.length && isNew.has(best.workout_id))
       out.push({
         feature: 'maps',
         kind: 'routeBest',
