@@ -103,6 +103,23 @@ describe('densityPoints', () => {
     }
   });
 
+  it('records the cells each activity adds its points to (the time-lapse weighs cells by finished activities)', () => {
+    const d = densityPoints([line(0, east(48.2)), line(1, east(48.2 + 60 / M_PER_DEG)), line(2, east(48.2))]);
+    const { start, cells, counts } = d.byLine;
+    expect(start.length).toBe(4);
+    // a feature's id is its index, and its weight is the sum of the points the activities add to it
+    const sum = new Map<number, number>();
+    for (let j = 0; j < cells.length; j++) sum.set(cells[j]!, (sum.get(cells[j]!) ?? 0) + counts[j]!);
+    d.points.features.forEach((f, k) => {
+      expect(f.properties?.k).toBe(k);
+      expect(sum.get(k)).toBe(f.properties?.w);
+    });
+    // the routes on the same street share their cells, the one a street apart has its own
+    const of = (i: number) => new Set(cells.slice(start[i], start[i + 1]));
+    expect(of(2)).toEqual(of(0));
+    expect([...of(1)].some((k) => of(0).has(k))).toBe(false);
+  });
+
   it('keeps routes a street apart (~60 m) in separate cells', () => {
     const d = densityPoints([line(0, east(48.2)), line(1, east(48.2 + 60 / M_PER_DEG))]);
     const lats = new Set(d.points.features.map((f) => f.geometry.coordinates[1]!.toFixed(6)));

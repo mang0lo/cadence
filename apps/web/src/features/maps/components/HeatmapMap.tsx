@@ -163,16 +163,16 @@ export function HeatmapMap({
   );
 
   // time-lapse: drawn straight from the position on every frame, no React render; the activities not finished yet
-  // are hidden through feature state, one update per finished activity
+  // are hidden (and left out of the density) through feature state, one update per finished activity
   const [lapseDrawer] = useState(() => new LapseDrawer());
   useOverlayStore(
     overlay,
     lapse,
     (map, progress) => {
       ensureHeatLayers(map, paletteRef.current);
-      lapseDrawer.draw(map, lines, progress);
+      lapseDrawer.draw(map, lines, progress, densityData);
     },
-    [lines],
+    [lines, densityData],
   );
 
   useFitBounds(overlay.mapRef, bounds, fitNonce, 48);

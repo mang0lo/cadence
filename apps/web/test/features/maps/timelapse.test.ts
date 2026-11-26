@@ -8,12 +8,14 @@ import type { FeatureCollection, LineString } from 'geojson';
 import type { MapsHeatmapActivity } from '@cadence/shared';
 import {
   LAYER,
+  LapseDensity,
   LapseDrawer,
   LapseVisibility,
   ensureHeatLayers,
   heatPalette,
   lapseAt,
   toHeatLines,
+  type DensityData,
   type HeatLine,
 } from '@/features/maps/lib/heatmapLayers';
 import { FakeLayerMap } from './fake-map';
@@ -60,7 +62,7 @@ describe('time-lapse visibility', () => {
     expect(m.calls).toEqual([]);
   });
 
-  it('keeps no stale state when the data changes (ids are positions) and starts over on the source of a new style', () => {
+  it('keeps no stale state when the data changes (ids are positions), starts over on a new style', () => {
     const m = heatMap();
     const v = new LapseVisibility();
     v.apply(m.map, 3, 5);
@@ -85,8 +87,77 @@ describe('time-lapse visibility', () => {
   });
 });
 
+/** Density cells: activity 0 adds 2 points to cell 0 and 1 to cell 1, activity 1 3 to cell 1, activity 2 1 to 2. */
+const DENSITY: DensityData = {
+  points: { type: 'FeatureCollection', features: [] },
+  maxPasses: 2,
+  byLine: {
+    start: Int32Array.from([0, 2, 3, 4]),
+    cells: Int32Array.from([0, 1, 1, 2]),
+    counts: Int32Array.from([2, 1, 3, 1]),
+  },
+};
+/** Weight (feature state `n`) per density cell. */
+const weights = (m: FakeLayerMap) =>
+  Object.fromEntries(Object.entries(m.state['hm-points'] ?? {}).map(([k, s]) => [k, s.n]));
+const weightPaint = (m: FakeLayerMap) => JSON.stringify(m.layers[LAYER.density]!.paint['heatmap-weight']);
+
+describe('time-lapse density', () => {
+  it('weighs each cell by the finished activities, changing only the cells of an activity that finishes', () => {
+    const m = heatMap();
+    const d = new LapseDensity();
+    d.apply(m.map, DENSITY, 0);
+    expect(weightPaint(m)).toContain('feature-state');
+    expect(weights(m)).toEqual({});
+    d.apply(m.map, DENSITY, 1);
+    expect(weights(m)).toEqual({ 0: 2, 1: 1 });
+    m.resetCalls();
+    d.apply(m.map, DENSITY, 1); // a frame that finishes nothing
+    expect(m.calls).toEqual([]);
+    d.apply(m.map, DENSITY, 3);
+    expect(weights(m)).toEqual({ 0: 2, 1: 4, 2: 1 });
+    d.apply(m.map, DENSITY, 1); // scrubbed back
+    expect(weights(m)).toEqual({ 0: 2, 1: 1, 2: 0 });
+    d.apply(m.map, DENSITY, null); // time-lapse off: every point weighs again
+    expect(weightPaint(m)).toBe('["get","w"]');
+    expect(m.sources['hm-points']!.promoteId).toBe('k');
+  });
+
+  it('starts over for other data and on the new source of a new style', () => {
+    const m = heatMap();
+    const d = new LapseDensity();
+    d.apply(m.map, DENSITY, 3);
+    const other: DensityData = {
+      ...DENSITY,
+      byLine: { start: Int32Array.from([0, 1]), cells: Int32Array.from([5]), counts: Int32Array.from([4]) },
+    };
+    d.apply(m.map, other, 1); // a filter change: cell ids are reused for other cells
+    expect(weights(m)).toEqual({ 0: 0, 1: 0, 2: 0, 5: 4 });
+    const next = heatMap(); // basemap switch
+    d.apply(next.map, other, 1);
+    expect(weights(next)).toEqual({ 5: 4 });
+    expect(weightPaint(next)).toContain('feature-state');
+  });
+
+  it('leaves the weights alone while the density is off', () => {
+    const m = heatMap();
+    new LapseDensity().apply(m.map, null, 2);
+    expect(m.calls).toEqual([]);
+  });
+});
+
 /** Activity `i` runs from (i, 0) to (i + 1, 0). */
-const line = (i: number): HeatLine => ({ id: 100 + i, i, sport: 'run', coords: [[i, 0], [i + 1, 0]], starts: [0], cum: [0, 1] });
+const line = (i: number): HeatLine => ({
+  id: 100 + i,
+  i,
+  sport: 'run',
+  coords: [
+    [i, 0],
+    [i + 1, 0],
+  ],
+  starts: [0],
+  cum: [0, 1],
+});
 const LINES = [line(0), line(1), line(2)];
 const headCoords = (m: FakeLayerMap) =>
   (m.sources['hm-head']!.data as FeatureCollection<LineString>).features.map((f) => f.geometry.coordinates);
@@ -117,11 +188,12 @@ describe('time-lapse drawing', () => {
 
   it('draws the position again on the empty sources of a new style', () => {
     const d = new LapseDrawer();
-    d.draw(heatMap().map, LINES, 1.5);
+    d.draw(heatMap().map, LINES, 1.5, DENSITY);
     const next = heatMap(); // basemap switch
-    d.draw(next.map, LINES, 1.5);
+    d.draw(next.map, LINES, 1.5, DENSITY);
     expect(hidden(next)).toEqual([1, 2]); // the second activity is the head, drawn half
     expect(headCoords(next)).toEqual([[[1, 0], [1.5, 0]]]);
+    expect(weights(next)).toEqual({ 0: 2, 1: 1 }); // the density of the finished activity
   });
 
   it('splits a position into finished activities and the drawn part of the next one', () => {
