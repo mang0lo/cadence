@@ -37,6 +37,19 @@ export class FitError extends Error {}
 
 const FIT_EPOCH_S = 631065600;
 
+/**
+ * Cheap check that a FIT file arrived complete, from its header (first 12–14 bytes) and its size: the '.FIT'
+ * signature and at least header + data + CRC bytes. Catches cut-off downloads and error pages without decoding.
+ */
+export function fitHeaderComplete(head: Uint8Array, size: number): boolean {
+  if (head.length < 12) return false;
+  const headerSize = head[0]!;
+  if (headerSize !== 12 && headerSize !== 14) return false;
+  if (head[8] !== 0x2e || head[9] !== 0x46 || head[10] !== 0x49 || head[11] !== 0x54) return false; // '.FIT'
+  const dataSize = (head[4]! | (head[5]! << 8) | (head[6]! << 16) | (head[7]! << 24)) >>> 0;
+  return size >= headerSize + dataSize + 2;
+}
+
 /** FIT sport / sub sport → HKWorkoutActivityType suffix. */
 function activityTypeOf(sport: string, sub: string): string {
   switch (sport) {
@@ -260,7 +273,8 @@ function stat(
 
 /** Parse one FIT activity file. Throws FitError when the file is not a readable FIT activity. */
 export function parseFit(buf: Uint8Array): FitActivity {
-  const stream = Stream.fromByteArray(Array.from(buf));
+  // one copy of the bytes (no array with a number per byte)
+  const stream = Stream.fromBuffer(buf);
   if (!Decoder.isFIT(stream)) throw new FitError('Not a FIT file');
   const decoder = new Decoder(stream);
   const { messages, errors } = decoder.read({
@@ -410,7 +424,9 @@ export function parseFit(buf: Uint8Array): FitActivity {
 
   let track: Track | null = null;
   const gpsIdx: number[] = [];
-  for (let i = 0; i < n; i++) if (lat[i] === lat[i]) gpsIdx.push(i);
+  // a virtual ride or run (Zwift, MyWhoosh …) maps a game world onto real coordinates: no route, places or tiles
+  // from it; speed and distance come from the sensor samples as on a trainer
+  if (subSport !== 'virtualActivity') for (let i = 0; i < n; i++) if (lat[i] === lat[i]) gpsIdx.push(i);
   if (gpsIdx.length >= 2) {
     const pick32 = (a: Float32Array) => {
       const out = Float32Array.from(gpsIdx, (i) => a[i]!);

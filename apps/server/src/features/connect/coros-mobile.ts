@@ -1,6 +1,6 @@
 import { createCipheriv, randomInt } from 'node:crypto';
 import type { CorosRegion } from '@cadence/shared';
-import { CorosApiError, CorosHttpError } from './coros-client';
+import { CorosApiError, CorosTransport, type CorosTransportOptions } from './coros-transport';
 
 /**
  * The COROS phone app's API (apieu.coros.com …): the only place with sleep, steps, calories and all-day heart rate.
@@ -9,7 +9,7 @@ import { CorosApiError, CorosHttpError } from './coros-client';
  * fixed IV from the app) after XOR-ing them with the appKey.
  *
  * A mobile login can sign the athlete's phone app out, so the token is kept and reused; Cadence only logs in again
- * when COROS rejects it.
+ * when COROS rejects it. Requests are spaced (800 ms by default) and retried like the Training Hub's (coros-transport.ts).
  */
 export const COROS_MOBILE_URL: Record<CorosRegion, string> = {
   en: 'https://api.coros.com',
@@ -76,57 +76,28 @@ export interface MobileDay {
   [key: string]: unknown;
 }
 
-export interface CorosMobileOptions {
+export interface CorosMobileOptions extends CorosTransportOptions {
   region: CorosRegion;
   token?: string | null;
-  fetch?: typeof fetch;
-  timeoutMs?: number;
 }
 
 export class CorosMobileClient {
   readonly baseUrl: string;
   token: string | null;
-  private readonly doFetch: typeof fetch;
-  private readonly timeout: number;
+  private readonly http: CorosTransport;
 
   constructor(o: CorosMobileOptions) {
     this.baseUrl = COROS_MOBILE_URL[o.region];
     this.token = o.token ?? null;
-    this.doFetch = o.fetch ?? fetch;
-    this.timeout = o.timeoutMs ?? 60_000;
+    this.http = new CorosTransport({ ...o, minIntervalMs: o.minIntervalMs ?? 800 });
   }
 
-  private async post<T>(path: string, body: unknown, headers: Record<string, string>): Promise<T> {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), this.timeout);
-    let res: Response;
-    try {
-      res = await this.doFetch(this.baseUrl + path, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', ...headers },
-        body: JSON.stringify(body),
-        signal: ctrl.signal,
-      });
-    } catch (e) {
-      throw new CorosHttpError(
-        ctrl.signal.aborted ? 'COROS did not answer in time' : `Could not reach COROS: ${(e as Error).message}`,
-        0,
-      );
-    } finally {
-      clearTimeout(timer);
-    }
-    const text = await res.text();
-    let env: { result?: string; message?: string; data?: T };
-    try {
-      env = JSON.parse(text);
-    } catch {
-      throw new CorosHttpError(
-        res.status === 429 ? 'COROS rate limit reached' : `Unexpected answer from COROS (HTTP ${res.status})`,
-        res.status,
-      );
-    }
-    if (env.result !== '0000') throw new CorosApiError(`COROS: ${env.message || `error ${env.result}`}`, String(env.result));
-    return env.data as T;
+  private post<T>(path: string, body: unknown, headers: Record<string, string>): Promise<T> {
+    return this.http.request<T>(this.baseUrl + path, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...headers },
+      body: JSON.stringify(body),
+    });
   }
 
   /** Log in like the phone app. `pwdMd5` = md5(password). */
