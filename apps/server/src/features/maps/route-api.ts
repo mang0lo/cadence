@@ -9,6 +9,7 @@ import type {
 } from '@cadence/shared';
 import { all, get, run, type Db } from '../../db/db';
 import { notFound } from '../../lib/http';
+import { IN_LIST, ROUTE_TIME, idList, parseList, visible } from './sql';
 
 const listQuery = z.object({
   sport: z.string().max(200).optional(),
@@ -47,19 +48,15 @@ interface EffortRow {
   polyline: string | null;
 }
 
-/** Moving time, falling back to the recorded duration (Apple's active time) when no GPS speed was available. */
-const TIME = 'COALESCE(NULLIF(w.moving_s, 0), w.duration_s)';
-
 function effortRows(db: Db, athleteId: number, routeIds: number[] | null): EffortRow[] {
-  const inList = routeIds ? ` AND g.route_id IN (${routeIds.map(() => '?').join(',')})` : '';
   return all<EffortRow>(
     db,
-    `SELECT g.route_id, w.id AS workout_id, w.name, w.sport, w.start_ts, w.end_ts, w.tz_min, ${TIME} AS time_s,
+    `SELECT g.route_id, w.id AS workout_id, w.name, w.sport, w.start_ts, w.end_ts, w.tz_min, ${ROUTE_TIME} AS time_s,
             w.distance_m, w.avg_hr, w.polyline
      FROM maps_workout_geo g JOIN workouts w ON w.id = g.workout_id
-     WHERE g.athlete_id = ? AND g.route_id IS NOT NULL AND w.hidden = 0 AND w.duplicate_of IS NULL${inList}
+     WHERE g.athlete_id = ? AND g.route_id IS NOT NULL AND ${visible()}${routeIds ? ` AND g.route_id IN ${IN_LIST}` : ''}
      ORDER BY g.route_id, w.start_ts, w.id`,
-    [athleteId, ...(routeIds ?? [])],
+    routeIds ? [athleteId, idList(routeIds)] : [athleteId],
   );
 }
 
@@ -75,12 +72,12 @@ export function routeSummaries(
   const where = ['athlete_id = ?'];
   const params: unknown[] = [athleteId];
   if (opts.sport?.length) {
-    where.push(`sport IN (${opts.sport.map(() => '?').join(',')})`);
-    params.push(...opts.sport);
+    where.push(`sport IN ${IN_LIST}`);
+    params.push(idList(opts.sport));
   }
   if (opts.ids) {
-    where.push(`id IN (${opts.ids.map(() => '?').join(',')})`);
-    params.push(...opts.ids);
+    where.push(`id IN ${IN_LIST}`);
+    params.push(idList(opts.ids));
   }
   const routes = all<RouteRow>(
     db,
@@ -135,10 +132,7 @@ export function routeSummaries(
 export function registerRouteRoutes(app: FastifyInstance): void {
   app.get('/routes', async (req): Promise<MapsRoutesResponse> => {
     const q = listQuery.parse(req.query);
-    const sports = (q.sport ?? '')
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean);
+    const sports = parseList(q.sport);
     const all_ = routeSummaries(app.db, req.athleteId, { min: q.min });
     const counts = new Map<string, number>();
     for (const r of all_) counts.set(r.sport, (counts.get(r.sport) ?? 0) + 1);

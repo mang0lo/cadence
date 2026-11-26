@@ -4,6 +4,7 @@ import type { MapsHeatmapActivity, MapsHeatmapResponse, PrivacyZone } from '@cad
 import { getSettings } from '../../core/settings';
 import { all } from '../../db/db';
 import { decodePolylineParts, encodePolylineParts, haversine, type LatLon } from '../../lib/geo';
+import { IN_LIST, idList, parseList, visible } from './sql';
 
 const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
@@ -59,20 +60,17 @@ export function trimPrivacyZones(points: LatLon[], zones: PrivacyZone[]): LatLon
 }
 
 /** WHERE clause (athlete scoped) shared by the queries: visible workouts that have a route. */
-const BASE = `athlete_id = ? AND hidden = 0 AND duplicate_of IS NULL AND has_route = 1 AND polyline IS NOT NULL`;
+const BASE = `athlete_id = ? AND ${visible('')} AND has_route = 1 AND polyline IS NOT NULL`;
 
 export function registerHeatmapRoutes(app: FastifyInstance): void {
   app.get('/heatmap', async (req): Promise<MapsHeatmapResponse> => {
     const q = query.parse(req.query);
     const where = [BASE];
     const params: unknown[] = [req.athleteId];
-    const sports = (q.sport ?? '')
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean);
+    const sports = parseList(q.sport);
     if (sports.length) {
-      where.push(`sport IN (${sports.map(() => '?').join(',')})`);
-      params.push(...sports);
+      where.push(`sport IN ${IN_LIST}`);
+      params.push(idList(sports));
     }
     const localDay = `date(start_ts + tz_min * 60, 'unixepoch')`;
     if (q.fromDay) {

@@ -6,6 +6,7 @@ import { notFound } from '../../lib/http';
 import { routeSummaries } from './route-api';
 import { effortRows, rankEfforts } from './segments';
 import { segmentSummaries } from './segment-api';
+import { ROUTE_TIME, visible } from './sql';
 
 const idParam = z.object({ id: z.coerce.number().int().positive() });
 
@@ -32,9 +33,9 @@ export function registerLinksRoutes(app: FastifyInstance): void {
       if (r) {
         const members = all<{ id: number; t: number; start_ts: number }>(
           app.db,
-          `SELECT w.id, COALESCE(NULLIF(w.moving_s, 0), w.duration_s) AS t, w.start_ts
+          `SELECT w.id, ${ROUTE_TIME} AS t, w.start_ts
            FROM maps_workout_geo g JOIN workouts w ON w.id = g.workout_id
-           WHERE g.route_id = ? AND w.hidden = 0 AND w.duplicate_of IS NULL`,
+           WHERE g.route_id = ? AND ${visible()}`,
           [g.route_id],
         );
         const me = members.find((m) => m.id === id);

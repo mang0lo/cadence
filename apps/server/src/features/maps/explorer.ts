@@ -8,6 +8,7 @@ import type {
 } from '@cadence/shared';
 import { all, get, type Db } from '../../db/db';
 import { addDays, localDay, today } from '../../lib/time';
+import { IN_LIST, idList, parseList, visible } from './sql';
 import { explorerStats, tileBounds, tileKey, type ExplorerStats } from './tiles';
 
 const query = z.object({
@@ -37,12 +38,10 @@ interface ExplorerData {
   workouts: number;
 }
 
-const VISIBLE = 'w.hidden = 0 AND w.duplicate_of IS NULL';
+const VISIBLE = visible();
 
 function sportClause(sports: string[]): { sql: string; params: string[] } {
-  return sports.length
-    ? { sql: ` AND w.sport IN (${sports.map(() => '?').join(',')})`, params: sports }
-    : { sql: '', params: [] };
+  return sports.length ? { sql: ` AND w.sport IN ${IN_LIST}`, params: [idList(sports)] } : { sql: '', params: [] };
 }
 
 /** Changes whenever the set of visible tiles can change (new / changed / hidden workouts). */
@@ -135,18 +134,11 @@ export function monthSeries(perMonth: Map<string, number>, now = today().slice(0
   return out;
 }
 
-function parseSports(raw: string | undefined): string[] {
-  return (raw ?? '')
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean);
-}
-
 export function registerExplorerRoutes(app: FastifyInstance): void {
   app.get('/explorer', async (req): Promise<MapsExplorerResponse> => {
     const q = query.parse(req.query);
     const zoom = q.zoom as 14 | 17;
-    const d = loadExplorer(app.db, req.athleteId, zoom, parseSports(q.sport));
+    const d = loadExplorer(app.db, req.athleteId, zoom, parseList(q.sport));
     const clusterKeys = new Set(d.stats.maxCluster.keys);
 
     let tiles: MapsExplorerTile[] = [];

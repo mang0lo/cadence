@@ -1,11 +1,9 @@
 import type { ImportHighlight } from '@cadence/shared';
 import { all, get } from '../../db/db';
 import type { WhatsNewInput } from '../types';
+import { IN_LIST as NEW_IDS, ROUTE_TIME as TIME, idList, visible } from './sql';
 
-const VISIBLE = 'w.hidden = 0 AND w.duplicate_of IS NULL';
-const NEW_IDS = '(SELECT value FROM json_each(?))';
-/** Moving time, falling back to Apple's active time (as in route-api.ts). */
-const TIME = 'COALESCE(NULLIF(w.moving_s, 0), w.duration_s)';
+const VISIBLE = visible();
 
 /** Explorer tiles at `z` that only the new activities visited. */
 function newTiles(db: WhatsNewInput['db'], athleteId: number, ids: string, z: number): number {
@@ -50,11 +48,11 @@ function replacements(db: WhatsNewInput['db'], athleteId: number, ids: string): 
  */
 export function mapsWhatsNew({ db, athleteId, workoutIds: newIds, initial }: WhatsNewInput): ImportHighlight[] {
   if (initial || !newIds.length) return [];
-  const replaced = replacements(db, athleteId, JSON.stringify(newIds));
+  const replaced = replacements(db, athleteId, idList(newIds));
   // replacements count as known activities below, like every other visible workout that is not new
   const workoutIds = newIds.filter((id) => !replaced.has(id));
   if (!workoutIds.length) return [];
-  const ids = JSON.stringify(workoutIds);
+  const ids = idList(workoutIds);
   const isNew = new Set(workoutIds);
   const out: ImportHighlight[] = [];
 

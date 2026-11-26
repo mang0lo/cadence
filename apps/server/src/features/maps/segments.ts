@@ -20,6 +20,7 @@ import {
 import { gunzipJson, gzipJson } from '../../lib/gzip';
 import type { DeriveStep } from '../types';
 import { GATE_RADIUS_M, matchSegment, sliceStream, thinPath, type SegmentPath } from './segment-match';
+import { IN_LIST, idList, visible } from './sql';
 
 export interface SegmentRow {
   id: number;
@@ -50,9 +51,8 @@ const COLS = `id, athlete_id, name, sport, source_workout_id, distance_m, elevat
 export const segmentRows = (db: Db, athleteId: number, ids?: number[]): SegmentRow[] =>
   all<SegmentRow>(
     db,
-    `SELECT ${COLS} FROM maps_segments WHERE athlete_id = ?${ids ? ` AND id IN (${ids.map(() => '?').join(',')})` : ''}
-     ORDER BY id`,
-    [athleteId, ...(ids ?? [])],
+    `SELECT ${COLS} FROM maps_segments WHERE athlete_id = ?${ids ? ` AND id IN ${IN_LIST}` : ''} ORDER BY id`,
+    ids ? [athleteId, idList(ids)] : [athleteId],
   );
 
 /** What the `path` blob holds: the thinned course (matching) and the elevation profile of the dense track (display). */
@@ -258,28 +258,25 @@ function* matchBatches(
 ): Generator<void, number, void> {
   if (!segments.length) return 0;
   const prepared = segments.map((r) => preparePath(db, r));
-  const segIds = segments.map((s) => s.id);
-  const inSegs = segIds.map(() => '?').join(',');
+  const segIds = idList(segments.map((s) => s.id));
+  // one JSON parameter for the workout ids: a first import after a reset (segments are kept) can bring more workouts
+  // than SQLite takes parameters
+  const some = workoutIds === 'all' ? null : idList(workoutIds);
   const workouts = all<CandidateWorkout>(
     db,
     `SELECT id, sport, start_ts, min_lat, min_lon, max_lat, max_lon, polyline FROM workouts
-     WHERE athlete_id = ? AND has_route = 1 AND min_lat IS NOT NULL
-       ${workoutIds === 'all' ? '' : `AND id IN (${workoutIds.map(() => '?').join(',') || 'NULL'})`}
+     WHERE athlete_id = ? AND has_route = 1 AND min_lat IS NOT NULL${some ? ` AND id IN ${IN_LIST}` : ''}
      ORDER BY start_ts`,
-    [athleteId, ...(workoutIds === 'all' ? [] : workoutIds)],
+    some ? [athleteId, some] : [athleteId],
   );
   // workouts that lost their route (or never had one) must lose their efforts too
   run(
     db,
-    `DELETE FROM maps_segment_efforts WHERE segment_id IN (${inSegs})
-       ${workoutIds === 'all' ? '' : `AND workout_id IN (${workoutIds.map(() => '?').join(',') || 'NULL'})`}
+    `DELETE FROM maps_segment_efforts WHERE segment_id IN ${IN_LIST}${some ? ` AND workout_id IN ${IN_LIST}` : ''}
        AND workout_id NOT IN (SELECT id FROM workouts WHERE has_route = 1)`,
-    [...segIds, ...(workoutIds === 'all' ? [] : workoutIds)],
+    some ? [segIds, some] : [segIds],
   );
-  const del = prepare(
-    db,
-    `DELETE FROM maps_segment_efforts WHERE workout_id = ? AND segment_id IN (${inSegs})`,
-  );
+  const del = prepare(db, `DELETE FROM maps_segment_efforts WHERE workout_id = ? AND segment_id IN ${IN_LIST}`);
   const ins = prepare(
     db,
     `INSERT OR REPLACE INTO maps_segment_efforts (segment_id, workout_id, idx, athlete_id, start_ts, elapsed_s, moving_s, avg_hr, avg_speed, track_m)
@@ -296,7 +293,7 @@ function* matchBatches(
         w.max_lon >= p.box[1] &&
         w.min_lon <= p.box[3],
     );
-    del.run(w.id, ...segIds);
+    del.run(w.id, segIds);
     if (!near.length) return;
     let lines: LatLon[][] | null = null;
     const candidates = near.filter((p) => {
@@ -353,7 +350,7 @@ function* matchBatches(
       // a segment deleted meanwhile (by the user: another thread or, between slices, another request) is dropped;
       // the others are still matched
       const exists = new Set(
-        all<{ id: number }>(db, `SELECT id FROM maps_segments WHERE id IN (${inSegs})`, segIds).map((r) => r.id),
+        all<{ id: number }>(db, `SELECT id FROM maps_segments WHERE id IN ${IN_LIST}`, [segIds]).map((r) => r.id),
       );
       if (exists.size < live.length) live = live.filter((p) => exists.has(p.row.id));
       if (!live.length) return -1;
@@ -418,11 +415,11 @@ export function effortRows(
   segmentIds?: number[],
   workoutId?: number,
 ): EffortRow[] {
-  const where = ['e.athlete_id = ?', 'w.hidden = 0', 'w.duplicate_of IS NULL'];
+  const where = ['e.athlete_id = ?', visible()];
   const params: unknown[] = [athleteId];
   if (segmentIds) {
-    where.push(`e.segment_id IN (${segmentIds.map(() => '?').join(',') || 'NULL'})`);
-    params.push(...segmentIds);
+    where.push(`e.segment_id IN ${IN_LIST}`);
+    params.push(idList(segmentIds));
   }
   if (workoutId !== undefined) {
     where.push('e.workout_id = ?');
