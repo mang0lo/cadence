@@ -142,6 +142,38 @@ describe('backup & restore', () => {
     }
   });
 
+  it('brings back exactly the database from before the failed restore, not an older one', () => {
+    const folder = path.join(dir, 'bad-restore-exact');
+    fs.mkdirSync(folder, { recursive: true });
+    const file = path.join(folder, 'cadence.db');
+    const name = (d: Db) => (d.prepare('SELECT name FROM athletes WHERE id = 1').get() as { name: string }).name;
+    // left over from an earlier restore, with a name that sorts last (the clock was wrong back then)
+    const staleFile = `${file}.before-restore-2999-01-01T00-00-00-000Z`;
+    const stale = openMigrated(staleFile);
+    run(stale, "UPDATE athletes SET name = 'Stale' WHERE id = 1");
+    stale.close();
+    const before = openMigrated(file);
+    run(before, "UPDATE athletes SET name = 'Before' WHERE id = 1");
+    before.close();
+    fs.writeFileSync(`${file}.restore`, 'not a database '.repeat(200));
+    const reopened = openWithPendingRestore(file, openMigrated, () => {});
+    try {
+      expect(name(reopened)).toBe('Before');
+    } finally {
+      reopened.close();
+    }
+    // no database before the restore: a new one, and the older file stays where it is
+    for (const f of [file, `${file}-wal`, `${file}-shm`]) fs.rmSync(f, { force: true });
+    fs.writeFileSync(`${file}.restore`, 'not a database '.repeat(200));
+    const fresh = openWithPendingRestore(file, openMigrated, () => {});
+    try {
+      expect(name(fresh)).toBe('Athlete');
+    } finally {
+      fresh.close();
+    }
+    expect(fs.existsSync(staleFile)).toBe(true);
+  });
+
   it('stages a valid backup and swaps it in on the next start', async () => {
     const backup = (await app.inject({ url: '/api/backup' })).rawPayload;
     const res = await app.inject({ method: 'POST', url: '/api/backup/restore', ...multipart('b.db', backup) });

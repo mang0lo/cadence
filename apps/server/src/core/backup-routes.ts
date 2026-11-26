@@ -26,22 +26,33 @@ function moveDb(from: string, to: string): void {
   for (const ext of ['-wal', '-shm']) if (fs.existsSync(from + ext)) fs.renameSync(from + ext, to + ext);
 }
 
+/**
+ * Swaps in a pending restore, keeping the old file: returns where the previous database went ('' when there was
+ * none), null when no restore is pending.
+ */
+function swapInRestore(dbPath: string): string | null {
+  const pending = restorePath(dbPath);
+  if (!fs.existsSync(pending)) return null;
+  let previous = '';
+  if (fs.existsSync(dbPath)) moveDb(dbPath, (previous = `${dbPath}.before-restore-${stamp()}`));
+  fs.renameSync(pending, dbPath);
+  return previous;
+}
+
 /** Called on startup before the database is opened: swaps in a pending restore, keeping the old file. */
 export function applyPendingRestore(dbPath: string): boolean {
-  const pending = restorePath(dbPath);
-  if (!fs.existsSync(pending)) return false;
-  if (fs.existsSync(dbPath)) moveDb(dbPath, `${dbPath}.before-restore-${stamp()}`);
-  fs.renameSync(pending, dbPath);
-  return true;
+  return swapInRestore(dbPath) !== null;
 }
 
 /**
  * Opens the database on startup (`open` opens and migrates it), applying a pending restore first. A restored file
  * that cannot be opened or migrated is kept aside as <db>.failed-restore-<time> and the database from before the
- * restore comes back: a bad backup must never keep the app from starting.
+ * restore comes back (exactly that one, not an older before-restore file): a bad backup must never keep the app from
+ * starting.
  */
 export function openWithPendingRestore<T>(dbPath: string, open: (file: string) => T, log: (msg: string) => void = console.log): T {
-  if (!applyPendingRestore(dbPath)) return open(dbPath);
+  const previous = swapInRestore(dbPath);
+  if (previous === null) return open(dbPath);
   try {
     const db = open(dbPath);
     log('Restored the database from an uploaded backup');
@@ -49,14 +60,7 @@ export function openWithPendingRestore<T>(dbPath: string, open: (file: string) =
   } catch (e) {
     log(`The uploaded backup could not be opened (${(e as Error).message}); the previous database is used again`);
     moveDb(dbPath, `${dbPath}.failed-restore-${stamp()}`);
-    const dir = path.dirname(dbPath);
-    const prefix = `${path.basename(dbPath)}.before-restore-`;
-    const previous = fs
-      .readdirSync(dir)
-      .filter((f) => f.startsWith(prefix) && !/-(wal|shm)$/.test(f))
-      .sort()
-      .pop();
-    if (previous) moveDb(path.join(dir, previous), dbPath);
+    if (previous) moveDb(previous, dbPath);
     return open(dbPath);
   }
 }
