@@ -140,6 +140,32 @@ describe('server mode', () => {
     }
   });
 
+  it('does not let a rebinding page name a local host in X-Forwarded-Host when a loopback proxy is trusted', async () => {
+    // inject connects from 127.0.0.1, like a browser on this machine that reaches the server directly
+    const s = await server({ CADENCE_MODE: 'dev', CADENCE_TRUST_PROXY: 'loopback', CADENCE_ALLOWED_HOSTS: 'cadence.home' });
+    try {
+      const rebound = { host: 'rebind.attacker.example:8787', 'x-forwarded-host': 'localhost:8787' };
+      expect((await s.app.inject({ url: '/api/athlete', headers: rebound })).statusCode).toBe(403);
+      const write = await s.app.inject({
+        method: 'PATCH',
+        url: '/api/athlete',
+        payload: { name: 'Mallory' },
+        headers: { ...rebound, origin: 'http://rebind.attacker.example:8787', 'sec-fetch-site': 'same-origin' },
+      });
+      expect(write.statusCode).toBe(403);
+      // the proxy itself: Host as it forwards it (nginx: the upstream address, Caddy: the site), the name in X-Forwarded-Host
+      for (const host of ['127.0.0.1:8787', 'cadence.home']) {
+        const res = await s.app.inject({ url: '/api/athlete', headers: { host, 'x-forwarded-host': 'cadence.home' } });
+        expect(res.statusCode, host).toBe(200);
+      }
+      // a forwarded name that is not allowed still counts
+      const other = await s.app.inject({ url: '/api/athlete', headers: { host: '127.0.0.1:8787', 'x-forwarded-host': 'evil.example' } });
+      expect(other.statusCode).toBe(403);
+    } finally {
+      await s.close();
+    }
+  });
+
   it('accepts extra host names from CADENCE_ALLOWED_HOSTS', async () => {
     const s = await server({ CADENCE_MODE: 'dev', CADENCE_ALLOWED_HOSTS: 'nas.local, .example.org' });
     try {

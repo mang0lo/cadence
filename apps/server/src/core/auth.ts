@@ -263,11 +263,14 @@ export function registerAuth(
           "throttle counts every client as the proxy's address. Set CADENCE_TRUST_PROXY to the proxy's address.",
       );
     }
-    if (allowedHosts && !hostAllowed(req.host, allowedHosts)) {
+    // the Host the browser sent counts, and with CADENCE_TRUST_PROXY also the proxy's X-Forwarded-Host: a page that
+    // reaches the server directly from this machine (a trusted loopback address) could name a local host in the latter
+    const denied = allowedHosts && [req.headers.host ?? '', req.host].find((h) => !hostAllowed(h, allowedHosts));
+    if (typeof denied === 'string') {
       return forbidden(
         reply,
         'forbidden_host',
-        `This server does not answer to ${hostName(req.host)}. Add it to CADENCE_ALLOWED_HOSTS to allow it.`,
+        `This server does not answer to ${hostName(denied)}. Add it to CADENCE_ALLOWED_HOSTS to allow it.`,
       );
     }
     if (!SAFE_METHODS.has(req.method) && crossSite(req)) {
