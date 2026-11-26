@@ -13,6 +13,26 @@ describe('health category colors', () => {
     expect(categorySlots(['Idle', 'Stood']).get('Stood')).toBe(categorySlots(['Stood']).get('Stood'));
   });
 
+  it('knows the symptom values as the import stores them (HKCategoryValueSeverity… → Severity…)', () => {
+    // 'SeverityUnspecified' must not move to another color when a severe headache enters the range
+    const ninetyDays = categorySlots(['SeverityMild', 'SeverityUnspecified']);
+    const oneYear = categorySlots(['SeverityMild', 'SeverityUnspecified', 'SeveritySevere', 'SeverityNotPresent']);
+    expect(oneYear.get('SeverityUnspecified')).toBe(ninetyDays.get('SeverityUnspecified'));
+    expect(oneYear.get('SeverityMild')).toBe(ninetyDays.get('SeverityMild'));
+    expect(new Set(oneYear.values()).size).toBe(4);
+    expect(['SeveritySevere', 'SeverityNotPresent', 'SeverityMild', 'SeverityUnspecified', 'SeverityModerate'].sort(compareCategoryValues)).toEqual([
+      'SeverityUnspecified',
+      'SeverityNotPresent',
+      'SeverityMild',
+      'SeverityModerate',
+      'SeveritySevere',
+    ]);
+    const presence = categorySlots(['PresencePresent', 'PresenceNotPresent']);
+    expect(presence.get('PresenceNotPresent')).toBe(categorySlots(['PresenceNotPresent']).get('PresenceNotPresent'));
+    expect(presence.get('PresencePresent')).toBe(categorySlots(['PresencePresent']).get('PresencePresent'));
+    expect(presence.get('PresencePresent')).not.toBe(presence.get('PresenceNotPresent'));
+  });
+
   it('gives unknown values distinct hash slots next to the known ones', () => {
     const slots = categorySlots(['Stood', 'Idle', 'SomethingNew', 'Other']);
     expect(new Set(slots.values()).size).toBe(4);

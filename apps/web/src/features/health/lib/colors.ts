@@ -129,12 +129,17 @@ const CATEGORY_VALUE_ORDER = [
   'Light',
   'Medium',
   'Heavy',
-  // symptom severity
+  // symptom severity: the import keeps the 'Severity' of HKCategoryValueSeverity… (headache, fatigue …)
+  'SeverityUnspecified',
+  'SeverityNotPresent',
   'SeverityMild',
   'SeverityModerate',
   'SeveritySevere',
+  // presence of a symptom (HKCategoryValuePresence…: mood or sleep changes …)
   'NotPresent',
   'Present',
+  'PresenceNotPresent',
+  'PresencePresent',
   // test results
   'Negative',
   'Positive',
