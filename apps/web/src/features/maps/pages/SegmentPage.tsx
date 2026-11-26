@@ -43,6 +43,7 @@ import { decodePolyline, toLngLat } from '@/lib/polyline';
 import { useResolvedTheme } from '@/lib/theme';
 import { EffortTrend } from '../components/EffortTrend';
 import { LineMap, type MapLine, type MapMarker } from '../components/LineMap';
+import { dateHint } from '../lib/dates';
 import { unionBox, type BBox } from '../lib/home';
 import { gradeAt } from '../lib/segments';
 
@@ -212,7 +213,7 @@ function Body({ detail }: { detail: MapsSegmentDetail }) {
             value={fmt.int(s.efforts)}
             hint={
               latest
-                ? `${t('maps.routes.latest')}: ${fmt.date(latest.startTs, latest.tzMin, 'dayShort')}`
+                ? `${t('maps.routes.latest')}: ${dateHint(fmt, latest.startTs, latest.tzMin)}`
                 : undefined
             }
           />

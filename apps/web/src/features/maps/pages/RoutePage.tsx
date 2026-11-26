@@ -33,6 +33,7 @@ import { decodePolyline, toLngLat } from '@/lib/polyline';
 import { useResolvedTheme } from '@/lib/theme';
 import { EffortTrend } from '../components/EffortTrend';
 import { LineMap, type MapLine } from '../components/LineMap';
+import { dateRange } from '../lib/dates';
 import { unionBox, type BBox } from '../lib/home';
 import { kindLabel, routeTitle } from '../lib/routeName';
 
@@ -181,7 +182,7 @@ function RouteBody({ detail }: { detail: MapsRouteDetail }) {
           <Stat
             label={t('maps.routes.timesDone')}
             value={`${fmt.int(route.count)}×`}
-            hint={`${fmt.date(route.firstTs, efforts[efforts.length - 1]?.tzMin ?? 0, 'dayShort')} – ${fmt.date(route.lastTs, route.lastTzMin, 'dayShort')}`}
+            hint={dateRange(fmt, route.firstTs, efforts[efforts.length - 1]?.tzMin ?? 0, route.lastTs, route.lastTzMin)}
           />
           <Stat
             label={t('maps.routes.best')}
