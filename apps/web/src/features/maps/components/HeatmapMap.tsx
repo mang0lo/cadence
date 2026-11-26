@@ -6,14 +6,21 @@ import type { MapsHeatmapActivity } from '@cadence/shared';
 import { workoutTitle } from '@cadence/shared';
 import { BaseMap, type Map as MapLibreMap } from '@/components/map/BaseMap';
 import { overlayColors } from '@/components/map/styles';
-import { useFitBounds, useMapOverlay, useMapPopup, useOverlayEffect } from '@/components/map/useMapOverlay';
+import {
+  useFitBounds,
+  useMapOverlay,
+  useMapPopup,
+  useOverlayEffect,
+  useOverlayStore,
+  type FrameValue,
+} from '@/components/map/useMapOverlay';
 import { useFormat } from '@/lib/format';
 import { useI18n, useT } from '@/lib/i18n';
 import { sportColorVar, useSportLabel } from '@/lib/sports';
 import { useResolvedTheme } from '@/lib/theme';
 import {
   LAYER,
-  LapseVisibility,
+  LapseDrawer,
   applyHeatPalette,
   densityPoints,
   ensureHeatLayers,
@@ -21,20 +28,12 @@ import {
   linesCollection,
   setDensityIntensity,
   setDensityVisible,
-  setHeadLine,
   setLinesData,
   setPointsData,
   type HeatBase,
   type HeatLine,
   type HeatTheme,
 } from '../lib/heatmapLayers';
-
-export interface HeatmapLapse {
-  /** Number of finished activities (chronological). */
-  done: number;
-  /** The activity being drawn right now: its part(s) drawn so far (lon/lat). */
-  head: [number, number][][] | null;
-}
 
 export interface HeatmapMapProps {
   className?: string;
@@ -44,8 +43,11 @@ export interface HeatmapMapProps {
   base: HeatBase;
   density: boolean;
   bounds: [number, number, number, number] | null;
-  /** Time-lapse state; `null` shows every activity. */
-  lapse: HeatmapLapse | null;
+  /**
+   * Time-lapse position in activities, chronological (2.5: two finished, the third half drawn); `null` shows every
+   * activity. The map follows it per frame without re-rendering.
+   */
+  lapse: FrameValue<number> | null;
   /** Bump to fit the data again. */
   fitNonce?: number;
   children?: ReactNode;
@@ -160,26 +162,17 @@ export function HeatmapMap({
     [density, densityData],
   );
 
-  // time-lapse: the activities not finished yet are hidden through feature state, one update per finished activity
-  const lapseVisibility = useMemo(() => new LapseVisibility(), []);
-  const done = lapse ? lapse.done : null;
-  useOverlayEffect(
+  // time-lapse: drawn straight from the position on every frame, no React render; the activities not finished yet
+  // are hidden through feature state, one update per finished activity
+  const [lapseDrawer] = useState(() => new LapseDrawer());
+  useOverlayStore(
     overlay,
-    (map) => {
+    lapse,
+    (map, progress) => {
       ensureHeatLayers(map, paletteRef.current);
-      lapseVisibility.apply(map, done, lines.length);
+      lapseDrawer.draw(map, lines, progress);
     },
-    [done, lines.length],
-  );
-
-  const head = lapse?.head ?? null;
-  useOverlayEffect(
-    overlay,
-    (map) => {
-      ensureHeatLayers(map, paletteRef.current);
-      setHeadLine(map, head);
-    },
-    [head],
+    [lines],
   );
 
   useFitBounds(overlay.mapRef, bounds, fitNonce, 48);

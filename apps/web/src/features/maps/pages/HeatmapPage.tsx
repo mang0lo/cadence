@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useState } from 'react';
 import { Flame, Globe, Maximize2, Pause, Play, RotateCcw, Timer, X } from 'lucide-react';
-import type { MapsHeatmapResponse } from '@cadence/shared';
+import type { MapsHeatmapActivity, MapsHeatmapResponse } from '@cadence/shared';
 import {
   Button,
   Card,
@@ -23,9 +23,10 @@ import { useT } from '@/lib/i18n';
 import { SportIcon, sortSports, sportColorVar, useSportLabel } from '@/lib/sports';
 import { useStoredState } from '@/lib/storage';
 import { addDays, todayKey } from '@/lib/time';
-import { HeatmapMap, type HeatmapLapse } from '../components/HeatmapMap';
-import { mainBounds, partialCoords, toHeatLines, type HeatBase, type HeatTheme } from '../lib/heatmapLayers';
+import { HeatmapMap } from '../components/HeatmapMap';
+import { lapseAt, mainBounds, toHeatLines, type HeatBase, type HeatTheme } from '../lib/heatmapLayers';
 import { sameBounds } from '../lib/home';
+import { Store, useThrottledStore } from '../lib/timelapse';
 
 const THEMES: HeatTheme[] = ['hot', 'blue', 'purple'];
 const THEME_DOT: Record<HeatTheme, string> = { hot: '#ff8a1f', blue: '#2aa3ff', purple: '#b04dff' };
@@ -81,17 +82,15 @@ export default function HeatmapPage() {
   useEffect(() => setShowAll(false), [sports, period]);
 
   // ----- time-lapse ---------------------------------------------------------------------------------------
+  // The position (in activities) changes every animation frame. It lives in a store that the map follows by itself
+  // and the caption and scrubber read throttled: the page only re-renders when the time-lapse starts, pauses or stops.
   const [lapseOn, setLapseOn] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState<number>(1);
-  const [progress, setProgress] = useState(0);
-  const progressRef = useRef(0);
+  const [progress] = useState(() => new Store(0));
   const count = lines.length;
 
-  const seek = useCallback((p: number) => {
-    progressRef.current = p;
-    setProgress(p);
-  }, []);
+  const seek = useCallback((p: number) => progress.set(p), [progress]);
 
   // new data / filter → restart
   useEffect(() => {
@@ -108,7 +107,7 @@ export default function HeatmapPage() {
       const dt = Math.min(0.1, (now - last) / 1000);
       last = now;
       const rate = Math.max(1.5, count / LAPSE_SECONDS) * speed;
-      const next = Math.min(count, progressRef.current + dt * rate);
+      const next = Math.min(count, progress.get() + dt * rate);
       seek(next);
       if (next >= count) {
         setPlaying(false);
@@ -118,7 +117,7 @@ export default function HeatmapPage() {
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [playing, speed, count, seek]);
+  }, [playing, speed, count, seek, progress]);
 
   const startLapse = () => {
     seek(0);
@@ -130,24 +129,15 @@ export default function HeatmapPage() {
     setPlaying(false);
   };
   const togglePlay = () => {
-    if (!playing && progressRef.current >= count) seek(0);
+    if (!playing && progress.get() >= count) seek(0);
     setPlaying((p) => !p);
   };
-
-  const done = Math.min(count, Math.floor(progress));
-  const frac = progress - done;
-  const lapse = useMemo<HeatmapLapse | null>(() => {
-    if (!lapseOn) return null;
-    const line = lines[done];
-    return { done, head: line && frac > 0 && done < count ? partialCoords(line, frac) : null };
-  }, [lapseOn, lines, done, frac, count]);
 
   const cumDistance = useMemo(() => {
     const out = [0];
     activities.forEach((a, i) => out.push(out[i]! + (a.distanceM ?? 0)));
     return out;
   }, [activities]);
-  const current = activities[Math.min(done, Math.max(0, activities.length - 1))];
 
   // ----- filters -----------------------------------------------------------------------------------------
   const facetSports = useMemo(() => (data ? sortSports(data.facets.sports.map((s) => s.sport)) : []), [data]);
@@ -272,7 +262,7 @@ export default function HeatmapPage() {
             base={base}
             density={density}
             bounds={bounds}
-            lapse={lapse}
+            lapse={lapseOn ? progress : null}
             fitNonce={fitNonce}
           >
             <div className="pointer-events-none absolute left-3 top-3 z-10 flex flex-col items-start gap-1.5">
@@ -310,22 +300,7 @@ export default function HeatmapPage() {
             </div>
             {lapseOn && (
               <>
-                {current && (
-                  <div
-                    className="pointer-events-none absolute inset-x-0 top-3 z-10 flex justify-center"
-                    aria-live="polite"
-                  >
-                    <div className="rounded-xl border border-border bg-surface/90 px-4 py-1.5 text-center shadow-card backdrop-blur">
-                      <div className="text-lg font-semibold tracking-tight text-fg tabular">
-                        {fmt.date(current.startTs, current.tzMin, 'day')}
-                      </div>
-                      <div className="text-xs text-fg-3 tabular">
-                        {fmt.int(Math.min(count, done + (frac > 0 ? 1 : 0)))} / {fmt.int(count)} ·{' '}
-                        {fmt.distance(cumDistance[Math.min(done, count)] ?? 0, 0)}
-                      </div>
-                    </div>
-                  </div>
-                )}
+                <LapseCaption progress={progress} activities={activities} count={count} cumDistance={cumDistance} />
                 <div className="absolute bottom-8 left-3 right-14 z-10 flex flex-wrap items-center gap-2 rounded-card border border-border bg-surface/90 px-2.5 py-1.5 shadow-card backdrop-blur">
                   <IconButton
                     icon={playing ? Pause : Play}
@@ -335,13 +310,7 @@ export default function HeatmapPage() {
                   />
                   <IconButton icon={RotateCcw} label={t('maps.heatmap.restart')} onClick={() => seek(0)} />
                   <div className="min-w-32 flex-1">
-                    <Slider
-                      value={Math.min(count, Math.floor(progress))}
-                      min={0}
-                      max={Math.max(1, count)}
-                      label={t('maps.heatmap.scrub')}
-                      onChange={(v) => seek(v)}
-                    />
+                    <LapseSlider progress={progress} count={count} label={t('maps.heatmap.scrub')} />
                   </div>
                   <SegmentedControl
                     size="sm"
@@ -359,6 +328,56 @@ export default function HeatmapPage() {
         </>
       )}
     </Page>
+  );
+}
+
+/** Date, number and distance of the time-lapse: follows the position at most ten times a second. */
+function LapseCaption({
+  progress,
+  activities,
+  count,
+  cumDistance,
+}: {
+  progress: Store<number>;
+  activities: MapsHeatmapActivity[];
+  count: number;
+  cumDistance: number[];
+}) {
+  const fmt = useFormat();
+  const { done, frac } = lapseAt(useThrottledStore(progress, 100), count);
+  const current = activities[Math.min(done, Math.max(0, activities.length - 1))];
+  if (!current) return null;
+  return (
+    <div className="pointer-events-none absolute inset-x-0 top-3 z-10 flex justify-center" aria-live="polite">
+      <div className="rounded-xl border border-border bg-surface/90 px-4 py-1.5 text-center shadow-card backdrop-blur">
+        <div className="text-lg font-semibold tracking-tight text-fg tabular">
+          {fmt.date(current.startTs, current.tzMin, 'day')}
+        </div>
+        <div className="text-xs text-fg-3 tabular">
+          {fmt.int(Math.min(count, done + (frac > 0 ? 1 : 0)))} / {fmt.int(count)} ·{' '}
+          {fmt.distance(cumDistance[done] ?? 0, 0)}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Time-lapse scrubber: follows the position throttled, shows a drag at once. */
+function LapseSlider({ progress, count, label }: { progress: Store<number>; count: number; label: string }) {
+  const p = useThrottledStore(progress, 100);
+  // a controlled range input snaps back to the rendered value: render a drag right away (the render reads the store)
+  const [, rerender] = useReducer((n: number) => n + 1, 0);
+  return (
+    <Slider
+      value={Math.min(count, Math.floor(p))}
+      min={0}
+      max={Math.max(1, count)}
+      label={label}
+      onChange={(v) => {
+        progress.set(v);
+        rerender();
+      }}
+    />
   );
 }
 

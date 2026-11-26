@@ -80,7 +80,31 @@ function useEffect(fn: () => Cleanup, deps?: Deps): void {
   });
 }
 
-export const fakeReact = { useRef, useState, useMemo, useCallback, useEffect, useLayoutEffect: useEffect };
+/** Reads the snapshot on every render; a store notification re-renders when the snapshot changed. */
+function useSyncExternalStore<T>(subscribe: (onChange: () => void) => () => void, getSnapshot: () => T): T {
+  const rt = current();
+  const value = getSnapshot();
+  const latest = useRef({ value, getSnapshot });
+  latest.current = { value, getSnapshot };
+  useEffect(
+    () =>
+      subscribe(() => {
+        if (!Object.is(latest.current.getSnapshot(), latest.current.value)) rt.schedule();
+      }),
+    [subscribe],
+  );
+  return value;
+}
+
+export const fakeReact = {
+  useRef,
+  useState,
+  useMemo,
+  useCallback,
+  useEffect,
+  useLayoutEffect: useEffect,
+  useSyncExternalStore,
+};
 
 export interface HookHandle<P, R> {
   readonly result: { current: R };

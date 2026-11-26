@@ -467,6 +467,38 @@ export class LapseVisibility {
   }
 }
 
+/**
+ * A time-lapse position in activities (2.5: two finished, the third half drawn) as the number of finished activities
+ * and the drawn fraction of the next one.
+ */
+export function lapseAt(progress: number, count: number): { done: number; frac: number } {
+  const done = Math.max(0, Math.min(count, Math.floor(progress)));
+  return { done, frac: done < count ? Math.max(0, progress - done) : 0 };
+}
+
+/**
+ * Draws the time-lapse at a position (see lapseAt; null: off, every activity shown): the finished activities
+ * (LapseVisibility) and the head, the part of the next activity drawn so far. A frame changes the head, plus one
+ * feature state when an activity finishes; nothing is sent again that the map already shows.
+ */
+export class LapseDrawer {
+  private visibility = new LapseVisibility();
+  /** The head source last drawn to, and whether it shows a line there. */
+  private head: { source: unknown; line: boolean } | null = null;
+
+  draw(map: MapLibreMap, lines: HeatLine[], progress: number | null): void {
+    const at = progress === null ? null : lapseAt(progress, lines.length);
+    this.visibility.apply(map, at ? at.done : null, lines.length);
+    const line = at && at.frac > 0 ? lines[at.done] : undefined;
+    const head = line && at ? partialCoords(line, at.frac) : null;
+    const source = map.getSource(SRC.head);
+    if (!source) return;
+    if (!head && this.head?.source === source && !this.head.line) return;
+    setHeadLine(map, head);
+    this.head = { source, line: !!head };
+  }
+}
+
 export function setDensityVisible(map: MapLibreMap, visible: boolean): void {
   if (map.getLayer(LAYER.density))
     map.setLayoutProperty(LAYER.density, 'visibility', visible ? 'visible' : 'none');

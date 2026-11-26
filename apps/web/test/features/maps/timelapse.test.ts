@@ -4,13 +4,17 @@
  * in the worker on every frame that finished an activity.
  */
 import { describe, expect, it } from 'vitest';
+import type { FeatureCollection, LineString } from 'geojson';
 import type { MapsHeatmapActivity } from '@cadence/shared';
 import {
   LAYER,
+  LapseDrawer,
   LapseVisibility,
   ensureHeatLayers,
   heatPalette,
+  lapseAt,
   toHeatLines,
+  type HeatLine,
 } from '@/features/maps/lib/heatmapLayers';
 import { FakeLayerMap } from './fake-map';
 
@@ -78,6 +82,53 @@ describe('time-lapse visibility', () => {
       expect(m.layers[id]!.filter).toBeUndefined();
     }
     expect(m.sources[SRC]!.promoteId).toBe('i');
+  });
+});
+
+/** Activity `i` runs from (i, 0) to (i + 1, 0). */
+const line = (i: number): HeatLine => ({ id: 100 + i, i, sport: 'run', coords: [[i, 0], [i + 1, 0]], starts: [0], cum: [0, 1] });
+const LINES = [line(0), line(1), line(2)];
+const headCoords = (m: FakeLayerMap) =>
+  (m.sources['hm-head']!.data as FeatureCollection<LineString>).features.map((f) => f.geometry.coordinates);
+
+describe('time-lapse drawing', () => {
+  it('per frame only moves the head, and reveals each finished activity once', () => {
+    const m = heatMap();
+    const d = new LapseDrawer();
+    d.draw(m.map, LINES, 0);
+    expect(hidden(m)).toEqual([0, 1, 2]);
+    expect(m.calls.filter((c) => c.startsWith('setData'))).toEqual(['setData hm-head']);
+    m.resetCalls();
+    d.draw(m.map, LINES, 0.25);
+    d.draw(m.map, LINES, 0.5);
+    expect(m.calls).toEqual(['setData hm-head', 'setData hm-head']); // frames within one activity: the head only
+    expect(headCoords(m)).toEqual([[[0, 0], [0.5, 0]]]);
+    m.resetCalls();
+    d.draw(m.map, LINES, 1); // the first activity finished, nothing of the second drawn yet
+    expect(m.calls).toEqual([`state ${SRC}`, 'setData hm-head']);
+    expect(hidden(m)).toEqual([1, 2]);
+    expect(headCoords(m)).toEqual([]);
+    m.resetCalls();
+    d.draw(m.map, LINES, 1); // nothing changed: nothing sent
+    d.draw(m.map, LINES, null); // time-lapse off: everything shown, the head is empty already
+    expect(m.calls).toEqual([`state ${SRC}`, `state ${SRC}`]);
+    expect(hidden(m)).toEqual([]);
+  });
+
+  it('draws the position again on the empty sources of a new style', () => {
+    const d = new LapseDrawer();
+    d.draw(heatMap().map, LINES, 1.5);
+    const next = heatMap(); // basemap switch
+    d.draw(next.map, LINES, 1.5);
+    expect(hidden(next)).toEqual([1, 2]); // the second activity is the head, drawn half
+    expect(headCoords(next)).toEqual([[[1, 0], [1.5, 0]]]);
+  });
+
+  it('splits a position into finished activities and the drawn part of the next one', () => {
+    expect(lapseAt(2.5, 5)).toEqual({ done: 2, frac: 0.5 });
+    expect(lapseAt(0, 5)).toEqual({ done: 0, frac: 0 });
+    expect(lapseAt(5, 5)).toEqual({ done: 5, frac: 0 });
+    expect(lapseAt(7, 5)).toEqual({ done: 5, frac: 0 });
   });
 });
 

@@ -91,6 +91,33 @@ export function useOverlayEffect(overlay: MapOverlay, draw: (map: Map) => void, 
   }, [styleVersion, ...deps]);
 }
 
+/** A value that changes every animation frame (a playback position): its current value and every change. */
+export interface FrameValue<T> {
+  get(): T;
+  subscribe(fn: (value: T) => void): () => void;
+}
+
+/**
+ * useOverlayEffect for a value that changes every frame, without a React render per change: draws the current value
+ * of `source` (null when there is none) when `source` or `deps` change and after every style load, then every new
+ * value while the style is loaded. `draw` must be idempotent.
+ */
+export function useOverlayStore<T>(
+  overlay: MapOverlay,
+  source: FrameValue<T> | null,
+  draw: (map: Map, value: T | null) => void,
+  deps: DependencyList,
+): void {
+  const { mapRef, styleVersion } = overlay;
+  useEffect(() => {
+    if (styleVersion === 0) return;
+    const drawValue = (value: T | null) => drawIfReady(mapRef.current, (map) => draw(map, value));
+    drawValue(source ? source.get() : null);
+    return source?.subscribe(drawValue);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [styleVersion, source, ...deps]);
+}
+
 /**
  * Fits the map to `bounds` whenever they change or `nonce` is bumped. BaseMap starts with the bounds of the first
  * render, so those are not fitted (and animated) again; bounds that only arrive later are.

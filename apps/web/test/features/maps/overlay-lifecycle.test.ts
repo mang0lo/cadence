@@ -14,8 +14,10 @@ import {
   useFitBounds,
   useMapOverlay,
   useOverlayEffect,
+  useOverlayStore,
   type MapOverlay,
 } from '@/components/map/useMapOverlay';
+import { Store } from '@/features/maps/lib/timelapse';
 import { renderHook } from './fake-react';
 
 vi.mock('react', async () => (await import('./fake-react')).fakeReact);
@@ -147,6 +149,43 @@ describe('overlay effects follow the style lifecycle', () => {
     expect(ready).toHaveBeenCalledWith(map);
     expect(loaded).toHaveBeenCalledWith(map);
     expect(h.result.current.mapRef.current).toBe(map);
+  });
+});
+
+describe('overlay drawn from a value that changes every frame (heatmap time-lapse)', () => {
+  it('draws each change without a React render, waits while a new style loads and draws again after it', () => {
+    const map = new FakeMap();
+    const position = new Store(0);
+    const drawn: (number | null)[] = [];
+    let renders = 0;
+    const h = renderHook(
+      ({ source }: { source: Store<number> | null }) => {
+        renders++;
+        const overlay = useMapOverlay();
+        useOverlayStore(overlay, source, (_map, v) => drawn.push(v), []);
+        return overlay;
+      },
+      { source: position as Store<number> | null },
+    );
+    mountBaseMap(map, h.result.current);
+    position.set(1);
+    expect(drawn).toEqual([]); // the first style is still loading
+    map.fire('style.load');
+    expect(drawn).toEqual([1]);
+    const rendered = renders;
+    position.set(2);
+    position.set(3);
+    expect(drawn).toEqual([1, 2, 3]);
+    expect(renders).toBe(rendered); // no render per frame
+    baseMapSetStyle(map, DARK); // basemap switch during the time-lapse
+    position.set(4);
+    expect(drawn).toEqual([1, 2, 3]);
+    map.fire('style.load');
+    expect(drawn).toEqual([1, 2, 3, 4]);
+    h.rerender({ source: null }); // time-lapse off
+    expect(drawn).toEqual([1, 2, 3, 4, null]);
+    position.set(5);
+    expect(drawn).toEqual([1, 2, 3, 4, null]); // no longer followed
   });
 });
 
