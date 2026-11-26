@@ -81,6 +81,12 @@ jobs:
       - run: npm run mac -- --dmg
       - name: Shell tests
         run: swift test --package-path apps/macos
+      # started once before it ships, like the desktop apps: its server must come up and the UI render
+      - name: Smoke test
+        timeout-minutes: 5
+        run: |
+          export CADENCE_DATA_DIR="$RUNNER_TEMP/cadence" CADENCE_SMOKE="$RUNNER_TEMP/smoke.png"
+          build/Cadence.app/Contents/MacOS/Cadence || { cat "$CADENCE_DATA_DIR/logs/server.log" || true; exit 1; }
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: release-macOS

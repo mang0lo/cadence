@@ -46,13 +46,20 @@ final class ServerProcess {
     /// Called when the server exits after it had started successfully.
     var onUnexpectedExit: ((Int32) -> Void)?
 
+    /// CADENCE_DATA_DIR: another data folder (tests, smoke runs), which then also holds the log (logs/server.log).
+    nonisolated private static var dataDirectoryOverride: URL? {
+        guard let dir = ProcessInfo.processInfo.environment["CADENCE_DATA_DIR"], !dir.isEmpty else { return nil }
+        return URL(fileURLWithPath: dir, isDirectory: true)
+    }
+
     nonisolated static var dataDirectory: URL {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        dataDirectoryOverride ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Cadence", isDirectory: true)
     }
 
     nonisolated static var logFile: URL {
-        FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask)[0]
+        dataDirectoryOverride?.appendingPathComponent("logs/server.log")
+            ?? FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Logs/Cadence/server.log")
     }
 

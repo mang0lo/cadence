@@ -130,6 +130,20 @@ jobs:
       - run: npm run mac -- --dmg
       - name: Shell tests
         run: swift test --package-path apps/macos
+      # start the built app once: its server must come up and the UI render (CADENCE_SMOKE, see SmokeTest.swift)
+      - name: Smoke test
+        timeout-minutes: 5
+        run: |
+          export CADENCE_DATA_DIR="$RUNNER_TEMP/cadence" CADENCE_SMOKE="$RUNNER_TEMP/smoke.png"
+          build/Cadence.app/Contents/MacOS/Cadence || { cat "$CADENCE_DATA_DIR/logs/server.log" || true; exit 1; }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        continue-on-error: true
+        with:
+          name: smoke-macOS
+          path: ${{ runner.temp }}/smoke.png
+          if-no-files-found: ignore
+          retention-days: 3
       - name: Disk image exists
         run: ls -l build/Cadence-*.dmg
       # like the desktop installers: kept for a few days, and a failing upload does not fail the build

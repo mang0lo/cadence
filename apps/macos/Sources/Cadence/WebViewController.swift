@@ -121,7 +121,8 @@ final class WebViewController: NSViewController, WKNavigationDelegate, WKUIDeleg
         let config = WKWebViewConfiguration()
         config.userContentController.add(WeakScriptHandler(self), name: "cadence")
         config.preferences.setValue(true, forKey: "developerExtrasEnabled")
-        config.websiteDataStore = .default()
+        // a smoke run keeps nothing (and does not touch what the app keeps for the user)
+        config.websiteDataStore = SmokeTest.isActive ? .nonPersistent() : .default()
 
         webView = WKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = self
@@ -133,7 +134,8 @@ final class WebViewController: NSViewController, WKNavigationDelegate, WKUIDeleg
         webView.translatesAutoresizingMaskIntoConstraints = false
         overlay.translatesAutoresizingMaskIntoConstraints = false
 
-        let root = NSView()
+        // the window takes this size when the view becomes its content (first launch, smoke runs)
+        let root = NSView(frame: NSRect(x: 0, y: 0, width: 1380, height: 900))
         root.addSubview(webView)
         root.addSubview(overlay)
         NSLayoutConstraint.activate([

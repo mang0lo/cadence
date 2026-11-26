@@ -7,6 +7,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let server = ServerProcess()
     /// CFBundleShortVersionString (set from package.json by scripts/build-macos.sh); nil in `swift run` builds.
     private let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+    /// CADENCE_SMOKE (CI): start once, check that the UI renders, quit.
+    private var smoke: SmokeTest?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.mainMenu = buildMenu()
@@ -23,10 +25,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.contentViewController = web
         window.delegate = self
         window.tabbingMode = .disallowed
-        if !window.setFrameUsingName("CadenceMain") { window.center() }
-        window.setFrameAutosaveName("CadenceMain")
-        window.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        if SmokeTest.isActive {
+            // nothing to see and nothing to keep (window position, restorable state)
+            window.isRestorable = false
+        } else {
+            if !window.setFrameUsingName("CadenceMain") { window.center() }
+            window.setFrameAutosaveName("CadenceMain")
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+        }
 
         web.onRestartRequested = { [weak self] in self?.startBackend() }
         web.onConnectServer = { [weak self] url in
@@ -43,10 +50,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             if code == ShellContract.restartExitCode {
                 self?.startBackend()
             } else {
+                self?.smoke?.fail(ServerError.exited(code).localizedDescription)
                 self?.web.showError(ServerError.exited(code))
             }
         }
+        if SmokeTest.isActive {
+            Preferences.remoteServerURL = nil // only in memory: the smoke run checks the built-in server
+            smoke = SmokeTest(webView: web.webView) { [weak self] code in
+                self?.server.stop()
+                exit(code)
+            }
+        }
         startBackend()
+        smoke?.start()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
@@ -86,7 +102,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 } else {
                     self?.web.load(url)
                 }
-            case .failure(let error): self?.web.showError(error)
+            case .failure(let error):
+                self?.smoke?.fail(error.localizedDescription)
+                self?.web.showError(error)
             }
         }
     }
