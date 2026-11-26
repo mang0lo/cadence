@@ -92,13 +92,16 @@ export interface HealthMetricCard {
   /** Latest day with a value and that value (canonical unit; sleep: minutes). */
   latestDay: string | null;
   latest: number | null;
-  /** Mean over the last 30 days up to `asOf` (cumulative metrics count days without data as 0). */
+  /**
+   * Mean over the last 30 days up to `asOf`. Cumulative metrics count days without data as 0 and end at the last
+   * complete day of their source instead (the day an export was taken on, and days after its data, are left out).
+   */
   avg30: number | null;
   n30: number;
   /** Mean over the 30 days before that. */
   avgPrev30: number | null;
   nPrev30: number;
-  /** Daily values of the last OVERVIEW_SPARK_DAYS days ending at `asOf` (null = no data). */
+  /** Daily values of the last OVERVIEW_SPARK_DAYS days ending where the 30-day window ends (null = no data). */
   spark: (number | null)[];
   firstDay: string | null;
 }
@@ -224,6 +227,8 @@ export interface IntradayBucket {
   min: number;
   max: number;
   n: number;
+  /** UTC offset of this bucket when it differs from the day's `tzMin` (after a DST change, while travelling). */
+  tzMin?: number;
 }
 
 export interface IntradayResponse {
@@ -231,7 +236,10 @@ export interface IntradayResponse {
   day: string;
   unit: string | null;
   aggregation: RecordTypeInfo['aggregation'];
-  /** Local UTC offset in minutes of the day (offset of the first sample). */
+  /**
+   * Local UTC offset in minutes of the day: the offset of its first sample (later buckets with another offset carry
+   * their own); without samples the offset of the type's nearest sample.
+   */
   tzMin: number;
   dayStartTs: number;
   dayEndTs: number;

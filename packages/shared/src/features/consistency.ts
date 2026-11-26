@@ -160,6 +160,7 @@ export interface DayHealth {
   activeEnergyKcal: number | null;
   exerciseMin: number | null;
   restingHr: number | null;
+  /** Asleep minutes of the night that ended on this day (the sleep pages' night: one source, COROS included). */
   sleepMin: number | null;
 }
 
@@ -411,7 +412,10 @@ export interface Achievement {
   progress: number;
   earned: boolean;
   earnedDay: string | null;
-  /** Activity that earned it (null for ring / streak-of-weeks achievements without a single activity). */
+  /**
+   * Activity that earned it: for streaks the first activity of the day (or week) that completed them; null for ring
+   * achievements and when no single activity applies.
+   */
   workout: AchievementWorkout | null;
   /** Earned since the last few imports (within 14 days of being detected). */
   isNew: boolean;
@@ -535,6 +539,7 @@ export interface YearHealth {
   stepsPerDay: YearHealthValue;
   stepsTotal: number | null;
   bestStepsDay: { day: string; value: number } | null;
+  /** Mean asleep minutes per night (nights of more than an hour, by wake-up day). */
   sleepPerNightMin: YearHealthValue;
   activeEnergyKcal: YearHealthValue;
   flights: YearHealthValue;

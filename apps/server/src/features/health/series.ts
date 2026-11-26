@@ -1,4 +1,15 @@
-import { dayFromNumber, dayNumber, mean, median, type MetricAgg, type MetricPoint, type MetricStats } from '@cadence/shared';
+import {
+  SLEEP_GENERIC_VALUES,
+  SLEEP_STAGE_VALUES,
+  categoryValueRole,
+  dayFromNumber,
+  dayNumber,
+  mean,
+  median,
+  type MetricAgg,
+  type MetricPoint,
+  type MetricStats,
+} from '@cadence/shared';
 
 /** One daily_metrics row. */
 export interface DailyRow {
@@ -82,25 +93,47 @@ export function summarize(rows: DailyRow[], aggregation: 'sum' | 'avg' | 'durati
   };
 }
 
-/** Category values that overlap other values of the same type and must not be added up (sleep: InBed spans the stages). */
-export function excludedFromCombined(identifier: string, value: string): boolean {
-  return identifier === 'HKCategoryTypeIdentifierSleepAnalysis' && (value === 'InBed' || value === 'Awake');
+const SLEEP = 'HKCategoryTypeIdentifierSleepAnalysis';
+
+/**
+ * Sleep written twice for the same night — in stages by the watch (Core / Deep / REM) and as a generic Asleep by
+ * another app (AutoSleep, Sleep Cycle …) — is counted once: on a day with stages the generic rows are dropped, the
+ * same "staged source wins" rule as the sleep nights. daily_metrics resolves sources only within one value, so this
+ * has to happen here. Other types pass unchanged.
+ */
+export function withoutDuplicateSleep(rowsByValue: Map<string, DailyRow[]>, identifier: string): Map<string, DailyRow[]> {
+  if (identifier !== SLEEP) return rowsByValue;
+  const staged = new Set<string>();
+  for (const v of SLEEP_STAGE_VALUES) for (const r of rowsByValue.get(v) ?? []) if (r.value > 0) staged.add(r.day);
+  if (!staged.size) return rowsByValue;
+  const out = new Map<string, DailyRow[]>();
+  for (const [value, rows] of rowsByValue) {
+    const keep = SLEEP_GENERIC_VALUES.includes(value) ? rows.filter((r) => !staged.has(r.day)) : rows;
+    if (keep.length) out.set(value, keep);
+  }
+  return out;
 }
 
-/** Per-day sum over several category values (minutes; events count their occurrences when they have no duration). */
+/**
+ * Per-day total over the values of a category type: minutes, and occurrences for events without a duration. Which
+ * values count is declared per type (categoryValueRole: stand hours count Stood only, sleep leaves out InBed and
+ * Awake …); the metric page and the explorer sparkline both use this.
+ */
 export function combineCategoryRows(
   rowsByValue: Map<string, DailyRow[]>,
   identifier: string,
 ): DailyRow[] {
   const days = new Map<string, DailyRow>();
-  for (const [value, rows] of rowsByValue) {
-    if (excludedFromCombined(identifier, value)) continue;
+  for (const [value, rows] of withoutDuplicateSleep(rowsByValue, identifier)) {
+    const role = categoryValueRole(identifier, value);
+    if (role === 'skip') continue;
     for (const r of rows) {
-      const d = days.get(r.day);
-      if (d) {
+      let d = days.get(r.day);
+      if (!d) days.set(r.day, (d = { day: r.day, value: 0, min: null, max: null, n: 0 }));
+      if (role === 'add') {
         d.value += r.value;
         d.n += r.n;
-      } else days.set(r.day, { day: r.day, value: r.value, min: null, max: null, n: r.n });
+      }
     }
   }
   return [...days.values()].sort((a, b) => (a.day < b.day ? -1 : 1));

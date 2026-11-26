@@ -440,6 +440,32 @@ export function categoryValueLabel(value: string, lang: 'en' | 'de'): string {
   return value.replace(/([a-z0-9])([A-Z])/g, '$1 $2');
 }
 
+/**
+ * How a category value counts in the daily total of its type (metric page statistics, explorer sparkline):
+ *  - 'add': its minutes (or, for events without a duration, its occurrences) count;
+ *  - 'zero': the day has data but the value adds nothing (stand hours: an Idle hour was worn, not stood);
+ *  - 'skip': not part of the total (sleep: InBed spans the stages and Awake is not sleep; no flow, symptom not present).
+ * Every value still shows as its own category in the stacked charts.
+ */
+export type CategoryValueRole = 'add' | 'zero' | 'skip';
+
+/** Generic and staged asleep values of SleepAnalysis (a night written both ways must be counted once). */
+export const SLEEP_GENERIC_VALUES: readonly string[] = ['Asleep', 'AsleepUnspecified'];
+export const SLEEP_STAGE_VALUES: readonly string[] = ['AsleepCore', 'AsleepDeep', 'AsleepREM'];
+
+export function categoryValueRole(identifier: string, value: string): CategoryValueRole {
+  switch (identifier) {
+    case 'HKCategoryTypeIdentifierSleepAnalysis':
+      return value === 'InBed' || value === 'Awake' ? 'skip' : 'add';
+    case 'HKCategoryTypeIdentifierAppleStandHour':
+      return value === 'Stood' ? 'add' : 'zero';
+    case 'HKCategoryTypeIdentifierMenstrualFlow':
+      return value === 'None' ? 'skip' : 'add';
+  }
+  // symptoms: 'SeverityNotPresent', 'PresenceNotPresent' (logged to say the symptom was absent)
+  return value.endsWith('NotPresent') ? 'skip' : 'add';
+}
+
 // ---------------------------------------------------------------------------------------------------------------
 // Display
 // ---------------------------------------------------------------------------------------------------------------

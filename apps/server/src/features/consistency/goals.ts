@@ -4,6 +4,8 @@
  */
 import {
   LONGEST_PRESETS,
+  M_PER_FT,
+  M_PER_MI,
   goalMetricsFor,
   sportInfo,
   type GoalInput,
@@ -12,6 +14,7 @@ import {
   type GoalPeriodProgress,
   type GoalPeriodResult,
   type GoalSuggestion,
+  type Units,
 } from '@cadence/shared';
 import { daysBetween, periodRange, plusDays, previousPeriodStart } from './days';
 
@@ -193,9 +196,19 @@ export function roundNice(v: number): number {
   return Math.max(step, Math.round(v / step) * step);
 }
 
-/** A target from an average per period: a ~10 % stretch, rounded to a nice number in display-friendly units. */
-export function niceTarget(metric: GoalMetric, period: GoalPeriod, average: number, stretch = 1.1): number {
+/**
+ * A target from an average per period: a ~10 % stretch, rounded to a nice number in the units the athlete reads
+ * (kilometres or miles, metres or feet). The result stays canonical (m, s, kcal …).
+ */
+export function niceTarget(
+  metric: GoalMetric,
+  period: GoalPeriod,
+  average: number,
+  stretch = 1.1,
+  units: Units = 'metric',
+): number {
   const v = average * stretch;
+  const imperial = units === 'imperial';
   switch (metric) {
     case 'active_days':
       return Math.max(1, Math.min(PERIOD_DAYS_MAX[period] - (period === 'year' ? 1 : 0), period === 'year' ? Math.round(v / 5) * 5 : Math.round(v)));
@@ -205,12 +218,15 @@ export function niceTarget(metric: GoalMetric, period: GoalPeriod, average: numb
       // nice in hours from 2 h on ("6 h"), else in minutes ("90 min")
       return v >= 7200 ? roundNice(v / 3600) * 3600 : roundNice(v / 60) * 60;
     case 'distance':
-      return Math.max(1000, roundNice(v));
-    case 'longest':
-      // whole kilometres from 10 km on, else half kilometres
-      return v >= 10_000 ? Math.round(v / 1000) * 1000 : Math.max(500, Math.round(v / 500) * 500);
+      return imperial ? Math.max(1, roundNice(v / M_PER_MI)) * M_PER_MI : Math.max(1000, roundNice(v));
+    case 'longest': {
+      // whole kilometres (miles) from 10 km (6 mi) on, else halves
+      const unit = imperial ? M_PER_MI : 1000;
+      const n = v / unit;
+      return (n >= (imperial ? 6 : 10) ? Math.round(n) : Math.max(0.5, Math.round(n * 2) / 2)) * unit;
+    }
     case 'elevation':
-      return Math.max(100, roundNice(v));
+      return imperial ? Math.max(300, roundNice(v / M_PER_FT)) * M_PER_FT : Math.max(100, roundNice(v));
     case 'calories':
       return Math.max(50, roundNice(v));
   }
@@ -260,7 +276,7 @@ function trailingYear(rows: DailyRow[], metric: GoalMetric, sport: string | null
 const sameGoal = (a: Pick<GoalInput, 'period' | 'metric' | 'sport'>, b: Pick<GoalInput, 'period' | 'metric' | 'sport'>) =>
   a.period === b.period && a.metric === b.metric && (a.sport ?? null) === (b.sport ?? null);
 
-/** Suggested goals from recent averages, excluding combinations that already exist. */
+/** Suggested goals from recent averages, excluding combinations that already exist (targets nice in `units`). */
 export function suggestGoals(
   rows: DailyRow[],
   existing: Pick<GoalInput, 'period' | 'metric' | 'sport'>[],
@@ -268,6 +284,7 @@ export function suggestGoals(
   weekStart: 0 | 1,
   firstDay: string | null,
   max = 5,
+  units: Units = 'metric',
 ): GoalSuggestion[] {
   if (!firstDay || !rows.length) return [];
   const recent = rowsIn(rows, plusDays(asOf, -180), asOf);
@@ -314,7 +331,12 @@ export function suggestGoals(
     }
     if (avg.average <= 0) continue;
     if (c.metric === 'elevation' && avg.average < 200) continue;
-    out.push({ ...c, target: niceTarget(c.metric, c.period, avg.average), average: avg.average, periods: avg.periods });
+    out.push({
+      ...c,
+      target: niceTarget(c.metric, c.period, avg.average, undefined, units),
+      average: avg.average,
+      periods: avg.periods,
+    });
     if (out.length >= max) break;
   }
   if (longSuggestion && !out.includes(longSuggestion) && out.length < max) out.push(longSuggestion);
@@ -322,7 +344,13 @@ export function suggestGoals(
 }
 
 /** Sensible starting goals: 3+ active days and the WHO's 150 min per week, plus a monthly distance goal. */
-export function defaultGoals(rows: DailyRow[], asOf: string, weekStart: 0 | 1, firstDay: string | null): GoalInput[] {
+export function defaultGoals(
+  rows: DailyRow[],
+  asOf: string,
+  weekStart: 0 | 1,
+  firstDay: string | null,
+  units: Units = 'metric',
+): GoalInput[] {
   const weekB = bucketByPeriod(rows, 'week', weekStart);
   const days = recentAverage({ period: 'week', metric: 'active_days', sport: null }, weekB, asOf, weekStart, firstDay, 8);
   const time = recentAverage({ period: 'week', metric: 'time', sport: null }, weekB, asOf, weekStart, firstDay, 8);
@@ -346,7 +374,7 @@ export function defaultGoals(rows: DailyRow[], asOf: string, weekStart: 0 | 1, f
     const monthB = bucketByPeriod(rows, 'month', weekStart);
     const dist = recentAverage({ period: 'month', metric: 'distance', sport: top }, monthB, asOf, weekStart, firstDay, 3);
     if (dist.periods && dist.average > 0)
-      out.push({ period: 'month', sport: top, metric: 'distance', target: niceTarget('distance', 'month', dist.average, 1) });
+      out.push({ period: 'month', sport: top, metric: 'distance', target: niceTarget('distance', 'month', dist.average, 1, units) });
   }
   return out;
 }

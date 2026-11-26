@@ -1,7 +1,8 @@
 import type { IntradayBucket, IntradayResponse } from '@cadence/shared';
-import { all, type Db } from '../../db/db';
+import { all, get, type Db } from '../../db/db';
+import { badRequest } from '../../lib/http';
 import { parseDay } from '../../lib/time';
-import type { TypeRow } from './util';
+import { localDayRange, localDaySql, type TypeRow } from './util';
 
 export interface IntradayRow {
   start_ts: number;
@@ -18,6 +19,8 @@ export const INTRADAY_BUCKETS = [1, 5, 10, 15, 30, 60] as const;
  *  - 'avg' types: mean / min / max / count per bucket;
  *  - 'sum' types: per bucket and source the sum, then the maximum over sources (iPhone and Watch both count steps,
  *    same rule as daily_metrics) – `avg`, `min` and `max` all hold the bucket total.
+ * With `dayTzMin`, a bucket whose first sample has another offset (after a DST change, while travelling) carries
+ * that offset as `tzMin`, so its time can be labelled right.
  */
 export function bucketize(
   rows: IntradayRow[],
@@ -25,9 +28,30 @@ export function bucketize(
   dayEndTs: number,
   bucketS: number,
   aggregation: 'sum' | 'avg' | 'duration',
+  dayTzMin?: number,
 ): IntradayBucket[] {
   const count = Math.max(1, Math.ceil((dayEndTs - dayStartTs) / bucketS));
   const idx = (ts: number) => Math.min(count - 1, Math.max(0, Math.floor((ts - dayStartTs) / bucketS)));
+  const buckets = totals(rows, bucketS, aggregation, idx, dayStartTs);
+  if (dayTzMin === undefined) return buckets;
+  const tzOf = new Map<number, number>();
+  for (const r of rows) {
+    const i = idx(r.start_ts);
+    if (!tzOf.has(i)) tzOf.set(i, r.tz_min);
+  }
+  return buckets.map((b) => {
+    const tz = tzOf.get(Math.round((b.ts - dayStartTs) / bucketS));
+    return tz === undefined || tz === dayTzMin ? b : { ...b, tzMin: tz };
+  });
+}
+
+function totals(
+  rows: IntradayRow[],
+  bucketS: number,
+  aggregation: 'sum' | 'avg' | 'duration',
+  idx: (ts: number) => number,
+  dayStartTs: number,
+): IntradayBucket[] {
   if (aggregation === 'sum') {
     const per = new Map<number, Map<number, number>>();
     for (const r of rows) {
@@ -59,7 +83,22 @@ export function bucketize(
     .map(([i, a]) => ({ ts: dayStartTs + i * bucketS, avg: a.sum / a.n, min: a.min, max: a.max, n: a.n }));
 }
 
-/** Samples of one record type on one local day, bucketed (see `bucketize`). */
+/**
+ * Offset of the type's sample nearest to a local day without samples (the last one before it, else the first one
+ * after it): the athlete's own offset rather than the server's, which may run in UTC. Null without any sample.
+ */
+function nearestTzMin(db: Db, athleteId: number, typeId: number, dn: number): number | null {
+  const sql = (dir: 'before' | 'after') =>
+    `SELECT tz_min FROM records WHERE athlete_id = ? AND type_id = ? AND start_ts ${dir === 'before' ? '<' : '>='} ?
+     ORDER BY start_ts ${dir === 'before' ? 'DESC' : 'ASC'} LIMIT 1`;
+  const params = [athleteId, typeId, dn * 86400];
+  return (get<{ tz_min: number }>(db, sql('before'), params) ?? get<{ tz_min: number }>(db, sql('after'), params))?.tz_min ?? null;
+}
+
+/**
+ * Samples of one record type on one local day, bucketed (see `bucketize`). `fallbackTzMin` is the offset used when
+ * the athlete has no sample of the type at all.
+ */
 export function buildIntraday(
   db: Db,
   athleteId: number,
@@ -69,17 +108,16 @@ export function buildIntraday(
   fallbackTzMin: number,
 ): IntradayResponse {
   const dn = parseDay(day);
-  if (dn === null) throw new Error(`Invalid day ${day}`);
-  // generous UTC window, then the exact local-day filter (offsets of samples may differ while travelling)
-  const lo = dn * 86400 - 15 * 3600;
-  const hi = (dn + 1) * 86400 + 15 * 3600;
+  if (dn === null) throw badRequest(`Invalid day ${day}`);
+  // the samples of the local day, each by its own offset (offsets of samples may differ while travelling)
+  const w = localDaySql('r', localDayRange(day, day));
   const rows = all<IntradayRow>(
     db,
-    `SELECT start_ts, tz_min, value, source_id FROM records
-     WHERE athlete_id = ? AND type_id = ? AND start_ts >= ? AND start_ts < ? AND value IS NOT NULL ORDER BY start_ts`,
-    [athleteId, type.id, lo, hi],
-  ).filter((r) => Math.floor((r.start_ts + r.tz_min * 60) / 86400) === dn);
-  const tzMin = rows.length ? rows[0]!.tz_min : fallbackTzMin;
+    `SELECT r.start_ts, r.tz_min, r.value, r.source_id FROM records r
+     WHERE r.athlete_id = ? AND r.type_id = ? AND ${w.sql} AND r.value IS NOT NULL ORDER BY r.start_ts`,
+    [athleteId, type.id, ...w.params],
+  );
+  const tzMin = rows.length ? rows[0]!.tz_min : (nearestTzMin(db, athleteId, type.id, dn) ?? fallbackTzMin);
   const tzEnd = rows.length ? rows[rows.length - 1]!.tz_min : tzMin;
   const dayStartTs = dn * 86400 - tzMin * 60;
   const dayEndTs = (dn + 1) * 86400 - tzEnd * 60;
@@ -93,6 +131,6 @@ export function buildIntraday(
     dayEndTs,
     bucketS: bucketMin * 60,
     sampleCount: rows.length,
-    buckets: bucketize(rows, dayStartTs, dayEndTs, bucketMin * 60, type.aggregation),
+    buckets: bucketize(rows, dayStartTs, dayEndTs, bucketMin * 60, type.aggregation, tzMin),
   };
 }

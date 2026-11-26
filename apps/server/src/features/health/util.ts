@@ -1,11 +1,65 @@
 import { z } from 'zod';
 import { DEFAULT_HEALTH_SETTINGS, type HealthSettings, type RecordTypeInfo } from '@cadence/shared';
 import { get, type Db } from '../../db/db';
+import { firstRecord, lastRecord } from '../../core/coverage';
 import { getSetting, setSetting } from '../../core/settings';
-import { HttpError, notFound } from '../../lib/http';
-import { localDay, nowSec } from '../../lib/time';
+import { badRequest, HttpError, notFound } from '../../lib/http';
+import { parseDay } from '../../lib/time';
 
-export const dayParam = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'expected YYYY-MM-DD');
+/** A local day 'YYYY-MM-DD' that exists in the calendar (2026-02-30 is a 400, not an empty or failing answer). */
+export const dayParam = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, 'expected YYYY-MM-DD')
+  .refine((d) => parseDay(d) !== null, 'not a calendar day');
+
+/** Margin around a range of local days in UTC: offsets reach −12 / +14 h (a little more for safety). */
+const TZ_WINDOW_S = 15 * 3600;
+
+/**
+ * Local days [fromDay, toDay] as timestamps: [lo, hi) is a UTC window that surely contains them (for the start_ts
+ * indexes), and a sample lies on those days when start_ts + tz_min * 60 ∈ [localLo, localHi). Open ends stay open.
+ */
+export interface LocalDayRange {
+  lo: number;
+  hi: number;
+  localLo: number | null;
+  localHi: number | null;
+}
+
+export function localDayRange(fromDay?: string, toDay?: string): LocalDayRange {
+  const start = (day: string) => {
+    const n = parseDay(day);
+    if (n === null) throw badRequest(`Invalid day ${day}`);
+    return n * 86_400;
+  };
+  const localLo = fromDay ? start(fromDay) : null;
+  const localHi = toDay ? start(toDay) + 86_400 : null;
+  return {
+    lo: localLo === null ? -1e12 : localLo - TZ_WINDOW_S,
+    hi: localHi === null ? 1e12 : localHi + TZ_WINDOW_S,
+    localLo,
+    localHi,
+  };
+}
+
+/**
+ * SQL condition of a LocalDayRange on a table with start_ts / tz_min (`alias.`): the UTC window for the index plus
+ * the exact local days as integer arithmetic (no date() call per row).
+ */
+export function localDaySql(alias: string, r: LocalDayRange): { sql: string; params: number[] } {
+  const local = `${alias}.start_ts + ${alias}.tz_min * 60`;
+  let sql = `${alias}.start_ts >= ? AND ${alias}.start_ts < ?`;
+  const params = [r.lo, r.hi];
+  if (r.localLo !== null) {
+    sql += ` AND ${local} >= ?`;
+    params.push(r.localLo);
+  }
+  if (r.localHi !== null) {
+    sql += ` AND ${local} < ?`;
+    params.push(r.localHi);
+  }
+  return { sql, params };
+}
 
 export interface TypeRow {
   id: number;
@@ -46,31 +100,12 @@ export function aggregationOfMetric(db: Db, metric: string): RecordTypeInfo['agg
   return row?.aggregation ?? null;
 }
 
-/** Earliest / latest local day with any health record (anchor for "last 30 days" style ranges). */
+/**
+ * Earliest / latest local day with a health record of any source (Apple Health, COROS daily values): the anchor for
+ * "last 30 days" style ranges. Same records as the data horizon of the consistency pages (core/coverage.ts).
+ */
 export function dataRange(db: Db, athleteId: number): { firstDay: string | null; asOf: string | null } {
-  const limit = nowSec() + 86_400;
-  const tzAt = (typeId: number, ts: number) =>
-    get<{ tz_min: number }>(db, 'SELECT tz_min FROM records WHERE athlete_id = ? AND type_id = ? AND start_ts = ? LIMIT 1', [
-      athleteId,
-      typeId,
-      ts,
-    ])?.tz_min ?? 0;
-  const last = get<{ type_id: number; last_ts: number }>(
-    db,
-    `SELECT type_id, last_ts FROM record_type_stats WHERE athlete_id = ? AND last_ts IS NOT NULL AND last_ts <= ?
-     ORDER BY last_ts DESC LIMIT 1`,
-    [athleteId, limit],
-  );
-  const first = get<{ type_id: number; first_ts: number }>(
-    db,
-    `SELECT type_id, first_ts FROM record_type_stats WHERE athlete_id = ? AND first_ts IS NOT NULL AND first_ts >= 946684800
-     ORDER BY first_ts ASC LIMIT 1`,
-    [athleteId],
-  );
-  return {
-    asOf: last ? localDay(last.last_ts, tzAt(last.type_id, last.last_ts)) : null,
-    firstDay: first ? localDay(first.first_ts, tzAt(first.type_id, first.first_ts)) : null,
-  };
+  return { asOf: lastRecord(db, athleteId)?.day ?? null, firstDay: firstRecord(db, athleteId)?.day ?? null };
 }
 
 const SETTINGS_KEY = 'health.settings';

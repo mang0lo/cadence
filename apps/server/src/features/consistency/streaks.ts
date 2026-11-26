@@ -147,7 +147,10 @@ export function longestRunWithin(days: Iterable<string>, from: string, to: strin
   return best ? { start: fromEpoch(best.start), end: fromEpoch(best.end), length: best.length } : null;
 }
 
-/** Longest run of qualifying weeks whose week start lies inside [from, to]. */
+/**
+ * Longest run of qualifying weeks, counting only the days inside [from, to]: a week cut by `from` or `to` counts with
+ * its days inside the range, and the run returned is clamped to the range.
+ */
 export function longestWeekRunWithin(
   days: Iterable<string>,
   from: string,

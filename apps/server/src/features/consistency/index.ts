@@ -1,7 +1,7 @@
 import type { Feature } from '../types';
 import { migrations } from './migrations';
 import routes from './routes';
-import { achievementsStep } from './trophies';
+import { achievementsStep, resetAchievements } from './trophies';
 import { consistencyWhatsNew } from './whats-new';
 
 /**
@@ -19,6 +19,8 @@ const feature: Feature = {
   routes,
   // goals are user-written: keep them when the user deletes all imported data
   keepOnReset: ['consistency_goals', 'consistency_goal_checks'],
+  // the derived trophies are deleted: so is the state of their cache (kept in the settings)
+  onReset: resetAchievements,
   whatsNew: consistencyWhatsNew,
 };
 

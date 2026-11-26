@@ -3,9 +3,8 @@ import { z } from 'zod';
 import type { HeartEvent, HeartEventType, IntradayResponse } from '@cadence/shared';
 import { all } from '../../db/db';
 import { badRequest } from '../../lib/http';
-import { localDay, parseDay } from '../../lib/time';
 import { INTRADAY_BUCKETS, buildIntraday } from './intraday';
-import { checkDayOrder, dayParam, resolveType } from './util';
+import { checkDayOrder, dayParam, localDayRange, localDaySql, resolveType } from './util';
 
 /** Category types of heart notifications. */
 const EVENT_TYPES: Record<string, HeartEventType> = {
@@ -49,21 +48,19 @@ export function registerHeartRoutes(app: FastifyInstance): void {
       `SELECT id, identifier FROM record_types WHERE identifier IN (${Object.keys(EVENT_TYPES).map(() => '?').join(',')})`,
       Object.keys(EVENT_TYPES),
     );
-    const lo = q.fromDay ? (parseDay(q.fromDay) ?? 0) * 86400 - 15 * 3600 : -1e12;
-    const hi = q.toDay ? ((parseDay(q.toDay) ?? 0) + 1) * 86400 + 15 * 3600 : 1e12;
+    // the exact local days in SQL, so the limit counts only events of the range
+    const w = localDaySql('r', localDayRange(q.fromDay, q.toDay));
     const events: HeartEvent[] = [];
     for (const t of types) {
       const rows = all<{ start_ts: number; tz_min: number; meta: string | null; source: string | null }>(
         app.db,
         `SELECT r.start_ts, r.tz_min, r.meta, s.name AS source
          FROM records r LEFT JOIN sources s ON s.id = r.source_id
-         WHERE r.athlete_id = ? AND r.type_id = ? AND r.start_ts >= ? AND r.start_ts < ?
+         WHERE r.athlete_id = ? AND r.type_id = ? AND ${w.sql}
          ORDER BY r.start_ts DESC LIMIT ?`,
-        [req.athleteId, t.id, lo, hi, q.limit],
+        [req.athleteId, t.id, ...w.params, q.limit],
       );
       for (const r of rows) {
-        const day = localDay(r.start_ts, r.tz_min);
-        if ((q.fromDay && day < q.fromDay) || (q.toDay && day > q.toDay)) continue;
         events.push({
           type: EVENT_TYPES[t.identifier]!,
           ts: r.start_ts,

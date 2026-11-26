@@ -2,8 +2,12 @@ import type { ImportHighlight } from '@cadence/shared';
 import { all } from '../../db/db';
 import type { WhatsNewInput } from '../types';
 
-/** Trophies the trophy step found newly earned during this import (first_seen_at is stamped by the step). */
-export function consistencyWhatsNew({ db, athleteId, since }: WhatsNewInput): ImportHighlight[] {
+/**
+ * Trophies the trophy step found newly earned during this import (first_seen_at is stamped by the step). Nothing on
+ * a first import: every trophy of the history would only repeat the totals (same rule as activities and maps).
+ */
+export function consistencyWhatsNew({ db, athleteId, since, initial }: WhatsNewInput): ImportHighlight[] {
+  if (initial) return [];
   return all<{
     key: string;
     grp: string;

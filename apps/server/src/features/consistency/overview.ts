@@ -17,6 +17,7 @@ import { all, type Db } from '../../db/db';
 import { getSetting, setSetting } from '../../core/settings';
 import { SUMMARY_COLS, toSummary, type WorkoutRow } from '../../core/workouts';
 import { localDay } from '../../lib/time';
+import { dailyValues } from '../health/overview';
 import { closed } from './achievements';
 import {
   firstDataDay,
@@ -195,9 +196,6 @@ export function ringValues(r: RingRow): RingValues {
 }
 
 const HK = (t: string) => `HKQuantityTypeIdentifier${t}`;
-const SLEEP_METRICS = ['AsleepCore', 'AsleepDeep', 'AsleepREM', 'Asleep', 'AsleepUnspecified'].map(
-  (v) => `HKCategoryTypeIdentifierSleepAnalysis:${v}`,
-);
 const DAY_METRICS = {
   steps: HK('StepCount'),
   walkRunDistanceM: HK('DistanceWalkingRunning'),
@@ -222,7 +220,7 @@ export function dayDetail(db: Db, athleteId: number, day: string): DayDetail {
     restingHr: heartMetric(db, athleteId, 'restingHr'),
     steps: heartMetric(db, athleteId, 'steps'),
   };
-  const metrics = [...Object.values(dayMetrics), ...SLEEP_METRICS];
+  const metrics = Object.values(dayMetrics);
   const values = new Map(
     all<{ metric: string; value: number }>(
       db,
@@ -233,8 +231,8 @@ export function dayDetail(db: Db, athleteId: number, day: string): DayDetail {
   const health = Object.fromEntries(
     Object.entries(dayMetrics).map(([k, metric]) => [k, values.get(metric) ?? null]),
   ) as unknown as DayHealth;
-  const sleep = SLEEP_METRICS.reduce((s, m) => s + (values.get(m) ?? 0), 0);
-  health.sleepMin = sleep > 0 ? sleep : null;
+  // the night that ended on this day, as the sleep pages show it (one source per night, COROS nights included)
+  health.sleepMin = dailyValues(db, athleteId, 'sleep', day, day)[0]?.value ?? null;
   return { day, workouts: ws.map(toSummary), rings: ring ? ringValues(ring) : null, health };
 }
 
