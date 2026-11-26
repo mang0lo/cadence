@@ -1,12 +1,28 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { AthleteSettings, DataSourcesInfo, ServerStatus } from '@cadence/shared';
-import { get, run } from '../db/db';
+import { get, run, type Db } from '../db/db';
 import { isAuthenticated } from './auth';
 import { getAthlete, getSettings, updateSettings } from './settings';
 import { dataSources, preferred } from './sources';
 
-let countsCache: { at: number; value: ServerStatus['counts'] } | null = null;
+/** Per athlete: the counts are cheap but not free, and /status is polled. */
+const countsCache = new Map<number, { at: number; value: ServerStatus['counts'] }>();
+
+function statusCounts(db: Db, athleteId: number): ServerStatus['counts'] {
+  const hit = countsCache.get(athleteId);
+  if (hit && Date.now() - hit.at <= 30_000) return hit.value;
+  // record_type_stats instead of COUNT(*) over records: tens of millions of rows would block the event loop
+  const workouts = get<{ n: number }>(db, 'SELECT COUNT(*) AS n FROM workouts WHERE athlete_id = ?', [athleteId])!.n;
+  const r = get<{ types: number; records: number | null }>(
+    db,
+    'SELECT COUNT(*) AS types, SUM(count) AS records FROM record_type_stats WHERE athlete_id = ?',
+    [athleteId],
+  )!;
+  const value = { workouts, records: r.records ?? 0, recordTypes: r.types };
+  countsCache.set(athleteId, { at: Date.now(), value });
+  return value;
+}
 
 const settingsPatch = z
   .object({
@@ -46,33 +62,24 @@ const settingsPatch = z
 
 /** Core endpoints: status, athlete profile, settings. Mounted under /api. */
 export default async function coreRoutes(app: FastifyInstance) {
-  app.get('/status', async (req): Promise<ServerStatus & { authenticated: boolean }> => {
-    const db = app.db;
-    if (!countsCache || Date.now() - countsCache.at > 30_000) {
-      // record_type_stats instead of COUNT(*) over records: tens of millions of rows would block the event loop
-      const workouts = get<{ n: number }>(db, 'SELECT COUNT(*) AS n FROM workouts WHERE athlete_id = ?', [
-        req.athleteId,
-      ])!.n;
-      const r = get<{ types: number; records: number | null }>(
-        db,
-        'SELECT COUNT(*) AS types, SUM(count) AS records FROM record_type_stats WHERE athlete_id = ?',
-        [req.athleteId],
-      )!;
-      countsCache = { at: Date.now(), value: { workouts, records: r.records ?? 0, recordTypes: r.types } };
+  // Public (login screen, Docker health check): before a login it tells nothing about the data or the version
+  app.get('/status', { config: { public: true } }, async (req): Promise<ServerStatus & { authenticated: boolean }> => {
+    const authRequired = !!app.config.password;
+    const authenticated = isAuthenticated(req, app.config.password);
+    const base = { ok: true as const, name: 'cadence' as const, mode: app.config.mode, authRequired, authenticated };
+    if (authRequired && !authenticated) {
+      return { ...base, version: '', localImport: false, counts: { workouts: 0, records: 0, recordTypes: 0 }, lastImportAt: null };
     }
     const last = get<{ t: number | null }>(
-      db,
-      "SELECT MAX(finished_at) AS t FROM import_jobs WHERE status = 'done' AND kind = 'import'",
+      app.db,
+      "SELECT MAX(finished_at) AS t FROM import_jobs WHERE athlete_id = ? AND status = 'done' AND kind = 'import'",
+      [req.athleteId],
     );
     return {
-      ok: true,
-      name: 'cadence',
+      ...base,
       version: app.config.version,
-      mode: app.config.mode,
-      authRequired: !!app.config.password,
-      authenticated: isAuthenticated(req, app.config.password),
       localImport: app.config.allowLocalImport,
-      counts: countsCache.value,
+      counts: statusCounts(app.db, req.athleteId),
       lastImportAt: last?.t ?? null,
     };
   });
@@ -115,5 +122,5 @@ export default async function coreRoutes(app: FastifyInstance) {
 
 /** Lets other modules invalidate the cached counts (e.g. after an import). */
 export function invalidateStatusCounts(): void {
-  countsCache = null;
+  countsCache.clear();
 }

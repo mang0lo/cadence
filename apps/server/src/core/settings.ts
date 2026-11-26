@@ -32,10 +32,14 @@ export function getSettings(db: Db, athleteId: number): AthleteSettings {
   return { ...DEFAULT_SETTINGS, ...getSetting<Partial<AthleteSettings>>(db, athleteId, SETTINGS_KEY, {}) };
 }
 
+/**
+ * Stores only the keys the athlete set, never the defaults: a key that is missing means "not chosen" (the first
+ * COROS connection picks the watch then), and a changed default reaches everyone who did not choose.
+ */
 export function updateSettings(db: Db, athleteId: number, patch: Partial<AthleteSettings>): AthleteSettings {
-  const next = { ...getSettings(db, athleteId), ...patch };
+  const next = { ...getSetting<Partial<AthleteSettings>>(db, athleteId, SETTINGS_KEY, {}), ...patch };
   setSetting(db, athleteId, SETTINGS_KEY, next);
-  return next;
+  return { ...DEFAULT_SETTINGS, ...next };
 }
 
 export function ageFrom(birthDate: string | null, at = new Date()): number | null {
@@ -69,10 +73,12 @@ export function getEffectiveHr(db: Db, athleteId: number): EffectiveHr {
     maxHr = settings.maxHr;
     maxHrSource = 'settings';
   } else {
-    // 3rd highest workout max HR ignores the odd optical-sensor spike.
+    // 3rd highest workout max HR ignores the odd optical-sensor spike; hidden workouts do not count (a bad strap
+    // reading is a reason to hide one)
     const top = all<{ max_hr: number }>(
       db,
-      `SELECT max_hr FROM workouts WHERE athlete_id = ? AND max_hr BETWEEN 120 AND 225 AND duplicate_of IS NULL
+      `SELECT max_hr FROM workouts
+       WHERE athlete_id = ? AND max_hr BETWEEN 120 AND 225 AND duplicate_of IS NULL AND hidden = 0
        ORDER BY max_hr DESC LIMIT 3`,
       [athleteId],
     );
