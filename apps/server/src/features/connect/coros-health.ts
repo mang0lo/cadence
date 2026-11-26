@@ -2,7 +2,7 @@ import { all, get, prepare, run, tx, type Db } from '../../db/db';
 import { recomputeDailyMetrics, refreshTypeStats } from '../../derive/daily';
 import type { Aggregation } from '../../import/hk';
 import { fnv1a } from '../../lib/hash';
-import { parseDay } from '../../lib/time';
+import { dayString, parseDay } from '../../lib/time';
 import { getSettings } from '../../core/settings';
 import { preferred } from '../../core/sources';
 import { rebuildSleepNights } from '../health/sleep';
@@ -179,12 +179,15 @@ export function refreshCorosMetrics(db: Db, athleteId: number, fromDay: string |
     `SELECT id, identifier, kind, aggregation FROM record_types WHERE identifier IN (${ALL_METRICS.map(() => '?').join(',')})`,
     ALL_METRICS.map((m) => m.identifier),
   );
-  const from = fromDay ? parseDay(fromDay) : null;
+  const parsed = fromDay ? parseDay(fromDay) : null;
+  // one day earlier, as the core step does; the band must cover that day too (each incremental sync would else
+  // drop it from the day before its window)
+  const from = parsed === null ? null : parsed - 1;
   for (const t of rows) {
-    recomputeDailyMetrics(db, athleteId, t, from === null ? null : from - 1);
+    recomputeDailyMetrics(db, athleteId, t, from);
     refreshTypeStats(db, athleteId, t.id);
   }
-  applyCorosHeartRateBand(db, athleteId, fromDay);
+  applyCorosHeartRateBand(db, athleteId, from === null ? null : dayString(from));
 }
 
 /**
