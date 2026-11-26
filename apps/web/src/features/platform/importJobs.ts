@@ -156,3 +156,15 @@ export function jobSourceLabel(t: TFunction, job: ImportJob): string {
   if (coros) return t('platform.import.corosBatch', { count: Number(coros[1]) });
   return job.sourceName ?? '–';
 }
+
+/**
+ * The error to show after uploading `total` files, null when none failed: for a single file what the server said, for
+ * several which of them failed (and why, when only one did).
+ */
+export function uploadFailure(t: TFunction, total: number, failed: { name: string; error: unknown }[]): unknown {
+  if (!failed.length) return null;
+  if (total === 1) return failed[0]!.error;
+  const which = t('platform.import.uploadsFailed', { count: failed.length, names: failed.map((f) => f.name).join(', ') });
+  const why = failed.length === 1 && failed[0]!.error instanceof Error ? ` ${failed[0]!.error.message}` : '';
+  return new Error(which + why);
+}

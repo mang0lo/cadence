@@ -11,6 +11,7 @@ import {
   jobStepLabel,
   loadJobs,
   stepKey,
+  uploadFailure,
   waitingJobs,
   wantsFullList,
   type JobsIo,
@@ -160,6 +161,29 @@ describe('loading the job list', () => {
     const server = [job('running', { id: 'coros' }), ...prev];
     const io = fakeIo(server);
     expect(await loadJobs(prev, io, false)).toEqual({ jobs: server, full: true });
+  });
+});
+
+describe('failed uploads', () => {
+  const tooLarge = new Error('Upload exceeds the size limit');
+  const wrongType = new Error('Upload the export.zip (or export.xml) from the Health app, or FIT files (.fit / .zip)');
+
+  it('shows what the server said about a single file', () => {
+    expect(uploadFailure(t, 1, [{ name: 'export.zip', error: tooLarge }])).toBe(tooLarge);
+    expect(uploadFailure(t, 1, [])).toBeNull();
+    expect(uploadFailure(t, 5, [])).toBeNull();
+  });
+
+  it('names the files that failed among several, with the reason when only one did', () => {
+    // five FIT files dropped, one refused: the user learns which one is missing and why
+    expect((uploadFailure(t, 5, [{ name: 'c.gpx', error: wrongType }]) as Error).message).toBe(
+      `platform.import.uploadsFailed({"count":1,"names":"c.gpx"}) ${wrongType.message}`,
+    );
+    const two = [
+      { name: 'a.fit', error: tooLarge },
+      { name: 'b.fit', error: new Error('network') },
+    ];
+    expect((uploadFailure(t, 5, two) as Error).message).toBe('platform.import.uploadsFailed({"count":2,"names":"a.fit, b.fit"})');
   });
 });
 

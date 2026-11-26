@@ -25,7 +25,7 @@ import { useFormat } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
 import { isNativeShell, NATIVE_IMPORT_EVENT, postNative } from '@/lib/native';
 import { useSettings } from '@/lib/settings';
-import { isActive, jobErrorText, jobPhaseLabel, jobSourceLabel, jobStepLabel } from './importJobs';
+import { isActive, jobErrorText, jobPhaseLabel, jobSourceLabel, jobStepLabel, uploadFailure } from './importJobs';
 import { IMPORT_JOBS_KEY, useImportJobs } from './useImportJobs';
 import { WhatsNewCard } from './WhatsNew';
 import { latestSummaryJob } from './whatsNewState';
@@ -176,9 +176,7 @@ export default function ImportPage() {
     }
     setUpload(null);
     if (failed.length < files.length) await started();
-    if (failed.length === 1) setError(failed[0]!.error);
-    else if (failed.length > 1)
-      setError(new Error(t('platform.import.uploadsFailed', { count: failed.length, names: failed.map((f) => f.name).join(', ') })));
+    setError(uploadFailure(t, files.length, failed));
   };
 
   const startLocal = useCallback(
