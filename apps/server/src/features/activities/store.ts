@@ -195,20 +195,31 @@ export function athletesWithStaleAnalyses(db: Db): number[] {
  * Derive step: (re)compute the analysis of the changed workouts plus every workout whose cached key is missing or
  * outdated (catch-up). A full run ('all') only recomputes changed keys: the analysis depends on nothing else (HR
  * settings, other workouts). Each batch is computed first and written in a short transaction.
+ * A workout whose analysis fails stays stale and is part of every later run, so it must not hold up the others: they
+ * are stored, and the step fails at the end (a warning of the job) naming it.
  */
 export function deriveAnalyses(ctx: DeriveContext): void {
   const { db, athleteId } = ctx;
   const listed = ctx.workoutIds === 'all' ? null : new Set(ctx.workoutIds);
   const rows = keyRows(db, athleteId).filter((r) => listed?.has(r.id) || r.cache_key !== r.key);
+  const failed: string[] = [];
   const BATCH = 25;
   for (let i = 0; i < rows.length; i += BATCH) {
     ctx.checkCancelled();
     const slice = rows.slice(i, i + BATCH);
-    const done = slice.map((w) => ({ w, a: computeAnalysis(db, w) }));
+    const done = slice.flatMap((w) => {
+      try {
+        return [{ w, a: computeAnalysis(db, w) }];
+      } catch (e) {
+        failed.push(`workout ${w.id}: ${(e as Error).message}`);
+        return [];
+      }
+    });
     tx(db, () => {
       for (const { w, a } of done) store(db, w, w.key, a);
     });
     ctx.report(Math.min(1, (i + slice.length) / rows.length), `${Math.min(rows.length, i + slice.length)} / ${rows.length}`);
   }
   if (!rows.length) ctx.report(1);
+  if (failed.length) throw new Error(`${failed.length} of ${rows.length} analyses failed (${failed.slice(0, 3).join('; ')})`);
 }

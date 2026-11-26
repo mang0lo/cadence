@@ -8,6 +8,7 @@ import { all, get, openDb, run, type Db } from '../src/db/db';
 import { DERIVE_VERSION } from '../src/derive/context';
 import { ANALYSIS_VERSION, deriveAnalyses, staleAnalyses } from '../src/features/activities/store';
 import type { DeriveContext } from '../src/features/types';
+import { gzipJson } from '../src/lib/gzip';
 
 let dir: string;
 let db: Db;
@@ -73,6 +74,20 @@ describe('activity analysis cache', () => {
     expect(staleAnalyses(db, 1)).toEqual([]);
     deriveAnalyses(ctx('all', n));
     expect(n.at(-1)).toBe(1);
+  });
+
+  it('one workout the analysis fails on does not hold up the others', () => {
+    // the oldest workout's stream decodes but is no stream: its analysis throws, in every run (it stays stale)
+    const [bad, a, b] = [workout(), workout(), workout()];
+    run(db, 'INSERT INTO workout_streams (workout_id, version, points, data) VALUES (?, 1, 2, ?)', [bad, gzipJson({})]);
+    const n: number[] = [];
+    // an import of the newest workout
+    expect(() => deriveAnalyses(ctx([b!], n))).toThrow(new RegExp(`^1 of 3 analyses failed \\(workout ${bad}: `));
+    expect(n).toEqual([3]);
+    expect([a, b].map((id) => keyOf(id!)?.startsWith(`${ANALYSIS_VERSION}|`))).toEqual([true, true]);
+    expect(staleAnalyses(db, 1)).toEqual([bad]);
+    // the next run only retries that one
+    expect(() => deriveAnalyses(ctx([], n))).toThrow(/^1 of 1 analyses failed/);
   });
 
   it('refreshes stale analyses in the background when the server starts', async () => {
