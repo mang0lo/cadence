@@ -90,10 +90,14 @@ export function registerHeatmapRoutes(app: FastifyInstance): void {
       distance_m: number | null;
       duration_s: number;
       polyline: string;
+      min_lat: number | null;
+      min_lon: number | null;
+      max_lat: number | null;
+      max_lon: number | null;
     }>(
       app.db,
-      `SELECT id, sport, name, start_ts, tz_min, distance_m, duration_s, polyline FROM workouts
-       WHERE ${where.join(' AND ')} ORDER BY start_ts, id LIMIT ${MAX_ACTIVITIES}`,
+      `SELECT id, sport, name, start_ts, tz_min, distance_m, duration_s, polyline, min_lat, min_lon, max_lat, max_lon
+       FROM workouts WHERE ${where.join(' AND ')} ORDER BY start_ts, id LIMIT ${MAX_ACTIVITIES}`,
       params,
     );
 
@@ -104,15 +108,19 @@ export function registerHeatmapRoutes(app: FastifyInstance): void {
     let minLon = Infinity;
     let maxLat = -Infinity;
     let maxLon = -Infinity;
+    const extend = (la: number, lo: number) => {
+      if (la < minLat) minLat = la;
+      if (la > maxLat) maxLat = la;
+      if (lo < minLon) minLon = lo;
+      if (lo > maxLon) maxLon = lo;
+    };
     let totalDistanceM = 0;
     for (const r of rows) {
       let polyline = r.polyline;
-      // a track in several parts (travelled while paused): each part starts and ends somewhere, trim each one
-      const decoded = decodePolylineParts(polyline);
-      let parts = decoded;
       if (zones.length) {
+        // a track in several parts (travelled while paused): each part starts and ends somewhere, trim each one
         let cut = false;
-        parts = decoded
+        const parts = decodePolylineParts(polyline)
           .map((p) => {
             const t = trimPrivacyZones(p, zones);
             // trimPrivacyZones returns the very same array when nothing had to be cut
@@ -123,13 +131,13 @@ export function registerHeatmapRoutes(app: FastifyInstance): void {
         if (cut) privacyApplied = true;
         if (!parts.length) continue;
         if (cut) polyline = encodePolylineParts(parts);
-      }
-      for (const [la, lo] of parts.flat()) {
-        if (la < minLat) minLat = la;
-        if (la > maxLat) maxLat = la;
-        if (lo < minLon) minLon = lo;
-        if (lo > maxLon) maxLon = lo;
-      }
+        for (const p of parts) for (const [la, lo] of p) extend(la, lo);
+      } else if (r.min_lat !== null && r.min_lon !== null && r.max_lat !== null && r.max_lon !== null) {
+        // nothing to trim: the stored bounding box of the track spares decoding the route (rounded outwards to the
+        // polyline's precision, so it contains every drawn point)
+        extend(Math.floor(r.min_lat * 1e5) / 1e5, Math.floor(r.min_lon * 1e5) / 1e5);
+        extend(Math.ceil(r.max_lat * 1e5) / 1e5, Math.ceil(r.max_lon * 1e5) / 1e5);
+      } else for (const p of decodePolylineParts(polyline)) for (const [la, lo] of p) extend(la, lo);
       totalDistanceM += r.distance_m ?? 0;
       items.push({
         id: r.id,
