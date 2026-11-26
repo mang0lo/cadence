@@ -101,6 +101,11 @@ const STEP_KEYS: Record<string, string> = {
   'Progress: pace at heart rate & running dynamics': 'paceAtHr',
   'progress.power-curve': 'powerCurve',
   'Progress: power curve': 'powerCurve',
+  // both progress caches in one step
+  'progress.workout-caches': 'paceAndPower',
+  'Progress: pace at heart rate, running dynamics & power curve': 'paceAndPower',
+  'connect.coros': 'corosDaily',
+  'COROS daily data': 'corosDaily',
   'consistency.achievements': 'trophies',
   'Trophies & challenges': 'trophies',
   'maps.geometry': 'mapGeometry',
@@ -113,6 +118,8 @@ const STEP_KEYS: Record<string, string> = {
   'Sleep nights': 'sleep',
   'health.ecg': 'ecg',
   'ECG analysis': 'ecg',
+  'health.record-sources': 'recordSources',
+  'Sources of health records': 'recordSources',
 };
 
 /** Key of a derive step (id or reported label) in platform.import.steps, null when unknown. */
