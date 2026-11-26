@@ -44,6 +44,19 @@ function useSnapshot(req: SnapshotRequest | null): string | null {
 const SETTLE_MS = 200;
 
 /**
+ * The nearest ancestor that scrolls vertically (the app's main area). It is the root of the "near" observer: measured
+ * against the window, a preview inside a scrolling area is clipped by that area, so the margin would never apply and
+ * a preview would only count as near once it is on screen (and lose its image as soon as it leaves).
+ */
+function scrollParent(el: Element): Element | null {
+  for (let p = el.parentElement; p; p = p.parentElement) {
+    const { overflowY } = getComputedStyle(p);
+    if ((overflowY === 'auto' || overflowY === 'scroll') && p.scrollHeight > p.clientHeight) return p;
+  }
+  return null;
+}
+
+/**
  * Rendered size of the element (CSS px, rounded) and whether it is near the viewport. Thumbnails away from the
  * viewport load no tiles and no map image; the layout is computed for the real size so the map fills the box
  * whatever its aspect ratio. The first size is taken at once, later changes once they have settled.
@@ -84,7 +97,7 @@ function useBox<T extends Element>(): [React.RefObject<T | null>, { w: number; h
           const last = entries[entries.length - 1];
           if (last) setNear(last.isIntersecting);
         },
-        { rootMargin: '300px' },
+        { root: scrollParent(el), rootMargin: '300px' },
       );
       io.observe(el);
     }
