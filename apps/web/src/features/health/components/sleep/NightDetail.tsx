@@ -23,6 +23,7 @@ import { addDays } from '@/lib/time';
 import { DayNav } from '../DayNav';
 import { Spark } from '../Spark';
 import { TrendDelta } from '../TrendDelta';
+import { numAxisLabel } from '../../lib/chart';
 import { useDaily } from '../../lib/hooks';
 import { measureColor, type MeasureKey } from '../../lib/colors';
 import { useMetricFormat } from '../../lib/metrics';
@@ -216,7 +217,7 @@ function NightSeriesChart({
           formatter: (v: number) => fmt.time(v / 1000, 0),
         },
       }),
-      yAxis: valueAxis(theme, { scale: true, axisLabel: { color: theme.muted, fontSize: 11 } }),
+      yAxis: valueAxis(theme, { scale: true, axisLabel: { color: theme.muted, fontSize: 11, formatter: numAxisLabel(fmt) } }),
       series: [s],
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

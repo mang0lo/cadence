@@ -9,6 +9,7 @@ import { useChartTheme } from '@/components/charts/theme';
 import { Skeleton } from '@/components/ui';
 import { useFormat } from '@/lib/format';
 import { useT } from '@/lib/i18n';
+import { numAxisLabel } from '../../lib/chart';
 import { stageColor } from '../../lib/sleep';
 import { identifierColor } from '../../lib/colors';
 import { useMetricFormat } from '../../lib/metrics';
@@ -227,7 +228,7 @@ export function MetricChart({ series, mode, loading }: Props) {
           { axisPointer: { type: 'shadow', shadowStyle: { color: theme.grid, opacity: 0.35 } } },
         ),
         xAxis: categoryAxis(theme, chart.labels, { axisLabel: { color: theme.muted, fontSize: 11, hideOverlap: true } }),
-        yAxis: valueAxis(theme, { axisLabel: { color: theme.muted, fontSize: 11, formatter: (v: number) => fmt.num(v, chart.hours ? 1 : 0) } }),
+        yAxis: valueAxis(theme, { axisLabel: { color: theme.muted, fontSize: 11, formatter: numAxisLabel(fmt) } }),
         series: series2,
       };
     }
@@ -248,9 +249,7 @@ export function MetricChart({ series, mode, loading }: Props) {
         { axisPointer: { type: 'shadow', shadowStyle: { color: theme.grid, opacity: 0.35 } } },
       ),
       xAxis: categoryAxis(theme, chart.labels, { axisLabel: { color: theme.muted, fontSize: 11, hideOverlap: true } }),
-      yAxis: valueAxis(theme, {
-        axisLabel: { color: theme.muted, fontSize: 11, formatter: (v: number) => fmt.num(v, chart.axisUnit === 'h' ? 1 : 0) },
-      }),
+      yAxis: valueAxis(theme, { axisLabel: { color: theme.muted, fontSize: 11, formatter: numAxisLabel(fmt) } }),
       series: [s],
     };
   })();

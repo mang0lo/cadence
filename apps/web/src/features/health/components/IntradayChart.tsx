@@ -22,7 +22,7 @@ import { useApi } from '@/lib/api';
 import { useFormat } from '@/lib/format';
 import { useI18n, useT } from '@/lib/i18n';
 import { SportIcon, sportColorVar } from '@/lib/sports';
-import { LEGEND_LINE_ICON } from '../lib/chart';
+import { LEGEND_LINE_ICON, numAxisLabel } from '../lib/chart';
 import { useMetricFormat } from '../lib/metrics';
 
 export interface IntradayChartProps {
@@ -141,7 +141,7 @@ export function IntradayChart({
             { axisPointer: { type: 'shadow', shadowStyle: { color: theme.grid, opacity: 0.35 } } },
           ),
           xAxis: categoryAxis(theme, labels, { axisLabel: { color: theme.muted, fontSize: 11, hideOverlap: true } }),
-          yAxis: valueAxis(theme, { axisLabel: { color: theme.muted, fontSize: 11 } }),
+          yAxis: valueAxis(theme, { axisLabel: { color: theme.muted, fontSize: 11, formatter: numAxisLabel(fmt) } }),
           series: [s],
         },
         rows: d.buckets.map((b) => ({
@@ -230,7 +230,7 @@ export function IntradayChart({
           );
         }),
         xAxis: xs,
-        yAxis: valueAxis(theme, { scale: true, axisLabel: { color: theme.muted, fontSize: 11 } }),
+        yAxis: valueAxis(theme, { scale: true, axisLabel: { color: theme.muted, fontSize: 11, formatter: numAxisLabel(fmt) } }),
         series,
       },
       rows: d.buckets.map((b) => ({
