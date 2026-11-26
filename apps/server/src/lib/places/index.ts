@@ -198,13 +198,32 @@ export function placesAlong(polyline: string | null, stepM = 800): string[] {
 /** Stored form of the places of a route: "|Hannover|Berlin|" (searchable with LIKE), null without any. */
 export const placesColumn = (names: string[]): string | null => (names.length ? `|${names.join('|')}|` : null);
 
+const countryCache = new Map<string, string | null>();
+
+/**
+ * ISO country code of the place a position is named after (see nearestPlace), looked up on a ~100 m grid: fine
+ * enough for twin towns on a border (Kreuzlingen / Konstanz), coarse enough to cache repeated routes.
+ */
+function countryAt(lat: number, lon: number): string | null {
+  const la = Math.round(lat * 1000) / 1000;
+  const lo = Math.round(lon * 1000) / 1000;
+  const key = `${la},${lo}`;
+  const hit = countryCache.get(key);
+  if (hit !== undefined) return hit;
+  const c = nearestPlace(la, lo, 30)?.country ?? null;
+  const code = c && /^[A-Z]{2}$/.test(c) ? c : null;
+  if (countryCache.size >= 50_000) countryCache.clear();
+  countryCache.set(key, code);
+  return code;
+}
+
 /** ISO country codes along a route (start, end and a point every few kilometers), in order. */
 export function countriesAlong(polyline: string | null, stepM = 4000): string[] {
   if (!polyline) return [];
   const out = new Set<string>();
   const add = (lat: number, lon: number) => {
-    const c = nearestPlace(Math.round(lat * 50) / 50, Math.round(lon * 50) / 50, 30)?.country;
-    if (c && /^[A-Z]{2}$/.test(c)) out.add(c);
+    const c = countryAt(lat, lon);
+    if (c) out.add(c);
   };
   for (const part of decodePolylineParts(polyline))
     for (let i = 0; i < part.length; i++) {
