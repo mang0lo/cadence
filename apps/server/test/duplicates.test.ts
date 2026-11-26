@@ -159,10 +159,13 @@ describe('resolveDuplicates', () => {
 });
 
 describe('detectDuplicates', () => {
+  /** Source of unrelated workouts on other days: an import of a few workouts then takes the incremental path. */
+  const FILLER = 'Filler';
   let db: Db;
   beforeEach(() => {
     db = openDb(':memory:');
     migrateAll(db);
+    for (let day = 3; day < 23; day++) insert({ from: day * 1440, to: day * 1440 + 45, source: FILLER });
   });
   afterEach(() => db.close());
 
@@ -190,9 +193,11 @@ describe('detectDuplicates', () => {
   }
   const dupOf = () =>
     Object.fromEntries(
-      all<{ id: number; duplicate_of: number | null }>(db, 'SELECT id, duplicate_of FROM workouts ORDER BY id').map(
-        (r) => [r.id, r.duplicate_of],
-      ),
+      all<{ id: number; duplicate_of: number | null }>(
+        db,
+        'SELECT id, duplicate_of FROM workouts WHERE source_name IS NOT ? ORDER BY id',
+        [FILLER],
+      ).map((r) => [r.id, r.duplicate_of]),
     );
 
   it('keeps both halves of a split session visible (full run and import of the copy)', () => {
@@ -237,10 +242,24 @@ describe('detectDuplicates', () => {
     expect(dupOf()).toEqual({ [fit]: null, [watch]: fit });
     // a Strava copy of the second hour overlaps the Watch workout but not the watch's file
     const strava = insert(thirdParty(61, 120, 'Strava'));
+    // a stale mark elsewhere shows that this run only looks at the new workout's chain
+    run(db, 'UPDATE workouts SET duplicate_of = 999 WHERE source_name = ? AND start_ts > ?', [FILLER, T0 + 20 * 1440 * MIN]);
     detectDuplicates(db, 1, [strava]);
     expect(dupOf()).toEqual({ [fit]: null, [watch]: fit, [strava]: null });
+    expect(all(db, 'SELECT id FROM workouts WHERE duplicate_of = 999')).toHaveLength(2);
     detectDuplicates(db, 1, 'all');
     expect(dupOf()).toEqual({ [fit]: null, [watch]: fit, [strava]: null });
+    expect(all(db, 'SELECT id FROM workouts WHERE duplicate_of = 999')).toHaveLength(0);
+  });
+
+  it('finds a long workout that started long before the new one', () => {
+    updateSettings(db, 1, { watch: 'coros' });
+    // a two-day hike on the watch, and a Watch hike in the middle of it
+    const fit = insert({ from: 0, to: 48 * 60, sport: 'hike', source: 'COROS VERTIX 2', fit: true });
+    detectDuplicates(db, 1, [fit]);
+    const watch = insert({ from: 40 * 60, to: 41 * 60, sport: 'hike' });
+    detectDuplicates(db, 1, [watch]);
+    expect(dupOf()).toEqual({ [fit]: null, [watch]: fit });
   });
 
   it('gives the same result incrementally as a full run, in any import order', () => {
@@ -257,7 +276,7 @@ describe('detectDuplicates', () => {
     const orders = permutations(specs.map((_, k) => k));
     expect(orders).toHaveLength(120);
     for (const order of orders) {
-      run(db, 'DELETE FROM workouts');
+      run(db, 'DELETE FROM workouts WHERE source_name IS NOT ?', [FILLER]);
       for (const k of order) detectDuplicates(db, 1, [insert(specs[k]!)]);
       const incremental = dupOf();
       detectDuplicates(db, 1, 'all');

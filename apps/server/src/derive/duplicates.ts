@@ -1,5 +1,5 @@
 import { preferDeviceWorkouts } from '../core/sources';
-import { all, prepare, tx, type Db } from '../db/db';
+import { all, get, prepare, tx, type Db } from '../db/db';
 import type { DeriveStep } from '../features/types';
 
 /** What duplicate detection needs to know about a workout (columns of `workouts`, see COLS). */
@@ -106,12 +106,16 @@ const COLS = `id, start_ts, end_ts, sport, source_name, hidden, has_route,
 /**
  * The given workouts and every workout linked to them through a chain of overlaps: whether a workout counts can
  * depend on one it does not overlap itself (its original's own original), so an incremental run must see the whole
- * chain to decide exactly like a full one.
+ * chain to decide exactly like a full one. `longest` (the longest workout's duration) bounds each lookup to the
+ * starts that can still reach into the window, so it walks a few index entries instead of every earlier workout.
  */
-function loadChains(db: Db, athleteId: number, ids: number[]): Row[] {
+function loadChains(db: Db, athleteId: number, ids: number[], longest: number): Row[] {
   const byId = new Map<number, Row>();
   const one = prepare(db, `SELECT ${COLS} FROM workouts WHERE id = ? AND athlete_id = ?`);
-  const overlap = prepare(db, `SELECT ${COLS} FROM workouts WHERE athlete_id = ? AND start_ts < ? AND end_ts > ?`);
+  const overlap = prepare(
+    db,
+    `SELECT ${COLS} FROM workouts WHERE athlete_id = ? AND start_ts >= ? AND start_ts < ? AND end_ts > ?`,
+  );
   for (const id of ids) {
     if (byId.has(id)) continue; // loaded with the chain of an earlier id
     const w = one.get(id, athleteId) as unknown as Row | undefined;
@@ -123,7 +127,7 @@ function loadChains(db: Db, athleteId: number, ids: number[]): Row[] {
     for (;;) {
       let nlo = lo;
       let nhi = hi;
-      for (const r of overlap.all(athleteId, hi, lo) as unknown as Row[]) {
+      for (const r of overlap.all(athleteId, lo - longest, hi, lo) as unknown as Row[]) {
         byId.set(r.id, r);
         if (r.start_ts < nlo) nlo = r.start_ts;
         if (r.end_ts > nhi) nhi = r.end_ts;
@@ -141,13 +145,18 @@ function loadChains(db: Db, athleteId: number, ids: number[]): Row[] {
  * Apple Watch run back to Health) → `duplicate_of` is set on the copy with less data (see resolveDuplicates).
  */
 export function detectDuplicates(db: Db, athleteId: number, workoutIds: number[] | 'all'): number {
-  let rows: Row[];
-  if (workoutIds === 'all') {
-    rows = all<Row>(db, `SELECT ${COLS} FROM workouts WHERE athlete_id = ? ORDER BY start_ts`, [athleteId]);
-  } else {
-    if (!workoutIds.length) return 0;
-    rows = loadChains(db, athleteId, workoutIds);
+  if (workoutIds !== 'all' && !workoutIds.length) return 0;
+  let rows: Row[] | null = null;
+  if (workoutIds !== 'all') {
+    const size = get<{ n: number; longest: number | null }>(
+      db,
+      'SELECT COUNT(*) AS n, MAX(end_ts - start_ts) AS longest FROM workouts WHERE athlete_id = ?',
+      [athleteId],
+    )!;
+    // a first import lists (nearly) every workout: one pass over all of them beats a lookup per workout
+    if (4 * workoutIds.length < size.n) rows = loadChains(db, athleteId, workoutIds, Math.max(0, size.longest ?? 0));
   }
+  rows ??= all<Row>(db, `SELECT ${COLS} FROM workouts WHERE athlete_id = ?`, [athleteId]);
   const want = resolveDuplicates(rows, preferDeviceWorkouts(db, athleteId));
   const upd = prepare(db, 'UPDATE workouts SET duplicate_of = ? WHERE id = ?');
   let marked = 0;
