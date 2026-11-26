@@ -32,6 +32,15 @@ const feature: Feature = {
         CREATE INDEX ix_activities_analysis_athlete ON activities_analysis(athlete_id);
       `,
     },
+    {
+      // the unit of `efficiency` depends on its basis (similar activities only compare like with like), and
+      // Progress → Trends reads decoupling and the speed based efficiency from here (one definition)
+      id: 'activities_002_efficiency_basis',
+      up: /* sql */ `
+        ALTER TABLE activities_analysis ADD COLUMN efficiency_basis TEXT;   -- 'gap' | 'speed' | 'power'
+        ALTER TABLE activities_analysis ADD COLUMN pace_efficiency REAL;    -- (grade adjusted) speed per beat (m/beat)
+      `,
+    },
   ],
   deriveSteps: [
     {

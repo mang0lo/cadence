@@ -10,7 +10,7 @@ import {
 } from '@cadence/shared';
 import { SUMMARY_COLS, toSummary, type WorkoutRow } from '../../core/workouts';
 import { all, type Db } from '../../db/db';
-import { SORT_EXPR, listWhere, type ListFilter } from './queries';
+import { listWhere, orderBy, type ListFilter } from './queries';
 
 export type CsvLang = 'en' | 'de';
 
@@ -160,14 +160,12 @@ function textCell(s: string | null | undefined, sep: string): string {
  */
 export function activitiesCsv(db: Db, athleteId: number, o: CsvOptions): string {
   const { sql, params } = listWhere(athleteId, o);
-  const expr = SORT_EXPR[o.sort];
-  const dir = o.order === 'asc' ? 'ASC' : 'DESC';
   const rows = all<
     WorkoutRow & { avg_power: number | null; avg_cadence: number | null; temperature_c: number | null; device: string | null }
   >(
     db,
     `SELECT ${SUMMARY_COLS}, avg_power, avg_cadence, temperature_c, device FROM workouts WHERE ${sql}
-     ORDER BY (${expr}) IS NULL, ${expr} ${dir}, start_ts ${dir}, id ${dir}`,
+     ORDER BY ${orderBy(o.sort, o.order)}`,
     params,
   );
   const de = o.lang === 'de';

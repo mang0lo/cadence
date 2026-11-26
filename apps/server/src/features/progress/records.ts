@@ -10,8 +10,10 @@ import {
   type RacePrediction,
 } from '@cadence/shared';
 import { all, get, type Db } from '../../db/db';
+import { heartMetric } from '../../core/sources';
 import { SUMMARY_COLS, toSummary, type WorkoutRow } from '../../core/workouts';
 import { addDays, localDay } from '../../lib/time';
+import { compareEfforts } from '../activities/best-efforts';
 import { median, RIEGEL_EXPONENT, riegel, shiftYears, timeFromVdot } from './math';
 
 interface EffortRow {
@@ -46,10 +48,13 @@ const toRef = (r: EffortRow): ProgressEffortRef => ({
   elapsedS: r.elapsed_s,
 });
 
-/** Fastest of a list (ties: the earlier attempt keeps the record). */
+/** Best effort definitions of a sport (own keys only: 'constructor' is no sport). */
+const effortDefs = (sport: string) => (Object.hasOwn(BEST_EFFORTS, sport) ? BEST_EFFORTS[sport]! : []);
+
+/** Fastest of a list (ties: the earlier attempt keeps the record — the ranking rule of the activity medals). */
 function fastest(rows: EffortRow[]): EffortRow | null {
   let best: EffortRow | null = null;
-  for (const r of rows) if (!best || r.elapsed_s < best.elapsed_s) best = r;
+  for (const r of rows) if (!best || compareEfforts(r, best) < 0) best = r;
   return best;
 }
 
@@ -60,7 +65,7 @@ const HIGHLIGHTS: { key: ProgressHighlightKey; col: string; where?: (sport: stri
   { key: 'longest', col: 'distance_m' },
   { key: 'longestTime', col: 'COALESCE(moving_s, duration_s)' },
   { key: 'climb', col: 'elevation_gain_m' },
-  { key: 'fastest', col: 'avg_speed', where: () => 'AND distance_m >= ?', params: (s) => [FASTEST_MIN_M[s] ?? 1000] },
+  { key: 'fastest', col: 'avg_speed', where: () => 'AND distance_m >= ?', params: (s) => [Object.hasOwn(FASTEST_MIN_M, s) ? FASTEST_MIN_M[s]! : 1000] },
   { key: 'hardest', col: 'effort' },
 ];
 
@@ -85,7 +90,7 @@ export function records(db: Db, athleteId: number, q: { sport: string | null; to
     if (!list) byEffort.set(r.effort, (list = []));
     list.push(r);
   }
-  const efforts: ProgressEffortRow[] = (BEST_EFFORTS[sport] ?? []).map((def) => {
+  const efforts: ProgressEffortRow[] = effortDefs(sport).map((def) => {
     const list = (byEffort.get(def.key) ?? []).filter((r) => localDay(r.start_ts, r.tz_min) <= q.today);
     const inRange = (from: string) => list.filter((r) => localDay(r.start_ts, r.tz_min) >= from);
     const best = fastest(list);
@@ -116,7 +121,7 @@ export function records(db: Db, athleteId: number, q: { sport: string | null; to
 }
 
 export function effortHistory(db: Db, athleteId: number, q: { sport: string; effort: string }): ProgressEffortHistory | null {
-  const def = (BEST_EFFORTS[q.sport] ?? []).find((d) => d.key === q.effort);
+  const def = effortDefs(q.sport).find((d) => d.key === q.effort);
   if (!def) return null;
   const rows = effortRows(db, athleteId, q.sport, q.effort);
   let best = Infinity;
@@ -126,7 +131,7 @@ export function effortHistory(db: Db, athleteId: number, q: { sport: string; eff
     return { ...toRef(r), avgHr: r.avg_hr, pr };
   });
   const top = [...rows]
-    .sort((a, b) => a.elapsed_s - b.elapsed_s || a.start_ts - b.start_ts)
+    .sort(compareEfforts)
     .slice(0, 10)
     .map((r, i) => ({ ...toRef(r), avgHr: r.avg_hr, rank: i + 1 }));
   return { sport: q.sport, effort: q.effort, distanceM: def.distanceM, attempts, top };
@@ -165,20 +170,24 @@ export function riegelFromCandidates(
   return { elapsedS: riegel(best.row.elapsedS, best.distanceM, targetM), basis: best };
 }
 
-/** Recent VO2max: median of the readings in the 30 days up to the latest one. */
+/**
+ * Recent VO2max of the preferred source (Settings → My watch, see heartMetric): median of the plausible readings in
+ * the 30 days up to the latest plausible one.
+ */
 export function recentVo2max(db: Db, athleteId: number, today: string): { value: number; day: string } | null {
+  const metric = heartMetric(db, athleteId, 'vo2max');
   const latest = get<{ day: string }>(
     db,
-    `SELECT day FROM daily_metrics WHERE athlete_id = ? AND metric = 'HKQuantityTypeIdentifierVO2Max' AND day <= ?
+    `SELECT day FROM daily_metrics WHERE athlete_id = ? AND metric = ? AND day <= ? AND value BETWEEN 10 AND 95
      ORDER BY day DESC LIMIT 1`,
-    [athleteId, today],
+    [athleteId, metric, today],
   );
   if (!latest) return null;
   const values = all<{ value: number }>(
     db,
-    `SELECT value FROM daily_metrics WHERE athlete_id = ? AND metric = 'HKQuantityTypeIdentifierVO2Max'
+    `SELECT value FROM daily_metrics WHERE athlete_id = ? AND metric = ?
        AND day > ? AND day <= ? AND value BETWEEN 10 AND 95`,
-    [athleteId, addDays(latest.day, -30), latest.day],
+    [athleteId, metric, addDays(latest.day, -30), latest.day],
   ).map((r) => r.value);
   const m = median(values);
   return m === null ? null : { value: Math.round(m * 10) / 10, day: latest.day };

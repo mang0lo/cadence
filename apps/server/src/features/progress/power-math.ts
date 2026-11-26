@@ -5,7 +5,7 @@
  * the GPS fixes (~1 s) or a 5 s / 10 s grid for workouts without GPS. `breaks` are the indices where a new part of
  * the track starts after a jump across a pause (train, car); no window may span one.
  */
-import { trackParts, type ProgressPowerPeriod, type WorkoutStreams } from '@cadence/shared';
+import { trackParts, type ProgressPowerPeriod } from '@cadence/shared';
 import { addDays, parseDay } from '../../lib/time';
 import { linearFit, shiftYears } from './math';
 
@@ -59,12 +59,20 @@ export function medianStep(t: ArrayLike<number>, parts: readonly [number, number
   return 1;
 }
 
+/** The stream arrays powerParts reads (WorkoutStreams, or the typed arrays of the activity analysis). */
+export interface PowerStream {
+  t: ArrayLike<number>;
+  power?: ArrayLike<number | null> | null;
+  breaks?: ArrayLike<number> | null;
+}
+
 /**
  * The power of a workout resampled to 1 Hz, one array per track part (parts split at `breaks`, see trackParts).
  * The grid of a part starts at its first sample; values are linearly interpolated between samples that are at
  * most the interpolation gap apart (see MIN_GAP_S), every other second is 0 W. Parts without any power are dropped.
+ * Used for the power curve and the peaks on the activity page.
  */
-export function powerParts(st: WorkoutStreams): PowerPart[] {
+export function powerParts(st: PowerStream): PowerPart[] {
   const t = st.t;
   const p = st.power;
   const n = t?.length ?? 0;

@@ -62,6 +62,7 @@ export interface ProgressOverview {
 // Volume, year over year, comparison, weekly snapshot
 // ---------------------------------------------------------------------------
 
+/** fromDay / toDay: the days of the bucket inside the requested range (the first and the last one can be partial). */
 export interface ProgressVolumeBucket extends ProgressDayRange {
   /** Week start day 'YYYY-MM-DD', month 'YYYY-MM' or year 'YYYY'. */
   key: string;
@@ -81,6 +82,7 @@ export interface ProgressVolumeResponse {
   /** Trailing average of the bucket totals over `rollingWindow` buckets (0 = none, e.g. for years). */
   rollingWindow: number;
   rolling: Record<ProgressVolumeMetric, (number | null)[]>;
+  /** Totals over [fromDay, toDay] (= the sum of the buckets, whatever the bucket size). */
   totals: ProgressTotals;
 }
 
@@ -159,9 +161,11 @@ export interface ProgressWeeklySnapshot {
 
 /**
  * speed: average moving speed · hr: average heart rate · ef: efficiency factor (speed / HR = meters per
- * heartbeat) · cadence: steps (run/walk) or revolutions (ride) per minute · power: average power ·
+ * heartbeat; grade adjusted for foot sports, from the speed also for rides with power — the activity analysis'
+ * `paceEfficiency`) · cadence: steps (run/walk) or revolutions (ride) per minute · power: average power ·
  * stride / gct / vo: Apple Watch running dynamics (stride length m, ground contact time ms, vertical
- * oscillation m) · decoupling: aerobic decoupling (Pa:HR drift, %) between the halves of the workout.
+ * oscillation m) · decoupling: aerobic decoupling (%) between the halves of the workout after a 5-minute warm-up,
+ * the value of the activity page (Pw:HR for rides with power, else Pa:HR on the grade adjusted pace).
  */
 export type ProgressTrendMetric = 'speed' | 'hr' | 'ef' | 'cadence' | 'power' | 'stride' | 'gct' | 'vo' | 'decoupling';
 export const PROGRESS_TREND_METRICS: ProgressTrendMetric[] = [
@@ -262,8 +266,9 @@ export interface ProgressIntensityResponse {
   bucket: 'week' | 'month';
   /** Upper bounds (bpm) of Z1..Z4 the zone times were computed with. */
   zoneBounds: number[];
+  /** Workouts of [fromDay, toDay] only: the first and the last bucket can be partial (fromDay / toDay say so). */
   buckets: (ProgressDayRange & { key: string; zones: number[]; total: number; easyShare: number | null })[];
-  /** easy = Z1+Z2, hard = Z3..Z5 (share of the time with heart rate). */
+  /** Over [fromDay, toDay]. easy = Z1+Z2, hard = Z3..Z5 (share of the time with heart rate). */
   totals: { zones: number[]; total: number; easyShare: number | null; hardShare: number | null };
   coverage: { withZones: number; workouts: number };
 }
@@ -303,7 +308,7 @@ export interface ProgressHighlight {
 /** GET /api/progress/records?sport=&today= */
 export interface ProgressRecordsResponse {
   sport: string | null;
-  /** Sports with best efforts, most workouts first. */
+  /** Sports with visible workouts, most workouts first (their efforts can be empty). */
   sports: { sport: string; workouts: number }[];
   /** One row per BEST_EFFORTS distance of the sport (also without attempts). */
   efforts: ProgressEffortRow[];
@@ -326,7 +331,10 @@ export interface RacePrediction {
   distanceM: number;
   /** Riegel (T2 = T1 · (D2/D1)^1.06) from the recent best effort closest in distance. */
   riegel: { elapsedS: number; basis: ProgressEffortRef & { effort: string; distanceM: number } } | null;
-  /** Daniels/Gilbert race time for Apple's VO2max used as VDOT. */
+  /**
+   * Daniels/Gilbert race time for the recent VO2max (preferred source: Apple Health or the watch's own, e.g. COROS)
+   * used as VDOT.
+   */
   vo2max: { elapsedS: number } | null;
 }
 
@@ -335,6 +343,7 @@ export interface ProgressPredictions {
   /** Best efforts of this many days back were used (widened when there were none). */
   windowDays: number;
   riegelExponent: number;
+  /** Median of the preferred source's VO2max readings in the 30 days up to the latest one (ml/kg/min). */
   vo2max: { value: number; day: string } | null;
   targets: RacePrediction[];
 }
@@ -376,7 +385,7 @@ export interface ProgressFitnessResponse {
         acwrStatus: ProgressAcwrStatus | null;
       })
     | null;
-  /** Weekly load sums in the range. */
+  /** Weekly load sums of the days in the range (the first and the last week can be partial: fromDay / toDay). */
   weeks: (ProgressDayRange & { key: string; load: number; count: number })[];
   /** TSB bounds of each zone (null = open ended). */
   zones: { key: ProgressFormZone; min: number | null; max: number | null }[];

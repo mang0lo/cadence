@@ -18,8 +18,10 @@ import {
   type ActivityPower,
   type WorkoutStreams,
   stitchElevation,
+  trackParts,
 } from '@cadence/shared';
 import { smooth } from '../../derive/streams';
+import { bestAverages, MAX_PLAUSIBLE_W, powerParts } from '../progress/power-math';
 
 export interface Series {
   n: number;
@@ -56,18 +58,21 @@ export type AnalysisResult = Omit<ActivityAnalysis, 'workoutId' | 'computedAt'>;
 
 /** Longest gap (s) a single segment may contribute to moving time (same cap as core). */
 const MAX_SEGMENT_S = 600;
+/** Longest gap (s) a single segment may contribute to a time-weighted mean. */
+const MAX_WEIGHT_S = 30;
 /** Elevation grid resolution (m) for grades and climbs. */
 export const GRID_STEP_M = 10;
 
 const isNum = (x: number) => x === x;
 
-function floatArray(a: (number | null)[] | undefined, n: number): Float64Array | null {
+/** Typed copy of a stream array; values outside [lo, hi] count as missing (NaN). */
+function floatArray(a: (number | null)[] | undefined, n: number, lo = -Infinity, hi = Infinity): Float64Array | null {
   if (!a || a.length !== n) return null;
   const out = new Float64Array(n);
   let any = false;
   for (let i = 0; i < n; i++) {
     const v = a[i];
-    if (v === null || v === undefined || !Number.isFinite(v)) out[i] = NaN;
+    if (v === null || v === undefined || !Number.isFinite(v) || v < lo || v > hi) out[i] = NaN;
     else {
       out[i] = v;
       any = true;
@@ -76,7 +81,10 @@ function floatArray(a: (number | null)[] | undefined, n: number): Float64Array |
   return any ? out : null;
 }
 
-/** Typed arrays from the stream DTO (missing/mismatched arrays become null). */
+/**
+ * Typed arrays from the stream DTO (missing/mismatched arrays become null). Power outside 0 … MAX_PLAUSIBLE_W is a
+ * sensor glitch and counts as missing, as in the power curve.
+ */
 export function toSeries(s: WorkoutStreams): Series {
   const n = s.t.length;
   const t = Float64Array.from(s.t);
@@ -91,7 +99,7 @@ export function toSeries(s: WorkoutStreams): Series {
     speed: floatArray(s.speed, n),
     hr: floatArray(s.hr, n),
     cadence: floatArray(s.cadence, n),
-    power: floatArray(s.power, n),
+    power: floatArray(s.power, n, 0, MAX_PLAUSIBLE_W),
     moving,
     breaks: s.breaks ?? [],
   };
@@ -124,11 +132,18 @@ export function movingMean(s: Series, a: Float64Array | null): { mean: number | 
     if (!s.moving[i]) continue;
     const v = segValue(a, i);
     if (!isNum(v)) continue;
-    const dt = Math.min(segDt(s, i), 30);
+    const dt = Math.min(segDt(s, i), MAX_WEIGHT_S);
     sum += v * dt;
     w += dt;
   }
   return { mean: w > 0 ? sum / w : null, seconds: w };
+}
+
+/** Moving time with the same per-segment cap as the weights of movingMean (compare coverage like with like). */
+function weightedMovingSeconds(s: Series): number {
+  let m = 0;
+  for (let i = 1; i < s.n; i++) if (s.moving[i]) m += Math.min(segDt(s, i), MAX_WEIGHT_S);
+  return m;
 }
 
 // ---------------------------------------------------------------------------
@@ -226,47 +241,75 @@ export function gradeAdjustedSpeedSeries(s: Series, grid: ElevationGrid, sport: 
 // Decoupling & efficiency
 // ---------------------------------------------------------------------------
 
+export interface DecouplingOptions {
+  /** Moving seconds at the start that are left out: heart rate still catches up with the output there. */
+  warmupS?: number;
+  /** Minimum moving time after the warm-up. */
+  minMovingS?: number;
+}
+
 /**
- * Aerobic decoupling (Friel): the moving time is split into two equal halves; for each half the time-weighted
- * output (speed or power) and heart rate are averaged. Needs ≥ 20 min of moving time and heart rate covering
- * ≥ 60 % of each half.
+ * The definition behind every stored decoupling value (activity page and Progress → Trends): the first 5 minutes of
+ * moving time are warm-up, the rest must be at least 20 minutes (two halves of ≥ 10 minutes).
+ */
+export const DECOUPLING: Required<DecouplingOptions> = { warmupS: 300, minMovingS: 20 * 60 };
+/** A larger drift is no physiology but a recording problem (a lift or a car ride with the workout running). */
+export const DECOUPLING_MAX_ABS_PCT = 60;
+/** Heart rate outside this range (bpm) is a sensor glitch. */
+const HR_MIN = 40;
+const HR_MAX = 230;
+
+/**
+ * Aerobic decoupling (Friel): the moving time after the warm-up is split into two equal halves; for each half the
+ * time-weighted output (speed or power) and heart rate are averaged. Needs `minMovingS` of moving time after the
+ * warm-up and heart rate covering ≥ 60 % of each half (measured in the capped weights, so sparse streams count
+ * fully). Null when |decoupling| > DECOUPLING_MAX_ABS_PCT.
+ * The analysis uses DECOUPLING; the defaults (no warm-up, 20 minutes) are the plain definition.
  */
 export function aerobicDecoupling(
   s: Series,
   output: Float64Array | null,
   basis: ActivityDecoupling['basis'],
-  minMovingS = 20 * 60,
+  o: DecouplingOptions = {},
 ): ActivityDecoupling | null {
   if (!output || !s.hr) return null;
-  const total = movingSeconds(s);
-  if (total < minMovingS) return null;
-  const half = total / 2;
+  const warmupS = o.warmupS ?? 0;
+  const minMovingS = o.minMovingS ?? 20 * 60;
+  const body = movingSeconds(s) - warmupS;
+  if (body < minMovingS) return null;
+  const mid = warmupS + body / 2;
+  const hr = s.hr.map((h) => (h >= HR_MIN && h <= HR_MAX ? h : NaN));
   const acc = [
-    { o: 0, h: 0, w: 0 },
-    { o: 0, h: 0, w: 0 },
+    { o: 0, h: 0, w: 0, cap: 0 },
+    { o: 0, h: 0, w: 0, cap: 0 },
   ];
   let cum = 0;
   for (let i = 1; i < s.n; i++) {
     if (!s.moving[i]) continue;
     const dt = segDt(s, i);
-    const part = cum + dt / 2 < half ? 0 : 1;
+    const at = cum + dt / 2;
     cum += dt;
-    const o = segValue(output, i);
-    const h = segValue(s.hr, i);
-    if (!isNum(o) || !isNum(h) || h <= 0) continue;
-    const w = Math.min(dt, 30);
-    acc[part]!.o += o * w;
-    acc[part]!.h += h * w;
-    acc[part]!.w += w;
+    if (at < warmupS) continue;
+    const half = acc[at < mid ? 0 : 1]!;
+    const w = Math.min(dt, MAX_WEIGHT_S);
+    half.cap += w;
+    const ov = segValue(output, i);
+    const h = segValue(hr, i);
+    if (!isNum(ov) || !isNum(h)) continue;
+    half.o += ov * w;
+    half.h += h * w;
+    half.w += w;
   }
   const [a, b] = acc as [(typeof acc)[0], (typeof acc)[0]];
-  if (a.w < 0.6 * half || b.w < 0.6 * half) return null;
+  if (!(a.w > 0) || !(b.w > 0) || a.w < 0.6 * a.cap || b.w < 0.6 * b.cap) return null;
   const first = { output: a.o / a.w, hr: a.h / a.w };
   const second = { output: b.o / b.w, hr: b.h / b.w };
   const r1 = first.output / first.hr;
   const r2 = second.output / second.hr;
   if (!(r1 > 0)) return null;
-  return { basis, first, second, pct: ((r1 - r2) / r1) * 100 };
+  const pct = ((r1 - r2) / r1) * 100;
+  if (!(Math.abs(pct) <= DECOUPLING_MAX_ABS_PCT)) return null;
+  return { basis, first, second, pct };
 }
 
 /** Efficiency factor: output per heartbeat (needs ≥ 10 min moving with heart rate on ≥ 50 % of it). */
@@ -276,9 +319,9 @@ export function efficiencyFactor(
   basis: ActivityEfficiency['basis'],
 ): ActivityEfficiency | null {
   if (output === null || !(output > 0)) return null;
-  const total = movingSeconds(s);
+  if (movingSeconds(s) < 600) return null;
   const hr = movingMean(s, s.hr);
-  if (total < 600 || hr.mean === null || hr.seconds < 0.5 * total || hr.mean <= 0) return null;
+  if (hr.mean === null || hr.seconds < 0.5 * weightedMovingSeconds(s) || hr.mean <= 0) return null;
   const value = basis === 'power' ? output / hr.mean : (output * 60) / hr.mean;
   return { value, basis };
 }
@@ -365,8 +408,14 @@ export function normalizedPower(p: Float64Array): number | null {
   return k >= W ? (acc / k) ** 0.25 : null;
 }
 
+/** Peak power durations of the activity page (a subset of PROGRESS_POWER_DURATIONS: the same bests as the curve). */
 export const POWER_PEAK_WINDOWS = [5, 60, 300, 1200, 3600];
 
+/**
+ * Average, max and normalized power plus the peaks. The peaks are the power curve's best averages (power-math:
+ * 1 Hz per track part, never across a break, unmeasured seconds count as 0 W), so the activity page and Progress →
+ * Power show the same numbers.
+ */
 export function powerAnalysis(s: Series): ActivityPower | null {
   const p = powerPerSecond(s);
   if (!p || !s.power) return null;
@@ -387,10 +436,10 @@ export function powerAnalysis(s: Series): ActivityPower | null {
   }
   const avgW = sum / cnt;
   const np = normalizedPower(p);
-  const peaks = POWER_PEAK_WINDOWS.flatMap((w) => {
-    const v = peakPower(p, w);
-    return v === null ? [] : [{ durationS: w, watts: v }];
-  });
+  const peaks = bestAverages(powerParts({ t: s.t, power: s.power, breaks: s.breaks }), POWER_PEAK_WINDOWS).map((b) => ({
+    durationS: b.durationS,
+    watts: b.watts,
+  }));
   return {
     avgW,
     maxW,
@@ -499,12 +548,60 @@ function meanBetween(s: Series, a: Float64Array | null, t0: number, t1: number):
   return w > 0 ? sum / w : null;
 }
 
-export function climbsOf(s: Series, grid: ElevationGrid, o: ClimbOptions = DEFAULT_CLIMB_OPTIONS): ActivityClimb[] {
+/** Grid indices [from, to] of one track part and the shift stitchElevation applied to its elevation. */
+export interface GridPart {
+  from: number;
+  to: number;
+  offset: number;
+}
+
+/**
+ * The track parts on the elevation grid (the jump while paused has no distance, so a part ends at the last grid point
+ * at or before the break and the next one starts after it), with the elevation shift of each part (stitched − real).
+ */
+export function gridParts(s: Series, grid: ElevationGrid, stitched: Float64Array | null): GridPart[] {
+  const last = grid.ele.length - 1;
+  if (!s.breaks.length || !s.dist) return [{ from: 0, to: last, offset: 0 }];
+  const out: GridPart[] = [];
+  let from = 0;
+  for (const [a, b] of trackParts(s.n, s.breaks)) {
+    let offset = 0;
+    if (stitched && s.ele) {
+      for (let i = a; i < b; i++) {
+        if (isNum(s.ele[i]!) && isNum(stitched[i]!)) {
+          offset = stitched[i]! - s.ele[i]!;
+          break;
+        }
+      }
+    }
+    const end = s.dist[b - 1]!;
+    const to = b < s.n && isNum(end) ? Math.min(last, Math.floor(end / grid.step)) : last;
+    if (to >= from) out.push({ from, to, offset });
+    from = Math.max(from, to + 1);
+  }
+  return out;
+}
+
+/**
+ * Climbs on the elevation grid, detected within each track part (`parts`, default: one part) so a climb never spans
+ * a ride travelled while paused. Start and end elevations are the real (unstitched) ones.
+ */
+export function climbsOf(
+  s: Series,
+  grid: ElevationGrid,
+  o: ClimbOptions = DEFAULT_CLIMB_OPTIONS,
+  parts: GridPart[] = [{ from: 0, to: grid.ele.length - 1, offset: 0 }],
+): ActivityClimb[] {
   if (!s.dist) return [];
   const step = grid.step;
   const e = grid.ele;
   const w = Math.max(1, Math.round(100 / step));
-  return detectClimbRanges(e, step, o).map(([a, b]) => {
+  const ranges = parts.flatMap((p) =>
+    p.to - p.from >= 2
+      ? detectClimbRanges(e.subarray(p.from, p.to + 1), step, o).map(([a, b]) => [a + p.from, b + p.from, p.offset] as const)
+      : [],
+  );
+  return ranges.map(([a, b, offset]) => {
     const startDistM = a * step;
     const endDistM = b * step;
     const lengthM = endDistM - startDistM;
@@ -522,8 +619,8 @@ export function climbsOf(s: Series, grid: ElevationGrid, o: ClimbOptions = DEFAU
       endDistM,
       lengthM,
       gainM,
-      startEleM: e[a]!,
-      endEleM: e[b]!,
+      startEleM: e[a]! - offset,
+      endEleM: e[b]! - offset,
       avgGrade,
       maxGrade,
       durationS,
@@ -598,6 +695,8 @@ export function statsBetween(s: Series, t0: number, t1: number): RangeStats {
     for (let i = 0; i < s.n; i++) {
       const ti = s.t[i]!;
       if (ti < t0 || ti > t1) continue;
+      // a new track part: the height difference to the previous one was travelled while paused, no climbing
+      if (s.breaks.length && s.breaks.includes(i)) ref = NaN;
       const e = s.ele[i]!;
       if (!isNum(e)) continue;
       if (!isNum(ref)) ref = e;
@@ -691,6 +790,7 @@ export function analyzeActivity(inp: AnalysisInput): AnalysisResult {
       avgSpeed: null,
       gapSpeed: null,
       efficiency: null,
+      paceEfficiency: null,
       decoupling: null,
       climbs: [],
       laps,
@@ -704,22 +804,27 @@ export function analyzeActivity(inp: AnalysisInput): AnalysisResult {
   const totalDist = s.dist ? s.dist[s.n - 1]! : null;
   const avgSpeed = totalDist !== null && movingS > 0 ? totalDist / movingS : null;
   // the height difference between track parts (travelled while paused) is no climb
-  const grid = s.dist && s.ele ? elevationGrid(s.dist, s.breaks.length ? stitchElevation(s.ele, s.breaks) : s.ele) : null;
+  const stitched = s.ele && s.breaks.length ? stitchElevation(s.ele, s.breaks) : null;
+  const grid = s.dist && s.ele ? elevationGrid(s.dist, stitched ?? s.ele) : null;
   const footSport = (GAP_SPORTS as readonly string[]).includes(sport);
   const gapSpeed = footSport && grid ? gradeAdjustedSpeed(s, grid, sport) : null;
   const power = powerAnalysis(s);
   const cycling = info.group === 'cycle';
 
+  // One definition for the activity page and Progress → Trends (which reads the stored values): Pw:HR for rides
+  // with power, else (grade adjusted) Pa:HR; DECOUPLING leaves out the warm-up.
+  const paced = info.distance && !DECOUPLING_EXCLUDED.has(sport) && !!s.speed && !!s.dist;
+  const paceEfficiency = paced ? efficiencyFactor(s, gapSpeed ?? avgSpeed, gapSpeed !== null ? 'gap' : 'speed') : null;
   let decoupling: ActivityDecoupling | null = null;
   let efficiency: ActivityEfficiency | null = null;
   if (cycling && power) {
-    decoupling = aerobicDecoupling(s, s.power, 'power');
+    decoupling = aerobicDecoupling(s, s.power, 'power', DECOUPLING);
     efficiency = efficiencyFactor(s, power.normalizedW ?? power.avgW, 'power');
   }
-  if (info.distance && !DECOUPLING_EXCLUDED.has(sport) && s.speed && s.dist) {
+  if (paced) {
     const output = footSport && grid ? gradeAdjustedSpeedSeries(s, grid, sport) : s.speed;
-    decoupling ??= aerobicDecoupling(s, output, 'pace');
-    efficiency ??= efficiencyFactor(s, gapSpeed ?? avgSpeed, gapSpeed !== null ? 'gap' : 'speed');
+    decoupling ??= aerobicDecoupling(s, output, 'pace', DECOUPLING);
+    efficiency ??= paceEfficiency;
   }
 
   return {
@@ -727,8 +832,9 @@ export function analyzeActivity(inp: AnalysisInput): AnalysisResult {
     avgSpeed,
     gapSpeed,
     efficiency,
+    paceEfficiency,
     decoupling,
-    climbs: grid && totalDist !== null && totalDist >= 500 ? climbsOf(s, grid) : [],
+    climbs: grid && totalDist !== null && totalDist >= 500 ? climbsOf(s, grid, DEFAULT_CLIMB_OPTIONS, gridParts(s, grid, stitched)) : [],
     laps,
     segments,
     power,

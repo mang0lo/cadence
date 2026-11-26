@@ -180,7 +180,8 @@ export function isLeapYear(y: number): boolean {
 
 /**
  * Contiguous buckets covering [fromDay, toDay]. Each bucket spans its full calendar period (a week can start
- * before fromDay); the caller clips the data, not the bucket.
+ * before fromDay); callers count only the data inside [fromDay, toDay] (and report the clipped ranges, see
+ * clipRange in common.ts).
  */
 export function bucketsBetween(fromDay: string, toDay: string, bucket: ProgressBucket, weekStart: 0 | 1): BucketRange[] {
   const out: BucketRange[] = [];
@@ -409,7 +410,7 @@ export function vo2Level(value: number, levels: { key: ProgressVo2Level; min: nu
 }
 
 // ---------------------------------------------------------------------------
-// Streams → pace at heart rate, aerobic decoupling
+// Streams → pace at heart rate (aerobic decoupling: activities/analysis.ts)
 // ---------------------------------------------------------------------------
 
 /** Moving seconds and meters per integer bpm, starting at bpm `lo`. */
@@ -514,32 +515,4 @@ export function mostCommonBand(dist: { lo: number; seconds: number[] }, width = 
   // align to 5 bpm so the band reads naturally (e.g. 140–150)
   const start = Math.round(bestLo / 5) * 5;
   return { lo: start, hi: start + width };
-}
-
-/**
- * Aerobic decoupling (Pa:HR, %): how much the speed-per-heartbeat ratio drops from the first to the second
- * half of the moving time. < 5 % = good aerobic endurance. Null for short or HR-less workouts.
- */
-export function aerobicDecoupling(st: WorkoutStreams, f: StreamFilter, minMovingS = 2400): number | null {
-  const samples = movingSamples(st, f);
-  let total = 0;
-  for (const x of samples) total += x.dt;
-  if (total < minMovingS) return null;
-  const half = total / 2;
-  const acc = [
-    { d: 0, hb: 0 },
-    { d: 0, hb: 0 },
-  ];
-  let tCum = 0;
-  for (const x of samples) {
-    const k = tCum < half ? 0 : 1;
-    acc[k]!.d += x.dd;
-    acc[k]!.hb += x.hr * x.dt;
-    tCum += x.dt;
-  }
-  if (!(acc[0]!.hb > 0) || !(acc[1]!.hb > 0)) return null;
-  const ef1 = acc[0]!.d / acc[0]!.hb;
-  const ef2 = acc[1]!.d / acc[1]!.hb;
-  if (!(ef1 > 0)) return null;
-  return ((ef1 - ef2) / ef1) * 100;
 }

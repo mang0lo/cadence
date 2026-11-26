@@ -4,17 +4,18 @@ import type { Migration } from '../../db/migrate';
  * Tables of the progress feature.
  *
  * progress_workout_metrics – per-workout values that need streams or raw records and are therefore
- * precomputed by the derive step `progress.workout-metrics` (and filled lazily for workouts derived before
+ * precomputed by the derive step `progress.workout-caches` (derive.ts; filled lazily for workouts derived before
  * this feature existed):
  *   - running dynamics averages from records during the workout (stride length, ground contact time,
  *     vertical oscillation),
- *   - aerobic decoupling (Pa:HR) from the streams,
  *   - hr_speed: JSON {lo, s, d} = moving seconds and meters per integer bpm from bpm `lo`
  *     (pace inside any heart-rate band = Σd / Σs over the band, see math.ts).
+ *   Aerobic decoupling and the efficiency factor are read from activities_analysis (one definition with the activity
+ *   page); the decoupling_pct column of migration 001 is dropped by 003.
  *
  * progress_power_bests – per workout with a power stream: the best average power (W) for each standard duration
  * (PROGRESS_POWER_DURATIONS) the workout covers within one track part, with the local day and the sport, so the
- * power curve of any period is a MAX per duration (derive step `progress.power-curve`, see power-curve.ts).
+ * power curve of any period is a MAX per duration (derive step `progress.workout-caches`, see power-curve.ts).
  * progress_power_state – one row per processed workout (also those without power), so the lazy fill knows what
  * is done; `source_updated_at` = workouts.updated_at the rows were computed from.
  * Rows exist for hidden and duplicate workouts too; the queries exclude them by joining workouts.
@@ -60,6 +61,13 @@ export const progressMigrations: Migration[] = [
       ) WITHOUT ROWID;
       CREATE INDEX ix_progress_power_bests_day ON progress_power_bests(athlete_id, sport, day);
       CREATE INDEX ix_progress_power_bests_duration ON progress_power_bests(athlete_id, sport, duration_s, day);
+    `,
+  },
+  {
+    // decoupling comes from the activity analysis now (activities_analysis.decoupling_pct)
+    id: 'progress_003_drop_decoupling',
+    up: /* sql */ `
+      ALTER TABLE progress_workout_metrics DROP COLUMN decoupling_pct;
     `,
   },
 ];

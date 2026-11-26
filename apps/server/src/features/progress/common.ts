@@ -1,7 +1,14 @@
-import { SPORTS, type ProgressTotals, type ProgressVolumeMetric } from '@cadence/shared';
+import {
+  SPORTS,
+  type ProgressDayRange,
+  type ProgressTotals,
+  type ProgressVolumeMetric,
+  type WorkoutStreams,
+} from '@cadence/shared';
 import { z } from 'zod';
 import { all, get, type Db } from '../../db/db';
 import { getEffectiveHr, getSetting, getSettings } from '../../core/settings';
+import { gunzipJson } from '../../lib/gzip';
 import { dayString, parseDay, today as serverToday } from '../../lib/time';
 
 // ---------------------------------------------------------------------------
@@ -19,7 +26,7 @@ export const zSport = z
   .max(40)
   .optional()
   .transform((s) => (s && s !== 'all' ? s : null))
-  .refine((s) => s === null || s in SPORTS, 'unknown sport');
+  .refine((s) => s === null || Object.hasOwn(SPORTS, s), 'unknown sport');
 
 export const zVolumeMetric = z.enum(['distance', 'time', 'elevation', 'count', 'effort']);
 
@@ -30,6 +37,41 @@ export function resolveToday(day: string | undefined): string {
 
 export function weekStartOf(db: Db, athleteId: number): 0 | 1 {
   return getSettings(db, athleteId).weekStart === 0 ? 0 : 1;
+}
+
+/**
+ * True while an import or rederive job of the athlete is queued or running. Its derive steps fill the per-workout
+ * caches of the workouts it adds or changes, so requests leave them alone meanwhile.
+ */
+export function derivePending(db: Db, athleteId: number): boolean {
+  return !!get(
+    db,
+    "SELECT 1 FROM import_jobs WHERE athlete_id = ? AND status IN ('queued', 'running') LIMIT 1",
+    [athleteId],
+  );
+}
+
+/** Decoded streams of a workout (null when it has none or the blob is corrupt). */
+export function workoutStreams(db: Db, id: number): WorkoutStreams | null {
+  const blob = get<{ data: Uint8Array }>(db, 'SELECT data FROM workout_streams WHERE workout_id = ?', [id])?.data;
+  if (!blob) return null;
+  try {
+    return gunzipJson<WorkoutStreams>(blob);
+  } catch {
+    return null;
+  }
+}
+
+/** workouts.updated_at of the given workouts (deleted ones are missing). */
+export function updatedAtOf(db: Db, ids: number[]): Map<number, number> {
+  if (!ids.length) return new Map();
+  return new Map(
+    all<{ id: number; updated_at: number }>(
+      db,
+      `SELECT id, updated_at FROM workouts WHERE id IN (${ids.map(() => '?').join(',')})`,
+      ids,
+    ).map((r) => [r.id, r.updated_at]),
+  );
 }
 
 /** HR zone upper bounds the stored zone times were computed with (falls back to the current effective HR). */
@@ -164,6 +206,11 @@ export function visibleWorkoutsInDays(
     params.push(sport);
   }
   return { where: where.join(' AND '), params };
+}
+
+/** The part of a bucket inside the requested range (the first and the last bucket can be partial). */
+export function clipRange(b: ProgressDayRange, q: ProgressDayRange): ProgressDayRange {
+  return { fromDay: b.fromDay < q.fromDay ? q.fromDay : b.fromDay, toDay: b.toDay > q.toDay ? q.toDay : b.toDay };
 }
 
 /** Unix seconds of UTC midnight of a day (used as a stable x value for day-based series). */

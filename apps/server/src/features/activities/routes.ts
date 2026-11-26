@@ -6,7 +6,7 @@ import { notFound } from '../../lib/http';
 import { parseDay, today as serverToday } from '../../lib/time';
 import { activitiesCsv } from './export';
 import { activityNav, activitySummary, listActivities, similarActivities } from './queries';
-import { getAnalysis } from './store';
+import { athletesWithStaleAnalyses, getAnalysis } from './store';
 
 const bool = z
   .union([z.boolean(), z.enum(['true', 'false', '1', '0'])])
@@ -46,6 +46,17 @@ const similarQuery = z.object({ limit: z.coerce.number().int().min(1).max(1000).
 
 /** Routes of the activities feature, mounted under /api/activities. */
 export default async function activitiesRoutes(app: FastifyInstance) {
+  // After an update that changed the analysis (ANALYSIS_VERSION) or an import that stopped before its analysis step,
+  // cached analyses are stale: refresh them in the background (only stale rows, see deriveAnalyses) instead of
+  // leaving old values in similar activities and Progress → Trends until each activity page is opened.
+  app.addHook('onReady', async () => {
+    if (!app.jobs) return;
+    for (const athleteId of athletesWithStaleAnalyses(app.db)) {
+      if (!app.jobs.busy(athleteId))
+        app.jobs.enqueueDerive(athleteId, { origin: 'upgrade', workoutIds: [], sinceDay: serverToday() });
+    }
+  });
+
   app.get('/summary', async (req): Promise<ActivitiesSummary> => {
     const q = summaryQuery.parse(req.query);
     const weekStart = (q.weekStart ?? getSettings(app.db, req.athleteId).weekStart) as 0 | 1;
