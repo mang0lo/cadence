@@ -2,22 +2,14 @@ import { useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Check, Pencil, Star, Trash2, Trophy, Waypoints, X } from 'lucide-react';
-import {
-  M_PER_FT,
-  sportInfo,
-  workoutTitle,
-  type MapsSegmentDetail,
-  type MapsSegmentEffort,
-} from '@cadence/shared';
+import { M_PER_FT, type MapsSegmentDetail } from '@cadence/shared';
 import { ChartCard } from '@/components/charts/ChartCard';
 import { EChart } from '@/components/charts/EChart';
 import { areaSeries, axisTooltip, grid, tooltipHtml, valueAxis } from '@/components/charts/options';
 import { useChartTheme } from '@/components/charts/theme';
 import {
-  Badge,
   Button,
   Card,
-  CardHeader,
   Dialog,
   EmptyState,
   ErrorState,
@@ -28,16 +20,13 @@ import {
   Skeleton,
   Stat,
   StatRow,
-  Table,
-  TD,
-  TH,
-  cn,
 } from '@/components/ui';
 import { api, useApi } from '@/lib/api';
 import { useFormat } from '@/lib/format';
-import { useI18n, useT } from '@/lib/i18n';
-import { SportBadge, SportIcon, sportColorVar, useSportLabel } from '@/lib/sports';
+import { useT } from '@/lib/i18n';
+import { SportBadge } from '@/lib/sports';
 import { decodePolyline, toLngLat } from '@/lib/polyline';
+import { EffortTable, type EffortRow } from '../components/EffortTable';
 import { EffortTrend } from '../components/EffortTrend';
 import { LineMap, useShownOverlayColors, type MapLine, type MapMarker } from '../components/LineMap';
 import { dateHint } from '../lib/dates';
@@ -112,7 +101,24 @@ function Body({ detail }: { detail: MapsSegmentDetail }) {
   };
 
   const latest = efforts[0];
-  const best = efforts.find((e) => e.rank === 1);
+  const rows = useMemo<EffortRow[]>(() => {
+    const best = efforts.find((e) => e.rank === 1);
+    return efforts.map((e) => ({
+      key: `${e.workoutId}:${e.idx}`,
+      workoutId: e.workoutId,
+      name: e.name,
+      sport: e.sport,
+      startTs: e.startTs,
+      tzMin: e.tzMin,
+      timeS: e.elapsedS,
+      movingS: e.movingS,
+      avgSpeed: e.avgSpeed,
+      avgHr: e.avgHr,
+      rank: e.rank,
+      best: e === best,
+      pr: e.pr,
+    }));
+  }, [efforts]);
   return (
     <div className="grid min-w-0 gap-4">
       <PageHeader
@@ -250,10 +256,14 @@ function Body({ detail }: { detail: MapsSegmentDetail }) {
             title={t('maps.segments.trendTitle')}
             subtitle={t('maps.routes.trendSubtitle')}
           />
-          <Leaderboard
-            efforts={efforts}
+          <EffortTable
+            title={t('maps.segments.leaderboard')}
+            subtitle={t('maps.segments.leaderboardHint')}
+            rows={rows}
             sport={s.sport}
-            bestId={best ? `${best.workoutId}:${best.idx}` : null}
+            bestLabel={t('maps.segments.prBadge')}
+            leaderboard
+            initialSort={{ col: 'rank', dir: 'asc' }}
           />
         </>
       )}
@@ -400,131 +410,5 @@ function ProfileChart({ detail }: { detail: MapsSegmentDetail }) {
         <EmptyState title={t('maps.segments.noElevation')} className="py-16" />
       )}
     </ChartCard>
-  );
-}
-
-type SortCol = 'rank' | 'date' | 'pace' | 'hr';
-
-function Leaderboard({
-  efforts,
-  sport,
-  bestId,
-}: {
-  efforts: MapsSegmentEffort[];
-  sport: string;
-  bestId: string | null;
-}) {
-  const t = useT();
-  const fmt = useFormat();
-  const { lang } = useI18n();
-  const sportLabel = useSportLabel();
-  const [sort, setSort] = useState<{ col: SortCol; dir: 'asc' | 'desc' }>({ col: 'rank', dir: 'asc' });
-  const [all, setAll] = useState(false);
-  const mixed = new Set(efforts.map((e) => e.sport)).size > 1;
-  const rows = useMemo(() => {
-    const key = (e: MapsSegmentEffort) =>
-      sort.col === 'rank'
-        ? e.rank
-        : sort.col === 'date'
-          ? e.startTs
-          : sort.col === 'pace'
-            ? e.avgSpeed
-            : (e.avgHr ?? 0);
-    const list = [...efforts].sort((a, b) => key(a) - key(b) || a.startTs - b.startTs);
-    return sort.dir === 'desc' ? list.reverse() : list;
-  }, [efforts, sort]);
-  const visible = all ? rows : rows.slice(0, 15);
-  const th = (col: SortCol, label: string, numeric = false, className?: string) => (
-    <TH
-      numeric={numeric}
-      className={className}
-      onClick={() =>
-        setSort((s) =>
-          s.col === col
-            ? { col, dir: s.dir === 'asc' ? 'desc' : 'asc' }
-            : { col, dir: col === 'date' || col === 'pace' ? 'desc' : 'asc' },
-        )
-      }
-      sorted={sort.col === col ? sort.dir : null}
-    >
-      {label}
-    </TH>
-  );
-  return (
-    <Card padded={false}>
-      <div className="p-4 pb-0 sm:p-5 sm:pb-0">
-        <CardHeader title={t('maps.segments.leaderboard')} subtitle={t('maps.segments.leaderboardHint')} />
-      </div>
-      <Table>
-        <thead>
-          <tr>
-            {th('rank', t('maps.routes.rank'), true, 'w-16')}
-            {th('date', t('common.day'))}
-            <TH numeric>{t('maps.routes.time')}</TH>
-            {th('pace', sportInfo(sport).speedMode === 'speed' ? t('common.speed') : t('common.pace'), true)}
-            {th('hr', t('common.avgHr'), true)}
-          </tr>
-        </thead>
-        <tbody>
-          {visible.map((e) => {
-            const isBest = bestId === `${e.workoutId}:${e.idx}`;
-            return (
-              <tr key={`${e.workoutId}:${e.idx}`} className={cn('hover:bg-surface-2', isBest && 'bg-good/5')}>
-                <TD numeric>
-                  {isBest ? (
-                    <Badge tone="good" icon={Trophy}>
-                      {t('maps.segments.prBadge')}
-                    </Badge>
-                  ) : (
-                    <span className="tabular">{e.rank}</span>
-                  )}
-                </TD>
-                <TD>
-                  <Link
-                    to={`/activities/${e.workoutId}`}
-                    className="font-medium text-fg hover:text-accent-fg"
-                  >
-                    {fmt.date(e.startTs, e.tzMin, 'day')}
-                  </Link>
-                  <span className="ml-2 text-xs text-fg-3">
-                    {fmt.time(e.startTs, e.tzMin)} · {workoutTitle(e, lang)}
-                  </span>
-                  {mixed && (
-                    <span className="ml-2 inline-flex items-center gap-1 text-xs text-fg-3">
-                      <span style={{ color: sportColorVar(e.sport) }}>
-                        <SportIcon sport={e.sport} size={12} strokeWidth={2.5} />
-                      </span>
-                      {sportLabel(e.sport)}
-                    </span>
-                  )}
-                  {e.pr && !isBest && (
-                    <Badge tone="neutral" className="ml-2" icon={Trophy}>
-                      {t('maps.segments.wasPr')}
-                    </Badge>
-                  )}
-                </TD>
-                <TD numeric>
-                  <span className="font-semibold text-fg">{fmt.duration(e.elapsedS)}</span>
-                  {e.movingS !== null && Math.abs(e.movingS - e.elapsedS) >= 5 && (
-                    <span className="block text-xs text-fg-3">
-                      {t('common.movingTime')} {fmt.duration(e.movingS)}
-                    </span>
-                  )}
-                </TD>
-                <TD numeric>{fmt.pace(e.avgSpeed, e.sport)}</TD>
-                <TD numeric>{e.avgHr ? fmt.hr(e.avgHr) : '–'}</TD>
-              </tr>
-            );
-          })}
-        </tbody>
-      </Table>
-      {rows.length > 15 && (
-        <div className="flex justify-center p-3">
-          <Button size="sm" variant="ghost" onClick={() => setAll((v) => !v)}>
-            {all ? t('common.less') : t('maps.routes.showAllEfforts', { count: rows.length })}
-          </Button>
-        </div>
-      )}
-    </Card>
   );
 }
