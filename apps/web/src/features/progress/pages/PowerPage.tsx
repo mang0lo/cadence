@@ -1,5 +1,3 @@
-import { useCallback } from 'react';
-import { useSearchParams } from 'react-router';
 import { Zap } from 'lucide-react';
 import {
   PROGRESS_POWER_COMPARES,
@@ -23,6 +21,7 @@ import { useFtpEstimate, usePowerCurve } from '../api';
 import { CardSkeleton, SportSelect } from '../components/common';
 import { FtpCard, FtpHistoryCard, NoPowerCard, PowerBestsCard, PowerCurveCard } from '../components/power';
 import { isPowerCompare, isPowerPeriod, type PowerUnit } from '../power';
+import { urlSport, useUrlParams } from '../useFilters';
 
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -32,22 +31,7 @@ const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
  */
 export default function PowerPage() {
   const t = useT();
-  const [params, setParams] = useSearchParams();
-  const set = useCallback(
-    (patch: Record<string, string | null>) =>
-      setParams(
-        (prev) => {
-          const next = new URLSearchParams(prev);
-          for (const [k, v] of Object.entries(patch)) {
-            if (v === null) next.delete(k);
-            else next.set(k, v);
-          }
-          return next;
-        },
-        { replace: true },
-      ),
-    [setParams],
-  );
+  const [params, set] = useUrlParams();
   const today = todayKey();
   const rawPeriod = params.get('period');
   const period: ProgressPowerPeriod = isPowerPeriod(rawPeriod) ? rawPeriod : '90d';
@@ -59,12 +43,13 @@ export default function PowerPage() {
   if (!DAY_RE.test(from)) from = addDays(today, -89);
   if (!DAY_RE.test(to)) to = today;
   if (from > to) [from, to] = [to, from];
-  const urlSport = params.get('sport');
+  // an unknown ?sport= (old link) is dropped: the server's default sport applies and the picker stays usable
+  const asked = urlSport(params.get('sport'));
 
-  const curve = usePowerCurve({ sport: urlSport, period, year, fromDay: from, toDay: to, compare });
-  const ftp = useFtpEstimate(urlSport);
+  const curve = usePowerCurve({ sport: asked, period, year, fromDay: from, toDay: to, compare });
+  const ftp = useFtpEstimate(asked);
   const data = curve.data;
-  const sport = data?.sport ?? urlSport ?? '';
+  const sport = data?.sport ?? asked ?? '';
   const unit: PowerUnit = params.get('unit') === 'wkg' && data?.current.bodyMass ? 'wkg' : 'w';
   // without any power data there is nothing to filter (the empty state explains what is needed)
   const noPower = !!data && !data.sports.length;

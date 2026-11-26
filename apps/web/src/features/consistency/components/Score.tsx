@@ -1,11 +1,11 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Check, Clock, Gauge, LineChart } from 'lucide-react';
 import type { ConsistencyPrefs, ConsistencyScore } from '@cadence/shared';
 import { ChartCard } from '@/components/charts/ChartCard';
 import { EChart } from '@/components/charts/EChart';
 import { axisTooltip, grid, lineSeries, timeAxis, tooltipHtml, valueAxis } from '@/components/charts/options';
 import { useChartTheme } from '@/components/charts/theme';
-import { Card, CardHeader, EmptyState, Field, Hint, SegmentedControl, Select, cn } from '@/components/ui';
+import { Card, CardHeader, EmptyState, ErrorState, Field, Hint, SegmentedControl, Select, cn } from '@/components/ui';
 import { useFormat } from '@/lib/format';
 import { useT } from '@/lib/i18n';
 import { dayToDate } from '@/lib/time';
@@ -24,6 +24,12 @@ export function ScoreCard({ score, prefs }: { score: ConsistencyScore; prefs: Co
   const t = useT();
   const fmt = useFormat();
   const { setPrefs } = useConsistencyMutations();
+  // the controls show the server's preferences: a failed change snaps back, so say why
+  const [prefsError, setPrefsError] = useState<unknown>(null);
+  const savePrefs = (patch: Partial<ConsistencyPrefs>) => {
+    setPrefsError(null);
+    void setPrefs(patch).catch(setPrefsError);
+  };
   const current = score.weeks[score.weeks.length - 1];
   const explain =
     score.basis === 'goals'
@@ -82,7 +88,7 @@ export function ScoreCard({ score, prefs }: { score: ConsistencyScore; prefs: Co
           <SegmentedControl
             size="sm"
             value={prefs.scoreBasis}
-            onChange={(v) => void setPrefs({ scoreBasis: v }).catch(() => undefined)}
+            onChange={(v) => savePrefs({ scoreBasis: v })}
             items={[
               { value: 'days', label: t('consistency.score.basisDays') },
               { value: 'goals', label: t('consistency.score.basisGoals') },
@@ -93,13 +99,15 @@ export function ScoreCard({ score, prefs }: { score: ConsistencyScore; prefs: Co
           <Field label={t('consistency.score.minDays')}>
             <Select
               value={String(prefs.minActiveDays)}
-              onChange={(v) => void setPrefs({ minActiveDays: Number(v) }).catch(() => undefined)}
-              className="h-8 text-xs"
+              onChange={(v) => savePrefs({ minActiveDays: Number(v) })}
+              // h-8! — Select sets h-9 itself and cn does not merge conflicting utilities (h-9 comes later in the CSS)
+              className="h-8! text-xs"
               options={[1, 2, 3, 4, 5, 6, 7].map((n) => ({ value: String(n), label: t('consistency.score.perWeek', { count: n }) }))}
             />
           </Field>
         )}
       </div>
+      {prefsError ? <ErrorState error={prefsError} className="mt-3" /> : null}
     </Card>
   );
 }
@@ -109,7 +117,8 @@ export function ScoreTrendCard({ score }: { score: ConsistencyScore }) {
   const t = useT();
   const fmt = useFormat();
   const theme = useChartTheme();
-  const points = score.trend.filter((p) => p.score !== null);
+  // memoized: a new array on every render would rebuild the chart (setOption notMerge) on each page re-render
+  const points = useMemo(() => score.trend.filter((p) => p.score !== null), [score.trend]);
   const option = useMemo(
     () => ({
       grid: grid({ top: 12 }),

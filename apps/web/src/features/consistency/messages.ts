@@ -27,6 +27,8 @@ export const messages: Dictionary = {
       noDataHint: 'Import your Apple Health export to see your streaks, goals and trophies.',
       dayUnit: { one: 'day', other: 'days' },
       weekUnit: { one: 'week', other: 'weeks' },
+      activities: { one: '{n} activity', other: '{n} activities' },
+      days: { one: '{n} day', other: '{n} days' },
     },
     page: {
       title: 'Consistency',
@@ -138,6 +140,7 @@ export const messages: Dictionary = {
     },
     goals: {
       unit: { activities: 'activities', days: 'days', minutes: 'min' },
+      zeroTime: '0m',
       metrics: {
         distance: 'Distance',
         longest: 'Longest activity',
@@ -417,7 +420,7 @@ export const messages: Dictionary = {
       perWeek: 'Per week',
       everest: '≈ {x} × Mount Everest',
       eiffel: 'Eiffel Towers climbed',
-      eiffelHint: '330 m each',
+      eiffelHint: '{height} each',
       fastest: 'Fastest of the year',
       pr: 'PR',
       prs: 'New personal records',
@@ -480,6 +483,8 @@ export const messages: Dictionary = {
       noDataHint: 'Importiere deinen Apple-Health-Export, um deine Serien, Ziele und Trophäen zu sehen.',
       dayUnit: { one: 'Tag', other: 'Tage' },
       weekUnit: { one: 'Woche', other: 'Wochen' },
+      activities: { one: '{n} Aktivität', other: '{n} Aktivitäten' },
+      days: { one: '{n} Tag', other: '{n} Tage' },
     },
     page: {
       title: 'Konstanz',
@@ -592,6 +597,7 @@ export const messages: Dictionary = {
     },
     goals: {
       unit: { activities: 'Aktivitäten', days: 'Tage', minutes: 'Min.' },
+      zeroTime: '0 Min.',
       metrics: {
         distance: 'Distanz',
         longest: 'Längste Einheit',
@@ -871,7 +877,7 @@ export const messages: Dictionary = {
       perWeek: 'Pro Woche',
       everest: '≈ {x} × Mount Everest',
       eiffel: 'Eiffeltürme erklommen',
-      eiffelHint: 'je 330 m',
+      eiffelHint: 'je {height}',
       fastest: 'Schnellste Zeiten des Jahres',
       pr: 'Bestzeit',
       prs: 'Neue Bestleistungen',

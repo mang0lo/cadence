@@ -2,8 +2,6 @@ import { useEffect, useState } from 'react';
 import {
   GOAL_PERIODS,
   LONGEST_PRESETS,
-  M_PER_KM,
-  M_PER_MI,
   goalMetricsFor,
   type GoalInput,
   type GoalMetric,
@@ -14,7 +12,17 @@ import { useFormat } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
 import { sortSports, sportLabel } from '@/lib/sports';
 import { useConsistencyMutations, useSports } from '../api';
-import { formatGoalValue, fromInputValue, targetUnit, toInputValue } from '../lib';
+import {
+  changeGoalForm,
+  fillGoalForm,
+  formatGoalValue,
+  formTarget,
+  fromInputValue,
+  goalTargetText,
+  targetUnit,
+  type GoalForm,
+  type GoalFormExact,
+} from '../lib';
 import { FieldGroup } from './FieldGroup';
 
 const MAX_DAYS: Record<GoalPeriod, number> = { day: 1, week: 7, month: 31, year: 366 };
@@ -49,20 +57,25 @@ export function GoalDialog({
   const fmt = useFormat();
   const sportsQ = useSports();
   const { createGoal, updateGoal } = useConsistencyMutations();
-  const [period, setPeriod] = useState<GoalPeriod>('week');
-  const [sport, setSport] = useState<string>('all');
-  const [metric, setMetric] = useState<GoalMetric>('active_days');
-  const [target, setTarget] = useState('');
+  const [form, setForm] = useState<GoalForm>({ period: 'week', sport: 'all', metric: 'active_days', target: '' });
+  // the target the form was last filled with (the edited goal, a quick pick): saved exactly while its number is untouched
+  const [exact, setExact] = useState<GoalFormExact | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [saving, setSaving] = useState(false);
+  const { period, sport, metric, target } = form;
+
+  // the input shows the target rounded in the display unit, in the locale's number format ("42,195" in German); a
+  // stored combination the catalogue no longer has falls back like a changed sport would (and keeps no exact target)
+  const fill = (f: Omit<GoalForm, 'target'>, canonical: number) => {
+    const next = fillGoalForm(fmt, f, canonical);
+    setForm(next.form);
+    setExact(next.exact);
+  };
 
   useEffect(() => {
     if (!open) return;
     const g = initial ?? { period: 'week', sport: null, metric: 'active_days', target: 3 };
-    setPeriod(g.period);
-    setSport(g.sport ?? 'all');
-    setMetric(g.metric);
-    setTarget(fieldValue(toInputValue(fmt, g.metric, g.target, g.period)));
+    fill({ period: g.period, sport: g.sport ?? 'all', metric: g.metric }, g.target);
     setError(null);
     setSaving(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -71,42 +84,25 @@ export function GoalDialog({
   const known = (sportsQ.data ?? []).map((s) => s.sport);
   const sports = sortSports([...new Set([...known, ...COMMON_SPORTS, ...(sport !== 'all' ? [sport] : [])])]);
   // the measures depend on the sport and the period: no distance for strength training, no "active days" per day …
+  // (changeGoalForm keeps the chosen measure one of them)
   const metricOptions = goalMetricsFor(sport === 'all' ? null : sport, period);
-  const effectiveMetric: GoalMetric = metricOptions.includes(metric) ? metric : 'time';
 
-  // the input shows the locale's decimal separator (42,195 km in German, not "42.195")
-  function fieldValue(v: number): string {
-    return lang === 'de' ? String(v).replace('.', ',') : String(v);
-  }
-  const parsed = Number(target.replace(',', '.'));
-  const canonical = Number.isFinite(parsed) ? fromInputValue(fmt, effectiveMetric, parsed, period) : NaN;
+  const canonical = formTarget(fmt, form, exact);
   const invalid = !(canonical > 0) ? t('consistency.goals.form.invalid') : null;
   const tooMany =
-    effectiveMetric === 'active_days' && canonical > MAX_DAYS[period]
+    metric === 'active_days' && canonical > MAX_DAYS[period]
       ? t(`consistency.goals.form.tooMany.${period}`, { count: MAX_DAYS[period] })
       : null;
   const problem = target.trim() === '' ? null : (invalid ?? tooMany);
 
   // quick picks: classic single distances (marathon, Ironman legs …) or bigger round targets
-  const pick = (m: GoalMetric, v: number, s?: string) => {
-    if (s) setSport(s);
-    setMetric(m);
-    setTarget(fieldValue(toInputValue(fmt, m, v, period)));
-  };
-  // time is entered in minutes for a day and in hours otherwise: keep the amount when the unit changes
-  const changePeriod = (p: GoalPeriod) => {
-    if (effectiveMetric === 'time' && (p === 'day') !== (period === 'day') && canonical > 0)
-      setTarget(fieldValue(toInputValue(fmt, 'time', canonical, p)));
-    setPeriod(p);
-  };
-  const presetSports = effectiveMetric === 'longest' ? PRESET_SPORTS.filter((s) => sport === 'all' || s === sport) : [];
-  const big = BIG_GOALS[effectiveMetric]?.[period] ?? [];
-  const bigCanonical = (v: number) =>
-    effectiveMetric === 'distance'
-      ? v * (fmt.units === 'imperial' ? M_PER_MI : M_PER_KM)
-      : effectiveMetric === 'time'
-        ? v * (period === 'day' ? 60 : 3600)
-        : v;
+  const pick = (m: GoalMetric, v: number, s?: string) => fill({ period, sport: s ?? sport, metric: m }, v);
+  // a period or sport without the chosen measure falls back to time; time keeps its amount between minutes and hours
+  const change = (c: Partial<Pick<GoalForm, 'period' | 'sport'>>) => setForm((f) => changeGoalForm(fmt, f, c));
+  const presetSports = metric === 'longest' ? PRESET_SPORTS.filter((s) => sport === 'all' || s === sport) : [];
+  const big = BIG_GOALS[metric]?.[period] ?? [];
+  // chips are round numbers in the input unit (elevation chips in m in both unit systems)
+  const bigCanonical = (v: number) => (metric === 'elevation' ? v : fromInputValue(fmt, metric, v, period));
   const bigLabel = t(period === 'day' ? 'consistency.goals.presets.title' : 'consistency.goals.presets.bigger');
   const chip = 'rounded-full border border-border px-2.5 py-1 text-xs font-medium text-fg-2 hover:bg-surface-2';
 
@@ -114,7 +110,7 @@ export function GoalDialog({
     if (invalid || tooMany || saving) return;
     setSaving(true);
     setError(null);
-    const input: GoalInput = { period, sport: sport === 'all' ? null : sport, metric: effectiveMetric, target: canonical };
+    const input: GoalInput = { period, sport: sport === 'all' ? null : sport, metric, target: canonical };
     try {
       if (initial?.id) await updateGoal(initial.id, input);
       else await createGoal(input);
@@ -147,7 +143,7 @@ export function GoalDialog({
         <FieldGroup label={t('consistency.goals.form.period')}>
           <SegmentedControl
             value={period}
-            onChange={changePeriod}
+            onChange={(p: GoalPeriod) => change({ period: p })}
             className="max-w-full self-start"
             items={GOAL_PERIODS.map((p) => ({ value: p, label: t(`consistency.goals.periods.${p}`) }))}
           />
@@ -156,7 +152,7 @@ export function GoalDialog({
           <Field label={t('consistency.goals.form.sport')}>
             <Select
               value={sport}
-              onChange={setSport}
+              onChange={(s) => change({ sport: s })}
               className="w-full"
               options={[
                 { value: 'all', label: t('common.allSports') },
@@ -166,11 +162,10 @@ export function GoalDialog({
           </Field>
           <Field label={t('consistency.goals.form.metric')}>
             <Select
-              value={effectiveMetric}
+              value={metric}
               onChange={(m) => {
-                setMetric(m);
-                // keep the number meaningful when switching units
-                if (m !== effectiveMetric) setTarget('');
+                // a number in another unit means something else: clear it
+                if (m !== metric) setForm((f) => ({ ...f, metric: m, target: '' }));
               }}
               className="w-full"
               options={metricOptions.map((m) => ({ value: m, label: t(`consistency.goals.metrics.${m}`) }))}
@@ -179,18 +174,18 @@ export function GoalDialog({
         </div>
         <Field
           label={t('consistency.goals.form.target')}
-          help={
-            effectiveMetric === 'time' && canonical > 0 && !problem
-              ? `= ${fmt.durationShort(canonical)} ${t(`consistency.goals.perUnit.${period}`)}`
-              : undefined
-          }
+          // how the number was read: "1,000" is a thousand km, not 1 km
+          help={canonical > 0 && !problem ? `= ${goalTargetText(fmt, t, { metric, target: canonical, period })}` : undefined}
         >
           <div className="flex items-center gap-2">
             <Input
               inputMode="decimal"
               value={target}
               autoFocus
-              onChange={(e) => setTarget(e.target.value)}
+              onChange={(e) => {
+                const value = e.target.value;
+                setForm((f) => ({ ...f, target: value }));
+              }}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
                   e.preventDefault();
@@ -201,8 +196,8 @@ export function GoalDialog({
               aria-invalid={!!problem}
             />
             <span className="text-sm text-fg-3">
-              {targetUnit(fmt, t, effectiveMetric, period)}{' '}
-              {t(`consistency.goals.${effectiveMetric === 'longest' ? 'onceUnit' : 'perUnit'}.${period}`)}
+              {targetUnit(fmt, t, metric, period)}{' '}
+              {t(`consistency.goals.${metric === 'longest' ? 'onceUnit' : 'perUnit'}.${period}`)}
             </span>
           </div>
         </Field>
@@ -230,8 +225,8 @@ export function GoalDialog({
           <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label={bigLabel}>
             <span className="mr-1 text-xs font-medium text-fg-2">{bigLabel}</span>
             {big.map((v) => (
-              <button key={v} type="button" className={chip} onClick={() => pick(effectiveMetric, bigCanonical(v))}>
-                {formatGoalValue(fmt, t, effectiveMetric, bigCanonical(v))}
+              <button key={v} type="button" className={chip} onClick={() => pick(metric, bigCanonical(v))}>
+                {formatGoalValue(fmt, t, metric, bigCanonical(v))}
               </button>
             ))}
           </div>

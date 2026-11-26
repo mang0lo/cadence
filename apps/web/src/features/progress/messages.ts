@@ -36,6 +36,7 @@ export const messages: Dictionary = {
       date: 'Date',
       activity: 'Activity',
       activities: 'Activities',
+      activityCount: { one: '{n} activity', other: '{n} activities' },
       value: 'Value',
       total: 'Total',
       other: 'Other',
@@ -94,8 +95,6 @@ export const messages: Dictionary = {
       title: 'Per-activity trends',
       subtitle: 'Each dot is one activity · rolling median of {n} · linear trend',
       metrics: {
-        pace: 'Pace',
-        speed: 'Speed',
         hr: 'Avg heart rate',
         ef: 'Efficiency',
         cadenceFoot: 'Cadence',
@@ -148,6 +147,7 @@ export const messages: Dictionary = {
       empty: 'No heart-rate data with pace for this sport',
       emptyHint: 'Pace at heart rate needs activities with heart rate and GPS or distance.',
       pickSport: 'Choose a sport with distance to compare its pace at the same heart rate',
+      notSaved: 'This band could not be saved. It applies until you leave the page.',
     },
     intensity: {
       title: 'Intensity distribution',
@@ -168,9 +168,9 @@ export const messages: Dictionary = {
         subtitle: 'Fastest time per distance · {scope}',
         distance: 'Distance',
         time: 'Time',
-        pace: 'Pace',
         date: 'Date',
         attempts: 'Attempts',
+        attemptsAllTime: 'Attempts (all time)',
         allTimePr: 'All-time PR',
         select: 'Show progression',
       },
@@ -188,6 +188,7 @@ export const messages: Dictionary = {
         title: 'Top 10 · {distance}',
         rank: '#',
         avgHr: 'Avg HR',
+        emptyScope: 'No attempts at this distance in this period',
       },
       highlights: {
         title: 'Highlights',
@@ -241,6 +242,7 @@ export const messages: Dictionary = {
         activity: 'Activity',
         mass: 'W/kg with your weight of {kg} on {date}.',
         noMass: 'Log your weight in Apple Health to see W/kg.',
+        borrowedMass: 'No weight is logged for “{name}”: its W/kg use the same weight.',
         method:
           'Each value is the best average within one activity. Seconds without power data count as 0 W, and parts of a track separated by a break are never joined.',
       },
@@ -424,6 +426,7 @@ export const messages: Dictionary = {
       date: 'Datum',
       activity: 'Aktivität',
       activities: 'Aktivitäten',
+      activityCount: { one: '{n} Aktivität', other: '{n} Aktivitäten' },
       value: 'Wert',
       total: 'Gesamt',
       other: 'Andere',
@@ -482,8 +485,6 @@ export const messages: Dictionary = {
       title: 'Trends pro Aktivität',
       subtitle: 'Jeder Punkt ist eine Aktivität · gleitender Median über {n} · linearer Trend',
       metrics: {
-        pace: 'Pace',
-        speed: 'Geschwindigkeit',
         hr: 'Ø Herzfrequenz',
         ef: 'Effizienz',
         cadenceFoot: 'Schrittfrequenz',
@@ -536,6 +537,7 @@ export const messages: Dictionary = {
       empty: 'Keine Herzfrequenzdaten mit Pace für diese Sportart',
       emptyHint: 'Dafür braucht es Aktivitäten mit Herzfrequenz und GPS oder Distanz.',
       pickSport: 'Wähle eine Sportart mit Distanz, um ihre Pace bei gleicher Herzfrequenz zu vergleichen',
+      notSaved: 'Dieser Bereich konnte nicht gespeichert werden. Er gilt, bis du die Seite verlässt.',
     },
     intensity: {
       title: 'Intensitätsverteilung',
@@ -556,9 +558,9 @@ export const messages: Dictionary = {
         subtitle: 'Schnellste Zeit pro Distanz · {scope}',
         distance: 'Distanz',
         time: 'Zeit',
-        pace: 'Pace',
         date: 'Datum',
         attempts: 'Versuche',
+        attemptsAllTime: 'Versuche (gesamt)',
         allTimePr: 'Allzeit-Rekord',
         select: 'Entwicklung anzeigen',
       },
@@ -576,6 +578,7 @@ export const messages: Dictionary = {
         title: 'Top 10 · {distance}',
         rank: '#',
         avgHr: 'Ø HF',
+        emptyScope: 'Keine Versuche über diese Distanz in diesem Zeitraum',
       },
       highlights: {
         title: 'Highlights',
@@ -629,6 +632,7 @@ export const messages: Dictionary = {
         activity: 'Aktivität',
         mass: 'W/kg mit deinem Gewicht von {kg} am {date}.',
         noMass: 'Trage dein Gewicht in Apple Health ein, um W/kg zu sehen.',
+        borrowedMass: 'Für „{name}“ ist kein Gewicht eingetragen: Die W/kg nutzen dasselbe Gewicht.',
         method:
           'Jeder Wert ist der beste Durchschnitt innerhalb einer Aktivität. Sekunden ohne Leistungsdaten zählen als 0 W, durch eine Unterbrechung getrennte Streckenteile werden nie verbunden.',
       },

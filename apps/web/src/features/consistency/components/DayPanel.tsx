@@ -13,10 +13,12 @@ import { RingGlyph } from './RingGlyph';
 function ringRows(fmt: Formatter, t: (k: string) => string, r: RingValues): [string, string][] {
   const of = (v: number | null, goal: number | null, unit: string) =>
     v === null ? '–' : goal ? `${fmt.int(v)} / ${fmt.int(goal)} ${unit}` : `${fmt.int(v)} ${unit}`;
-  const move = r.moveGoalMin !== null ? of(r.moveMin, r.moveGoalMin, 'min') : of(r.moveKcal, r.moveGoalKcal, 'kcal');
+  // "min" is "Min." in German; kcal and h are the same in both languages (as in fmt.energy / fmt.hours)
+  const min = t('consistency.goals.unit.minutes');
+  const move = r.moveGoalMin !== null ? of(r.moveMin, r.moveGoalMin, min) : of(r.moveKcal, r.moveGoalKcal, 'kcal');
   return [
     [t('consistency.rings.move'), move],
-    [t('consistency.rings.exercise'), of(r.exerciseMin, r.exerciseGoalMin, 'min')],
+    [t('consistency.rings.exercise'), of(r.exerciseMin, r.exerciseGoalMin, min)],
     [t('consistency.rings.stand'), of(r.standHours, r.standGoalHours, 'h')],
   ];
 }

@@ -29,6 +29,19 @@ export function msDay(ms: number): string {
   return new Date(ms).toISOString().slice(0, 10);
 }
 
+/**
+ * Both ends of a series' fitted trend on the local time axis. The fit runs from the series' first to its last
+ * workout (fit.startTs / endTs are their UTC start times); each end takes that workout's own UTC offset, which
+ * differs across DST or travel. Without it a run on Jan 31 at 19:30 in New York would start the trend in February.
+ */
+export function fitEnds(
+  workouts: readonly { tzMin: number }[],
+  points: readonly (readonly [number, number])[],
+  fit: { startTs: number; endTs: number },
+): [number, number] {
+  return [localMs(fit.startTs, workouts[points[0]![0]]!.tzMin), localMs(fit.endTs, workouts[points[points.length - 1]![0]]!.tzMin)];
+}
+
 const monthYearCache = new Map<string, Intl.DateTimeFormat>();
 
 /** "Jan 2026" / "Jan. 2026" ('monthYearShort' would print "Jan 26", which reads like a date). */
@@ -58,6 +71,17 @@ export function bucketLabel(fmt: Formatter, key: string, style: 'short' | 'long'
   if (key.length === 4) return key;
   if (key.length === 7) return style === 'short' ? monthYearLabel(fmt, `${key}-01`) : fmt.day(`${key}-01`, 'month');
   return fmt.day(key, style === 'short' ? 'dayShort' : 'day');
+}
+
+/**
+ * Fixed palette slots of the health measures the progress pages chart: the slots of the Health pages
+ * (features/health/lib/colors.ts), so resting HR, HRV and VO2max keep their color on every page (never by rank).
+ * A test keeps both in step until that registry moves to components/charts.
+ */
+const MEASURE_SLOTS = { restingHr: 8, hrv: 7, vo2max: 2 } as const;
+
+export function measureColor(theme: ChartTheme, key: keyof typeof MEASURE_SLOTS): string {
+  return theme.series[MEASURE_SLOTS[key] - 1]!;
 }
 
 /**

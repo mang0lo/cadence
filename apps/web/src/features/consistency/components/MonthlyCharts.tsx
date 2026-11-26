@@ -38,9 +38,11 @@ export function MonthlyActiveDays({
   const t = useT();
   const fmt = useFormat();
   const theme = useChartTheme();
-  const names = fmt.monthNames('short');
-  const thisYear = activeDaysPerMonth(cur, year, asOf);
-  const lastYear = activeDaysPerMonth(prev, year - 1, asOf);
+  // all memoized: new arrays on every render would rebuild the chart (setOption notMerge) on each page re-render
+  const names = useMemo(() => fmt.monthNames('short'), [fmt]);
+  const long = useMemo(() => fmt.monthNames('long'), [fmt]);
+  const thisYear = useMemo(() => activeDaysPerMonth(cur, year, asOf), [cur, year, asOf]);
+  const lastYear = useMemo(() => activeDaysPerMonth(prev, year - 1, asOf), [prev, year, asOf]);
   const hasPrev = lastYear.some((v) => (v ?? 0) > 0);
   const option = useMemo(
     () => ({
@@ -52,7 +54,7 @@ export function MonthlyActiveDays({
           const ps = params as AxisParam[];
           const i = ps[0]?.dataIndex ?? 0;
           return tooltipHtml(
-            fmt.monthNames('long')[i]!,
+            long[i]!,
             ps
               .filter((p) => p.value !== null && p.value !== undefined)
               .map((p) => ({ color: p.color, label: p.seriesName, value: t('common.days', { count: p.value! }) })),
@@ -68,7 +70,7 @@ export function MonthlyActiveDays({
         barSeries(theme, String(year), thisYear, theme.series[0]!),
       ],
     }),
-    [theme, names, thisYear, lastYear, hasPrev, year, fmt, t],
+    [theme, names, long, thisYear, lastYear, hasPrev, year, t],
   );
   const total = thisYear.reduce<number>((s, v) => s + (v ?? 0), 0);
   return (
@@ -83,7 +85,7 @@ export function MonthlyActiveDays({
           { key: 'cur', label: String(year), numeric: true },
         ],
         rows: months(year).map((_, i) => ({
-          month: fmt.monthNames('long')[i],
+          month: long[i],
           prev: lastYear[i] ?? '–',
           cur: thisYear[i] ?? '–',
         })),
@@ -126,7 +128,8 @@ export function RingClosureCard({
     return months(year).map((m) => per.get(m) ?? null);
   }, [data, year]);
   const hasData = stats.some((s) => s && s.days > 0);
-  const names = fmt.monthNames('short');
+  const names = useMemo(() => fmt.monthNames('short'), [fmt]);
+  const long = useMemo(() => fmt.monthNames('long'), [fmt]);
   const label = (r: Ring) => t(`consistency.rings.${r}`);
   const option = useMemo(
     () => ({
@@ -137,7 +140,7 @@ export function RingClosureCard({
         const i = ps[0]?.dataIndex ?? 0;
         const s = stats[i];
         return tooltipHtml(
-          `${fmt.monthNames('long')[i]}${s ? ` · ${t('common.days', { count: s.days })}` : ''}`,
+          `${long[i]}${s ? ` · ${t('common.days', { count: s.days })}` : ''}`,
           ps.filter((p) => p.value !== null).map((p) => ({ color: p.color, label: p.seriesName, value: fmt.pct(p.value!) })),
           theme,
         );
@@ -152,7 +155,7 @@ export function RingClosureCard({
       ),
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [theme, stats, names, fmt, t],
+    [theme, stats, names, long, fmt, t],
   );
   return (
     <ChartCard
@@ -169,7 +172,7 @@ export function RingClosureCard({
           s && s.days
             ? [
                 {
-                  month: fmt.monthNames('long')[i],
+                  month: long[i],
                   move: fmt.pct(s.move / s.days),
                   exercise: fmt.pct(s.exercise / s.days),
                   stand: fmt.pct(s.stand / s.days),

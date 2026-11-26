@@ -21,7 +21,7 @@ import type {
   ProgressRampStatus,
   ProgressVo2Level,
 } from '@cadence/shared';
-import { ChartCard } from '@/components/charts/ChartCard';
+import { ChartCard, type TableView } from '@/components/charts/ChartCard';
 import { EChart } from '@/components/charts/EChart';
 import {
   areaSeries,
@@ -40,7 +40,7 @@ import { useChartTheme, type ChartTheme } from '@/components/charts/theme';
 import { Badge, Card, EmptyState, ErrorState, Hint, Stat } from '@/components/ui';
 import { useFormat, type Formatter } from '@/lib/format';
 import { useT, type TFunction } from '@/lib/i18n';
-import { bucketLabel, chartLegend, dayMs, timeAxisLabel } from '../chart';
+import { bucketLabel, chartLegend, dayMs, measureColor, timeAxisLabel } from '../chart';
 import { signedRounded } from '../format';
 import { ChartSkeleton } from './common';
 import { FormZoneBadge, type BadgeTone } from './FormZoneBadge';
@@ -306,7 +306,7 @@ export function WeeklyLoadCard({ data, loading }: { data: ProgressFitnessRespons
   );
 }
 
-export function AcwrCard({ data, loading }: { data: ProgressFitnessResponse; loading: boolean }) {
+export function AcwrCard({ data, loading, table }: { data: ProgressFitnessResponse; loading: boolean; table: TableView | undefined }) {
   const t = useT();
   const fmt = useFormat();
   const theme = useChartTheme();
@@ -343,14 +343,24 @@ export function AcwrCard({ data, loading }: { data: ProgressFitnessResponse; loa
       title={t('progress.fitness.charts.acwr')}
       subtitle={t('progress.fitness.charts.acwrSubtitle', { low: fmt.num(th.acwrLow, 1), high: fmt.num(th.acwrHigh, 1) })}
       icon={Waves}
-      table={dayTableAcwr(data, fmt, t)}
+      table={table}
     >
       <EChart option={option} height={200} loading={loading} ariaLabel={t('progress.fitness.charts.acwr')} />
     </ChartCard>
   );
 }
 
-function dayTableAcwr(data: ProgressFitnessResponse, fmt: Formatter, t: TFunction) {
+/**
+ * The day table of the ACWR and ramp cards (both show the same columns): built once per response for both cards,
+ * not on every render of each (about 4 ms for ten years of days).
+ */
+export function useAcwrTable(data: ProgressFitnessResponse | undefined): TableView | undefined {
+  const t = useT();
+  const fmt = useFormat();
+  return useMemo(() => (data ? dayTableAcwr(data, fmt, t) : undefined), [data, fmt, t]);
+}
+
+function dayTableAcwr(data: ProgressFitnessResponse, fmt: Formatter, t: TFunction): TableView {
   return {
     columns: [
       { key: 'day', label: t('progress.common.date') },
@@ -365,7 +375,7 @@ function dayTableAcwr(data: ProgressFitnessResponse, fmt: Formatter, t: TFunctio
   };
 }
 
-export function RampCard({ data, loading }: { data: ProgressFitnessResponse; loading: boolean }) {
+export function RampCard({ data, loading, table }: { data: ProgressFitnessResponse; loading: boolean; table: TableView | undefined }) {
   const t = useT();
   const fmt = useFormat();
   const theme = useChartTheme();
@@ -399,7 +409,7 @@ export function RampCard({ data, loading }: { data: ProgressFitnessResponse; loa
     } as EChartsOption;
   }, [data, theme, fmt, t, th]);
   return (
-    <ChartCard title={t('progress.fitness.charts.ramp')} subtitle={t('progress.fitness.charts.rampSubtitle')} icon={TrendingUp} table={dayTableAcwr(data, fmt, t)}>
+    <ChartCard title={t('progress.fitness.charts.ramp')} subtitle={t('progress.fitness.charts.rampSubtitle')} icon={TrendingUp} table={table}>
       <EChart option={option} height={200} loading={loading} ariaLabel={t('progress.fitness.charts.ramp')} />
     </ChartCard>
   );
@@ -444,7 +454,7 @@ export function Vo2Card({ data, loading, error }: { data: ProgressPhysiology | u
         const i = ps[0]?.dataIndex ?? 0;
         const rows = [{ color: theme.muted, label: names.readings, value: fmt.num(v.points[i]!.value, 1) }];
         const m = v.median[i];
-        if (m !== null && m !== undefined) rows.push({ color: theme.series[0]!, label: names.median, value: fmt.num(m, 1) });
+        if (m !== null && m !== undefined) rows.push({ color: measureColor(theme, 'vo2max'), label: names.median, value: fmt.num(m, 1) });
         return tooltipHtml(fmt.day(v.points[i]!.day, 'day'), rows, theme);
       }),
       series: [
@@ -455,7 +465,7 @@ export function Vo2Card({ data, loading, error }: { data: ProgressPhysiology | u
             ? { silent: true, label: { show: true, position: 'right', color: theme.muted, fontSize: 11, distance: 8 }, data: bands as never }
             : undefined,
         }),
-        lineSeries(theme, names.median, v.median.map((m, i) => [xs[i]!, m]), theme.series[0]!, { z: 4 }),
+        lineSeries(theme, names.median, v.median.map((m, i) => [xs[i]!, m]), measureColor(theme, 'vo2max'), { z: 4 }),
       ],
     } as EChartsOption;
   }, [v, theme, fmt, t, names]);
@@ -518,16 +528,20 @@ export function DailyContextCard({
   kind,
   series,
   loading,
+  error,
 }: {
   kind: 'restingHr' | 'hrv';
   series: ProgressDailySeries | undefined;
   loading: boolean;
+  /** The request failed: say so instead of a skeleton that never ends. */
+  error: unknown;
 }) {
   const t = useT();
   const fmt = useFormat();
   const theme = useChartTheme();
   const unit = kind === 'restingHr' ? 'bpm' : 'ms';
-  const color = theme.series[kind === 'restingHr' ? 0 : 2]!;
+  // the colors these measures have on the Health pages
+  const color = measureColor(theme, kind);
   const names = useMemo(() => ({ daily: t('progress.fitness.legend.daily'), avg: t('progress.fitness.legend.avg7') }), [t]);
   const option = useMemo<EChartsOption | null>(() => {
     if (!series || !series.points.length) return null;
@@ -583,7 +597,9 @@ export function DailyContextCard({
         ) : undefined
       }
     >
-      {!series ? (
+      {error ? (
+        <ErrorState error={error} />
+      ) : !series ? (
         <ChartSkeleton height={170} />
       ) : !option ? (
         <EmptyState title={t('progress.fitness.noSeries')} className="h-[170px]" />
