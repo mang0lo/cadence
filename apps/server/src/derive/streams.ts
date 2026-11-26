@@ -384,7 +384,7 @@ export function buildStreams(inp: StreamInput): BuiltStreams | null {
       dist,
       speed,
       hr: inp.hr ? sampleAt(inp.hr, abs, 30) : null,
-      cadence: cadenceAt(inp, abs),
+      cadence: cadenceAt(inp, abs, moving),
       power: inp.power ? sampleAt(inp.power, abs, 30) : null,
       moving,
       rawDistanceM,
@@ -438,7 +438,7 @@ export function buildStreams(inp: StreamInput): BuiltStreams | null {
     dist,
     speed,
     hr: inp.hr ? sampleAt(inp.hr, abs, 30) : null,
-    cadence: cadenceAt(inp, abs),
+    cadence: cadenceAt(inp, abs, moving),
     power: inp.power ? sampleAt(inp.power, abs, 30) : null,
     moving,
     rawDistanceM: null,
@@ -447,11 +447,21 @@ export function buildStreams(inp: StreamInput): BuiltStreams | null {
   };
 }
 
-function cadenceAt(inp: StreamInput, abs: Float64Array): Float64Array | null {
+function cadenceAt(inp: StreamInput, abs: Float64Array, moving: Uint8Array): Float64Array | null {
   if (inp.cadence && inp.cadence.t.length) return sampleAt(inp.cadence, abs, 30);
   if (inp.steps && inp.steps.s.length) {
+    // Steps/min only when the step records rate at least half of the moving samples: a few background steps of the
+    // phone during part of a run say nothing about its cadence.
     const r = rateAt(inp.steps, abs);
-    return r.some((x) => x === x) ? r : null;
+    const anyMoving = moving.includes(1);
+    let n = 0;
+    let rated = 0;
+    for (let k = 0; k < r.length; k++) {
+      if (anyMoving && !moving[k]) continue;
+      n++;
+      if (r[k] === r[k]) rated++;
+    }
+    return rated > 0 && rated >= 0.5 * n ? r : null;
   }
   return null;
 }

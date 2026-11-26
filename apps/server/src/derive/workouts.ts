@@ -30,6 +30,7 @@ import {
   pausedIntervals,
   toDto,
   trackParts,
+  type BuiltStreams,
   type Intervals,
   type Samples,
 } from './streams';
@@ -141,14 +142,19 @@ function toIntervals(rows: RawSample[]): Intervals | null {
   };
 }
 
+/** Sum of the records inside [from, to]; a record reaching over either end counts with its share inside. */
 function sumOf(rows: RawSample[], from: number, to: number): number | null {
   let s = 0;
   let any = false;
   for (const r of rows) {
-    if (r.start_ts >= from && r.end_ts <= to + 1) {
-      s += r.value;
-      any = true;
-    }
+    const d = r.end_ts - r.start_ts;
+    if (d > 0) {
+      const inside = Math.min(r.end_ts, to) - Math.max(r.start_ts, from);
+      if (inside <= 0) continue;
+      s += (r.value * inside) / d;
+    } else if (r.start_ts >= from && r.start_ts <= to) s += r.value;
+    else continue;
+    any = true;
   }
   return any ? s : null;
 }
@@ -176,6 +182,14 @@ function nanStats(
   }
   if (mn === Infinity) return { avg: null, min: null, max: null };
   return { avg: w > 0 ? sum / w : mn, min: mn, max: mx };
+}
+
+/** Average of the cadence stream, unless implausible for the sport (steps/min on foot, rpm on the bike). */
+function streamCadence(b: BuiltStreams, footSport: boolean, isRide: boolean): number | null {
+  const avg = nanStats(b.cadence, b.t).avg;
+  if (avg === null) return null;
+  const [lo, hi] = footSport ? [60, 250] : isRide ? [20, 150] : [0, Infinity];
+  return avg >= lo && avg <= hi ? avg : null;
 }
 
 /** Recompute everything derived for one workout (streams, metrics, splits, best efforts, polyline, HR histogram). */
@@ -332,7 +346,7 @@ export function deriveWorkout(db: Db, cache: DeriveCache, id: number): void {
   if (movingS !== null && w.duration_s > 0) movingS = Math.min(movingS, Math.max(w.duration_s, elapsed));
   if (movingS === null || movingS <= 0) movingS = w.duration_s > 0 ? w.duration_s : elapsed;
   if (cadence === null && footSport && stepCount && movingS > 0) cadence = stepCount / (movingS / 60);
-  else if (cadence === null && built?.cadence) cadence = nanStats(built.cadence, built.t).avg;
+  else if (cadence === null && built?.cadence) cadence = streamCadence(built, footSport, isRide);
   const avgSpeed = distance && movingS > 0 ? distance / movingS : null;
   if (gainMeta && gainMeta.unit === 'm') gain = gainMeta.value;
   if (lossMeta && lossMeta.unit === 'm') loss = lossMeta.value;
