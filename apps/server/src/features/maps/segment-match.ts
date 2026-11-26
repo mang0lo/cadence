@@ -293,6 +293,8 @@ export function matchSegment(seg: SegmentPath, track: MatchTrack, opts: MatchOpt
   }
   const td = new Float64Array(n);
   const haveDist = !!track.dist && track.dist.length >= n;
+  // a later part of a track (see WorkoutStreams.breaks) goes on with the distance where the previous part ended
+  td[0] = haveDist ? track.dist![0]! || 0 : 0;
   for (let i = 1; i < n; i++)
     td[i] = haveDist
       ? Math.max(td[i - 1]!, track.dist![i]!)
