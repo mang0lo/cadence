@@ -194,8 +194,12 @@ export function useMapPopup(
  */
 export function shownStylePref(map: Map): MapStylePref {
   const url = map.getStyleUrl();
-  if (url === null) return 'satellite'; // the only basemap given as a style object
   if (url === DARK) return 'dark';
   if (url === LIBERTY) return 'outdoor';
-  return 'streets';
+  if (url !== null) return 'streets';
+  // a style object: the satellite basemap (the only one given as an object), or any basemap MapLibre rebuilt from a
+  // snapshot after a lost WebGL context, which only its name tells apart
+  if (map.getSource('imagery')) return 'satellite';
+  const name = (map.getStyle()?.name ?? '').toLowerCase();
+  return name.includes('dark') ? 'dark' : name.includes('liberty') ? 'outdoor' : 'streets';
 }

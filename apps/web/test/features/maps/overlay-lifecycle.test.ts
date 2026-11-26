@@ -28,7 +28,16 @@ type Handler = (e: unknown) => void;
 class FakeMap {
   private handlers: Record<string, Set<Handler>> = {};
   styleUrl: string | null = POSITRON;
+  /** Sources and name of the current style (a style object has no URL). */
+  styleSources: string[] = [];
+  styleName = '';
   fitBounds = vi.fn();
+  getSource(id: string) {
+    return this.styleSources.includes(id) ? { id } : undefined;
+  }
+  getStyle() {
+    return { name: this.styleName };
+  }
   on(type: string, fn: Handler) {
     (this.handlers[type] ??= new Set()).add(fn);
     return this;
@@ -233,6 +242,7 @@ describe('shown basemap', () => {
     mountBaseMap(map, h.result.current);
     map.fire('style.load');
     baseMapSetStyle(map, null); // satellite picked in the map's switcher; the setting still says streets
+    map.styleSources = ['imagery'];
     map.fire('style.load');
     expect(prefs).toEqual(['streets', 'satellite']);
     expect(overlayColors(prefs[1]!, 'light').casing).toBe(overlayColors('dark', 'light').casing);
@@ -244,9 +254,24 @@ describe('shown basemap', () => {
       [POSITRON, 'streets'],
       [DARK, 'dark'],
       [LIBERTY, 'outdoor'],
-      [null, 'satellite'],
     ] as const) {
       map.styleUrl = url;
+      expect(shownStylePref(asMap(map))).toBe(pref);
+    }
+    map.styleUrl = null; // the satellite style is an object
+    map.styleSources = ['imagery'];
+    expect(shownStylePref(asMap(map))).toBe('satellite');
+  });
+
+  it('tells a basemap MapLibre rebuilt after a lost WebGL context (a style object, no URL) by its name', () => {
+    const map = new FakeMap();
+    map.styleUrl = null;
+    for (const [name, pref] of [
+      ['Positron', 'streets'],
+      ['Dark Matter', 'dark'],
+      ['OSM Liberty', 'outdoor'],
+    ] as const) {
+      map.styleName = name;
       expect(shownStylePref(asMap(map))).toBe(pref);
     }
   });
