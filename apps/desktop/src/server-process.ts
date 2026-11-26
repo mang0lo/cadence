@@ -81,6 +81,8 @@ export class LocalServer extends EventEmitter<LocalServerEvents> {
   private run: Run | null = null;
   private currentUrl: string | null = null;
   private starting: Promise<string> | null = null;
+  /** Resolves once the server stopped last is gone: a start waits for it, so the port is free again. */
+  private stopping: Promise<void> = Promise.resolve();
   /** Counts start() and stop() calls: a start goes on only while no later call came. */
   private generation = 0;
 
@@ -238,18 +240,25 @@ export class LocalServer extends EventEmitter<LocalServerEvents> {
     await this.stopRun();
   }
 
-  private async stopRun(): Promise<void> {
+  /** Stops the current run, if any; resolves once the server stopped last is gone (also when another call stops it). */
+  private stopRun(): Promise<void> {
     const run = this.run;
-    if (!run) return;
-    this.run = null;
-    this.currentUrl = null;
-    run.abort();
-    const { child } = run;
+    if (run) {
+      this.run = null;
+      this.currentUrl = null;
+      run.abort();
+      // never rejects: every later start waits for it
+      this.stopping = this.terminate(run).catch(() => undefined);
+    }
+    return this.stopping;
+  }
+
+  private async terminate({ child, closed }: Run): Promise<void> {
     if (child.exitCode !== null || child.signalCode !== null) return;
     child.kill();
     const wait = (ms: number) => new Promise<boolean>((r) => setTimeout(() => r(false), ms));
-    if (await Promise.race([run.closed.then(() => true), wait(this.opts.stopGraceMs ?? 3000)])) return;
+    if (await Promise.race([closed.then(() => true), wait(this.opts.stopGraceMs ?? 3000)])) return;
     child.kill('SIGKILL');
-    await Promise.race([run.closed, wait(2000)]);
+    await Promise.race([closed, wait(2000)]);
   }
 }

@@ -227,6 +227,24 @@ describe('LocalServer', () => {
     expect(crashes).toEqual([]);
   });
 
+  it('starts the next server only once the one still stopping is gone, so it keeps the port', async () => {
+    const s = server();
+    let started = s.start();
+    const first = await spawned(1);
+    first.ignoreTerm = true; // busy closing its database: only SIGKILL ends it (after stopGraceMs)
+    first.listen(28787);
+    await started;
+    const stopping = s.stop(); // Settings → Server → another server …
+    started = s.start(); // … and straight back to the built-in one
+    const second = await spawned(2);
+    // the first one no longer holds 28787: the next one does not fall back to another port (another origin)
+    expect(first.signalCode).toBe('SIGKILL');
+    expect(second.env.PORT).toBe('28787');
+    second.listen(28787);
+    await expect(started).resolves.toBe('http://127.0.0.1:28787');
+    await stopping;
+  });
+
   it('runs one server when two starts come at once', async () => {
     const s = server();
     const a = s.start();
