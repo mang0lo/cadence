@@ -226,33 +226,35 @@ export function axisNumberFormatter(locale: string): (v: number) => string {
   let f = axisFormatters.get(locale);
   if (!f) {
     const nf = new Intl.NumberFormat(locale, { maximumFractionDigits: 6 });
-    f = (v: number) => nf.format(v === 0 ? 0 : v);
+    // a value that shows as 0 at 6 decimals is 0 (Intl would print "-0" for -0 and -0.0000001)
+    f = (v: number) => nf.format(Math.abs(v) < 5e-7 ? 0 : v);
     axisFormatters.set(locale, f);
   }
   return f;
 }
 
-type AxisOption = { type?: string; axisLabel?: { formatter?: unknown } };
+type AxisOption = { type?: string; data?: unknown; axisLabel?: { formatter?: unknown } };
 
 const NUMERIC_AXES = new Set(['value', 'log']);
 
-function localizeAxis(axis: unknown, defaultType: string, format: (v: number) => string): unknown {
+function localizeAxis(axis: unknown, format: (v: number) => string): unknown {
   if (!axis || typeof axis !== 'object') return axis;
   const a = axis as AxisOption;
-  if (!NUMERIC_AXES.has(a.type ?? defaultType) || a.axisLabel?.formatter != null) return axis;
+  // the type ECharts gives an axis without one (axisModelCreator): category when it has data, value otherwise
+  const type = a.type || (a.data ? 'category' : 'value');
+  if (!NUMERIC_AXES.has(type) || a.axisLabel?.formatter != null) return axis;
   return { ...a, axisLabel: { ...a.axisLabel, formatter: format } };
 }
 
 /**
- * Value and log axes without a label formatter of their own get `format` (ECharts' default x axis is a category
- * axis, its default y axis a value axis). Returns a new option; the given one is not changed.
+ * Value and log axes without a label formatter of their own get `format` (an axis without a type is a value axis
+ * unless it has `data`, as in ECharts). Returns a new option; the given one is not changed.
  */
 export function localizeAxes(option: EChartsOption, format: (v: number) => string): EChartsOption {
-  const fix = (axes: unknown, defaultType: string) =>
-    Array.isArray(axes) ? axes.map((a) => localizeAxis(a, defaultType, format)) : localizeAxis(axes, defaultType, format);
+  const fix = (axes: unknown) => (Array.isArray(axes) ? axes.map((a) => localizeAxis(a, format)) : localizeAxis(axes, format));
   const out: EChartsOption = { ...option };
-  if (option.xAxis !== undefined) out.xAxis = fix(option.xAxis, 'category') as EChartsOption['xAxis'];
-  if (option.yAxis !== undefined) out.yAxis = fix(option.yAxis, 'value') as EChartsOption['yAxis'];
+  if (option.xAxis !== undefined) out.xAxis = fix(option.xAxis) as EChartsOption['xAxis'];
+  if (option.yAxis !== undefined) out.yAxis = fix(option.yAxis) as EChartsOption['yAxis'];
   return out;
 }
 

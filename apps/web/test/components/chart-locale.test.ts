@@ -13,6 +13,8 @@ describe('chart axes in the user language', () => {
     expect(de(12345)).toBe('12.345');
     expect(de(0.25)).toBe('0,25');
     expect(de(-0)).toBe('0');
+    expect(de(-1e-7)).toBe('0');
+    expect(de(-0.000001)).toBe('-0,000001');
     expect(de(1.5e6)).toBe('1.500.000');
     expect(axisNumberFormatter('en-US')(12345.5)).toBe('12,345.5');
   });
@@ -43,10 +45,18 @@ describe('chart axes in the user language', () => {
     const xs = out.xAxis as Axis[];
     expect(xs[0]!.axisLabel!.formatter).toBe(de);
     expect(xs[1]!.axisLabel).toBeUndefined();
-    expect(xs[2]!.axisLabel).toBeUndefined(); // ECharts' x axis is a category axis
+    // no type and no data: ECharts makes it a value axis (x or y alike)
+    expect(xs[2]!.axisLabel!.formatter).toBe(de);
     const ys = out.yAxis as Axis[];
     expect(ys[0]!.axisLabel).toMatchObject({ color: '#888', fontSize: 11, formatter: de });
     expect(ys[1]!.axisLabel!.formatter).toBe(de);
+  });
+
+  it('leaves the names of a category axis without a type alone (horizontal bars), they are no numbers', () => {
+    // ECharts makes an axis with data a category axis: a number format would turn its labels into "NaN"
+    const out = localizeAxes({ xAxis: { type: 'value' }, yAxis: { data: ['Laufen', 'Radfahren'] } }, de);
+    expect((out.yAxis as Axis).axisLabel).toBeUndefined();
+    expect((out.xAxis as Axis).axisLabel!.formatter).toBe(de);
   });
 
   it('names months and weekdays on time axes in the user language', () => {
