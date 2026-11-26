@@ -19,6 +19,7 @@ import { Card, CardHeader, ErrorState, Skeleton, Stat, StatRow } from '@/compone
 import { useApi } from '@/lib/api';
 import { useFormat } from '@/lib/format';
 import { useT } from '@/lib/i18n';
+import { useHasMetric } from '@/lib/sources';
 import { addDays } from '@/lib/time';
 import { DayNav } from '../DayNav';
 import { Spark } from '../Spark';
@@ -293,7 +294,9 @@ function PhysiologyPanel({ night }: { night: SleepNightDetail }) {
   const t = useT();
   const m = useMetricFormat();
   const p = night.physiology;
-  const wrist = useDaily([WRIST], addDays(night.day, -30), night.day);
+  const has = useHasMetric();
+  // only timed (Apple Watch) nights show the wrist temperature, and only athletes who record it have any
+  const wrist = useDaily([WRIST], addDays(night.day, -30), night.day, night.timed && has(WRIST));
   const wristSpark = (wrist.data?.[WRIST] ?? []).map((d: DailyMetric) => d.value);
   const wd = p.wristTemp?.delta;
   const wristDelta = wd === null || wd === undefined ? null : m.delta(WRIST, wd);
