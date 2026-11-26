@@ -23,11 +23,37 @@ function newTiles(db: WhatsNewInput['db'], athleteId: number, ids: string, z: nu
 }
 
 /**
+ * New activities that only replace a copy the athlete already had: the watch's own file of a workout that came from
+ * Apple Health before (or the other way round) is preferred over the old copy, which turns into its duplicate. They
+ * bring no new tiles, routes or efforts. "Already had" = the copy was stored before the running import job started.
+ */
+function replacements(db: WhatsNewInput['db'], athleteId: number, ids: string): Set<number> {
+  const job = get<{ t: number | null }>(
+    db,
+    "SELECT MAX(started_at) AS t FROM import_jobs WHERE athlete_id = ? AND status = 'running'",
+    [athleteId],
+  );
+  if (job?.t == null) return new Set();
+  return new Set(
+    all<{ id: number }>(
+      db,
+      `SELECT DISTINCT duplicate_of AS id FROM workouts
+       WHERE athlete_id = ? AND hidden = 0 AND duplicate_of IN ${NEW_IDS} AND created_at < ?`,
+      [athleteId, ids, job.t],
+    ).map((r) => r.id),
+  );
+}
+
+/**
  * New explorer tiles, new recurring routes, route bests and segment PRs of the new activities. A first import only
  * reports nothing here: every tile, route and effort would be new.
  */
-export function mapsWhatsNew({ db, athleteId, workoutIds, initial }: WhatsNewInput): ImportHighlight[] {
-  if (initial || !workoutIds.length) return [];
+export function mapsWhatsNew({ db, athleteId, workoutIds: newIds, initial }: WhatsNewInput): ImportHighlight[] {
+  if (initial || !newIds.length) return [];
+  const replaced = replacements(db, athleteId, JSON.stringify(newIds));
+  // replacements count as known activities below, like every other visible workout that is not new
+  const workoutIds = newIds.filter((id) => !replaced.has(id));
+  if (!workoutIds.length) return [];
   const ids = JSON.stringify(workoutIds);
   const isNew = new Set(workoutIds);
   const out: ImportHighlight[] = [];
