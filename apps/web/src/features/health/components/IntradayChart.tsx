@@ -22,6 +22,7 @@ import { useApi } from '@/lib/api';
 import { useFormat } from '@/lib/format';
 import { useI18n, useT } from '@/lib/i18n';
 import { SportIcon, sportColorVar } from '@/lib/sports';
+import { dayStartTs } from '@/lib/time';
 import { LEGEND_LINE_ICON, numAxisLabel } from '../lib/chart';
 import { useMetricFormat } from '../lib/metrics';
 
@@ -80,12 +81,16 @@ export function IntradayChart({
   // while another day loads the previous one stays visible (dimmed) instead of flashing a skeleton
   const d = q.data ?? null;
   const stale = !!d && (d.day !== day || d.type !== type);
+  // the day's workouts load alongside the samples: a UTC window that surely holds the local day (offsets reach ±14 h),
+  // cut to the exact day of the response below
+  const dayUtc = dayStartTs(day, 0);
   const w = useApi<Page<WorkoutSummary>>(
     ['health', 'intraday-workouts'],
-    d && workouts ? '/workouts' : null,
-    d ? { from: d.dayStartTs, to: d.dayEndTs, limit: 20, sort: 'start', order: 'asc' } : undefined,
+    workouts ? '/workouts' : null,
+    { from: dayUtc - 15 * 3600, to: dayUtc + 39 * 3600, limit: 50, sort: 'start', order: 'asc' },
   );
   const wk = workouts && d && w.data ? w.data.items.filter((x) => x.startTs >= d.dayStartTs && x.startTs < d.dayEndTs) : [];
+  const wkKey = wk.map((x) => x.id).join(',');
 
   const cumulative = d?.aggregation === 'sum';
   const unitLabel = m.unitLabel(type, unit);
@@ -247,7 +252,7 @@ export function IntradayChart({
       ],
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [d, wk.length, theme, fmt, m, color, reference?.value, reference?.label, lang]);
+  }, [d, wkKey, theme, fmt, m, color, reference?.value, reference?.label, lang]);
 
   const stats = useMemo(() => {
     if (!d || !d.buckets.length) return null;
