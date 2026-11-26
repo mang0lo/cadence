@@ -84,6 +84,13 @@ describe('cadence and steps without Apple statistics', () => {
     expect(derived(id)).toEqual({ step_count: null, avg_cadence: null });
   });
 
+  it('takes no cadence from steps the phone recorded during only part of a run, however plausible', () => {
+    // 170 steps/min, but only for 10 of 60 minutes (the phone was carried for a while): no step count, no cadence
+    const id = workout('run', 'Runkeeper', 60, [stat('DistanceWalkingRunning', 10_000)]);
+    for (let t = T0 + 20 * 60; t < T0 + 30 * 60; t += 120) rec(STEPS, PHONE, t, t + 120, 340);
+    expect(derived(id)).toEqual({ step_count: null, avg_cadence: null });
+  });
+
   it('counts step records that reach over the start or the end with their share inside the workout', () => {
     // 170 steps/min in 2-minute records, the first starting a minute before the run and the last ending a minute after
     const id = workout('run', 'Runkeeper', 60, [stat('DistanceWalkingRunning', 10_000)]);
