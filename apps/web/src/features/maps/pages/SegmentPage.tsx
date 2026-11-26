@@ -376,6 +376,7 @@ function ProfileChart({ detail }: { detail: MapsSegmentDetail }) {
       }),
       yAxis: valueAxis(theme, {
         scale: true,
+        minInterval: 1, // whole m / ft like the labels: a flat segment read '166 m, 166 m, 165 m, 165 m'
         axisLabel: { color: theme.muted, fontSize: 11, formatter: (v: number) => `${fmt.num(v)} ${eleUnit}` },
       }),
       series: [areaSeries(theme, name, data as never, theme.accent, { showSymbol: false })],

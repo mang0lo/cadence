@@ -3,6 +3,7 @@
  * swims, per km / mi for runs, speed for rides, with units in tooltip and table.
  */
 import { describe, expect, it } from 'vitest';
+import { number } from 'echarts';
 import { effortScale, effortSeries, type TrendEffort } from '@/features/maps/lib/effortTrend';
 import { createFormatter } from '@/lib/format';
 
@@ -60,5 +61,46 @@ describe('effort trend pace and speed', () => {
     expect(pace.bestSoFar.map((p) => Math.round(p[1]))).toEqual([125, 111, 111]);
     const speed = effortSeries(efforts, effortScale(metric, 'ride', 'pace'));
     expect(speed.bestSoFar.map((p) => +p[1].toFixed(2))).toEqual([2.88, 3.24, 3.24]);
+  });
+});
+
+/**
+ * The labels ECharts puts on the trend's value axis (`scale: true`, 4 splits): a nice step of at least `minInterval`,
+ * the extent widened to whole steps.
+ */
+function axisLabels(values: number[], minInterval: number, format: (v: number) => string): string[] {
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const step = Math.max(number.nice((max - min) / 4, true), minInterval);
+  const out: string[] = [];
+  const last = Math.ceil(number.round(max / step, 10)) * step;
+  for (let v = Math.floor(number.round(min / step, 10)) * step; v <= last + step / 1e6; v += step)
+    out.push(format(number.round(v, 10)));
+  return out;
+}
+
+describe('effort trend axis', () => {
+  it('gives every tick its own label when the efforts are seconds apart', () => {
+    // sample route 144: two walks of 1:01:40 and 1:01:42 were labelled 1:01:40, 1:01:41, 1:01:41, 1:01:42, 1:01:42
+    const cases: [string, 'time' | 'pace', TrendEffort[]][] = [
+      ['walk', 'time', [effort(0, 3700, 1.1), effort(1, 3702, 1.1)]],
+      ['run', 'time', [effort(0, 38, 3.9), effort(1, 39, 3.8)]],
+      ['run', 'pace', [effort(0, 1800, 1000 / 300), effort(1, 1801, 1000 / 300.6)]],
+      ['swim', 'pace', [effort(0, 1500, 100 / 125), effort(1, 1502, 100 / 125.4)]],
+      ['ride', 'pace', [effort(0, 1800, 25 / 3.6), effort(1, 1790, 25.1 / 3.6)]],
+    ];
+    for (const fmt of [metric, imperial]) {
+      for (const [sport, m, efforts] of cases) {
+        const s = effortScale(fmt, sport, m);
+        const labels = axisLabels(
+          efforts.map((e) => s.value(e)!),
+          s.minInterval,
+          s.axisLabel,
+        );
+        const what = `${fmt.units} ${sport} ${m}: ${labels.join(', ')}`;
+        expect(labels.length, what).toBeGreaterThan(1);
+        expect(new Set(labels).size, what).toBe(labels.length);
+      }
+    }
   });
 });

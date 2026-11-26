@@ -22,6 +22,11 @@ export interface EffortScale {
   label: (v: number) => string;
   /** Times and paces: lower is better (the axis runs inverted, so better is up). */
   lowerIsBetter: boolean;
+  /**
+   * Smallest axis step: what the labels resolve (whole seconds, a tenth of km/h or mph). Efforts seconds apart made
+   * ECharts step by 0.5 s, and the labels read 1:01:40, 1:01:41, 1:01:41, 1:01:42, 1:01:42.
+   */
+  minInterval: number;
 }
 
 /**
@@ -31,7 +36,7 @@ export interface EffortScale {
 export function effortScale(fmt: Formatter, sport: string, metric: EffortMetric): EffortScale {
   if (metric === 'time') {
     const clock = (v: number) => fmt.duration(v);
-    return { value: (e) => e.timeS, axisLabel: clock, label: clock, lowerIsBetter: true };
+    return { value: (e) => e.timeS, axisLabel: clock, label: clock, lowerIsBetter: true, minInterval: 1 };
   }
   const sf = speedFormat(fmt, sport);
   return {
@@ -39,6 +44,8 @@ export function effortScale(fmt: Formatter, sport: string, metric: EffortMetric)
     axisLabel: (v) => sf.axisLabel(v),
     label: (v) => `${sf.axisLabel(v)} ${sf.unit}`,
     lowerIsBetter: sf.inverse,
+    // paces are labelled in whole seconds (m:ss), speeds with one decimal
+    minInterval: sf.inverse ? 1 : 0.1,
   };
 }
 

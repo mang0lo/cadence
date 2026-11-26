@@ -79,6 +79,7 @@ export function EffortTrend({
       yAxis: valueAxis(theme, {
         scale: true,
         inverse: lowerIsBetter,
+        minInterval: scale.minInterval,
         axisLabel: { color: theme.muted, fontSize: 11, formatter: (v: number) => scale.axisLabel(v) },
       }),
       series: [
