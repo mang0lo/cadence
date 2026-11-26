@@ -1,14 +1,8 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useMemo, useRef, type ReactNode } from 'react';
 import type { Map as MapLibreMap } from 'maplibre-gl';
 import { BaseMap } from '@/components/map/BaseMap';
-import {
-  featureCollection,
-  fitTo,
-  lineFeature,
-  pointFeature,
-  setGeoJSON,
-  type LngLat,
-} from '@/components/map/layers';
+import { featureCollection, lineFeature, pointFeature, setGeoJSON, type LngLat } from '@/components/map/layers';
+import { useFitBounds, useMapOverlay, useOverlayEffect } from '@/components/map/useMapOverlay';
 import type { BBox } from '../lib/home';
 
 export interface MapLine {
@@ -62,13 +56,16 @@ export function LineMap({
   onReady,
   children,
 }: LineMapProps) {
-  const mapRef = useRef<MapLibreMap | null>(null);
-  const [styleVersion, setStyleVersion] = useState(0);
   const known = useRef(new Set<string>());
+  const overlay = useMapOverlay({
+    onReady,
+    onStyleLoad: () => {
+      known.current = new Set(); // a new style starts without our layers
+    },
+  });
 
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || styleVersion === 0) return;
+  // only while the style is loaded (a theme or basemap switch replaces it), and again after every style load
+  useOverlayEffect(overlay, (map) => {
     const wanted = new Set<string>();
     for (const l of lines) {
       wanted.add(l.id);
@@ -133,20 +130,9 @@ export function LineMap({
       if (map.getSource(s)) map.removeSource(s);
     }
     known.current = wanted;
-  }, [lines, markers, styleVersion]);
+  }, [lines, markers]);
 
-  const boundsKey = bounds ? bounds.join(',') : '';
-  const first = useRef(true);
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !bounds) return;
-    if (first.current) {
-      first.current = false;
-      return;
-    }
-    fitTo(map, bounds, padding, true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [boundsKey, fitNonce]);
+  useFitBounds(overlay.mapRef, bounds, fitNonce, padding);
 
   const stable = useMemo(() => ({ bounds }), [bounds]);
   return (
@@ -155,15 +141,7 @@ export function LineMap({
       bounds={stable.bounds}
       padding={padding}
       switcher={switcher}
-      onReady={(map) => {
-        mapRef.current = map;
-        onReady?.(map);
-      }}
-      onStyleLoad={(map) => {
-        mapRef.current = map;
-        known.current = new Set(); // a new style starts without our layers
-        setStyleVersion((v) => v + 1);
-      }}
+      {...overlay.bind}
     >
       {children}
     </BaseMap>
