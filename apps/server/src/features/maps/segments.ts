@@ -20,6 +20,7 @@ import {
 import { gunzipJson, gzipJson } from '../../lib/gzip';
 import type { DeriveStep } from '../types';
 import { GATE_RADIUS_M, matchSegment, sliceStream, thinPath, type SegmentPath } from './segment-match';
+import { IN_LIST, idList, visible } from './sql';
 
 export interface SegmentRow {
   id: number;
@@ -50,9 +51,8 @@ const COLS = `id, athlete_id, name, sport, source_workout_id, distance_m, elevat
 export const segmentRows = (db: Db, athleteId: number, ids?: number[]): SegmentRow[] =>
   all<SegmentRow>(
     db,
-    `SELECT ${COLS} FROM maps_segments WHERE athlete_id = ?${ids ? ` AND id IN (${ids.map(() => '?').join(',')})` : ''}
-     ORDER BY id`,
-    [athleteId, ...(ids ?? [])],
+    `SELECT ${COLS} FROM maps_segments WHERE athlete_id = ?${ids ? ` AND id IN ${IN_LIST}` : ''} ORDER BY id`,
+    ids ? [athleteId, idList(ids)] : [athleteId],
   );
 
 /** What the `path` blob holds: the thinned course (matching) and the elevation profile of the dense track (display). */
@@ -79,8 +79,16 @@ export interface NewSegment {
   name: string;
 }
 
-/** Cut the segment out of a workout's route, store it and match it against every compatible GPS workout. */
-export function createSegment(db: Db, athleteId: number, input: NewSegment): number {
+/**
+ * Cut the segment out of a workout's route, store it and match it against every compatible GPS workout. The matching
+ * runs in short slices that give the event loop a turn in between, so other requests are not held up meanwhile.
+ */
+export async function createSegment(
+  db: Db,
+  athleteId: number,
+  input: NewSegment,
+  opts: { sliceMs?: number } = {},
+): Promise<number> {
   const w = get<{ id: number; sport: string }>(
     db,
     'SELECT id, sport FROM workouts WHERE id = ? AND athlete_id = ?',
@@ -153,7 +161,7 @@ export function createSegment(db: Db, athleteId: number, input: NewSegment): num
     );
     return r.lastInsertRowid;
   });
-  matchWorkouts(db, athleteId, segmentRows(db, athleteId, [id]), 'all');
+  await matchWorkoutsAsync(db, athleteId, segmentRows(db, athleteId, [id]), 'all', opts);
   return id;
 }
 
@@ -194,6 +202,13 @@ function preparePath(db: Db, row: SegmentRow): Prepared {
   };
 }
 
+interface MatchRun {
+  onProgress?: (done: number, total: number) => void;
+  checkCancelled?: () => void;
+  /** End a batch (commit) once it took this long; without it a batch holds BATCH workouts. */
+  sliceMs?: number;
+}
+
 /**
  * Match segments against workouts (ids, or every GPS workout) and replace their stored efforts. A workout's stream is
  * only decoded when at least one segment of a compatible sport has both gates near the workout's (simplified) route.
@@ -207,100 +222,158 @@ export function matchWorkouts(
   onProgress?: (done: number, total: number) => void,
   checkCancelled?: () => void,
 ): number {
+  const it = matchBatches(db, athleteId, segments, workoutIds, { onProgress, checkCancelled });
+  for (;;) {
+    const r = it.next();
+    if (r.done) return r.value;
+  }
+}
+
+/**
+ * matchWorkouts for request handlers: commits every `sliceMs` (default 20 ms) and lets the event loop serve other
+ * requests before it goes on.
+ */
+export async function matchWorkoutsAsync(
+  db: Db,
+  athleteId: number,
+  segments: SegmentRow[],
+  workoutIds: number[] | 'all',
+  opts: { sliceMs?: number; onProgress?: (done: number, total: number) => void } = {},
+): Promise<number> {
+  const it = matchBatches(db, athleteId, segments, workoutIds, { sliceMs: 20, ...opts });
+  for (;;) {
+    const r = it.next();
+    if (r.done) return r.value;
+    await new Promise<void>((resolve) => setImmediate(resolve));
+  }
+}
+
+/** The matching itself, one committed batch per step (the generator yields between batches). */
+function* matchBatches(
+  db: Db,
+  athleteId: number,
+  segments: SegmentRow[],
+  workoutIds: number[] | 'all',
+  { onProgress, checkCancelled, sliceMs }: MatchRun,
+): Generator<void, number, void> {
   if (!segments.length) return 0;
   const prepared = segments.map((r) => preparePath(db, r));
-  const segIds = segments.map((s) => s.id);
-  const inSegs = segIds.map(() => '?').join(',');
+  const segIds = idList(segments.map((s) => s.id));
+  const createdAt = new Map(segments.map((s) => [s.id, s.created_at]));
+  // one JSON parameter for the workout ids: a first import after a reset (segments are kept) can bring more workouts
+  // than SQLite takes parameters
+  const some = workoutIds === 'all' ? null : idList(workoutIds);
   const workouts = all<CandidateWorkout>(
     db,
     `SELECT id, sport, start_ts, min_lat, min_lon, max_lat, max_lon, polyline FROM workouts
-     WHERE athlete_id = ? AND has_route = 1 AND min_lat IS NOT NULL
-       ${workoutIds === 'all' ? '' : `AND id IN (${workoutIds.map(() => '?').join(',') || 'NULL'})`}
+     WHERE athlete_id = ? AND has_route = 1 AND min_lat IS NOT NULL${some ? ` AND id IN ${IN_LIST}` : ''}
      ORDER BY start_ts`,
-    [athleteId, ...(workoutIds === 'all' ? [] : workoutIds)],
+    some ? [athleteId, some] : [athleteId],
   );
   // workouts that lost their route (or never had one) must lose their efforts too
   run(
     db,
-    `DELETE FROM maps_segment_efforts WHERE segment_id IN (${inSegs})
-       ${workoutIds === 'all' ? '' : `AND workout_id IN (${workoutIds.map(() => '?').join(',') || 'NULL'})`}
+    `DELETE FROM maps_segment_efforts WHERE segment_id IN ${IN_LIST}${some ? ` AND workout_id IN ${IN_LIST}` : ''}
        AND workout_id NOT IN (SELECT id FROM workouts WHERE has_route = 1)`,
-    [...segIds, ...(workoutIds === 'all' ? [] : workoutIds)],
+    some ? [segIds, some] : [segIds],
   );
-  const del = prepare(
-    db,
-    `DELETE FROM maps_segment_efforts WHERE workout_id = ? AND segment_id IN (${inSegs})`,
-  );
+  const del = prepare(db, `DELETE FROM maps_segment_efforts WHERE workout_id = ? AND segment_id IN ${IN_LIST}`);
   const ins = prepare(
     db,
     `INSERT OR REPLACE INTO maps_segment_efforts (segment_id, workout_id, idx, athlete_id, start_ts, elapsed_s, moving_s, avg_hr, avg_speed, track_m)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
   let stored = 0;
-  const BATCH = 25;
-  for (let b = 0; b < workouts.length; b += BATCH) {
-    checkCancelled?.();
-    tx(db, () => {
-      for (const w of workouts.slice(b, b + BATCH)) {
-        const near = prepared.filter(
-          (p) =>
-            p.sports.includes(w.sport) &&
-            w.max_lat >= p.box[0] &&
-            w.min_lat <= p.box[2] &&
-            w.max_lon >= p.box[1] &&
-            w.min_lon <= p.box[3],
-        );
-        del.run(w.id, ...segIds);
-        if (!near.length) continue;
-        let lines: LatLon[][] | null = null;
-        const candidates = near.filter((p) => {
-          // both gates must be on (the simplified version of) one part of the workout's route
-          lines ??= w.polyline ? decodePolylineParts(w.polyline) : [];
-          return lines.some(
-            (line) =>
-              line.length > 1 &&
-              distanceToPath(p.start[0], p.start[1], line) <= PAD_M &&
-              distanceToPath(p.end[0], p.end[1], line) <= PAD_M,
-          );
-        });
-        if (!candidates.length) continue;
-        const s = getStreams(db, athleteId, w.id);
-        if (!s?.lat || !s.lon || s.t.length < 2) continue;
-        // match every part of the track on its own: a pass never bridges a break (travelled while paused)
-        const parts = trackParts(s.t.length, s.breaks);
-        const slice = <T>(a: T[] | undefined, from: number, to: number) => a?.slice(from, to);
-        for (const p of candidates) {
-          const matches = parts.flatMap(([from, to]) =>
-            to - from < 2
-              ? []
-              : matchSegment(p.path, {
-                  t: s.t.slice(from, to),
-                  lat: s.lat!.slice(from, to),
-                  lon: s.lon!.slice(from, to),
-                  dist: slice(s.dist, from, to),
-                  hr: slice(s.hr, from, to),
-                  moving: slice(s.moving, from, to),
-                }),
-          );
-          matches.forEach((m, idx) => {
-            ins.run(
-              p.row.id,
-              w.id,
-              idx,
-              athleteId,
-              Math.round((w.start_ts + m.startT) * 10) / 10,
-              Math.round(m.elapsedS * 10) / 10,
-              m.movingS === null ? null : Math.round(m.movingS * 10) / 10,
-              m.avgHr === null ? null : Math.round(m.avgHr * 10) / 10,
-              Math.round((p.row.distance_m / m.elapsedS) * 1000) / 1000,
-              Math.round(m.trackM),
-            );
-            stored++;
-          });
-        }
-      }
+  let live = prepared;
+  const matchOne = (w: CandidateWorkout): void => {
+    const near = live.filter(
+      (p) =>
+        p.sports.includes(w.sport) &&
+        w.max_lat >= p.box[0] &&
+        w.min_lat <= p.box[2] &&
+        w.max_lon >= p.box[1] &&
+        w.min_lon <= p.box[3],
+    );
+    del.run(w.id, segIds);
+    if (!near.length) return;
+    let lines: LatLon[][] | null = null;
+    const candidates = near.filter((p) => {
+      // both gates must be on (the simplified version of) one part of the workout's route
+      lines ??= w.polyline ? decodePolylineParts(w.polyline) : [];
+      return lines.some(
+        (line) =>
+          line.length > 1 &&
+          distanceToPath(p.start[0], p.start[1], line) <= PAD_M &&
+          distanceToPath(p.end[0], p.end[1], line) <= PAD_M,
+      );
     });
-    onProgress?.(Math.min(workouts.length, b + BATCH), workouts.length);
+    if (!candidates.length) return;
+    const s = getStreams(db, athleteId, w.id);
+    if (!s?.lat || !s.lon || s.t.length < 2) return;
+    // match every part of the track on its own: a pass never bridges a break (travelled while paused)
+    const parts = trackParts(s.t.length, s.breaks);
+    const slice = <T>(a: T[] | undefined, from: number, to: number) => a?.slice(from, to);
+    for (const p of candidates) {
+      const matches = parts.flatMap(([from, to]) =>
+        to - from < 2
+          ? []
+          : matchSegment(p.path, {
+              t: s.t.slice(from, to),
+              lat: s.lat!.slice(from, to),
+              lon: s.lon!.slice(from, to),
+              dist: slice(s.dist, from, to),
+              hr: slice(s.hr, from, to),
+              moving: slice(s.moving, from, to),
+            }),
+      );
+      matches.forEach((m, idx) => {
+        ins.run(
+          p.row.id,
+          w.id,
+          idx,
+          athleteId,
+          Math.round((w.start_ts + m.startT) * 10) / 10,
+          Math.round(m.elapsedS * 10) / 10,
+          m.movingS === null ? null : Math.round(m.movingS * 10) / 10,
+          m.avgHr === null ? null : Math.round(m.avgHr * 10) / 10,
+          Math.round((p.row.distance_m / m.elapsedS) * 1000) / 1000,
+          Math.round(m.trackM),
+        );
+        stored++;
+      });
+    }
+  };
+  const BATCH = 25;
+  for (let b = 0; b < workouts.length; ) {
+    checkCancelled?.();
+    const deadline = sliceMs === undefined ? Infinity : performance.now() + sliceMs;
+    const next = tx(db, () => {
+      // a segment deleted meanwhile (by the user: another thread or, between slices, another request) is dropped;
+      // the others are still matched. One created meanwhile can get the id of a deleted one (SQLite reuses the highest
+      // rowid): only the same creation time makes it the segment loaded above.
+      const exists = new Set(
+        all<{ id: number; created_at: number }>(
+          db,
+          `SELECT id, created_at FROM maps_segments WHERE id IN ${IN_LIST}`,
+          [segIds],
+        )
+          .filter((r) => r.created_at === createdAt.get(r.id))
+          .map((r) => r.id),
+      );
+      if (exists.size < live.length) live = live.filter((p) => exists.has(p.row.id));
+      if (!live.length) return -1;
+      const stop = Math.min(workouts.length, b + BATCH);
+      let i = b;
+      while (i < stop) {
+        matchOne(workouts[i++]!);
+        if (performance.now() > deadline) break;
+      }
+      return i;
+    });
+    if (next < 0) break;
+    b = next;
+    onProgress?.(b, workouts.length);
+    if (b < workouts.length) yield;
   }
   return stored;
 }
@@ -343,22 +416,25 @@ export interface EffortRow {
   tz_min: number;
 }
 
-/** Efforts of visible workouts (hidden and duplicate workouts do not count), optionally of some segments only. */
+/**
+ * Efforts of visible workouts (hidden and duplicate workouts do not count), optionally of some segments only, or of
+ * the segments that one workout has an effort on.
+ */
 export function effortRows(
   db: Db,
   athleteId: number,
   segmentIds?: number[],
-  workoutId?: number,
+  onSegmentsOf?: number,
 ): EffortRow[] {
-  const where = ['e.athlete_id = ?', 'w.hidden = 0', 'w.duplicate_of IS NULL'];
+  const where = ['e.athlete_id = ?', visible()];
   const params: unknown[] = [athleteId];
   if (segmentIds) {
-    where.push(`e.segment_id IN (${segmentIds.map(() => '?').join(',') || 'NULL'})`);
-    params.push(...segmentIds);
+    where.push(`e.segment_id IN ${IN_LIST}`);
+    params.push(idList(segmentIds));
   }
-  if (workoutId !== undefined) {
-    where.push('e.workout_id = ?');
-    params.push(workoutId);
+  if (onSegmentsOf !== undefined) {
+    where.push('e.segment_id IN (SELECT segment_id FROM maps_segment_efforts WHERE workout_id = ?)');
+    params.push(onSegmentsOf);
   }
   return all<EffortRow>(
     db,

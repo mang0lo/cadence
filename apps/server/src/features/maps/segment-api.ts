@@ -108,7 +108,7 @@ export function registerSegmentRoutes(app: FastifyInstance): void {
   app.post('/segments', async (req, reply): Promise<MapsSegmentDetail> => {
     const body = createBody.parse(req.body ?? {});
     if (body.endM <= body.startM) throw badRequest('The end of the segment has to be after its start');
-    const id = createSegment(app.db, req.athleteId, body);
+    const id = await createSegment(app.db, req.athleteId, body);
     reply.code(201);
     return detail(app.db, req.athleteId, id);
   });
