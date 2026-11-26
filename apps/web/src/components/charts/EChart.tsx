@@ -136,10 +136,20 @@ function ChartCanvas({
     const c = echarts.init(node, undefined, { renderer: 'canvas', locale: chartLocale(locale) as never });
     chart.current = c;
     const stopPointerFix = correctPointerPositions(node, c);
-    const ro = new ResizeObserver(() => c.resize());
+    // at most one resize per frame, outside the observer's callback (a resize lays out the whole chart at once; a page
+    // with many charts would do that for each of them on every callback while the window is dragged)
+    let frame = 0;
+    const ro = new ResizeObserver(() => {
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        if (!c.isDisposed()) c.resize();
+      });
+    });
     ro.observe(node);
     onReady?.(c);
     return () => {
+      cancelAnimationFrame(frame);
       stopPointerFix();
       ro.disconnect();
       c.dispose();
