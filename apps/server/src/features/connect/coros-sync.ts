@@ -377,6 +377,8 @@ export class CorosSync {
     if (!a) throw new Error('Not connected to COROS');
     const db = this.deps.db;
     const c = this.client(a.region, a.accessToken);
+    // COROS refused the stored login during this sync: the sync must not clear needsReconnect at its end
+    let refused = false;
     // calls log in again (once per token) when COROS no longer takes the token, e.g. after a Training Hub login
     const session = new CorosSession({
       token: () => c.accessToken,
@@ -386,6 +388,7 @@ export class CorosSync {
           l = await c.login(a.email, a.pwdMd5);
         } catch (e) {
           if (!(e instanceof CorosApiError)) throw e;
+          refused = true;
           this.save(athleteId, { needsReconnect: true });
           throw new CorosLoginError(`COROS login failed (${e.message}) – connect the account again`);
         }
@@ -535,7 +538,8 @@ export class CorosSync {
     p.state = 'done';
     this.save(athleteId, {
       lastSyncAt: now(),
-      needsReconnect: false,
+      // e.g. the token ran out after the downloads and the health part's new login was refused
+      ...(refused ? {} : { needsReconnect: false }),
       lastError:
         [p.failed ? `${p.failed} activities could not be downloaded` : null, healthError]
           .filter(Boolean)

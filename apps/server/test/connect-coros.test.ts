@@ -423,6 +423,21 @@ describe('COROS sync', () => {
     expect(await sync.start(1)).toMatchObject({ state: 'done', downloaded: 1 });
   });
 
+  it('pauses the auto sync when the login is refused after the downloads', async () => {
+    const { fake, sync, enqueued } = setup([act(1)]);
+    await sync.connect(1, 'me@example.com', 'secret', 'eu');
+    // the password changes on COROS while the sync downloads: the health part's new login is refused
+    fake.state.onDownload = () => {
+      fake.state.token = 'expired';
+      fake.state.password = md5Hex('changed');
+    };
+    expect(await sync.start(1)).toMatchObject({ state: 'done', downloaded: 1 });
+    expect(enqueued).toHaveLength(1);
+    expect(sync.status(1)).toMatchObject({ lastError: expect.stringMatching(/connect the account again/), needsReconnect: true });
+    sync.autoTick();
+    expect(sync.isSyncing(1)).toBe(false);
+  });
+
   it('logs in again only when COROS rejects the token, not for other errors', async () => {
     const { fake, sync } = setup([act(1), act(2, { labelId: 'broken' }), act(3), act(4)]);
     await sync.connect(1, 'me@example.com', 'secret', 'eu');
