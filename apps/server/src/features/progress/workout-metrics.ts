@@ -1,9 +1,7 @@
 import { sportInfo, type WorkoutStreams } from '@cadence/shared';
 import { all, get, prepare, tx, type Db } from '../../db/db';
 import { maxPlausibleSpeed, movingThreshold } from '../../derive/streams';
-import { gunzipJson } from '../../lib/gzip';
-import type { DeriveStep } from '../types';
-import { derivePending, updatedAtOf } from './common';
+import { derivePending, updatedAtOf, workoutStreams } from './common';
 import { hrSpeedHistogram, type HrSpeedHistogram, type StreamFilter } from './math';
 
 /** Bump when the computation changes: rows of older versions are recomputed (derive or lazily). */
@@ -16,7 +14,7 @@ const DYNAMICS = {
 } as const;
 type DynamicsKey = keyof typeof DYNAMICS;
 
-interface WorkoutRef {
+export interface WorkoutRef {
   id: number;
   athlete_id: number;
   sport: string;
@@ -39,7 +37,9 @@ export function streamFilter(sport: string): StreamFilter {
   return { skipS: WARMUP_SKIP_S, minSpeed: movingThreshold(sport), maxSpeed: maxPlausibleSpeed(sport) };
 }
 
-function dynamicsTypeIds(db: Db): Record<DynamicsKey, number | null> {
+export type DynamicsTypeIds = Record<DynamicsKey, number | null>;
+
+export function dynamicsTypeIds(db: Db): DynamicsTypeIds {
   const id = (identifier: string) =>
     get<{ id: number }>(db, 'SELECT id FROM record_types WHERE identifier = ?', [identifier])?.id ?? null;
   return { stride: id(DYNAMICS.stride.type), gct: id(DYNAMICS.gct.type), vo: id(DYNAMICS.vo.type) };
@@ -48,11 +48,18 @@ function dynamicsTypeIds(db: Db): Record<DynamicsKey, number | null> {
 const round = (x: number | null, digits: number) =>
   x === null || !Number.isFinite(x) ? null : Math.round(x * 10 ** digits) / 10 ** digits;
 
-/** Compute the cached metrics of one workout (reads its streams and, for runs, the running-dynamics records). */
+/** Whether the metrics of a workout need its streams (pace at heart rate: distance sports). */
+export const metricsReadStreams = (w: Pick<WorkoutRef, 'sport'>): boolean => sportInfo(w.sport).distance;
+
+/**
+ * Compute the cached metrics of one workout: from its streams (read here unless given, null = none) and, for runs,
+ * the running-dynamics records.
+ */
 export function computeWorkoutMetrics(
   db: Db,
   w: WorkoutRef,
-  typeIds: Record<DynamicsKey, number | null>,
+  typeIds: DynamicsTypeIds,
+  streams?: WorkoutStreams | null,
 ): WorkoutMetrics {
   const dyn: Record<DynamicsKey, number | null> = { stride: null, gct: null, vo: null };
   if (w.sport === 'run') {
@@ -70,14 +77,13 @@ export function computeWorkoutMetrics(
     }
   }
   let hist: HrSpeedHistogram | null = null;
-  if (sportInfo(w.sport).distance) {
-    const blob = get<{ data: Uint8Array }>(db, 'SELECT data FROM workout_streams WHERE workout_id = ?', [w.id])?.data;
-    if (blob) {
+  if (metricsReadStreams(w)) {
+    const st = streams === undefined ? workoutStreams(db, w.id) : streams;
+    if (st) {
       try {
-        const st = gunzipJson<WorkoutStreams>(blob);
         hist = hrSpeedHistogram(st, streamFilter(w.sport));
       } catch {
-        /* corrupt stream blob: leave empty */
+        /* malformed stream: leave empty */
       }
     }
   }
@@ -99,9 +105,30 @@ function upsertSql(): string {
 }
 
 /**
+ * Write computed rows (call inside a transaction). A workout changed since it was read (updated_at) is skipped:
+ * the newer derivation stores its own row.
+ */
+export function writeWorkoutMetrics(db: Db, rows: { w: WorkoutRef; m: WorkoutMetrics }[]): void {
+  const ins = prepare(db, upsertSql());
+  const current = updatedAtOf(db, rows.map((r) => r.w.id));
+  for (const { w, m } of rows) {
+    if (current.get(w.id) !== w.updated_at) continue;
+    ins.run(
+      w.id,
+      w.athlete_id,
+      METRICS_VERSION,
+      w.updated_at,
+      m.stride_m,
+      m.gct_ms,
+      m.vo_m,
+      m.hr_speed ? JSON.stringify(m.hr_speed) : null,
+    );
+  }
+}
+
+/**
  * Compute and store metrics for the given workouts. Each batch is computed first and written in a short
- * transaction (the write lock stalls every other writer). A workout changed since it was read (updated_at) is not
- * written: the newer derivation stores its own row. Returns the number of workouts processed.
+ * transaction (the write lock stalls every other writer). Returns the number of workouts processed.
  */
 export function storeWorkoutMetrics(
   db: Db,
@@ -110,29 +137,12 @@ export function storeWorkoutMetrics(
 ): number {
   if (!workouts.length) return 0;
   const typeIds = dynamicsTypeIds(db);
-  const ins = prepare(db, upsertSql());
   const BATCH = 40;
   for (let i = 0; i < workouts.length; i += BATCH) {
     hooks.check?.();
     const slice = workouts.slice(i, i + BATCH);
-    const results = slice.map((w) => computeWorkoutMetrics(db, w, typeIds));
-    tx(db, () => {
-      const current = updatedAtOf(db, slice.map((w) => w.id));
-      slice.forEach((w, k) => {
-        if (current.get(w.id) !== w.updated_at) return;
-        const m = results[k]!;
-        ins.run(
-          w.id,
-          w.athlete_id,
-          METRICS_VERSION,
-          w.updated_at,
-          m.stride_m,
-          m.gct_ms,
-          m.vo_m,
-          m.hr_speed ? JSON.stringify(m.hr_speed) : null,
-        );
-      });
-    });
+    const rows = slice.map((w) => ({ w, m: computeWorkoutMetrics(db, w, typeIds) }));
+    tx(db, () => writeWorkoutMetrics(db, rows));
     const done = Math.min(workouts.length, i + slice.length);
     hooks.report?.(done / workouts.length, `${done} / ${workouts.length} workouts`);
   }
@@ -187,14 +197,3 @@ export function athletesMissingMetrics(db: Db): number[] {
     [METRICS_VERSION],
   ).map((r) => r.athlete_id);
 }
-
-export const workoutMetricsStep: DeriveStep = {
-  id: 'progress.workout-metrics',
-  label: 'Progress: pace at heart rate & running dynamics',
-  weight: 1,
-  run(ctx) {
-    const todo = workoutsToRefresh(ctx.db, ctx.athleteId, ctx.workoutIds);
-    const n = storeWorkoutMetrics(ctx.db, todo, { check: ctx.checkCancelled, report: ctx.report });
-    ctx.report(1, n ? `${n} workouts` : undefined);
-  },
-};

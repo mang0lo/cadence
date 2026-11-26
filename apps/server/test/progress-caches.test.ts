@@ -1,27 +1,25 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkoutStreams } from '@cadence/shared';
 import { buildApp, migrateAll } from '../src/app';
 import { loadConfig } from '../src/config';
 import { all, get, openDb, run, type Db } from '../src/db/db';
 import { DERIVE_VERSION } from '../src/derive/context';
 import { deriveAnalyses } from '../src/features/activities/store';
-import {
-  ensurePowerBests,
-  powerCurveStep,
-  powerWorkoutsToRefresh,
-  storePowerBests,
-} from '../src/features/progress/power-curve';
-import {
-  ensureWorkoutMetrics,
-  storeWorkoutMetrics,
-  workoutMetricsStep,
-  workoutsToRefresh,
-} from '../src/features/progress/workout-metrics';
+import { workoutCachesStep } from '../src/features/progress/derive';
+import { ensurePowerBests, powerWorkoutsToRefresh, storePowerBests } from '../src/features/progress/power-curve';
+import { ensureWorkoutMetrics, storeWorkoutMetrics, workoutsToRefresh } from '../src/features/progress/workout-metrics';
 import type { DeriveContext } from '../src/features/types';
+import * as gzip from '../src/lib/gzip';
 import { gzipJson } from '../src/lib/gzip';
+
+// count stream decodes
+vi.mock('../src/lib/gzip', async (importOriginal) => {
+  const m = await importOriginal<typeof import('../src/lib/gzip')>();
+  return { ...m, gunzipJson: vi.fn(m.gunzipJson) };
+});
 
 let dir: string;
 let db: Db;
@@ -132,8 +130,7 @@ describe('progress caches', () => {
     const [staleM] = workoutsToRefresh(db, 1, [b]);
     const [staleP] = powerWorkoutsToRefresh(db, 1, [b]);
     run(db, 'UPDATE workouts SET updated_at = 2000 WHERE id = ?', [b]);
-    workoutMetricsStep.run(ctx([b]));
-    powerCurveStep.run(ctx([b]));
+    workoutCachesStep.run(ctx([b]));
     const rows = () => ({ state: stateOf(b), bests: bestsOf(b), metrics: metricsOf(b) });
     const fresh = rows();
     expect(fresh.state!.source_updated_at).toBe(2000);
@@ -151,8 +148,7 @@ describe('progress caches', () => {
   it('the request-time fill refreshes rows computed from an older derivation', () => {
     const a = workout('run');
     const b = workout('ride');
-    workoutMetricsStep.run(ctx('all'));
-    powerCurveStep.run(ctx('all'));
+    workoutCachesStep.run(ctx('all'));
     const fresh = { state: stateOf(b), bests: bestsOf(b), metrics: metricsOf(a) };
     // e.g. a lost write: the rows still describe the workouts before their last derivation
     run(db, 'UPDATE progress_power_state SET source_updated_at = 999, power_s = 0 WHERE workout_id = ?', [b]);
@@ -172,15 +168,35 @@ describe('progress caches', () => {
     const c = workout('ride');
     // the import of c also catches up a and b
     const n: number[] = [];
-    workoutMetricsStep.run(ctx([c], n));
-    powerCurveStep.run(ctx([c], n));
-    expect(n).toEqual([3, 3]);
+    workoutCachesStep.run(ctx([c], n));
+    expect(n).toEqual([3]);
     expect(ids('progress_workout_metrics')).toEqual([a, b, c]);
     expect(ids('progress_power_state')).toEqual([a, b, c]);
     // listed workouts are always recomputed, nothing else is
-    workoutMetricsStep.run(ctx([a], n));
-    powerCurveStep.run(ctx([], n));
-    expect(n).toEqual([3, 3, 1, 0]);
+    workoutCachesStep.run(ctx([a], n));
+    workoutCachesStep.run(ctx([], n));
+    expect(n).toEqual([3, 1, 0]);
+    // a stale row of one cache recomputes only that cache
+    run(db, 'UPDATE progress_power_state SET version = 0 WHERE workout_id = ?', [b]);
+    run(db, 'UPDATE progress_workout_metrics SET hr_speed = NULL WHERE workout_id = ?', [b]);
+    workoutCachesStep.run(ctx([], n));
+    expect(n).toEqual([3, 1, 0, 1]);
+    expect(metricsOf(b)!.hr_speed).toBeNull();
+  });
+
+  it('one pass decodes each stream once for both caches', () => {
+    const a = workout('run');
+    const b = workout('ride');
+    const c = workout('ride');
+    const decode = vi.mocked(gzip.gunzipJson);
+    decode.mockClear();
+    workoutCachesStep.run(ctx('all'));
+    // the run has no power: only its metrics read the stream
+    expect(decode).toHaveBeenCalledTimes(3);
+    expect(ids('progress_workout_metrics')).toEqual([a, b, c]);
+    expect(ids('progress_power_state')).toEqual([a, b, c]);
+    expect([a, b, c].map((id) => metricsOf(id)!.hr_speed !== null)).toEqual([true, true, true]);
+    expect([a, b, c].map(bestsOf).map((x) => x > 0)).toEqual([false, true, true]);
   });
 
   it('the server start fills missing rows in the background', async () => {

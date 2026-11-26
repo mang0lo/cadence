@@ -1,9 +1,7 @@
 import { PROGRESS_POWER_DURATIONS, type WorkoutStreams } from '@cadence/shared';
-import { all, get, prepare, tx, type Db } from '../../db/db';
-import { gunzipJson } from '../../lib/gzip';
+import { all, prepare, tx, type Db } from '../../db/db';
 import { localDay } from '../../lib/time';
-import type { DeriveStep } from '../types';
-import { derivePending, updatedAtOf } from './common';
+import { derivePending, updatedAtOf, workoutStreams } from './common';
 import { bestAverages, powerParts, type BestAverage } from './power-math';
 
 /** Bump when the computation changes: rows of older versions are recomputed (derive or lazily). */
@@ -31,20 +29,20 @@ export interface WorkoutPowerBests {
 
 const NONE: WorkoutPowerBests = { bests: [], seconds: 0 };
 
-/** Best average power per standard duration of one workout (reads its streams). */
-export function computePowerBests(db: Db, w: Pick<PowerWorkoutRef, 'id' | 'power'>): WorkoutPowerBests {
-  if (w.power === null) return NONE;
-  const blob = get<{ data: Uint8Array }>(db, 'SELECT data FROM workout_streams WHERE workout_id = ?', [
-    w.id,
-  ])?.data;
-  if (!blob) return NONE;
-  let st: WorkoutStreams;
-  try {
-    st = gunzipJson<WorkoutStreams>(blob);
-  } catch {
-    return NONE; // corrupt stream blob
-  }
-  if (!st.power) return NONE;
+/** Whether the bests of a workout need its streams (only workouts with power). */
+export const powerReadsStreams = (w: Pick<PowerWorkoutRef, 'power'>): boolean => w.power !== null;
+
+/**
+ * Best average power per standard duration of one workout, from its streams (read here unless given, null = none).
+ */
+export function computePowerBests(
+  db: Db,
+  w: Pick<PowerWorkoutRef, 'id' | 'power'>,
+  streams?: WorkoutStreams | null,
+): WorkoutPowerBests {
+  if (!powerReadsStreams(w)) return NONE;
+  const st = streams === undefined ? workoutStreams(db, w.id) : streams;
+  if (!st?.power) return NONE;
   const parts = powerParts(st);
   const bests = bestAverages(parts, PROGRESS_POWER_DURATIONS);
   return bests.length ? { bests, seconds: parts.reduce((s, p) => s + p.measured, 0) } : NONE;
@@ -53,17 +51,10 @@ export function computePowerBests(db: Db, w: Pick<PowerWorkoutRef, 'id' | 'power
 const r1 = (x: number) => Math.round(x * 10) / 10;
 
 /**
- * Compute and store the bests of the given workouts (also hidden ones and duplicates: the queries exclude those, so
- * hiding or un-hiding needs no recomputation). Computation happens outside the short write transactions. A workout
- * changed since it was read (updated_at) is not written: the newer derivation stores its own rows.
- * Returns the number of workouts processed.
+ * Write computed bests (call inside a transaction). A workout changed since it was read (updated_at) is skipped:
+ * the newer derivation stores its own rows.
  */
-export function storePowerBests(
-  db: Db,
-  workouts: PowerWorkoutRef[],
-  hooks: { check?: () => void; report?: (fraction: number, message?: string) => void } = {},
-): number {
-  if (!workouts.length) return 0;
+export function writePowerBests(db: Db, rows: { w: PowerWorkoutRef; r: WorkoutPowerBests }[]): void {
   const del = prepare(db, 'DELETE FROM progress_power_bests WHERE workout_id = ?');
   const ins = prepare(
     db,
@@ -77,23 +68,33 @@ export function storePowerBests(
      ON CONFLICT (workout_id) DO UPDATE SET athlete_id = excluded.athlete_id, version = excluded.version,
        source_updated_at = excluded.source_updated_at, power_s = excluded.power_s`,
   );
+  const current = updatedAtOf(db, rows.map((x) => x.w.id));
+  for (const { w, r } of rows) {
+    if (current.get(w.id) !== w.updated_at) continue;
+    del.run(w.id);
+    const day = localDay(w.start_ts, w.tz_min);
+    for (const b of r.bests) ins.run(w.id, w.athlete_id, w.sport, day, b.durationS, r1(b.watts), r1(b.offsetS));
+    state.run(w.id, w.athlete_id, POWER_CURVE_VERSION, w.updated_at, Math.round(r.seconds));
+  }
+}
+
+/**
+ * Compute and store the bests of the given workouts (also hidden ones and duplicates: the queries exclude those, so
+ * hiding or un-hiding needs no recomputation). Computation happens outside the short write transactions.
+ * Returns the number of workouts processed.
+ */
+export function storePowerBests(
+  db: Db,
+  workouts: PowerWorkoutRef[],
+  hooks: { check?: () => void; report?: (fraction: number, message?: string) => void } = {},
+): number {
+  if (!workouts.length) return 0;
   const BATCH = 40;
   for (let i = 0; i < workouts.length; i += BATCH) {
     hooks.check?.();
     const slice = workouts.slice(i, i + BATCH);
-    const results = slice.map((w) => computePowerBests(db, w));
-    tx(db, () => {
-      const current = updatedAtOf(db, slice.map((w) => w.id));
-      slice.forEach((w, k) => {
-        if (current.get(w.id) !== w.updated_at) return;
-        const r = results[k]!;
-        del.run(w.id);
-        const day = localDay(w.start_ts, w.tz_min);
-        for (const b of r.bests)
-          ins.run(w.id, w.athlete_id, w.sport, day, b.durationS, r1(b.watts), r1(b.offsetS));
-        state.run(w.id, w.athlete_id, POWER_CURVE_VERSION, w.updated_at, Math.round(r.seconds));
-      });
-    });
+    const rows = slice.map((w) => ({ w, r: computePowerBests(db, w) }));
+    tx(db, () => writePowerBests(db, rows));
     const done = Math.min(workouts.length, i + slice.length);
     hooks.report?.(done / workouts.length, `${done} / ${workouts.length} workouts`);
   }
@@ -147,14 +148,3 @@ export function athletesMissingPowerBests(db: Db): number[] {
     [POWER_CURVE_VERSION],
   ).map((r) => r.athlete_id);
 }
-
-export const powerCurveStep: DeriveStep = {
-  id: 'progress.power-curve',
-  label: 'Progress: power curve',
-  weight: 1,
-  run(ctx) {
-    const todo = powerWorkoutsToRefresh(ctx.db, ctx.athleteId, ctx.workoutIds);
-    const n = storePowerBests(ctx.db, todo, { check: ctx.checkCancelled, report: ctx.report });
-    ctx.report(1, n ? `${n} workouts` : undefined);
-  },
-};

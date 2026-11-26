@@ -1,7 +1,14 @@
-import { SPORTS, type ProgressDayRange, type ProgressTotals, type ProgressVolumeMetric } from '@cadence/shared';
+import {
+  SPORTS,
+  type ProgressDayRange,
+  type ProgressTotals,
+  type ProgressVolumeMetric,
+  type WorkoutStreams,
+} from '@cadence/shared';
 import { z } from 'zod';
 import { all, get, type Db } from '../../db/db';
 import { getEffectiveHr, getSetting, getSettings } from '../../core/settings';
+import { gunzipJson } from '../../lib/gzip';
 import { dayString, parseDay, today as serverToday } from '../../lib/time';
 
 // ---------------------------------------------------------------------------
@@ -42,6 +49,17 @@ export function derivePending(db: Db, athleteId: number): boolean {
     "SELECT 1 FROM import_jobs WHERE athlete_id = ? AND status IN ('queued', 'running') LIMIT 1",
     [athleteId],
   );
+}
+
+/** Decoded streams of a workout (null when it has none or the blob is corrupt). */
+export function workoutStreams(db: Db, id: number): WorkoutStreams | null {
+  const blob = get<{ data: Uint8Array }>(db, 'SELECT data FROM workout_streams WHERE workout_id = ?', [id])?.data;
+  if (!blob) return null;
+  try {
+    return gunzipJson<WorkoutStreams>(blob);
+  } catch {
+    return null;
+  }
 }
 
 /** workouts.updated_at of the given workouts (deleted ones are missing). */
