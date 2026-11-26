@@ -1,5 +1,5 @@
 import { preferDeviceWorkouts } from '../core/sources';
-import { all, prepare, tx } from '../db/db';
+import { all, prepare, tx, type Db } from '../db/db';
 import type { DeriveStep } from '../features/types';
 
 /** What duplicate detection needs to know about a workout (columns of `workouts`, see COLS). */
@@ -101,31 +101,49 @@ const COLS = `id, start_ts, end_ts, sport, source_name, has_route, (hr_hist IS N
   distance_m, energy_kcal, duplicate_of, (ext_key LIKE 'fit:%') AS from_device`;
 
 /**
+ * The given workouts and every workout linked to them through a chain of overlaps: whether a workout counts can
+ * depend on one it does not overlap itself (its original's own original), so an incremental run must see the whole
+ * chain to decide exactly like a full one.
+ */
+function loadChains(db: Db, athleteId: number, ids: number[]): Row[] {
+  const byId = new Map<number, Row>();
+  const one = prepare(db, `SELECT ${COLS} FROM workouts WHERE id = ? AND athlete_id = ?`);
+  const overlap = prepare(db, `SELECT ${COLS} FROM workouts WHERE athlete_id = ? AND start_ts < ? AND end_ts > ?`);
+  for (const id of ids) {
+    if (byId.has(id)) continue; // loaded with the chain of an earlier id
+    const w = one.get(id, athleteId) as unknown as Row | undefined;
+    if (!w) continue;
+    byId.set(w.id, w);
+    // widen the window until no workout overlapping it reaches beyond it
+    let lo = w.start_ts;
+    let hi = w.end_ts;
+    for (;;) {
+      let nlo = lo;
+      let nhi = hi;
+      for (const r of overlap.all(athleteId, hi, lo) as unknown as Row[]) {
+        byId.set(r.id, r);
+        if (r.start_ts < nlo) nlo = r.start_ts;
+        if (r.end_ts > nhi) nhi = r.end_ts;
+      }
+      if (nlo === lo && nhi === hi) break;
+      lo = nlo;
+      hi = nhi;
+    }
+  }
+  return [...byId.values()];
+}
+
+/**
  * Overlapping workouts of the same sport recorded by different sources (e.g. Strava wrote a copy of an
  * Apple Watch run back to Health) → `duplicate_of` is set on the copy with less data (see resolveDuplicates).
  */
-export function detectDuplicates(
-  db: import('../db/db').Db,
-  athleteId: number,
-  workoutIds: number[] | 'all',
-): number {
+export function detectDuplicates(db: Db, athleteId: number, workoutIds: number[] | 'all'): number {
   let rows: Row[];
   if (workoutIds === 'all') {
     rows = all<Row>(db, `SELECT ${COLS} FROM workouts WHERE athlete_id = ? ORDER BY start_ts`, [athleteId]);
   } else {
     if (!workoutIds.length) return 0;
-    const byId = new Map<number, Row>();
-    const win = prepare(db, 'SELECT start_ts, end_ts FROM workouts WHERE id = ? AND athlete_id = ?');
-    const overlap = prepare(
-      db,
-      `SELECT ${COLS} FROM workouts WHERE athlete_id = ? AND start_ts < ? AND end_ts > ?`,
-    );
-    for (const id of workoutIds) {
-      const w = win.get(id, athleteId) as { start_ts: number; end_ts: number } | undefined;
-      if (!w) continue;
-      for (const r of overlap.all(athleteId, w.end_ts, w.start_ts) as unknown as Row[]) byId.set(r.id, r);
-    }
-    rows = [...byId.values()];
+    rows = loadChains(db, athleteId, workoutIds);
   }
   const want = resolveDuplicates(rows, preferDeviceWorkouts(db, athleteId));
   const upd = prepare(db, 'UPDATE workouts SET duplicate_of = ? WHERE id = ?');

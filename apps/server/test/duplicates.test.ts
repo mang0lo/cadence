@@ -199,4 +199,40 @@ describe('detectDuplicates', () => {
     detectDuplicates(db, 1, 'all');
     expect(dupOf()).toEqual({ [apple]: fit, [fit]: null });
   });
+
+  it('keeps the marks of workouts the new one does not overlap itself', () => {
+    updateSettings(db, 1, { watch: 'coros' });
+    const fit = insert({ from: 0, to: 60, source: 'COROS PACE 3', fit: true });
+    const watch = insert({ from: 0, to: 120 });
+    detectDuplicates(db, 1, [fit, watch]);
+    expect(dupOf()).toEqual({ [fit]: null, [watch]: fit });
+    // a Strava copy of the second hour overlaps the Watch workout but not the watch's file
+    const strava = insert(thirdParty(61, 120, 'Strava'));
+    detectDuplicates(db, 1, [strava]);
+    expect(dupOf()).toEqual({ [fit]: null, [watch]: fit, [strava]: null });
+    detectDuplicates(db, 1, 'all');
+    expect(dupOf()).toEqual({ [fit]: null, [watch]: fit, [strava]: null });
+  });
+
+  it('gives the same result incrementally as a full run, in any import order', () => {
+    updateSettings(db, 1, { watch: 'coros' });
+    const specs: Spec[] = [
+      { from: 0, to: 120 },
+      { from: 0, to: 60, source: 'COROS PACE 3', fit: true },
+      thirdParty(61, 120, 'Strava'),
+      thirdParty(100, 180, 'Runkeeper'),
+      { from: 170, to: 200, source: 'COROS PACE 3', fit: true },
+    ];
+    const permutations = (xs: number[]): number[][] =>
+      xs.length ? xs.flatMap((x) => permutations(xs.filter((y) => y !== x)).map((p) => [x, ...p])) : [[]];
+    const orders = permutations(specs.map((_, k) => k));
+    expect(orders).toHaveLength(120);
+    for (const order of orders) {
+      run(db, 'DELETE FROM workouts');
+      for (const k of order) detectDuplicates(db, 1, [insert(specs[k]!)]);
+      const incremental = dupOf();
+      detectDuplicates(db, 1, 'all');
+      expect(dupOf(), `import order ${order.join(',')}`).toEqual(incremental);
+    }
+  });
 });
