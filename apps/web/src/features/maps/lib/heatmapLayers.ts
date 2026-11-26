@@ -8,7 +8,10 @@ import type { MapsHeatmapActivity } from '@cadence/shared';
 export type HeatTheme = 'hot' | 'blue' | 'purple';
 export type HeatBase = 'dark' | 'satellite' | 'streets';
 
-/** A decoded route ready for the map. `i` = chronological index (the time-lapse key). */
+/**
+ * A decoded route ready for the map. `i` = chronological index among the drawable routes (0, 1, 2 … without gaps):
+ * the time-lapse key and the map feature id.
+ */
 export interface HeatLine {
   id: number;
   i: number;
@@ -98,9 +101,10 @@ export const heatPalette = (theme: HeatTheme, darkBase: boolean): HeatPalette =>
 /** Decode the API polylines into map lines (lon/lat order) with cumulative lengths. */
 export function toHeatLines(items: MapsHeatmapActivity[]): HeatLine[] {
   const out: HeatLine[] = [];
-  items.forEach((a, i) => {
+  items.forEach((a) => {
     const parts = decodePolylineParts(a.polyline).filter((p) => p.length > 1);
     if (!parts.length) return;
+    const i = out.length; // an item without a drawable route leaves no gap
     const coords: [number, number][] = [];
     const starts: number[] = [];
     for (const p of parts) {
@@ -254,8 +258,13 @@ export const LAYER = {
 } as const;
 const SRC = { lines: 'hm-lines', head: 'hm-head', points: 'hm-points' } as const;
 
-/** Layers that show finished activities (they share the time-lapse filter). */
-const LINE_LAYERS = [LAYER.glow, LAYER.mid, LAYER.core, LAYER.hot, LAYER.hit];
+/**
+ * Opacity of a finished-activities layer: 0 while the time-lapse hides the activity (feature state 'hidden', see
+ * LapseVisibility). Feature state changes repaint the affected features; a filter change would re-tile the whole
+ * source in the worker, on every frame of the time-lapse.
+ */
+const lapseOpacity = (opacity: number): ExpressionSpecification =>
+  ['case', ['boolean', ['feature-state', 'hidden'], false], 0, opacity] as unknown as ExpressionSpecification;
 
 const zoomWidth = (a: number, b: number, c: number): ExpressionSpecification =>
   ['interpolate', ['linear'], ['zoom'], 8, a, 12, b, 16, c] as unknown as ExpressionSpecification;
@@ -268,7 +277,8 @@ export function ensureHeatLayers(map: MapLibreMap, palette: HeatPalette): void {
   if (map.getLayer(LAYER.hit)) return; // added last: everything exists
   // the glow goes below the basemap labels so they stay readable
   const before = firstSymbolLayer(map);
-  if (!map.getSource(SRC.lines)) map.addSource(SRC.lines, { type: 'geojson', data: emptyLines });
+  // feature id = chronological index `i`: the time-lapse hides activities through feature state
+  if (!map.getSource(SRC.lines)) map.addSource(SRC.lines, { type: 'geojson', data: emptyLines, promoteId: 'i' });
   if (!map.getSource(SRC.head)) map.addSource(SRC.head, { type: 'geojson', data: emptyLines });
   if (!map.getSource(SRC.points)) map.addSource(SRC.points, { type: 'geojson', data: emptyPoints });
   const s = palette.strength;
@@ -319,23 +329,23 @@ export function ensureHeatLayers(map: MapLibreMap, palette: HeatPalette): void {
     'line-color': palette.glow,
     'line-width': zoomWidth(5, 9, 18),
     'line-blur': zoomWidth(4, 7, 12),
-    'line-opacity': Math.min(1, 0.07 * s),
+    'line-opacity': lapseOpacity(Math.min(1, 0.07 * s)),
   });
   line(LAYER.mid, SRC.lines, {
     'line-color': palette.mid,
     'line-width': zoomWidth(2.2, 3.4, 6),
     'line-blur': 1.5,
-    'line-opacity': Math.min(1, 0.14 * s),
+    'line-opacity': lapseOpacity(Math.min(1, 0.14 * s)),
   });
   line(LAYER.core, SRC.lines, {
     'line-color': palette.core,
     'line-width': zoomWidth(0.9, 1.4, 2.6),
-    'line-opacity': Math.min(1, 0.22 * s),
+    'line-opacity': lapseOpacity(Math.min(1, 0.22 * s)),
   });
   line(LAYER.hot, SRC.lines, {
     'line-color': palette.hot,
     'line-width': zoomWidth(0.5, 0.8, 1.4),
-    'line-opacity': Math.min(1, 0.3 * s),
+    'line-opacity': lapseOpacity(Math.min(1, 0.3 * s)),
   });
   // the activity currently being drawn by the time-lapse
   line(LAYER.headGlow, SRC.head, {
@@ -396,13 +406,13 @@ export function applyHeatPalette(map: MapLibreMap, palette: HeatPalette): void {
   if (!map.getLayer(LAYER.glow)) return;
   const s = palette.strength;
   map.setPaintProperty(LAYER.glow, 'line-color', palette.glow);
-  map.setPaintProperty(LAYER.glow, 'line-opacity', Math.min(1, 0.07 * s));
+  map.setPaintProperty(LAYER.glow, 'line-opacity', lapseOpacity(Math.min(1, 0.07 * s)));
   map.setPaintProperty(LAYER.mid, 'line-color', palette.mid);
-  map.setPaintProperty(LAYER.mid, 'line-opacity', Math.min(1, 0.14 * s));
+  map.setPaintProperty(LAYER.mid, 'line-opacity', lapseOpacity(Math.min(1, 0.14 * s)));
   map.setPaintProperty(LAYER.core, 'line-color', palette.core);
-  map.setPaintProperty(LAYER.core, 'line-opacity', Math.min(1, 0.22 * s));
+  map.setPaintProperty(LAYER.core, 'line-opacity', lapseOpacity(Math.min(1, 0.22 * s)));
   map.setPaintProperty(LAYER.hot, 'line-color', palette.hot);
-  map.setPaintProperty(LAYER.hot, 'line-opacity', Math.min(1, 0.3 * s));
+  map.setPaintProperty(LAYER.hot, 'line-opacity', lapseOpacity(Math.min(1, 0.3 * s)));
   map.setPaintProperty(LAYER.headGlow, 'line-color', palette.core);
   map.setPaintProperty(LAYER.head, 'line-color', palette.hot);
   map.setPaintProperty(LAYER.density, 'heatmap-color', densityRamp(palette));
@@ -425,10 +435,36 @@ export function setHeadLine(map: MapLibreMap, lines: [number, number][][] | null
   });
 }
 
-/** Show only the first `k` activities (time-lapse) or all of them (`null`). */
-export function setLapseFilter(map: MapLibreMap, k: number | null): void {
-  const filter = k === null ? null : (['<', ['get', 'i'], k] as unknown as ExpressionSpecification);
-  for (const id of LINE_LAYERS) if (map.getLayer(id)) map.setFilter(id, filter);
+/**
+ * Which activities the time-lapse shows: the first `done` (by `i`), or all. The others carry the feature state
+ * `hidden` (see lapseOpacity). Only the activities whose visibility changes are touched, so a frame that finishes one
+ * activity is one feature-state update instead of a filter change that re-tiles every line.
+ */
+export class LapseVisibility {
+  /** The lines source the state was set on, and the ids hidden there: [from, to). */
+  private hidden: { source: unknown; from: number; to: number } | null = null;
+
+  /**
+   * Show the first `done` of the `total` activities (null: all of them). Feature state outlives setData, so new data
+   * only changes the ids whose visibility differs (ids are positions); a new source (after a style switch) has none.
+   */
+  apply(map: MapLibreMap, done: number | null, total: number): void {
+    const source = map.getSource(SRC.lines);
+    if (!source) return;
+    const prev = this.hidden?.source === source ? this.hidden : { from: 0, to: 0 };
+    const from = done === null ? 0 : Math.min(done, total);
+    const to = done === null ? 0 : total;
+    const set = (a: number, b: number, hidden: boolean) => {
+      for (let i = a; i < b; i++) map.setFeatureState({ source: SRC.lines, id: i }, { hidden });
+    };
+    // hide what is new in [from, to), show what left it: explicit states, no removeFeatureState (MapLibre keeps
+    // state changes queued before a full removal when another state is set in the same frame)
+    set(from, Math.min(to, prev.from), true);
+    set(Math.max(from, prev.to), to, true);
+    set(prev.from, Math.min(prev.to, from), false);
+    set(Math.max(prev.from, to), prev.to, false);
+    this.hidden = { source, from, to };
+  }
 }
 
 export function setDensityVisible(map: MapLibreMap, visible: boolean): void {

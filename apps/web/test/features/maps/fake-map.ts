@@ -51,10 +51,13 @@ export class FakeLayerMap {
   getLayer(id: string): FakeLayer | undefined {
     return this.layers[id];
   }
+  /** Like MapLibre: the same source object until the source is removed (a new style has new ones). */
   getSource(id: string) {
     const s = this.sources[id];
-    return s && { type: s.type, setData: (data: unknown) => this.setData(id, data) };
+    if (!s) return undefined;
+    return (this.sourceObjects[id] ??= { type: s.type, setData: (data: unknown) => this.setData(id, data) });
   }
+  private sourceObjects: Record<string, object> = {};
   private setData(id: string, data: unknown): void {
     this.calls.push(`setData ${id}`);
     this.sources[id]!.data = data;
@@ -78,6 +81,8 @@ export class FakeLayerMap {
   }
   removeSource(id: string): void {
     delete this.sources[id];
+    delete this.sourceObjects[id];
+    delete this.state[id];
   }
   setPaintProperty(id: string, name: string, value: unknown): void {
     this.calls.push(`paint ${id} ${name}`);

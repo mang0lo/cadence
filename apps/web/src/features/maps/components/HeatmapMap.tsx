@@ -13,6 +13,7 @@ import { sportColorVar, useSportLabel } from '@/lib/sports';
 import { useResolvedTheme } from '@/lib/theme';
 import {
   LAYER,
+  LapseVisibility,
   applyHeatPalette,
   densityPoints,
   ensureHeatLayers,
@@ -21,7 +22,6 @@ import {
   setDensityIntensity,
   setDensityVisible,
   setHeadLine,
-  setLapseFilter,
   setLinesData,
   setPointsData,
   type HeatBase,
@@ -160,14 +160,16 @@ export function HeatmapMap({
     [density, densityData],
   );
 
+  // time-lapse: the activities not finished yet are hidden through feature state, one update per finished activity
+  const lapseVisibility = useMemo(() => new LapseVisibility(), []);
   const done = lapse ? lapse.done : null;
   useOverlayEffect(
     overlay,
     (map) => {
       ensureHeatLayers(map, paletteRef.current);
-      setLapseFilter(map, done);
+      lapseVisibility.apply(map, done, lines.length);
     },
-    [done, geo],
+    [done, lines.length],
   );
 
   const head = lapse?.head ?? null;
