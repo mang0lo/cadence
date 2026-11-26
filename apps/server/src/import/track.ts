@@ -64,7 +64,7 @@ export function encodeTrack(tr: Track): Uint8Array {
       o += 4;
     }
   }
-  return gzip(new Uint8Array(buf), 6);
+  return gzip(new Uint8Array(buf));
 }
 
 export function decodeTrack(blob: Uint8Array): Track {
