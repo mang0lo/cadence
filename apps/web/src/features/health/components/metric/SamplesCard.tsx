@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight, ListOrdered } from 'lucide-react';
 import type { MetricSample, Page, RecordTypeInfo } from '@cadence/shared';
 import { Card, CardHeader, ErrorState, IconButton, SegmentedControl, Skeleton, Table, TD, TH } from '@/components/ui';
@@ -25,10 +25,13 @@ export function SamplesCard({ type, fromDay, toDay }: { type: RecordTypeInfo; fr
   const fmt = useFormat();
   const m = useMetricFormat();
   const time = useSecondsTime();
-  const [page, setPage] = useState(0);
   const [order, setOrder] = useState<'desc' | 'asc'>('desc');
-  // a new range or order starts on the first page
-  useEffect(() => setPage(0), [type.identifier, fromDay, toDay, order]);
+  // a new range or order starts on the first page — already in the render that requests it (an effect would first
+  // request the old page of the new range, a second COUNT over the range on the server)
+  const filter = `${type.identifier}|${fromDay ?? ''}|${toDay ?? ''}|${order}`;
+  const [paging, setPaging] = useState({ filter, page: 0 });
+  const page = paging.filter === filter ? paging.page : 0;
+  const setPage = (next: (p: number) => number) => setPaging({ filter, page: next(page) });
 
   const q = useApi<Page<MetricSample>>(['health', 'metric', 'samples'], '/health/metric/samples', {
     type: type.identifier,
