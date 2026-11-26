@@ -15,6 +15,21 @@ const KIND_ICON: Record<TrainingKind, LucideIcon> = {
 /** "DE" → 🇩🇪 (regional indicator letters). */
 const flag = (code: string) => String.fromCodePoint(...[...code.toUpperCase()].map((c) => 0x1f1e6 + c.charCodeAt(0) - 65));
 
+/** Country names per language, built once (a tag row renders for every activity in lists and the feed). */
+const regionNames = new Map<string, Intl.DisplayNames | null>();
+function countryNames(lang: string): Intl.DisplayNames | null {
+  let names = regionNames.get(lang);
+  if (names === undefined) {
+    try {
+      names = new Intl.DisplayNames([lang], { type: 'region' });
+    } catch {
+      names = null;
+    }
+    regionNames.set(lang, names);
+  }
+  return names;
+}
+
 /**
  * Small automatic tags of an activity — kind of training, countries, weather. Each one is only shown when the
  * activity has the data for it; nothing is rendered without any.
@@ -30,12 +45,7 @@ export function WorkoutTags({
   const fmt = useFormat();
   const countries = w.countries ?? [];
   if (!w.trainingKind && !countries.length && !w.weather) return null;
-  let names: Intl.DisplayNames | null = null;
-  try {
-    names = new Intl.DisplayNames([lang], { type: 'region' });
-  } catch {
-    names = null;
-  }
+  const names = countries.length ? countryNames(lang) : null;
   const countryName = (c: string) => names?.of(c) ?? c;
   return (
     <div className={cn('flex flex-wrap items-center gap-1.5', className)}>
