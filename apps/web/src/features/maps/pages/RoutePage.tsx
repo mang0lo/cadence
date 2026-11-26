@@ -4,7 +4,6 @@ import { useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Check, Pencil, Route as RouteIcon, Trophy, X } from 'lucide-react';
 import { sportInfo, workoutTitle, type MapsRouteDetail, type MapsRouteEffort } from '@cadence/shared';
 import { useChartTheme } from '@/components/charts/theme';
-import { overlayColors } from '@/components/map/styles';
 import {
   Badge,
   Button,
@@ -27,12 +26,10 @@ import {
 import { api, useApi } from '@/lib/api';
 import { useFormat } from '@/lib/format';
 import { useI18n, useT } from '@/lib/i18n';
-import { useSettings } from '@/lib/settings';
 import { SportBadge } from '@/lib/sports';
 import { decodePolyline, toLngLat } from '@/lib/polyline';
-import { useResolvedTheme } from '@/lib/theme';
 import { EffortTrend } from '../components/EffortTrend';
-import { LineMap, type MapLine } from '../components/LineMap';
+import { LineMap, useShownOverlayColors, type MapLine } from '../components/LineMap';
 import { dateRange } from '../lib/dates';
 import { unionBox, type BBox } from '../lib/home';
 import { kindLabel, routeTitle } from '../lib/routeName';
@@ -231,11 +228,9 @@ function RouteBody({ detail }: { detail: MapsRouteDetail }) {
 
 function RouteMapCard({ detail }: { detail: MapsRouteDetail }) {
   const t = useT();
-  const { settings } = useSettings();
-  const appTheme = useResolvedTheme();
   const chart = useChartTheme();
   const { route, tracks } = detail;
-  const overlay = overlayColors(settings.mapStyle, appTheme);
+  const [overlay, onStylePref] = useShownOverlayColors();
 
   const { lines, bounds, markers } = useMemo(() => {
     const decoded = new Map(tracks.map((tr) => [tr.workoutId, toLngLat(decodePolyline(tr.polyline))]));
@@ -291,6 +286,7 @@ function RouteMapCard({ detail }: { detail: MapsRouteDetail }) {
         markers={markers}
         bounds={bounds}
         padding={56}
+        onStylePref={onStylePref}
       >
         <div className="pointer-events-none absolute left-3 top-3 z-10 flex flex-col gap-1 rounded-lg border border-border bg-surface/90 px-2.5 py-1.5 text-xs text-fg-2 shadow-card backdrop-blur">
           <LegendItem color={chart.series[0]!} label={t('maps.routes.best')} />

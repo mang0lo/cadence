@@ -1,7 +1,11 @@
-import { useMemo, useRef, type ReactNode } from 'react';
+import { useMemo, useRef, useState, type ReactNode } from 'react';
 import type { Map as MapLibreMap } from 'maplibre-gl';
+import type { MapStylePref } from '@cadence/shared';
 import { BaseMap } from '@/components/map/BaseMap';
-import { useFitBounds, useMapOverlay, useOverlayEffect } from '@/components/map/useMapOverlay';
+import { overlayColors } from '@/components/map/styles';
+import { shownStylePref, useFitBounds, useMapOverlay, useOverlayEffect } from '@/components/map/useMapOverlay';
+import { useSettings } from '@/lib/settings';
+import { useResolvedTheme } from '@/lib/theme';
 import type { BBox } from '../lib/home';
 import { syncLineOverlays, type LineOverlayState, type MapLine, type MapMarker } from '../lib/lineOverlays';
 
@@ -18,10 +22,23 @@ export interface LineMapProps {
   /** Built-in basemap / 3D switcher of BaseMap (default on). */
   switcher?: boolean;
   onReady?: (map: MapLibreMap) => void;
+  /** After every style load: the basemap shown (the built-in switcher can differ from the setting). */
+  onStylePref?: (pref: MapStylePref) => void;
   children?: ReactNode;
 }
 
 const NO_MARKERS: MapMarker[] = [];
+
+/**
+ * Overlay colors (casing, muted lines) for the basemap a LineMap shows: pass `onStylePref` to that LineMap. Colors
+ * from settings.mapStyle alone stay light-map colors after the map's own switcher changed to satellite or dark.
+ */
+export function useShownOverlayColors(): [ReturnType<typeof overlayColors>, (pref: MapStylePref) => void] {
+  const { settings } = useSettings();
+  const theme = useResolvedTheme();
+  const [pref, setPref] = useState<MapStylePref>(settings.mapStyle);
+  return [overlayColors(pref, theme), setPref];
+}
 
 /**
  * A map that draws a handful of styled polylines and point markers (route detail, segment views). Sources and layers
@@ -36,6 +53,7 @@ export function LineMap({
   padding = 48,
   switcher = true,
   onReady,
+  onStylePref,
   children,
 }: LineMapProps) {
   // what is drawn per item (only changed items are updated: the segment editor's hover marker moves on every pointer
@@ -43,8 +61,9 @@ export function LineMap({
   const drawn = useRef<LineOverlayState>(new Map());
   const overlay = useMapOverlay({
     onReady,
-    onStyleLoad: () => {
+    onStyleLoad: (map) => {
       drawn.current = new Map();
+      onStylePref?.(shownStylePref(map));
     },
   });
 

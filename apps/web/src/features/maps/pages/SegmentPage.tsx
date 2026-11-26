@@ -13,7 +13,6 @@ import { ChartCard } from '@/components/charts/ChartCard';
 import { EChart } from '@/components/charts/EChart';
 import { areaSeries, axisTooltip, grid, tooltipHtml, valueAxis } from '@/components/charts/options';
 import { useChartTheme } from '@/components/charts/theme';
-import { overlayColors } from '@/components/map/styles';
 import {
   Badge,
   Button,
@@ -37,12 +36,10 @@ import {
 import { api, useApi } from '@/lib/api';
 import { useFormat } from '@/lib/format';
 import { useI18n, useT } from '@/lib/i18n';
-import { useSettings } from '@/lib/settings';
 import { SportBadge, SportIcon, sportColorVar, useSportLabel } from '@/lib/sports';
 import { decodePolyline, toLngLat } from '@/lib/polyline';
-import { useResolvedTheme } from '@/lib/theme';
 import { EffortTrend } from '../components/EffortTrend';
-import { LineMap, type MapLine, type MapMarker } from '../components/LineMap';
+import { LineMap, useShownOverlayColors, type MapLine, type MapMarker } from '../components/LineMap';
 import { dateHint } from '../lib/dates';
 import { unionBox, type BBox } from '../lib/home';
 import { gradeAt } from '../lib/segments';
@@ -284,10 +281,8 @@ function Body({ detail }: { detail: MapsSegmentDetail }) {
 
 function SegmentMap({ detail }: { detail: MapsSegmentDetail }) {
   const t = useT();
-  const { settings } = useSettings();
-  const appTheme = useResolvedTheme();
   const chart = useChartTheme();
-  const overlay = overlayColors(settings.mapStyle, appTheme);
+  const [overlay, onStylePref] = useShownOverlayColors();
   const { segment } = detail;
   const { lines, markers, bounds } = useMemo(() => {
     const coords = toLngLat(decodePolyline(segment.polyline));
@@ -310,6 +305,7 @@ function SegmentMap({ detail }: { detail: MapsSegmentDetail }) {
         markers={markers}
         bounds={bounds}
         padding={64}
+        onStylePref={onStylePref}
       >
         <div className="pointer-events-none absolute left-3 top-3 z-10 rounded-lg border border-border bg-surface/90 px-2.5 py-1.5 text-xs text-fg-2 shadow-card backdrop-blur">
           <span className="inline-flex items-center gap-2">

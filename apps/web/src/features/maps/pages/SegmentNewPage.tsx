@@ -14,7 +14,6 @@ import {
 } from '@cadence/shared';
 import { useChartTheme } from '@/components/charts/theme';
 import { RouteThumbnail } from '@/components/map/RouteThumbnail';
-import { overlayColors } from '@/components/map/styles';
 import {
   Button,
   Card,
@@ -31,10 +30,8 @@ import {
 import { api, useApi } from '@/lib/api';
 import { useFormat } from '@/lib/format';
 import { useI18n, useT } from '@/lib/i18n';
-import { useSettings } from '@/lib/settings';
 import { SportBadge, sportColorVar, useSportLabel } from '@/lib/sports';
-import { useResolvedTheme } from '@/lib/theme';
-import { LineMap, type MapLine, type MapMarker } from '../components/LineMap';
+import { LineMap, useShownOverlayColors, type MapLine, type MapMarker } from '../components/LineMap';
 import { RangeProfile } from '../components/RangeProfile';
 import { unionBox, type BBox } from '../lib/home';
 import { elapsedBetween, pointAt, slicePoints } from '../lib/segments';
@@ -160,10 +157,8 @@ function EditorBody({ source }: { source: MapsSegmentSource }) {
   const sportLabel = useSportLabel();
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const { settings } = useSettings();
-  const appTheme = useResolvedTheme();
   const chart = useChartTheme();
-  const overlay = overlayColors(settings.mapStyle, appTheme);
+  const [overlay, onStylePref] = useShownOverlayColors();
   const { points, totalM } = source;
   const breaksM = source.breaksM ?? [];
 
@@ -258,6 +253,7 @@ function EditorBody({ source }: { source: MapsSegmentSource }) {
             markers={markers}
             bounds={bounds}
             padding={56}
+            onStylePref={onStylePref}
           />
         </Card>
         <Card>

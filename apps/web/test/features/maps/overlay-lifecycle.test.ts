@@ -7,7 +7,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Map } from 'maplibre-gl';
 import { markStyleReady } from '@/components/map/layers';
-import { DARK, LIBERTY, POSITRON } from '@/components/map/styles';
+import type { MapStylePref } from '@cadence/shared';
+import { DARK, LIBERTY, POSITRON, overlayColors } from '@/components/map/styles';
 import {
   shownStylePref,
   useFitBounds,
@@ -186,6 +187,18 @@ describe('fit to bounds', () => {
 });
 
 describe('shown basemap', () => {
+  it('is reported after each style load, also when the map’s own switcher changed it (route overlay colors)', () => {
+    const map = new FakeMap();
+    const prefs: MapStylePref[] = [];
+    const h = renderHook(() => useMapOverlay({ onStyleLoad: (m) => prefs.push(shownStylePref(m)) }), {});
+    mountBaseMap(map, h.result.current);
+    map.fire('style.load');
+    baseMapSetStyle(map, null); // satellite picked in the map's switcher; the setting still says streets
+    map.fire('style.load');
+    expect(prefs).toEqual(['streets', 'satellite']);
+    expect(overlayColors(prefs[1]!, 'light').casing).toBe(overlayColors('dark', 'light').casing);
+  });
+
   it('tells the style the map shows, whatever the setting says', () => {
     const map = new FakeMap();
     for (const [url, pref] of [
