@@ -50,8 +50,10 @@ const SETTLE_MS = 200;
  */
 function scrollParent(el: Element): Element | null {
   for (let p = el.parentElement; p; p = p.parentElement) {
-    const { overflowY } = getComputedStyle(p);
+    const { overflowY, position } = getComputedStyle(p);
     if ((overflowY === 'auto' || overflowY === 'scroll') && p.scrollHeight > p.clientHeight) return p;
+    // a dialog or a fixed panel is not clipped by the page's scrolling area (and would never intersect it)
+    if (p.tagName === 'DIALOG' || position === 'fixed') return null;
   }
   return null;
 }
