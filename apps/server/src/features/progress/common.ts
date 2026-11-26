@@ -32,6 +32,30 @@ export function weekStartOf(db: Db, athleteId: number): 0 | 1 {
   return getSettings(db, athleteId).weekStart === 0 ? 0 : 1;
 }
 
+/**
+ * True while an import or rederive job of the athlete is queued or running. Its derive steps fill the per-workout
+ * caches of the workouts it adds or changes, so requests leave them alone meanwhile.
+ */
+export function derivePending(db: Db, athleteId: number): boolean {
+  return !!get(
+    db,
+    "SELECT 1 FROM import_jobs WHERE athlete_id = ? AND status IN ('queued', 'running') LIMIT 1",
+    [athleteId],
+  );
+}
+
+/** workouts.updated_at of the given workouts (deleted ones are missing). */
+export function updatedAtOf(db: Db, ids: number[]): Map<number, number> {
+  if (!ids.length) return new Map();
+  return new Map(
+    all<{ id: number; updated_at: number }>(
+      db,
+      `SELECT id, updated_at FROM workouts WHERE id IN (${ids.map(() => '?').join(',')})`,
+      ids,
+    ).map((r) => [r.id, r.updated_at]),
+  );
+}
+
 /** HR zone upper bounds the stored zone times were computed with (falls back to the current effective HR). */
 export function zoneBoundsOf(db: Db, athleteId: number): number[] {
   const basis = getSetting<{ zoneBounds?: number[] } | null>(db, athleteId, 'core.effortBasis', null);

@@ -3,6 +3,7 @@ import { all, get, prepare, tx, type Db } from '../../db/db';
 import { maxPlausibleSpeed, movingThreshold } from '../../derive/streams';
 import { gunzipJson } from '../../lib/gzip';
 import type { DeriveStep } from '../types';
+import { derivePending, updatedAtOf } from './common';
 import { hrSpeedHistogram, type HrSpeedHistogram, type StreamFilter } from './math';
 
 /** Bump when the computation changes: rows of older versions are recomputed (derive or lazily). */
@@ -97,7 +98,11 @@ function upsertSql(): string {
       vo_m = excluded.vo_m, hr_speed = excluded.hr_speed`;
 }
 
-/** Compute and store metrics for the given workouts in short transactions. Returns the number computed. */
+/**
+ * Compute and store metrics for the given workouts. Each batch is computed first and written in a short
+ * transaction (the write lock stalls every other writer). A workout changed since it was read (updated_at) is not
+ * written: the newer derivation stores its own row. Returns the number of workouts processed.
+ */
 export function storeWorkoutMetrics(
   db: Db,
   workouts: WorkoutRef[],
@@ -110,9 +115,12 @@ export function storeWorkoutMetrics(
   for (let i = 0; i < workouts.length; i += BATCH) {
     hooks.check?.();
     const slice = workouts.slice(i, i + BATCH);
+    const results = slice.map((w) => computeWorkoutMetrics(db, w, typeIds));
     tx(db, () => {
-      for (const w of slice) {
-        const m = computeWorkoutMetrics(db, w, typeIds);
+      const current = updatedAtOf(db, slice.map((w) => w.id));
+      slice.forEach((w, k) => {
+        if (current.get(w.id) !== w.updated_at) return;
+        const m = results[k]!;
         ins.run(
           w.id,
           w.athlete_id,
@@ -123,7 +131,7 @@ export function storeWorkoutMetrics(
           m.vo_m,
           m.hr_speed ? JSON.stringify(m.hr_speed) : null,
         );
-      }
+      });
     });
     const done = Math.min(workouts.length, i + slice.length);
     hooks.report?.(done / workouts.length, `${done} / ${workouts.length} workouts`);
@@ -133,48 +141,51 @@ export function storeWorkoutMetrics(
 
 const REF_COLS = 'w.id, w.athlete_id, w.sport, w.start_ts, w.end_ts, w.updated_at';
 
+/** The cached row of workout `w` (alias m) is missing, of an older version or computed from an older derivation. */
+const STALE = 'm.workout_id IS NULL OR m.version <> ? OR m.source_updated_at <> w.updated_at';
+
 /**
- * Derive scope: the changed workouts, or for a full rebuild every workout whose cached row is missing, of an
- * older version or computed from an older derivation (workouts.updated_at changed).
+ * Derive scope: the listed workouts plus every workout whose cached row is stale (missing, e.g. after a cancelled
+ * import, of an older version or computed from an older derivation). A full rebuild ('all') recomputes the stale
+ * rows only.
  */
 export function workoutsToRefresh(db: Db, athleteId: number, ids: number[] | 'all'): WorkoutRef[] {
-  if (ids === 'all') {
-    return all<WorkoutRef>(
-      db,
-      `SELECT ${REF_COLS} FROM workouts w LEFT JOIN progress_workout_metrics m ON m.workout_id = w.id
-       WHERE w.athlete_id = ? AND (m.workout_id IS NULL OR m.version <> ? OR m.source_updated_at <> w.updated_at)
-       ORDER BY w.start_ts`,
-      [athleteId, METRICS_VERSION],
-    );
-  }
-  const out: WorkoutRef[] = [];
-  for (let i = 0; i < ids.length; i += 500) {
-    const chunk = ids.slice(i, i + 500);
-    out.push(
-      ...all<WorkoutRef>(
-        db,
-        `SELECT ${REF_COLS} FROM workouts w WHERE w.athlete_id = ? AND w.id IN (${chunk.map(() => '?').join(',')})`,
-        [athleteId, ...chunk],
-      ),
-    );
-  }
-  return out;
+  return all<WorkoutRef>(
+    db,
+    `SELECT ${REF_COLS} FROM workouts w LEFT JOIN progress_workout_metrics m ON m.workout_id = w.id
+     WHERE w.athlete_id = ? AND (${STALE} OR w.id IN (SELECT value FROM json_each(?)))
+     ORDER BY w.start_ts`,
+    [athleteId, METRICS_VERSION, JSON.stringify(ids === 'all' ? [] : ids)],
+  );
 }
 
 /**
- * Request-time safety net: workouts that have no (current-version) row yet — e.g. a database imported before
- * this feature existed — are computed on first use. A no-op once the derive step has run.
+ * Request-time safety net for visible workouts with a stale row (e.g. renamed since, or a database imported before
+ * this feature existed). Nothing is computed while an import or rederive job of the athlete is queued or running:
+ * its derive steps fill the rows, and computing them here as well would wait for the job's write lock on the
+ * server's main thread and could store values of workouts that are not derived yet.
  */
 export function ensureWorkoutMetrics(db: Db, athleteId: number, sport: string | null): number {
+  if (derivePending(db, athleteId)) return 0;
   const missing = all<WorkoutRef>(
     db,
     `SELECT ${REF_COLS} FROM workouts w LEFT JOIN progress_workout_metrics m ON m.workout_id = w.id
      WHERE w.athlete_id = ? AND w.hidden = 0 AND w.duplicate_of IS NULL ${sport ? 'AND w.sport = ?' : ''}
-       AND (m.workout_id IS NULL OR m.version <> ?)
+       AND (${STALE})
      ORDER BY w.start_ts`,
     sport ? [athleteId, sport, METRICS_VERSION] : [athleteId, METRICS_VERSION],
   );
   return storeWorkoutMetrics(db, missing);
+}
+
+/** Athletes with workouts whose row is missing or of an older version (checked when the server starts). */
+export function athletesMissingMetrics(db: Db): number[] {
+  return all<{ athlete_id: number }>(
+    db,
+    `SELECT DISTINCT w.athlete_id FROM workouts w LEFT JOIN progress_workout_metrics m ON m.workout_id = w.id
+     WHERE m.workout_id IS NULL OR m.version <> ?`,
+    [METRICS_VERSION],
+  ).map((r) => r.athlete_id);
 }
 
 export const workoutMetricsStep: DeriveStep = {
