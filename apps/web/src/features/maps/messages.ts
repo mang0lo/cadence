@@ -115,6 +115,8 @@ export const messages: Dictionary = {
       latest: 'Latest',
       showMore: 'Show {count} more',
       empty: 'No repeated routes yet',
+      noneAtMin: 'No route done at least {min} times yet.',
+      showFromTwice: 'Show routes done twice or more',
       emptyHint:
         'A route shows up here once you have followed the same course at least twice (same start, same finish, same path).',
       notFound: 'Route not found',
@@ -331,6 +333,8 @@ export const messages: Dictionary = {
       latest: 'Letzte',
       showMore: '{count} weitere anzeigen',
       empty: 'Noch keine wiederholten Strecken',
+      noneAtMin: 'Noch keine Strecke, die du mindestens {min}-mal gemacht hast.',
+      showFromTwice: 'Strecken ab zwei Durchgängen zeigen',
       emptyHint:
         'Eine Strecke erscheint hier, sobald du denselben Kurs mindestens zweimal gemacht hast (gleicher Start, gleiches Ziel, gleicher Verlauf).',
       notFound: 'Strecke nicht gefunden',
