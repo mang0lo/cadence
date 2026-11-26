@@ -148,8 +148,10 @@ export function MonthsChart({ r }: { r: YearReview }) {
         { axisPointer: { type: 'shadow', shadowStyle: { color: 'rgba(128,128,128,0.08)' } } },
       ),
       xAxis: categoryAxis(theme, names),
-      // small years get half-hour ticks: print them as 0.5 h, not "1 h, 1 h"
+      // small years get half-hour ticks: print them as 0.5 h, not "1 h, 1 h"; ticks of at least 0.1 h (the bars'
+      // precision), or a top month of a few minutes gets 0.03 h steps that print as "0.0 h, 0.1 h, 0.1 h"
       yAxis: valueAxis(theme, {
+        minInterval: 0.1,
         axisLabel: { color: theme.muted, fontSize: 11, formatter: (v: number) => `${fmt.num(v, Number.isInteger(v) ? 0 : 1)} h` },
       }),
       series: [barSeries(theme, t('consistency.year.hours'), r.months.map((m) => Math.round((m.durationS / 3600) * 10) / 10), theme.series[0]!)],
