@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createFormatter } from '@/lib/format';
+import { clock as clockOf, createFormatter } from '@/lib/format';
 
 const de = createFormatter('metric', 'de-DE', 'de');
 const en = createFormatter('metric', 'en-US', 'en');
@@ -42,5 +42,29 @@ describe('fmt names and relative times', () => {
     expect(de.monthNames('long')).toEqual(names('de-DE', { month: 'long' }, months));
     expect(en.monthNames('short')).toEqual(names('en-US', { month: 'short' }, months));
     expect(de.weekdayNames(1, 'long')[0]).toBe('Montag');
+  });
+});
+
+describe('numbers that round to zero', () => {
+  it('have no minus sign ("-0 °C", "-0 m", "-0,0")', () => {
+    // start temperatures of sample workouts 5, 333 and 352
+    expect(de.temperature(-0.167)).toBe('0 °C');
+    expect(en.temperature(-0.389)).toBe('0 °C');
+    expect(de.elevation(-0.3)).toBe('0 m');
+    expect(de.num(-0.04, 1)).toBe('0,0');
+    expect(de.int(-0.4)).toBe('0');
+    expect(de.num(-0)).toBe('0');
+    expect(de.weight(-0.01)).toBe('0,0 kg');
+    expect(de.pct(-0.001)).toBe('0\u00a0%');
+    expect(en.compact(-0.04)).toBe('0');
+    expect(clockOf(-0.3)).toBe('0:00');
+  });
+
+  it('keep their sign when they do not', () => {
+    expect(de.temperature(-0.5)).toBe('-1 °C');
+    expect(de.num(-0.05, 1)).toBe('-0,1');
+    expect(de.pct(-0.006)).toBe('-1\u00a0%');
+    expect(clockOf(-0.6)).toBe('−0:01');
+    expect(de.signed(-0.04, 1)).toBe('±0,0');
   });
 });

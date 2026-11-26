@@ -81,6 +81,9 @@ function rtf(locale: string): Intl.RelativeTimeFormat {
 
 const two = (n: number) => (n < 10 ? `0${n}` : String(n));
 
+/** 0 for a value that shows as zero at `digits` decimals: Intl keeps the sign of -0.3 ("-0 °C"), zero has none. */
+const unsignedZero = (v: number, digits: number) => (Math.round(Math.abs(v) * 10 ** digits) === 0 ? 0 : v);
+
 /** 3725 → "1:02:05", 725 → "12:05" */
 export function clock(seconds: number): string {
   if (!Number.isFinite(seconds)) return '–';
@@ -88,14 +91,14 @@ export function clock(seconds: number): string {
   const h = Math.floor(s / 3600);
   const m = Math.floor((s % 3600) / 60);
   const sec = s % 60;
-  const sign = seconds < 0 ? '−' : '';
+  const sign = seconds < 0 && s > 0 ? '−' : '';
   return h > 0 ? `${sign}${h}:${two(m)}:${two(sec)}` : `${sign}${m}:${two(sec)}`;
 }
 
 export function createFormatter(units: Units, locale: string, lang: Lang) {
   const imperial = units === 'imperial';
   const num = (v: number, digits = 0) =>
-    nf(locale, { maximumFractionDigits: digits, minimumFractionDigits: digits }).format(v);
+    nf(locale, { maximumFractionDigits: digits, minimumFractionDigits: digits }).format(unsignedZero(v, digits));
 
   const distanceUnit = imperial ? 'mi' : 'km';
   const distanceValue = (m: number) => m / (imperial ? M_PER_MI : M_PER_KM);
@@ -107,9 +110,11 @@ export function createFormatter(units: Units, locale: string, lang: Lang) {
     lang,
     num,
     int: (v: number) => num(Math.round(v)),
-    compact: (v: number) => nf(locale, { notation: 'compact', maximumFractionDigits: 1 }).format(v),
+    compact: (v: number) => nf(locale, { notation: 'compact', maximumFractionDigits: 1 }).format(unsignedZero(v, 1)),
     pct: (fraction: number, digits = 0) =>
-      nf(locale, { style: 'percent', maximumFractionDigits: digits, minimumFractionDigits: digits }).format(fraction),
+      nf(locale, { style: 'percent', maximumFractionDigits: digits, minimumFractionDigits: digits }).format(
+        unsignedZero(fraction * 100, digits) === 0 ? 0 : fraction,
+      ),
     signed: (v: number, digits = 0) => {
       // decide the sign on the rounded value, so 0.04 → "±0.0" and not "+0.0"
       const r = Math.round(v * 10 ** digits) / 10 ** digits;
