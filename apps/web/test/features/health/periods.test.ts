@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { MetricPoint, MetricSeries } from '@cadence/shared';
-import { fillPeriods, periodKeys, periodStart, seriesKeys } from '@/features/health/lib/periods';
+import { fillPeriods, periodKeys, periodStart, periodValue, seriesKeys } from '@/features/health/lib/periods';
 
 const pt = (key: string, value: number, days = 1): MetricPoint => ({ key, value, min: null, max: null, n: 1, days });
 
@@ -53,5 +53,22 @@ describe('health period keys', () => {
     const series: Series = { agg: 'day', fromDay: null, toDay: null, points: [pt('2025-12-01', 1), pt('2025-12-04', 2)], categories: [] };
     expect(seriesKeys(series, 1)).toEqual(['2025-12-01', '2025-12-02', '2025-12-03', '2025-12-04']);
     expect(seriesKeys({ ...series, points: [] }, 1)).toEqual([]);
+  });
+});
+
+describe('health period values', () => {
+  it('shows the daily average or the total of a period', () => {
+    const week = pt('2025-12-01', 6000, 3);
+    expect(periodValue(week, 'week', 'average')).toBe(2000);
+    expect(periodValue(week, 'week', 'total')).toBe(6000);
+    expect(periodValue(week, 'day', 'average')).toBe(6000);
+    expect(periodValue({ ...week, value: 0, days: 0 }, 'week', 'average')).toBe(0);
+  });
+
+  it('counts events per period instead of events per day with events', () => {
+    // 3 + 3 notifications on Monday and Tuesday of one week
+    const week: MetricPoint = { key: '2025-12-01', value: 0, min: null, max: null, n: 6, days: 2 };
+    expect(periodValue(week, 'week', 'average', true)).toBe(6);
+    expect(periodValue(week, 'month', 'total', true)).toBe(6);
   });
 });

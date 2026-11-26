@@ -39,6 +39,16 @@ export function seriesKeys(series: Pick<MetricSeries, 'agg' | 'fromDay' | 'toDay
   return [...new Set([...keys, ...have])].sort();
 }
 
+/**
+ * Value of a period under the chosen mode: its total, or ('average', weeks and months) the daily average over its days
+ * with data. Events (category types without duration) always show how many there were: dividing by the days that had
+ * an event would make nearly every week "1".
+ */
+export function periodValue(p: MetricPoint, agg: MetricAgg, mode: 'average' | 'total', events = false): number {
+  if (events) return p.n;
+  return mode === 'average' && agg !== 'day' && p.days > 0 ? p.value / p.days : p.value;
+}
+
 /** One point per key; periods without data get a zero point (the true value of a cumulative measure). */
 export function fillPeriods(points: MetricPoint[], keys: string[]): MetricPoint[] {
   const byKey = new Map(points.map((p) => [p.key, p]));

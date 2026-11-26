@@ -14,7 +14,7 @@ import { numAxisLabel } from '../../lib/chart';
 import { stageColor } from '../../lib/sleep';
 import { identifierColor } from '../../lib/colors';
 import { useMetricFormat } from '../../lib/metrics';
-import { fillPeriods, seriesKeys } from '../../lib/periods';
+import { fillPeriods, periodValue, seriesKeys } from '../../lib/periods';
 import { TrendChart } from '../TrendChart';
 
 export type MetricMode = 'average' | 'total';
@@ -48,10 +48,6 @@ interface Props {
   mode: MetricMode;
   loading?: boolean;
 }
-
-/** value of a point under the chosen mode (daily average of the period instead of its total) */
-const shownValue = (p: MetricPoint, agg: MetricAgg, mode: MetricMode): number =>
-  mode === 'average' && agg !== 'day' && p.days > 0 ? p.value / p.days : p.value;
 
 /**
  * The chart of the metric page, chosen by the kind of data: cumulative measures as bars, discrete measures as a line with a
@@ -121,9 +117,7 @@ export function MetricChart({ series, mode, loading }: Props) {
       const byValue = all.map((c) => ({ c, byKey: new Map(c.points.map((p) => [p.key, p])) }));
       const valueOf = (c: { byKey: Map<string, MetricPoint> }, key: string): number => {
         const p = c.byKey.get(key);
-        if (!p) return 0;
-        const pt = isEvent ? { ...p, value: p.n } : p;
-        return shownValue(pt, agg, mode);
+        return p ? periodValue(p, agg, mode, isEvent) : 0;
       };
       const stackTotals = keys.map((k) => byValue.reduce((s, c) => s + valueOf(c, k), 0));
       const maxStack = Math.max(0, ...stackTotals);
@@ -162,7 +156,7 @@ export function MetricChart({ series, mode, loading }: Props) {
 
     // ---- cumulative measures: bars -------------------------------------------------------------------------
     const points = fillPeriods(series.points, keys);
-    const raw = points.map((p) => shownValue(p, agg, mode));
+    const raw = points.map((p) => periodValue(p, agg, mode));
     if (spec.duration) {
       const mins = raw.map((v) => (spec.duration === 'minutes' ? v : v / 60));
       const hours = Math.max(0, ...mins) >= 180;
@@ -289,11 +283,19 @@ export function MetricChart({ series, mode, loading }: Props) {
   return (
     <ChartCard
       title={`${t(titleKey)}${chart.axisUnit && !(chart.kind === 'category' && chart.isEvent) ? ` (${chart.axisUnit})` : ''}`}
-      subtitle={t(isCategory ? 'health.metric.chart.subtitleCat' : mode === 'average' && agg !== 'day' ? 'health.metric.chart.subtitleSumAvg' : 'health.metric.chart.subtitleSum')}
+      subtitle={t(
+        isEvent
+          ? 'health.metric.chart.subtitleEvents'
+          : isCategory
+            ? 'health.metric.chart.subtitleCat'
+            : mode === 'average' && agg !== 'day'
+              ? 'health.metric.chart.subtitleSumAvg'
+              : 'health.metric.chart.subtitleSum',
+      )}
       icon={BarChart3}
       table={hasData ? { columns, rows } : undefined}
       footer={
-        hasData && (isSum || isCategory) && mode === 'average' && agg !== 'day' ? <span>{t('health.metric.chart.perDayHint')}</span> : undefined
+        hasData && (isSum || isCategory) && !isEvent && mode === 'average' && agg !== 'day' ? <span>{t('health.metric.chart.perDayHint')}</span> : undefined
       }
     >
       {loading && !hasData ? (

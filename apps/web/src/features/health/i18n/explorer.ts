@@ -104,6 +104,7 @@ export const metric: Dictionary = {
       subtitleSumAvg: 'Each bar is the daily average of its period (total divided by days with data)',
       subtitleAvg: 'Mean of the daily means; the band spans the lowest to the highest sample',
       subtitleCat: 'Time per value',
+      subtitleEvents: 'Number of events in each period',
     },
     sources: {
       title: 'Sources',
@@ -180,6 +181,7 @@ export const metric: Dictionary = {
       subtitleSumAvg: 'Jeder Balken ist der Tagesdurchschnitt seines Zeitraums (Summe geteilt durch Tage mit Daten)',
       subtitleAvg: 'Mittelwert der Tagesmittel; das Band reicht vom niedrigsten bis zum höchsten Messwert',
       subtitleCat: 'Zeit je Wert',
+      subtitleEvents: 'Anzahl der Ereignisse je Zeitraum',
     },
     sources: {
       title: 'Quellen',

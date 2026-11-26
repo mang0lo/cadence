@@ -12,6 +12,7 @@ import { Badge, Button, Card, ErrorState, FilterBar, Page, PageHeader, Segmented
 import { useApi } from '@/lib/api';
 import { useFormat } from '@/lib/format';
 import { useI18n, useT } from '@/lib/i18n';
+import { diffDays } from '@/lib/time';
 import { DayNav } from '../components/DayNav';
 import { IntradayChart } from '../components/IntradayChart';
 import { useDayLabel } from '../components/MetricCard';
@@ -63,6 +64,9 @@ export default function MetricPage() {
 
   const stats = s?.stats;
   const parts = (v: number | null | undefined) => m.parts(identifier, v ?? undefined, unit);
+  // events per calendar day of the range (per day that had an event would be about 1)
+  const rangeDays = s?.fromDay && s.toDay ? diffDays(s.fromDay, s.toDay) + 1 : 0;
+  const eventsPerDay = stats && rangeDays > 0 ? stats.samples / rangeDays : 0;
 
   return (
     <Page>
@@ -139,7 +143,7 @@ export default function MetricPage() {
                     <Stat
                       size="sm"
                       label={`${t('health.metric.stats.average')} (${t('health.metric.stats.perDay')})`}
-                      value={isEvent ? fmt.num(stats.days ? stats.samples / stats.days : 0, 1) : parts(stats.mean).value}
+                      value={isEvent ? fmt.num(eventsPerDay, eventsPerDay > 0 && eventsPerDay < 1 ? 2 : 1) : parts(stats.mean).value}
                       unit={isEvent ? '' : parts(stats.mean).unit}
                     />
                     {!isEvent && <Stat size="sm" label={t('health.metric.stats.median')} value={parts(stats.median).value} unit={parts(stats.median).unit} />}
