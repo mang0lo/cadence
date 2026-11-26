@@ -23,7 +23,8 @@ import { useI18n, useT } from '@/lib/i18n';
 import { SportIcon, sortSports, sportColorVar, useSportLabel } from '@/lib/sports';
 import { useStoredState } from '@/lib/storage';
 import { TrendSparkline } from '../components/TrendSparkline';
-import { kindLabel, routeTitle, trendChange } from '../lib/routeName';
+import { dateHint } from '../lib/dates';
+import { activeRouteSport, kindLabel, routeTitle, trendChange } from '../lib/routeName';
 
 type SortKey = 'count' | 'recent' | 'distance' | 'improved';
 const PAGE_SIZE = 48;
@@ -44,8 +45,9 @@ function sortRoutes(items: MapsRouteSummary[], sort: SortKey): MapsRouteSummary[
 
 export default function RoutesPage() {
   const t = useT();
+  const fmt = useFormat();
   const sportLabel = useSportLabel();
-  const [sport, setSport] = useState<string>('all');
+  const [picked, setSport] = useState<string>('all');
   const [min, setMin] = useStoredState<'2' | '3' | '5'>('maps.routes.min', '2');
   const [sort, setSort] = useStoredState<SortKey>('maps.routes.sort', 'count');
   const [shown, setShown] = useState(PAGE_SIZE);
@@ -53,6 +55,8 @@ export default function RoutesPage() {
   const q = useApi<MapsRoutesResponse>(['maps', 'routes'], '/maps/routes', { min: Number(min) });
   const data = q.data;
   const sports = useMemo(() => sortSports((data?.sports ?? []).map((s) => s.sport)), [data]);
+  // the sport counts follow the minimum: a sport without routes at a higher minimum stops filtering
+  const sport = activeRouteSport(picked, sports);
   const items = useMemo(() => {
     const list = (data?.items ?? []).filter((r) => sport === 'all' || r.sport === sport);
     return sortRoutes(list, sort);
@@ -116,11 +120,28 @@ export default function RoutesPage() {
 
       {data && items.length === 0 && (
         <Card>
-          <EmptyState
-            icon={RouteIcon}
-            title={t('maps.routes.empty')}
-            description={t('maps.routes.emptyHint')}
-          />
+          {min === '2' ? (
+            <EmptyState
+              icon={RouteIcon}
+              title={t('maps.routes.empty')}
+              description={t('maps.routes.emptyHint')}
+            />
+          ) : (
+            <EmptyState
+              icon={RouteIcon}
+              title={t('maps.routes.noneAtMin', { min })}
+              action={
+                <Button
+                  onClick={() => {
+                    setMin('2');
+                    setShown(PAGE_SIZE);
+                  }}
+                >
+                  {t('maps.routes.showFromTwice')}
+                </Button>
+              }
+            />
+          )}
         </Card>
       )}
 
@@ -136,7 +157,7 @@ export default function RoutesPage() {
           {items.length > shown && (
             <div className="mt-5 flex justify-center">
               <Button onClick={() => setShown((n) => n + PAGE_SIZE)}>
-                {t('maps.routes.showMore', { count: items.length - shown })}
+                {t('maps.routes.showMore', { count: fmt.int(items.length - shown) })}
               </Button>
             </div>
           )}
@@ -239,7 +260,7 @@ function RouteCard({ route: r }: { route: MapsRouteSummary }) {
           <Stat3
             label={t('maps.routes.latest')}
             value={fmt.duration(r.latestTimeS)}
-            hint={fmt.date(r.lastTs, r.lastTzMin, 'dayShort')}
+            hint={dateHint(fmt, r.lastTs, r.lastTzMin)}
           />
         </dl>
       </div>

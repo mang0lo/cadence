@@ -5,15 +5,15 @@ export const messages: Dictionary = {
   en: {
     whatsNew: {
       title: 'Maps',
-      tiles: { one: '{count} new explorer tile', other: '{count} new explorer tiles' },
-      squadratinhos: { one: '{count} new at zoom 17', other: '{count} new at zoom 17' },
+      tiles: { one: '{n} new explorer tile', other: '{n} new explorer tiles' },
+      squadratinhos: { one: '{n} new at zoom 17', other: '{n} new at zoom 17' },
       newRoute: 'New recurring route:',
-      efforts: { one: '{count} effort', other: '{count} efforts' },
+      efforts: { one: '{n} effort', other: '{n} efforts' },
       routeBest: 'Best time on',
       faster: '{time} faster',
       segmentPr: 'Segment PR on',
-      segmentEfforts: { one: '{count} segment effort', other: '{count} segment efforts' },
-      onSegments: { one: 'on {count} segment', other: 'on {count} segments' },
+      segmentEfforts: { one: '{n} segment effort', other: '{n} segment efforts' },
+      onSegments: { one: 'on {n} segment', other: 'on {n} segments' },
     },
     nav: {
       heatmap: 'Heatmap',
@@ -32,6 +32,7 @@ export const messages: Dictionary = {
     },
     heatmap: {
       subtitle: 'All your routes on one map. Streets you use often glow brighter.',
+      activities: { one: '{n} activity', other: '{n} activities' },
       timelapse: 'Time-lapse',
       period: 'Period',
       colors: 'Colors',
@@ -63,9 +64,9 @@ export const messages: Dictionary = {
       stats: {
         tiles: 'Visited tiles',
         maxSquare: 'Max square',
-        maxSquareHint: '{count} tiles in one block',
+        maxSquareHint: { one: '{n} tile in one block', other: '{n} tiles in one block' },
         maxCluster: 'Max cluster',
-        maxClusterHint: '{count} tiles with all neighbours',
+        maxClusterHint: { one: '{n} tile with all neighbours', other: '{n} tiles with all neighbours' },
         maxClusterHelp:
           'A cluster is a connected group of visited tiles that all have a visited tile on all four sides (north, east, south, west).',
         newThisMonth: 'New this month',
@@ -75,14 +76,14 @@ export const messages: Dictionary = {
       legend: { visits: 'Visits per tile', first: 'First visit' },
       next: {
         text: {
-          one: 'Visit {count} more tile to reach a {size} × {size} square.',
-          other: 'Visit {count} more tiles to reach a {size} × {size} square.',
+          one: 'Visit {n} more tile to reach a {size} × {size} square.',
+          other: 'Visit {n} more tiles to reach a {size} × {size} square.',
         },
         show: 'Show on map',
       },
       detailHint: 'Zoom in to see the detail tiles.',
       firstVisit: 'First visit',
-      visitsCount: { one: '{count} visit', other: '{count} visits' },
+      visitsCount: { one: '{n} visit', other: '{n} visits' },
       openFirst: 'Open first activity',
       charts: {
         newPerMonth: 'New tiles per month',
@@ -114,6 +115,8 @@ export const messages: Dictionary = {
       latest: 'Latest',
       showMore: 'Show {count} more',
       empty: 'No repeated routes yet',
+      noneAtMin: 'No route done at least {min} times yet.',
+      showFromTwice: 'Show routes done twice or more',
       emptyHint:
         'A route shows up here once you have followed the same course at least twice (same start, same finish, same path).',
       notFound: 'Route not found',
@@ -136,7 +139,7 @@ export const messages: Dictionary = {
       rankBest: 'Best',
       rankN: 'Rank {rank}',
       efforts: 'Efforts',
-      effortsSubtitle: { one: '{count} effort', other: '{count} efforts' },
+      effortsSubtitle: { one: '{n} effort', other: '{n} efforts' },
       showAllEfforts: 'Show all {count}',
     },
     segments: {
@@ -198,13 +201,12 @@ export const messages: Dictionary = {
       title: 'Route & segments',
       subtitle: 'How this activity ranks on your courses',
       createSegment: 'Create segment',
-      routeDone: { one: 'Done once', other: 'Done {count} times' },
+      routeDone: { one: 'Done once', other: 'Done {n} times' },
       best: 'best {time}',
       routeBest: 'Fastest on this route',
       rank: '#{rank} of {count}',
       segment: 'Segment',
       time: 'Time',
-      pace: 'Pace',
       hr: 'Avg HR',
       rankCol: 'Rank',
       pr: 'PR',
@@ -214,15 +216,15 @@ export const messages: Dictionary = {
   de: {
     whatsNew: {
       title: 'Karten',
-      tiles: { one: '{count} neue Explorer-Kachel', other: '{count} neue Explorer-Kacheln' },
-      squadratinhos: { one: '{count} neu bei Zoom 17', other: '{count} neu bei Zoom 17' },
+      tiles: { one: '{n} neue Explorer-Kachel', other: '{n} neue Explorer-Kacheln' },
+      squadratinhos: { one: '{n} neu bei Zoom 17', other: '{n} neu bei Zoom 17' },
       newRoute: 'Neue wiederkehrende Strecke:',
-      efforts: { one: '{count}-mal', other: '{count}-mal' },
+      efforts: { one: '{n}-mal', other: '{n}-mal' },
       routeBest: 'Bestzeit auf',
       faster: '{time} schneller',
       segmentPr: 'Segment-Bestzeit auf',
-      segmentEfforts: { one: '{count} Segment-Versuch', other: '{count} Segment-Versuche' },
-      onSegments: { one: 'auf {count} Segment', other: 'auf {count} Segmenten' },
+      segmentEfforts: { one: '{n} Segment-Versuch', other: '{n} Segment-Versuche' },
+      onSegments: { one: 'auf {n} Segment', other: 'auf {n} Segmenten' },
     },
     nav: {
       heatmap: 'Heatmap',
@@ -241,6 +243,7 @@ export const messages: Dictionary = {
     },
     heatmap: {
       subtitle: 'Alle deine Strecken auf einer Karte. Häufig genutzte Straßen leuchten heller.',
+      activities: { one: '{n} Aktivität', other: '{n} Aktivitäten' },
       timelapse: 'Zeitraffer',
       period: 'Zeitraum',
       colors: 'Farben',
@@ -273,9 +276,9 @@ export const messages: Dictionary = {
       stats: {
         tiles: 'Besuchte Kacheln',
         maxSquare: 'Max. Quadrat',
-        maxSquareHint: '{count} Kacheln in einem Block',
+        maxSquareHint: { one: '{n} Kachel in einem Block', other: '{n} Kacheln in einem Block' },
         maxCluster: 'Max. Cluster',
-        maxClusterHint: '{count} Kacheln mit allen Nachbarn',
+        maxClusterHint: { one: '{n} Kachel mit allen Nachbarn', other: '{n} Kacheln mit allen Nachbarn' },
         maxClusterHelp:
           'Ein Cluster ist eine zusammenhängende Gruppe besuchter Kacheln, bei denen auf allen vier Seiten (Nord, Ost, Süd, West) ebenfalls eine besuchte Kachel liegt.',
         newThisMonth: 'Neu in diesem Monat',
@@ -285,14 +288,14 @@ export const messages: Dictionary = {
       legend: { visits: 'Besuche pro Kachel', first: 'Erster Besuch' },
       next: {
         text: {
-          one: 'Besuche noch {count} Kachel für ein {size} × {size}-Quadrat.',
-          other: 'Besuche noch {count} Kacheln für ein {size} × {size}-Quadrat.',
+          one: 'Besuche noch {n} Kachel für ein {size} × {size}-Quadrat.',
+          other: 'Besuche noch {n} Kacheln für ein {size} × {size}-Quadrat.',
         },
         show: 'Auf Karte zeigen',
       },
       detailHint: 'Zoome hinein, um die Detailkacheln zu sehen.',
       firstVisit: 'Erster Besuch',
-      visitsCount: { one: '{count} Besuch', other: '{count} Besuche' },
+      visitsCount: { one: '{n} Besuch', other: '{n} Besuche' },
       openFirst: 'Erste Aktivität öffnen',
       charts: {
         newPerMonth: 'Neue Kacheln pro Monat',
@@ -330,6 +333,8 @@ export const messages: Dictionary = {
       latest: 'Letzte',
       showMore: '{count} weitere anzeigen',
       empty: 'Noch keine wiederholten Strecken',
+      noneAtMin: 'Noch keine Strecke, die du mindestens {min}-mal gemacht hast.',
+      showFromTwice: 'Strecken ab zwei Durchgängen zeigen',
       emptyHint:
         'Eine Strecke erscheint hier, sobald du denselben Kurs mindestens zweimal gemacht hast (gleicher Start, gleiches Ziel, gleicher Verlauf).',
       notFound: 'Strecke nicht gefunden',
@@ -352,7 +357,7 @@ export const messages: Dictionary = {
       rankBest: 'Beste',
       rankN: 'Rang {rank}',
       efforts: 'Durchgänge',
-      effortsSubtitle: { one: '{count} Durchgang', other: '{count} Durchgänge' },
+      effortsSubtitle: { one: '{n} Durchgang', other: '{n} Durchgänge' },
       showAllEfforts: 'Alle {count} anzeigen',
     },
     segments: {
@@ -417,13 +422,12 @@ export const messages: Dictionary = {
       title: 'Strecke & Segmente',
       subtitle: 'So schneidet diese Aktivität auf deinen Strecken ab',
       createSegment: 'Segment erstellen',
-      routeDone: { one: 'Einmal absolviert', other: '{count}-mal absolviert' },
+      routeDone: { one: 'Einmal absolviert', other: '{n}-mal absolviert' },
       best: 'Bestzeit {time}',
       routeBest: 'Schnellste auf dieser Strecke',
       rank: 'Platz {rank} von {count}',
       segment: 'Segment',
       time: 'Zeit',
-      pace: 'Pace',
       hr: 'Ø HF',
       rankCol: 'Platz',
       pr: 'PR',

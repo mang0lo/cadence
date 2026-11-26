@@ -10,6 +10,8 @@ import { Badge, Card, CardHeader, Delta, ErrorState, Skeleton, Stat, Table, TD, 
 import { useApi } from '@/lib/api';
 import { useFormat } from '@/lib/format';
 import { useI18n, useT } from '@/lib/i18n';
+import { countVars } from './lib/counts';
+import { speedLabelKey } from './lib/effortSort';
 import { routeTitle } from './lib/routeName';
 
 /** Explorer tiles at a glance: visited tiles, max square and the tiles that are new this month. */
@@ -58,7 +60,7 @@ export function ExplorerWidget() {
         <Stat
           label={t('maps.explorer.stats.maxSquare')}
           value={d.maxSquare ? `${d.maxSquare} × ${d.maxSquare}` : '–'}
-          hint={d.maxSquare ? t('maps.explorer.stats.maxSquareHint', { count: d.maxSquare ** 2 }) : undefined}
+          hint={d.maxSquare ? t('maps.explorer.stats.maxSquareHint', countVars(fmt, d.maxSquare ** 2)) : undefined}
           size="md"
         />
         <Stat
@@ -113,12 +115,12 @@ export function WorkoutMapsCard({ workoutId, sport }: { workoutId: number; sport
               {routeTitle({ ...r, startLat: null, startLon: null }, t, fmt, lang)}
             </span>
             <span className="block text-xs text-fg-3">
-              {t('maps.workoutCard.routeDone', { count: r.count })} · {t('maps.workoutCard.best', { time: fmt.duration(r.bestTimeS) })}
+              {t('maps.workoutCard.routeDone', countVars(fmt, r.count))} · {t('maps.workoutCard.best', { time: fmt.duration(r.bestTimeS) })}
             </span>
           </span>
           {r.rank !== null && r.count > 1 && (
             <Badge tone={r.rank === 1 ? 'accent' : 'neutral'} icon={r.rank === 1 ? Trophy : undefined}>
-              {r.rank === 1 ? t('maps.workoutCard.routeBest') : t('maps.workoutCard.rank', { rank: r.rank, count: r.count })}
+              {r.rank === 1 ? t('maps.workoutCard.routeBest') : t('maps.workoutCard.rank', { rank: fmt.int(r.rank), count: fmt.int(r.count) })}
             </Badge>
           )}
         </Link>
@@ -129,7 +131,7 @@ export function WorkoutMapsCard({ workoutId, sport }: { workoutId: number; sport
             <tr>
               <TH>{t('maps.workoutCard.segment')}</TH>
               <TH numeric>{t('maps.workoutCard.time')}</TH>
-              <TH numeric>{t('maps.workoutCard.pace')}</TH>
+              <TH numeric>{t(speedLabelKey(sport))}</TH>
               <TH numeric>{t('maps.workoutCard.hr')}</TH>
               <TH numeric>{t('maps.workoutCard.rankCol')}</TH>
             </tr>
@@ -156,7 +158,7 @@ export function WorkoutMapsCard({ workoutId, sport }: { workoutId: number; sport
                       {t('maps.workoutCard.pr')}
                     </Badge>
                   ) : (
-                    t('maps.workoutCard.rank', { rank: e.rank, count: e.efforts })
+                    t('maps.workoutCard.rank', { rank: fmt.int(e.rank), count: fmt.int(e.efforts) })
                   )}
                 </TD>
               </tr>

@@ -2,12 +2,16 @@ import type { ExpressionSpecification, GeoJSONSource, Map as MapLibreMap } from 
 import type { Feature, FeatureCollection, LineString, Point } from 'geojson';
 import { decodePolylineParts } from '@/lib/polyline';
 import { homeRegion, type BBox } from './home';
+import { firstSymbolLayer } from './layerOrder';
 import type { MapsHeatmapActivity } from '@cadence/shared';
 
 export type HeatTheme = 'hot' | 'blue' | 'purple';
 export type HeatBase = 'dark' | 'satellite' | 'streets';
 
-/** A decoded route ready for the map. `i` = chronological index (the time-lapse key). */
+/**
+ * A decoded route ready for the map. `i` = chronological index among the drawable routes (0, 1, 2 … without gaps):
+ * the time-lapse key and the map feature id.
+ */
 export interface HeatLine {
   id: number;
   i: number;
@@ -97,9 +101,10 @@ export const heatPalette = (theme: HeatTheme, darkBase: boolean): HeatPalette =>
 /** Decode the API polylines into map lines (lon/lat order) with cumulative lengths. */
 export function toHeatLines(items: MapsHeatmapActivity[]): HeatLine[] {
   const out: HeatLine[] = [];
-  items.forEach((a, i) => {
+  items.forEach((a) => {
     const parts = decodePolylineParts(a.polyline).filter((p) => p.length > 1);
     if (!parts.length) return;
+    const i = out.length; // an item without a drawable route leaves no gap
     const coords: [number, number][] = [];
     const starts: number[] = [];
     for (const p of parts) {
@@ -171,29 +176,72 @@ export function linesCollection(lines: HeatLine[]): FeatureCollection<LineString
   };
 }
 
+/** Input of the density layer (see densityPoints). */
+export interface DensityData {
+  /** One point per cell: `k` = its index (the feature id), `w` = number of route points summed into it. */
+  points: FeatureCollection<Point>;
+  /** Most different routes through one ~100 m cell (normalises the intensity). */
+  maxPasses: number;
+  /**
+   * The points each activity adds, for the time-lapse: activity `i` (line index) adds `counts[j]` points to cell
+   * `cells[j]` for j in [start[i], start[i + 1]).
+   */
+  byLine: { start: Int32Array; cells: Int32Array; counts: Int32Array };
+}
+
 /**
- * Points along all routes for the density layer, roughly every `spacingM` meters. The spacing grows
- * automatically so that the total never exceeds `maxPoints`.
+ * Input of the density layer: points along all routes, roughly every `spacingM` meters (the spacing grows so that
+ * there are never more than `maxPoints`), summed per ~`cellM` grid cell into one point at their mean position with the
+ * count as weight `w`. The heatmap adds weights like points, so it looks the same, but routes that overlap (the
+ * streets around home) give one feature instead of one per pass: ~23× fewer features to send to the map worker.
  */
-export function densityPoints(
-  lines: HeatLine[],
-  spacingM = 40,
-  maxPoints = 250_000,
-): { points: FeatureCollection<Point>; maxPasses: number } {
+export function densityPoints(lines: HeatLine[], spacingM = 40, maxPoints = 250_000, cellM = 20): DensityData {
   const M_PER_DEG = 111_320;
   let totalM = 0;
   for (const l of lines) totalM += (l.cum[l.cum.length - 1] ?? 0) * M_PER_DEG;
   const step = Math.max(spacingM, totalM / maxPoints) / M_PER_DEG;
-  const features: Feature<Point>[] = [];
+  // grid of ~cellM square cells: rows of cellLat degrees, each row with its own longitude width
+  const cellLat = cellM / M_PER_DEG;
+  const half = Math.ceil(180 / cellLat) + 1;
+  // per cell key: sum of the positions, number of points, index (in insertion order = feature order)
+  const sums = new Map<number, { lon: number; lat: number; n: number; k: number }>();
   // number of different routes per ~100 m cell → normalisation of the density layer
   const cells = new Map<number, number>();
   let seen = new Set<number>();
+  // points of the current route per cell index (0 for the others) and the cells it touched → byLine
+  const own: number[] = [];
+  const touched: number[] = [];
+  const start: number[] = [];
+  const lineCells: number[] = [];
+  const lineCounts: number[] = [];
+  let lastRow = NaN;
+  let cellLon = cellLat;
   const push = (c: [number, number]) => {
-    features.push({ type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: c } });
+    const row = Math.floor(c[1] / cellLat);
+    if (row !== lastRow) {
+      lastRow = row;
+      cellLon = cellLat / Math.max(0.01, Math.cos(((row + 0.5) * cellLat * Math.PI) / 180));
+    }
+    const key = row * (2 * half + 1) + Math.floor(c[0] / cellLon) + half;
+    let sum = sums.get(key);
+    if (sum) {
+      sum.lon += c[0];
+      sum.lat += c[1];
+      sum.n++;
+    } else {
+      sum = { lon: c[0], lat: c[1], n: 1, k: sums.size };
+      sums.set(key, sum);
+    }
+    if (own[sum.k]) own[sum.k]!++;
+    else {
+      own[sum.k] = 1;
+      touched.push(sum.k);
+    }
     seen.add(Math.floor(c[0] / 0.0015) * 100_003 + Math.floor(c[1] / 0.001));
   };
   for (const l of lines) {
     seen = new Set();
+    start.push(lineCells.length);
     push(l.coords[0]!);
     let carry = 0; // distance travelled since the last emitted point
     for (let j = 1; j < l.coords.length; j++) {
@@ -210,10 +258,26 @@ export function densityPoints(
       carry = segLen - (pos - step);
     }
     for (const k of seen) cells.set(k, (cells.get(k) ?? 0) + 1);
+    for (const k of touched) {
+      lineCells.push(k);
+      lineCounts.push(own[k]!);
+      own[k] = 0;
+    }
+    touched.length = 0;
   }
+  start.push(lineCells.length);
   let maxPasses = 1;
   for (const n of cells.values()) if (n > maxPasses) maxPasses = n;
-  return { points: { type: 'FeatureCollection', features }, maxPasses };
+  const features: Feature<Point>[] = [];
+  for (const { lon, lat, n, k } of sums.values()) {
+    const coordinates = [lon / n, lat / n];
+    features.push({ type: 'Feature', properties: { k, w: n }, geometry: { type: 'Point', coordinates } });
+  }
+  return {
+    points: { type: 'FeatureCollection', features },
+    maxPasses,
+    byLine: { start: Int32Array.from(start), cells: Int32Array.from(lineCells), counts: Int32Array.from(lineCounts) },
+  };
 }
 
 const emptyLines: FeatureCollection<LineString> = { type: 'FeatureCollection', features: [] };
@@ -231,23 +295,35 @@ export const LAYER = {
 } as const;
 const SRC = { lines: 'hm-lines', head: 'hm-head', points: 'hm-points' } as const;
 
-/** Layers that show finished activities (they share the time-lapse filter). */
-const LINE_LAYERS = [LAYER.glow, LAYER.mid, LAYER.core, LAYER.hot, LAYER.hit];
+/**
+ * Opacity of a finished-activities layer: 0 while the time-lapse hides the activity (feature state 'hidden', see
+ * LapseVisibility). Feature state changes repaint the affected features; a filter change would re-tile the whole
+ * source in the worker, on every frame of the time-lapse.
+ */
+const lapseOpacity = (opacity: number): ExpressionSpecification =>
+  ['case', ['boolean', ['feature-state', 'hidden'], false], 0, opacity] as unknown as ExpressionSpecification;
+
+/** Weight of a density cell: its number of route points … */
+const DENSITY_WEIGHT = ['get', 'w'] as unknown as ExpressionSpecification;
+/** … and during the time-lapse only those of the finished activities (feature state `n`, see LapseDensity). */
+const LAPSE_DENSITY_WEIGHT = ['number', ['feature-state', 'n'], 0] as unknown as ExpressionSpecification;
 
 const zoomWidth = (a: number, b: number, c: number): ExpressionSpecification =>
   ['interpolate', ['linear'], ['zoom'], 8, a, 12, b, 16, c] as unknown as ExpressionSpecification;
 
-/** First symbol (label) layer of the basemap – the glow is inserted below it so labels stay readable. */
-function firstSymbolLayer(map: MapLibreMap): string | undefined {
-  return map.getStyle().layers.find((l) => l.type === 'symbol')?.id;
-}
-
-/** Create the sources and layers (idempotent – call again after every basemap style switch). */
+/**
+ * Create the sources and layers (idempotent – call again after every basemap style switch). Cheap once they exist:
+ * the time-lapse calls it on every frame.
+ */
 export function ensureHeatLayers(map: MapLibreMap, palette: HeatPalette): void {
+  if (map.getLayer(LAYER.hit)) return; // added last: everything exists
+  // the glow goes below the basemap labels so they stay readable
   const before = firstSymbolLayer(map);
-  if (!map.getSource(SRC.lines)) map.addSource(SRC.lines, { type: 'geojson', data: emptyLines });
+  // feature id = chronological index `i`: the time-lapse hides activities through feature state
+  if (!map.getSource(SRC.lines)) map.addSource(SRC.lines, { type: 'geojson', data: emptyLines, promoteId: 'i' });
   if (!map.getSource(SRC.head)) map.addSource(SRC.head, { type: 'geojson', data: emptyLines });
-  if (!map.getSource(SRC.points)) map.addSource(SRC.points, { type: 'geojson', data: emptyPoints });
+  // feature id = cell index `k`: the time-lapse weighs the cells through feature state
+  if (!map.getSource(SRC.points)) map.addSource(SRC.points, { type: 'geojson', data: emptyPoints, promoteId: 'k' });
   const s = palette.strength;
   const line = (id: string, source: string, paint: Record<string, unknown>): void => {
     if (map.getLayer(id)) return;
@@ -270,7 +346,8 @@ export function ensureHeatLayers(map: MapLibreMap, palette: HeatPalette): void {
         source: SRC.points,
         layout: { visibility: 'none' },
         paint: {
-          'heatmap-weight': 1,
+          // points of the same ~20 m cell are summed into one (densityPoints)
+          'heatmap-weight': DENSITY_WEIGHT,
           'heatmap-intensity': 0.01,
           'heatmap-radius': [
             'interpolate',
@@ -295,23 +372,23 @@ export function ensureHeatLayers(map: MapLibreMap, palette: HeatPalette): void {
     'line-color': palette.glow,
     'line-width': zoomWidth(5, 9, 18),
     'line-blur': zoomWidth(4, 7, 12),
-    'line-opacity': Math.min(1, 0.07 * s),
+    'line-opacity': lapseOpacity(Math.min(1, 0.07 * s)),
   });
   line(LAYER.mid, SRC.lines, {
     'line-color': palette.mid,
     'line-width': zoomWidth(2.2, 3.4, 6),
     'line-blur': 1.5,
-    'line-opacity': Math.min(1, 0.14 * s),
+    'line-opacity': lapseOpacity(Math.min(1, 0.14 * s)),
   });
   line(LAYER.core, SRC.lines, {
     'line-color': palette.core,
     'line-width': zoomWidth(0.9, 1.4, 2.6),
-    'line-opacity': Math.min(1, 0.22 * s),
+    'line-opacity': lapseOpacity(Math.min(1, 0.22 * s)),
   });
   line(LAYER.hot, SRC.lines, {
     'line-color': palette.hot,
     'line-width': zoomWidth(0.5, 0.8, 1.4),
-    'line-opacity': Math.min(1, 0.3 * s),
+    'line-opacity': lapseOpacity(Math.min(1, 0.3 * s)),
   });
   // the activity currently being drawn by the time-lapse
   line(LAYER.headGlow, SRC.head, {
@@ -372,13 +449,13 @@ export function applyHeatPalette(map: MapLibreMap, palette: HeatPalette): void {
   if (!map.getLayer(LAYER.glow)) return;
   const s = palette.strength;
   map.setPaintProperty(LAYER.glow, 'line-color', palette.glow);
-  map.setPaintProperty(LAYER.glow, 'line-opacity', Math.min(1, 0.07 * s));
+  map.setPaintProperty(LAYER.glow, 'line-opacity', lapseOpacity(Math.min(1, 0.07 * s)));
   map.setPaintProperty(LAYER.mid, 'line-color', palette.mid);
-  map.setPaintProperty(LAYER.mid, 'line-opacity', Math.min(1, 0.14 * s));
+  map.setPaintProperty(LAYER.mid, 'line-opacity', lapseOpacity(Math.min(1, 0.14 * s)));
   map.setPaintProperty(LAYER.core, 'line-color', palette.core);
-  map.setPaintProperty(LAYER.core, 'line-opacity', Math.min(1, 0.22 * s));
+  map.setPaintProperty(LAYER.core, 'line-opacity', lapseOpacity(Math.min(1, 0.22 * s)));
   map.setPaintProperty(LAYER.hot, 'line-color', palette.hot);
-  map.setPaintProperty(LAYER.hot, 'line-opacity', Math.min(1, 0.3 * s));
+  map.setPaintProperty(LAYER.hot, 'line-opacity', lapseOpacity(Math.min(1, 0.3 * s)));
   map.setPaintProperty(LAYER.headGlow, 'line-color', palette.core);
   map.setPaintProperty(LAYER.head, 'line-color', palette.hot);
   map.setPaintProperty(LAYER.density, 'heatmap-color', densityRamp(palette));
@@ -401,10 +478,133 @@ export function setHeadLine(map: MapLibreMap, lines: [number, number][][] | null
   });
 }
 
-/** Show only the first `k` activities (time-lapse) or all of them (`null`). */
-export function setLapseFilter(map: MapLibreMap, k: number | null): void {
-  const filter = k === null ? null : (['<', ['get', 'i'], k] as unknown as ExpressionSpecification);
-  for (const id of LINE_LAYERS) if (map.getLayer(id)) map.setFilter(id, filter);
+/**
+ * Which activities the time-lapse shows: the first `done` (by `i`), or all. The others carry the feature state
+ * `hidden` (see lapseOpacity). Only the activities whose visibility changes are touched, so a frame that finishes one
+ * activity is one feature-state update instead of a filter change that re-tiles every line.
+ */
+export class LapseVisibility {
+  /** The lines source the state was set on, and the ids hidden there: [from, to). */
+  private hidden: { source: unknown; from: number; to: number } | null = null;
+
+  /**
+   * Show the first `done` of the `total` activities (null: all of them). Feature state outlives setData, so new data
+   * only changes the ids whose visibility differs (ids are positions); a new source (after a style switch) has none.
+   */
+  apply(map: MapLibreMap, done: number | null, total: number): void {
+    const source = map.getSource(SRC.lines);
+    if (!source) return;
+    const prev = this.hidden?.source === source ? this.hidden : { from: 0, to: 0 };
+    const from = done === null ? 0 : Math.min(done, total);
+    const to = done === null ? 0 : total;
+    const set = (a: number, b: number, hidden: boolean) => {
+      for (let i = a; i < b; i++) map.setFeatureState({ source: SRC.lines, id: i }, { hidden });
+    };
+    // hide what is new in [from, to), show what left it: explicit states, no removeFeatureState (MapLibre keeps
+    // state changes queued before a full removal when another state is set in the same frame)
+    set(from, Math.min(to, prev.from), true);
+    set(Math.max(from, prev.to), to, true);
+    set(prev.from, Math.min(prev.to, from), false);
+    set(Math.max(prev.from, to), prev.to, false);
+    this.hidden = { source, from, to };
+  }
+}
+
+/**
+ * A time-lapse position in activities (2.5: two finished, the third half drawn) as the number of finished activities
+ * and the drawn fraction of the next one.
+ */
+export function lapseAt(progress: number, count: number): { done: number; frac: number } {
+  const done = Math.max(0, Math.min(count, Math.floor(progress)));
+  return { done, frac: done < count ? Math.max(0, progress - done) : 0 };
+}
+
+interface LapseDensityState {
+  source: unknown;
+  lapse: boolean;
+  data: DensityData | null;
+  done: number;
+  n: Map<number, number>;
+}
+
+/**
+ * The density layer during the time-lapse: a cell weighs only the points of the finished activities (feature state
+ * `n`), which changes for the cells of each activity that finishes or is scrubbed back. Off, the layer weighs all
+ * points again (`w`); the state stays for the next time-lapse.
+ */
+export class LapseDensity {
+  /** The points source, whether its weight reads the state, and the state there: data, finished count, `n` per cell. */
+  private applied: LapseDensityState | null = null;
+
+  /** Weigh the cells by the first `done` activities of `data` (null: off, or no density shown). */
+  apply(map: MapLibreMap, data: DensityData | null, done: number | null): void {
+    const source = map.getSource(SRC.points);
+    if (!source || !map.getLayer(LAYER.density)) return;
+    // a new source (style switch) comes with a new layer, weighing all points, and without state
+    const a: LapseDensityState =
+      this.applied?.source === source ? this.applied : { source, lapse: false, data: null, done: 0, n: new Map() };
+    const lapse = done !== null && data !== null;
+    if (lapse !== a.lapse)
+      map.setPaintProperty(LAYER.density, 'heatmap-weight', lapse ? LAPSE_DENSITY_WEIGHT : DENSITY_WEIGHT);
+    if (!lapse) {
+      this.applied = { ...a, lapse };
+      return;
+    }
+    const to = Math.min(done, data.byLine.start.length - 1);
+    if (a.lapse && a.data === data && a.done === to) return;
+    const { n } = a;
+    const changed = new Set<number>();
+    const add = (line: number, sign: number) => {
+      const { start, cells, counts } = data.byLine;
+      for (let j = start[line]!; j < start[line + 1]!; j++) {
+        n.set(cells[j]!, (n.get(cells[j]!) ?? 0) + sign * counts[j]!);
+        changed.add(cells[j]!);
+      }
+    };
+    if (a.data === data) {
+      for (let i = a.done; i < to; i++) add(i, 1);
+      for (let i = to; i < a.done; i++) add(i, -1);
+    } else {
+      // other data on the same source: the cell ids mean other cells now
+      for (const k of n.keys()) {
+        n.set(k, 0);
+        changed.add(k);
+      }
+      for (let i = 0; i < to; i++) add(i, 1);
+    }
+    for (const k of changed) {
+      const v = n.get(k)!;
+      map.setFeatureState({ source: SRC.points, id: k }, { n: v });
+      if (v === 0) n.delete(k);
+    }
+    this.applied = { source, lapse, data, done: to, n };
+  }
+}
+
+/**
+ * Draws the time-lapse at a position (see lapseAt; null: off, every activity shown): the finished activities
+ * (LapseVisibility, and their density with LapseDensity) and the head, the part of the next activity drawn so far. A
+ * frame changes the head, plus feature states when an activity finishes; nothing is sent again that the map shows.
+ */
+export class LapseDrawer {
+  private visibility = new LapseVisibility();
+  private density = new LapseDensity();
+  /** The head source last drawn to, and whether it shows a line there. */
+  private head: { source: unknown; line: boolean } | null = null;
+
+  /** `density`: the data of the density layer while it is shown. */
+  draw(map: MapLibreMap, lines: HeatLine[], progress: number | null, density: DensityData | null = null): void {
+    const at = progress === null ? null : lapseAt(progress, lines.length);
+    this.visibility.apply(map, at ? at.done : null, lines.length);
+    this.density.apply(map, density, at ? at.done : null);
+    const line = at && at.frac > 0 ? lines[at.done] : undefined;
+    const head = line && at ? partialCoords(line, at.frac) : null;
+    const source = map.getSource(SRC.head);
+    if (!source) return;
+    if (!head && this.head?.source === source && !this.head.line) return;
+    setHeadLine(map, head);
+    this.head = { source, line: !!head };
+  }
 }
 
 export function setDensityVisible(map: MapLibreMap, visible: boolean): void {

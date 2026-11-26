@@ -36,5 +36,12 @@ export function trendChange(trend: number[]): number | null {
   return first > 0 ? last / first - 1 : null;
 }
 
+/**
+ * The sport the routes list filters by: the picked one while it has routes at the chosen minimum, else all sports. A
+ * sport without routes there has no chip to show or clear it, and its filter would leave the list empty.
+ */
+export const activeRouteSport = (picked: string, sports: string[]): string =>
+  picked !== 'all' && sports.includes(picked) ? picked : 'all';
+
 export const kindLabel = (kind: MapsRouteSummary['kind'], t: TFunction): string =>
   t(`maps.routes.kind.${kind}`);
