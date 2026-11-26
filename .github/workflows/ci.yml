@@ -34,6 +34,9 @@ jobs:
           file: deploy/Dockerfile
           push: false
           tags: cadence:ci
+          # npm ci and the build are reused while nothing they depend on changed
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
   # Linux and Windows desktop app (Electron): package it, start the packaged app once (smoke test: the bundled server
   # must come up and the UI render), keep the installers as artifacts of the run for a few days. The build and the
@@ -61,6 +64,16 @@ jobs:
         with:
           node-version: 26
           cache: npm
+      # the Electron runtime and tools (NSIS, AppImage, winCodeSign) that electron-builder downloads for packaging
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/electron
+            ~/.cache/electron-builder
+            ~/AppData/Local/electron/Cache
+            ~/AppData/Local/electron-builder/Cache
+          key: electron-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: electron-${{ runner.os }}-
       - run: npm ci --no-audit --no-fund
       - run: npm run ${{ matrix.dist }}
       - name: Smoke test (Linux)
