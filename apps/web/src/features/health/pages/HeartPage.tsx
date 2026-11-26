@@ -36,20 +36,13 @@ import { IntradayChart } from '../components/IntradayChart';
 import { RangeSelect } from '../components/RangeSelect';
 import { TrendChart } from '../components/TrendChart';
 import { measureColor } from '../lib/colors';
-import { useDaily, useRange } from '../lib/hooks';
+import { useDaily, useHeartMetrics, useRange } from '../lib/hooks';
+import { HK } from '../lib/identifiers';
 import { useMetricFormat } from '../lib/metrics';
 import { toPoints } from '../lib/series';
 
-const WHR = 'HKQuantityTypeIdentifierWalkingHeartRateAverage';
-/** Apple's identifiers; the server says whether to show COROS' instead (Settings → My watch). */
-const APPLE = {
-  restingHr: 'HKQuantityTypeIdentifierRestingHeartRate',
-  hrv: 'HKQuantityTypeIdentifierHeartRateVariabilitySDNN',
-  vo2max: 'HKQuantityTypeIdentifierVO2Max',
-  steps: 'HKQuantityTypeIdentifierStepCount',
-  heartRate: 'HKQuantityTypeIdentifierHeartRate',
-};
-const REC = 'HKQuantityTypeIdentifierHeartRateRecoveryOneMinute';
+const WHR = HK.walkingHr;
+const REC = HK.recovery;
 
 const EVENT_ICON: Record<HeartEventType, LucideIcon> = {
   high: TrendingUp,
@@ -130,7 +123,7 @@ function HeartEvents({ fromDay, toDay }: { fromDay?: string; toDay?: string }) {
                       </Badge>
                     </TD>
                     <TD numeric>
-                      {e.threshold !== null ? m.value('HKQuantityTypeIdentifierHeartRate', e.threshold) : '–'}
+                      {e.threshold !== null ? m.value(HK.heartRate, e.threshold) : '–'}
                     </TD>
                   </tr>
                 );
@@ -157,7 +150,8 @@ export default function HeartPage() {
   const ready = !!meta.data?.asOf;
   // charts of metrics this athlete never recorded (walking HR without an Apple Watch …) are left out
   const has = useHasMetric();
-  const metrics = meta.data?.metrics ?? APPLE;
+  // Apple's or COROS' keys (Settings → My watch), as the server reads them
+  const metrics = useHeartMetrics();
   const RHR = metrics.restingHr;
   const HRV = metrics.hrv;
   const VO2 = metrics.vo2max;

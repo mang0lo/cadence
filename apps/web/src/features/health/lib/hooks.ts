@@ -3,20 +3,12 @@ import type { DailyMetric, HealthMeta, RecordTypeInfo } from '@cadence/shared';
 import { useApi } from '@/lib/api';
 import { useStoredState } from '@/lib/storage';
 import { addDays, diffDays, todayKey } from '@/lib/time';
+import { APPLE_METRICS } from './identifiers';
 
 /** Latest data day, first data day, sleep goal … — anchors all "last N days" ranges to the data, not to today. */
 export function useHealthMeta() {
   return useApi<HealthMeta>(['health', 'meta'], '/health/meta', undefined, { staleTime: 30_000 });
 }
-
-/** Apple's identifiers of the metrics the server may swap for the watch's own (`HealthMeta.metrics`). */
-export const APPLE_METRICS: HealthMeta['metrics'] = {
-  restingHr: 'HKQuantityTypeIdentifierRestingHeartRate',
-  hrv: 'HKQuantityTypeIdentifierHeartRateVariabilitySDNN',
-  vo2max: 'HKQuantityTypeIdentifierVO2Max',
-  steps: 'HKQuantityTypeIdentifierStepCount',
-  heartRate: 'HKQuantityTypeIdentifierHeartRate',
-};
 
 /**
  * daily_metrics keys of resting HR, HRV, VO₂max, steps and heart rate: Apple's or COROS' (Settings → My watch), as the

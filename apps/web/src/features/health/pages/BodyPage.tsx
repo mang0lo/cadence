@@ -14,15 +14,16 @@ import { TrendChart, type TrendPoint } from '../components/TrendChart';
 import { TrendDelta } from '../components/TrendDelta';
 import { measureColor } from '../lib/colors';
 import { useDaily, useRange } from '../lib/hooks';
+import { HK } from '../lib/identifiers';
 import { useMetricFormat } from '../lib/metrics';
 import { toPoints } from '../lib/series';
 
-const MASS = 'HKQuantityTypeIdentifierBodyMass';
-const BMI = 'HKQuantityTypeIdentifierBodyMassIndex';
-const FAT = 'HKQuantityTypeIdentifierBodyFatPercentage';
-const LEAN = 'HKQuantityTypeIdentifierLeanBodyMass';
-const HEIGHT = 'HKQuantityTypeIdentifierHeight';
-const SYS = 'HKQuantityTypeIdentifierBloodPressureSystolic';
+const MASS = HK.bodyMass;
+const BMI = HK.bmi;
+const FAT = HK.bodyFat;
+const LEAN = HK.leanMass;
+const HEIGHT = HK.height;
+const SYS = HK.systolic;
 /** Highest limit the endpoint accepts. */
 const BP_LIMIT = 5000;
 

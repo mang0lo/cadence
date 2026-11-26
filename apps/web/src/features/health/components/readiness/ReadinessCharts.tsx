@@ -10,10 +10,11 @@ import { useFormat } from '@/lib/format';
 import { useT } from '@/lib/i18n';
 import { LEGEND_LINE_ICON, dayAxisLabel } from '../../lib/chart';
 import { measureColor } from '../../lib/colors';
+import { HK } from '../../lib/identifiers';
 import { useMetricFormat } from '../../lib/metrics';
 
-const HRV = 'HKQuantityTypeIdentifierHeartRateVariabilitySDNN';
-const RHR = 'HKQuantityTypeIdentifierRestingHeartRate';
+const HRV = HK.hrv;
+const RHR = HK.restingHr;
 
 const xAxis = (theme: ChartTheme, fmt: ReturnType<typeof useFormat>) =>
   timeAxis(theme, { axisLabel: { color: theme.muted, fontSize: 11, hideOverlap: true, formatter: dayAxisLabel(fmt) } });

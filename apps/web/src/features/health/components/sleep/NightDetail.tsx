@@ -26,16 +26,17 @@ import { Spark } from '../Spark';
 import { TrendDelta } from '../TrendDelta';
 import { numAxisLabel } from '../../lib/chart';
 import { useDaily } from '../../lib/hooks';
+import { HK } from '../../lib/identifiers';
 import { measureColor, type MeasureKey } from '../../lib/colors';
 import { useMetricFormat } from '../../lib/metrics';
 import { stageColor, stageSeconds, STAGE_STACK } from '../../lib/sleep';
 import { useStageLabel } from './SleepCharts';
 
-const HR = 'HKQuantityTypeIdentifierHeartRate';
-const HRV = 'HKQuantityTypeIdentifierHeartRateVariabilitySDNN';
-const RESP = 'HKQuantityTypeIdentifierRespiratoryRate';
-const SPO2 = 'HKQuantityTypeIdentifierOxygenSaturation';
-const WRIST = 'HKQuantityTypeIdentifierAppleSleepingWristTemperature';
+const HR = HK.heartRate;
+const HRV = HK.hrv;
+const RESP = HK.respiratory;
+const SPO2 = HK.spo2;
+const WRIST = HK.wristTemp;
 
 /** Hypnogram: one row per stage, one rounded bar per stage segment; times are the local wall clock of the night. */
 function Hypnogram({ night }: { night: SleepNightDetail }) {
