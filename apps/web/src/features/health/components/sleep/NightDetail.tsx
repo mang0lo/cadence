@@ -30,6 +30,7 @@ import { HK } from '../../lib/identifiers';
 import { measureColor, type MeasureKey } from '../../lib/colors';
 import { useMetricFormat } from '../../lib/metrics';
 import { stageColor, stageSeconds, STAGE_STACK } from '../../lib/sleep';
+import { tzSpan } from '../../lib/tz';
 import { useStageLabel } from './SleepCharts';
 
 const HR = HK.heartRate;
@@ -48,7 +49,10 @@ function Hypnogram({ night }: { night: SleepNightDetail }) {
   const { option, rows, height } = useMemo(() => {
     const rowStages: SleepStage[] = night.staged ? ['awake', 'rem', 'core', 'deep'] : ['awake', 'asleep'];
     if (night.staged && night.unspecS > 0) rowStages.splice(1, 0, 'asleep');
+    // real-time axis on the hours of the bedtime offset; times read with the offset of their moment (daylight-saving nights)
     const off = night.tzBedMin * 60;
+    const tz = tzSpan(night.bedTs, night.tzBedMin, night.wakeTs, night.tzWakeMin);
+    const time = (ts: number) => fmt.time(ts, tz(ts));
     const items = night.segments
       .map((seg) => ({
         value: [(seg.startTs + off) * 1000, (seg.endTs + off) * 1000, rowStages.indexOf(seg.stage)],
@@ -88,7 +92,7 @@ function Hypnogram({ night }: { night: SleepNightDetail }) {
         const d = p.data;
         if (!d) return '';
         return tooltipHtml(
-          `${fmt.time(d.seg.startTs, night.tzBedMin)} – ${fmt.time(d.seg.endTs, night.tzBedMin)}`,
+          `${time(d.seg.startTs)} – ${time(d.seg.endTs)}`,
           [
             {
               color: stageColor(theme, d.stage),
@@ -106,7 +110,7 @@ function Hypnogram({ night }: { night: SleepNightDetail }) {
           color: theme.muted,
           fontSize: 11,
           hideOverlap: true,
-          formatter: (v: number) => fmt.time(v / 1000, 0),
+          formatter: (v: number) => time(v / 1000 - off),
         },
       }),
       yAxis: categoryAxis(
@@ -123,8 +127,8 @@ function Hypnogram({ night }: { night: SleepNightDetail }) {
     };
     const tableRows = night.segments.map((seg) => ({
       stage: stageLabel(seg.stage),
-      start: fmt.time(seg.startTs, night.tzBedMin),
-      end: fmt.time(seg.endTs, night.tzBedMin),
+      start: time(seg.startTs),
+      end: time(seg.endTs),
       duration: fmt.durationShort(seg.endTs - seg.startTs),
     }));
     return { option: opt, rows: tableRows, height: 56 + rowStages.length * 38 };
@@ -192,6 +196,8 @@ function NightSeriesChart({
   const color = measureColor(theme, measure);
   const unit = m.unitLabel(metric);
   const off = night.tzBedMin * 60;
+  const tz = useMemo(() => tzSpan(night.bedTs, night.tzBedMin, night.wakeTs, night.tzWakeMin), [night]);
+  const time = (ts: number) => fmt.time(ts, tz(ts));
 
   const option = useMemo(() => {
     const data = points.map((p) => [(p.ts + off) * 1000, m.toDisplay(metric, p.value)]);
@@ -204,7 +210,7 @@ function NightSeriesChart({
         const pt = p ? points[p.dataIndex] : undefined;
         if (!pt) return '';
         return tooltipHtml(
-          fmt.time(pt.ts, night.tzBedMin),
+          time(pt.ts),
           [{ color, label: title, value: m.value(metric, pt.value) }],
           theme,
         );
@@ -216,7 +222,7 @@ function NightSeriesChart({
           color: theme.muted,
           fontSize: 11,
           hideOverlap: true,
-          formatter: (v: number) => fmt.time(v / 1000, 0),
+          formatter: (v: number) => time(v / 1000 - off),
         },
       }),
       yAxis: valueAxis(theme, { scale: true, axisLabel: { color: theme.muted, fontSize: 11, formatter: numAxisLabel(fmt) } }),
@@ -234,7 +240,7 @@ function NightSeriesChart({
           { key: 'time', label: t('health.common.time') },
           { key: 'value', label: unit || t('health.common.value'), numeric: true },
         ],
-        rows: points.map((p) => ({ time: fmt.time(p.ts, night.tzBedMin), value: m.plain(metric, p.value) })),
+        rows: points.map((p) => ({ time: time(p.ts), value: m.plain(metric, p.value) })),
       }}
     >
       {points.length === 0 ? (

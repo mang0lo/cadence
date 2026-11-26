@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { numAxisLabel, tickDigits } from '@/features/health/lib/chart';
+import { numAxisLabel, tickDigits, withGaps } from '@/features/health/lib/chart';
 import { createFormatter } from '@/lib/format';
 
 describe('health chart helpers', () => {
@@ -25,5 +25,22 @@ describe('health chart helpers', () => {
     expect(en(0.25)).toBe('0.25');
     // 0-digit labels would print 0.5 and 1 both as "1"
     expect(new Set([0, 0.5, 1, 1.5].map(de)).size).toBe(4);
+  });
+
+  it('breaks intraday lines between the neighbours of a gap, in the coordinates of the axis', () => {
+    const bucket = (ts: number) => ({ ts, avg: ts / 100, min: 0, max: 0, n: 1 });
+    // local time UTC+1: the axis value of an instant is (ts + 3600) s
+    const x = (ts: number) => (ts + 3600) * 1000;
+    const pts = withGaps([bucket(0), bucket(300), bucket(1200), bucket(2400)], 300, x, (b) => b.avg);
+    // 300 → 1200 is three buckets (no break), 1200 → 2400 four: a null point right after the bucket at 1200
+    expect(pts).toEqual([
+      [x(150), 0],
+      [x(450), 3],
+      [x(1350), 12],
+      [x(1500), null],
+      [x(2550), 24],
+    ]);
+    const xs = pts.map((p) => p[0]);
+    expect([...xs].sort((a, b) => a - b)).toEqual(xs);
   });
 });
