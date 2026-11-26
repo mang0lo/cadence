@@ -27,7 +27,7 @@ export function startImportWatcher(
   intervalMs = 60_000,
 ): () => void {
   const candidates = new Map<string, string>();
-  const poll = () => {
+  const scan = () => {
     let names: string[];
     try {
       names = fs.readdirSync(dir);
@@ -75,6 +75,14 @@ export function startImportWatcher(
       dirty = true;
     }
     if (dirty) setSetting(db, athleteId, SEEN_KEY, seen);
+  };
+  const poll = () => {
+    try {
+      scan();
+    } catch (e) {
+      // e.g. the database stayed busy during a long import: the next poll tries again (a timer must not throw)
+      console.error('Import folder watcher:', e);
+    }
   };
   const first = setTimeout(poll, Math.min(5_000, intervalMs));
   const timer = setInterval(poll, intervalMs);

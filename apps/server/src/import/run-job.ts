@@ -1,5 +1,5 @@
 import type { ImportPhase, ImportStats } from '@cadence/shared';
-import { get, type Db } from '../db/db';
+import { get, run, type Db } from '../db/db';
 import { runDerive, type DeriveResult } from '../derive/run';
 import { openFitSource, runFitImport } from './fit/import';
 import { runImport, type RunImportOptions } from './importer';
@@ -56,6 +56,33 @@ export interface JobHooks {
   progress: (p: JobProgress) => void;
   checkCancelled: () => void;
   log: (message: string) => void;
+}
+
+/**
+ * Saves a running job's progress in its import_jobs row on phase changes and at most every `everyMs`. Called on the
+ * connection that runs the job (the worker's), so the HTTP thread never waits for the job's write transactions. A
+ * failed write is skipped (the next one or the final status catches up); a job that stopped running is not touched.
+ */
+export function progressSaver(db: Db, jobId: string, everyMs = 5000): (p: JobProgress) => void {
+  let phase: ImportPhase | null = null;
+  let last = 0;
+  let progress = 0;
+  return (p) => {
+    progress = Math.max(progress, Math.min(1, p.progress));
+    const now = Date.now();
+    if (p.phase === phase && now - last < everyMs) return;
+    phase = p.phase;
+    last = now;
+    try {
+      run(
+        db,
+        "UPDATE import_jobs SET phase = ?, progress = ?, message = ?, stats = ? WHERE id = ? AND status = 'running'",
+        [p.phase, progress, p.message, JSON.stringify(p.stats), jobId],
+      );
+    } catch {
+      /* busy or full: the next save or the job's end writes it */
+    }
+  };
 }
 
 /** Share of the overall progress bar taken by the import part of an import job (rest = derive). */

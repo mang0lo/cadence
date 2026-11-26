@@ -7,7 +7,7 @@ import type { Config } from '../config';
 import { invalidateStatusCounts } from '../core/routes';
 import { all, get, json, run, type Db } from '../db/db';
 import { CancelledError, DERIVE_VERSION } from '../derive/context';
-import { executeJob, type JobOptions, type JobSpec } from './run-job';
+import { executeJob, progressSaver, type JobOptions, type JobSpec } from './run-job';
 import { athletesWithPendingChanges, pendingScope } from './scope';
 import type { JobWorkerData, WorkerMessage } from './worker';
 import { emptyStats } from './writer';
@@ -73,7 +73,6 @@ interface Running {
   startedMs: number;
   cancel: Int32Array;
   worker: Worker | null;
-  lastPersist: number;
   done: boolean;
 }
 
@@ -107,7 +106,8 @@ function workerEntry(): URL {
 /**
  * One job at a time; the rest waits in the queue (persisted in import_jobs). Jobs run in a worker thread with
  * its own DB connection so the HTTP server stays responsive ('inline' runs them on the main thread – tests).
- * Live progress is kept in memory and persisted on phase changes / every few seconds.
+ * Live progress is kept in memory; the job's own connection saves it on phase changes / every few seconds
+ * (progressSaver), so this thread never waits for the worker's write transactions.
  */
 export class JobManager {
   private running: Running | null = null;
@@ -312,17 +312,25 @@ export class JobManager {
 
   private pump(): void {
     if (this.closed || this.running) return;
-    const next = get<JobRow>(
-      this.db,
-      "SELECT * FROM import_jobs WHERE status = 'queued' ORDER BY created_at, rowid LIMIT 1",
-    );
-    if (!next) return;
-    run(
-      this.db,
-      "UPDATE import_jobs SET status = 'running', started_at = unixepoch(), message = 'Starting' WHERE id = ?",
-      [next.id],
-    );
-    const row = get<JobRow>(this.db, 'SELECT * FROM import_jobs WHERE id = ?', [next.id])!;
+    let row: JobRow;
+    try {
+      const next = get<JobRow>(
+        this.db,
+        "SELECT * FROM import_jobs WHERE status = 'queued' ORDER BY created_at, rowid LIMIT 1",
+      );
+      if (!next) return;
+      run(
+        this.db,
+        "UPDATE import_jobs SET status = 'running', started_at = unixepoch(), message = 'Starting' WHERE id = ?",
+        [next.id],
+      );
+      row = get<JobRow>(this.db, 'SELECT * FROM import_jobs WHERE id = ?', [next.id])!;
+    } catch (e) {
+      // e.g. the database stayed busy: try again shortly instead of crashing the server (this runs from a timer)
+      console.error('Could not start the next job', e);
+      setTimeout(() => this.pump(), 2000).unref();
+      return;
+    }
     const running: Running = {
       id: row.id,
       athleteId: row.athlete_id,
@@ -332,7 +340,6 @@ export class JobManager {
       startedMs: Date.now(),
       cancel: new Int32Array(new SharedArrayBuffer(4)),
       worker: null,
-      lastPersist: Date.now(),
       done: false,
     };
     this.running = running;
@@ -348,26 +355,16 @@ export class JobManager {
     else this.runWorker(running, spec);
   }
 
+  /** In memory only: the job's own connection saves the row (progressSaver). */
   private onProgress(
     r: Running,
     m: { phase: string; progress: number; message: string | null; step: string | null; stats: unknown },
   ): void {
-    const phaseChanged = r.job.phase !== m.phase;
     r.job.phase = m.phase as ImportPhase;
     r.job.progress = Math.max(r.job.progress, Math.min(1, m.progress));
     if (!Atomics.load(r.cancel, 0)) r.job.message = m.message;
     r.job.step = m.step;
     r.job.stats = m.stats as ImportStats;
-    if (phaseChanged || Date.now() - r.lastPersist > 5000) {
-      r.lastPersist = Date.now();
-      run(this.db, 'UPDATE import_jobs SET phase = ?, progress = ?, message = ?, stats = ? WHERE id = ?', [
-        r.job.phase,
-        r.job.progress,
-        r.job.message,
-        JSON.stringify(r.job.stats),
-        r.id,
-      ]);
-    }
     this.emit(this.live({ id: r.id } as JobRow));
   }
 
@@ -406,12 +403,16 @@ export class JobManager {
 
   private async runInline(r: Running, spec: JobSpec): Promise<void> {
     const stats = emptyStats();
+    const save = progressSaver(this.db, r.id);
     try {
       await executeJob(
         this.db,
         spec,
         {
-          progress: (p) => this.onProgress(r, p),
+          progress: (p) => {
+            this.onProgress(r, p);
+            save(p);
+          },
           checkCancelled: () => {
             if (Atomics.load(r.cancel, 0)) throw new CancelledError();
           },

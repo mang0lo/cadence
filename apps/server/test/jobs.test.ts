@@ -5,9 +5,11 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { migrateAll } from '../src/app';
 import { get, openDb, run, type Db } from '../src/db/db';
 import { DERIVE_VERSION } from '../src/derive/context';
+import type { ImportPhase } from '@cadence/shared';
 import { JobManager, mergeDeriveOptions } from '../src/import/jobs';
-import type { JobOptions } from '../src/import/run-job';
+import { progressSaver, type JobOptions } from '../src/import/run-job';
 import { startImportWatcher } from '../src/import/watch';
+import { emptyStats } from '../src/import/writer';
 
 let dir: string;
 let db: Db;
@@ -131,6 +133,80 @@ describe('job manager', () => {
     expect(jobs.cancel(1, job.id)?.status).toBe('cancelled');
     expect(jobs.list(1).map((j) => j.status)).toEqual(['cancelled']);
     await jobs.close();
+  });
+
+  it('keeps the progress of a worker job in memory: the HTTP thread does not wait for the database', async () => {
+    run(db, "INSERT INTO import_jobs (id, athlete_id, kind, status, progress) VALUES ('w', 1, 'import', 'running', 0)");
+    const jobs = new JobManager(
+      db,
+      { dbPath: path.join(dir, 'cadence.db'), uploadsDir: path.join(dir, 'uploads') },
+      'worker',
+    );
+    // the state pump() sets up for a job, without starting a worker thread
+    const inner = jobs as unknown as { running: unknown; onProgress(r: unknown, m: unknown): void };
+    const r = {
+      id: 'w',
+      athleteId: 1,
+      job: jobs.get(1, 'w')!,
+      options: {},
+      sourcePath: null,
+      startedMs: Date.now(),
+      cancel: new Int32Array(new SharedArrayBuffer(4)),
+      worker: null,
+      done: false,
+    };
+    inner.running = r;
+    // the worker is inside a write transaction (a record flush)
+    const worker = openDb(path.join(dir, 'cadence.db'));
+    db.exec('PRAGMA busy_timeout = 50');
+    worker.exec('BEGIN IMMEDIATE');
+    try {
+      inner.onProgress(r, { phase: 'parse', progress: 0.4, message: 'Parsing', step: null, stats: emptyStats() });
+      expect(jobs.get(1, 'w')).toMatchObject({ status: 'running', phase: 'parse', progress: 0.4, message: 'Parsing' });
+    } finally {
+      worker.exec('ROLLBACK');
+      worker.close();
+    }
+    inner.running = null;
+  });
+
+  it("saves a job's progress on its own connection, on phase changes and now and then", () => {
+    run(db, "INSERT INTO import_jobs (id, athlete_id, kind, status, progress) VALUES ('p', 1, 'import', 'running', 0)");
+    const row = () =>
+      get<{ phase: string | null; progress: number; message: string | null }>(
+        db,
+        "SELECT phase, progress, message FROM import_jobs WHERE id = 'p'",
+      )!;
+    const save = progressSaver(db, 'p', 60_000);
+    const p = (phase: ImportPhase, progress: number, message: string) => ({
+      phase,
+      progress,
+      message,
+      step: null,
+      stats: emptyStats(),
+    });
+    save(p('parse', 0.1, 'Parsing'));
+    expect(row()).toEqual({ phase: 'parse', progress: 0.1, message: 'Parsing' });
+    // the same phase again within the interval is not written; a new phase is, and progress never goes back
+    save(p('parse', 0.3, 'Parsing on'));
+    expect(row().progress).toBe(0.1);
+    save(p('routes', 0.2, 'Routes'));
+    expect(row()).toEqual({ phase: 'routes', progress: 0.3, message: 'Routes' });
+    // a database another connection keeps locked: the save is skipped instead of failing the job
+    const other = openDb(path.join(dir, 'cadence.db'));
+    db.exec('PRAGMA busy_timeout = 50');
+    other.exec('BEGIN IMMEDIATE');
+    try {
+      expect(() => save(p('ecg', 0.5, 'ECGs'))).not.toThrow();
+    } finally {
+      other.exec('ROLLBACK');
+      other.close();
+    }
+    expect(row().phase).toBe('routes');
+    // the final status of a job that stopped is never overwritten
+    run(db, "UPDATE import_jobs SET status = 'cancelled', message = 'Cancelled' WHERE id = 'p'");
+    save(p('derive', 0.8, 'Deriving'));
+    expect(row()).toEqual({ phase: 'routes', progress: 0.3, message: 'Cancelled' });
   });
 });
 
