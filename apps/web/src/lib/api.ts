@@ -29,8 +29,14 @@ export function apiUrl(path: string, params?: QueryParams): string {
   return s ? `${url}?${s}` : url;
 }
 
-async function request<T>(method: string, path: string, body?: unknown, params?: QueryParams): Promise<T> {
-  const init: RequestInit = { method, credentials: 'same-origin', headers: {} };
+async function request<T>(
+  method: string,
+  path: string,
+  body?: unknown,
+  params?: QueryParams,
+  signal?: AbortSignal,
+): Promise<T> {
+  const init: RequestInit = { method, credentials: 'same-origin', headers: {}, signal };
   if (body instanceof FormData) init.body = body;
   else if (body !== undefined) {
     (init.headers as Record<string, string>)['content-type'] = 'application/json';
@@ -63,7 +69,8 @@ async function request<T>(method: string, path: string, body?: unknown, params?:
 }
 
 export const api = {
-  get: <T>(path: string, params?: QueryParams) => request<T>('GET', path, undefined, params),
+  /** `signal` cancels the request (useApi passes the query's: a superseded or unused query stops loading). */
+  get: <T>(path: string, params?: QueryParams, signal?: AbortSignal) => request<T>('GET', path, undefined, params, signal),
   post: <T>(path: string, body?: unknown) => request<T>('POST', path, body),
   put: <T>(path: string, body?: unknown) => request<T>('PUT', path, body),
   patch: <T>(path: string, body?: unknown) => request<T>('PATCH', path, body),
@@ -83,20 +90,31 @@ export const queryClient = new QueryClient({
   },
 });
 
+export type ApiQueryOptions<T> = Omit<UseQueryOptions<T, ApiError>, 'queryKey' | 'queryFn'>;
+
+/**
+ * The query options behind useApi. The fetch gets the query's AbortSignal: when the key changes (filters, ranges,
+ * tabs) or the page is left while it loads, TanStack cancels the request instead of letting the server finish it.
+ * Without a path the query never runs, whatever `options.enabled` says.
+ */
+export function apiQuery<T>(
+  key: readonly unknown[],
+  path: string | null,
+  params?: QueryParams,
+  options?: ApiQueryOptions<T>,
+): UseQueryOptions<T, ApiError> {
+  return {
+    ...options,
+    queryKey: [...key, params ?? null],
+    queryFn: ({ signal }) => api.get<T>(path!, params, signal),
+    enabled: path !== null && (options?.enabled ?? true),
+  };
+}
+
 /**
  * GET helper: `useApi<WorkoutSummary[]>(['activities', 'list', filters], '/workouts', filters)`.
  * Query keys start with the feature name so a finished import can invalidate everything.
  */
-export function useApi<T>(
-  key: readonly unknown[],
-  path: string | null,
-  params?: QueryParams,
-  options?: Omit<UseQueryOptions<T, ApiError>, 'queryKey' | 'queryFn'>,
-) {
-  return useQuery<T, ApiError>({
-    queryKey: [...key, params ?? null],
-    queryFn: () => api.get<T>(path!, params),
-    enabled: path !== null && (options?.enabled ?? true),
-    ...options,
-  });
+export function useApi<T>(key: readonly unknown[], path: string | null, params?: QueryParams, options?: ApiQueryOptions<T>) {
+  return useQuery<T, ApiError>(apiQuery<T>(key, path, params, options));
 }
