@@ -106,21 +106,28 @@ export interface FirstBuckets {
   ranges: { fromTs: number; fromTz: number; toTs: number; toTz: number }[];
 }
 
-/** Five equally populated buckets of the first-visit time (0 = oldest, 4 = newest). */
+/**
+ * Up to five about equally populated buckets of the first-visit time (0 = oldest). The tiles an activity visited first
+ * share its start time and always stay in one bucket: a cut moves past them, and a bucket left empty is dropped, so
+ * the bucket numbers (the legend rows) stay 0, 1, 2 … without gaps.
+ */
 export function firstVisitBuckets(tiles: MapsExplorerTile[]): FirstBuckets {
   const order = tiles.map((_, i) => i).sort((a, b) => tiles[a]!.firstTs - tiles[b]!.firstTs);
+  const ts = (k: number) => tiles[order[k]!]!.firstTs;
   const index = new Array<number>(tiles.length).fill(0);
   const n = tiles.length;
   const ranges: FirstBuckets['ranges'] = [];
   const buckets = Math.min(5, Math.max(1, n));
+  let from = 0;
   for (let b = 0; b < buckets; b++) {
-    const from = Math.floor((b * n) / buckets);
-    const to = Math.floor(((b + 1) * n) / buckets) - 1;
-    if (to < from) continue;
-    for (let k = from; k <= to; k++) index[order[k]!] = b;
+    let to = Math.floor(((b + 1) * n) / buckets) - 1;
+    if (to < from) continue; // the bucket before took these tiles (same activity)
+    while (to + 1 < n && ts(to + 1) === ts(to)) to++;
+    for (let k = from; k <= to; k++) index[order[k]!] = ranges.length;
     const a = tiles[order[from]!]!;
     const z = tiles[order[to]!]!;
     ranges.push({ fromTs: a.firstTs, fromTz: a.tzMin, toTs: z.firstTs, toTz: z.tzMin });
+    from = to + 1;
   }
   return { index, ranges };
 }
