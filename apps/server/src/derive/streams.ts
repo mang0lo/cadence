@@ -265,8 +265,9 @@ export function cleanTrackIndices(
   pauses: [number, number][] = [],
 ): number[] {
   const vmax = maxPlausibleSpeed(sport);
-  const keep: number[] = [];
+  let keep: number[] = [];
   let rejectedInRow = 0;
+  let firstRejected = -1;
   for (let i = 0; i < tr.t.length; i++) {
     const t = tr.t[i]!;
     if (t < startTs - 30 || t > endTs + 30) continue;
@@ -278,9 +279,20 @@ export function cleanTrackIndices(
       if (dt <= 0) continue;
       const d = haversine(tr.lat[p]!, tr.lon[p]!, tr.lat[i]!, tr.lon[i]!);
       // a fix after a pause may be far away (travelled while paused): a new part of the track, not a glitch
-      if (d / dt > vmax && rejectedInRow < 8 && !inPauses(pauses, tr.t[p]! + dt / 2)) {
-        rejectedInRow++;
-        continue;
+      if (d / dt > vmax && !inPauses(pauses, tr.t[p]! + dt / 2)) {
+        if (rejectedInRow < 8) {
+          if (!rejectedInRow) firstRejected = i;
+          rejectedInRow++;
+          continue;
+        }
+        // The jump persisted. When the only fix before it is the first one, that one was a stale (cached) position:
+        // drop it and start over from the first rejected fix.
+        if (keep.length === 1) {
+          keep = [];
+          rejectedInRow = 0;
+          i = firstRejected - 1;
+          continue;
+        }
       }
     }
     rejectedInRow = 0;
