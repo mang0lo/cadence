@@ -29,13 +29,14 @@ import type {
 import { useApi } from '@/lib/api';
 import { useFormat } from '@/lib/format';
 import { useT } from '@/lib/i18n';
+import { HK } from './identifiers';
 import { useMetricFormat } from './metrics';
 import { wrapMinutes } from './sleep';
 
-const HRV = 'HKQuantityTypeIdentifierHeartRateVariabilitySDNN';
-const RHR = 'HKQuantityTypeIdentifierRestingHeartRate';
-const RESP = 'HKQuantityTypeIdentifierRespiratoryRate';
-const WRIST = 'HKQuantityTypeIdentifierAppleSleepingWristTemperature';
+const HRV = HK.hrv;
+const RHR = HK.restingHr;
+const RESP = HK.respiratory;
+const WRIST = HK.wristTemp;
 
 /** Readiness of `day` (default: the latest day with data) and `days` days of history. */
 export function useReadiness(day: string | undefined, days: number, enabled = true) {

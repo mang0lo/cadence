@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { Fragment, type ReactNode } from 'react';
 import { Activity, BatteryCharging, ChevronRight, Footprints, HeartPulse, Moon, type LucideIcon } from 'lucide-react';
 import { Link } from 'react-router';
 import type { HealthSnapshot, SnapshotValue } from '@cadence/shared';
@@ -10,7 +10,8 @@ import { todayKey } from '@/lib/time';
 import { Spark } from './components/Spark';
 import { useDayLabel } from './components/MetricCard';
 import { ReadinessBandBadge, ReadinessRing, ReasonList } from './components/readiness/ReadinessRing';
-import { useMetricFormat } from './lib/metrics';
+import { useHeartMetrics } from './lib/hooks';
+import { durationParts, useMetricFormat, type ValueParts } from './lib/metrics';
 import { useReadiness } from './lib/readiness';
 
 /**
@@ -105,16 +106,13 @@ export function ReadinessWidget() {
 // Snapshot
 // ---------------------------------------------------------------------------------------------------------------
 
-const RHR = 'HKQuantityTypeIdentifierRestingHeartRate';
-const HRV = 'HKQuantityTypeIdentifierHeartRateVariabilitySDNN';
-const STEPS = 'HKQuantityTypeIdentifierStepCount';
-
 function Tile({
   to,
   icon: Icon,
   label,
   value,
   unit,
+  parts,
   hint,
   spark,
   extra,
@@ -124,6 +122,8 @@ function Tile({
   label: string;
   value: string;
   unit?: string;
+  /** Shown instead of value + unit: several numbers with their units ("6 Std. 53 Min."). */
+  parts?: ValueParts[];
   hint?: ReactNode;
   spark: (number | null)[];
   extra?: ReactNode;
@@ -139,8 +139,12 @@ function Tile({
         <span className="truncate">{label}</span>
       </div>
       <div className="mt-1 flex items-baseline gap-1">
-        <span className="text-2xl font-semibold tracking-tight text-fg">{value}</span>
-        {unit && <span className="text-sm font-medium text-fg-3">{unit}</span>}
+        {(parts ?? [{ value, unit: unit ?? '' }]).map((p, i) => (
+          <Fragment key={i}>
+            <span className="text-2xl font-semibold tracking-tight text-fg">{p.value}</span>
+            {p.unit && <span className="text-sm font-medium text-fg-3">{p.unit}</span>}
+          </Fragment>
+        ))}
       </div>
       {hint && <div className="mt-0.5 text-xs text-fg-3">{hint}</div>}
       <Spark data={spark} height={26} className="mt-2" ariaLabel={label} />
@@ -169,8 +173,10 @@ export function HealthSnapshotCard() {
   const m = useMetricFormat();
   const dayLabel = useDayLabel();
   const q = useApi<HealthSnapshot>(['health', 'snapshot'], '/health/snapshot', undefined, { staleTime: 30_000 });
+  // the snapshot holds COROS' values when the watch is a COROS: name, format and link them as such
+  const ids = useHeartMetrics();
 
-  if (q.isLoading) {
+  if (q.isLoading || !ids.ready) {
     return (
       <Card className="@container">
         <Skeleton className="h-4 w-40" />
@@ -197,6 +203,8 @@ export function HealthSnapshotCard() {
 
   const sleep = d.sleep;
   const sleepPct = sleep ? sleep.value / sleep.goalMin : 0;
+  // the notation of the sleep pages, numbers large and units small so "6 Std. 53 Min." fits the narrow dashboard column
+  const sleepText = sleep ? fmt.durationShort(sleep.value * 60) : '';
 
   return (
     <Card className="@container">
@@ -212,15 +220,15 @@ export function HealthSnapshotCard() {
         }
       />
       <div className="grid grid-cols-2 gap-x-6 gap-y-6 @lg:grid-cols-4">
-        {simple(d.restingHr, RHR, '/health/heart', HeartPulse, t('health.widget.restingHr'))}
-        {simple(d.hrv, HRV, '/health/heart', Activity, t('health.widget.hrv'))}
+        {simple(d.restingHr, ids.restingHr, '/health/heart', HeartPulse, t('health.widget.restingHr'))}
+        {simple(d.hrv, ids.hrv, '/health/heart', Activity, t('health.widget.hrv'))}
         {sleep && (
           <Tile
             to="/health/sleep"
             icon={Moon}
             label={t('health.widget.sleep')}
-            value={`${Math.floor(Math.round(sleep.value) / 60)}:${String(Math.round(sleep.value) % 60).padStart(2, '0')}`}
-            unit="h"
+            value={sleepText}
+            parts={durationParts(sleepText)}
             hint={
               <>
                 {dayLabel(sleep.day)}
@@ -239,7 +247,7 @@ export function HealthSnapshotCard() {
             spark={sleep.spark}
           />
         )}
-        {simple(d.steps, STEPS, `/health/explorer/${STEPS}`, Footprints, m.name(STEPS))}
+        {simple(d.steps, ids.steps, `/health/explorer/${encodeURIComponent(ids.steps)}`, Footprints, m.name(ids.steps))}
       </div>
     </Card>
   );

@@ -32,7 +32,7 @@ export const body: Dictionary = {
       category: 'Category',
       latest: 'Latest reading',
       average: 'Average',
-      readings: '{count} readings',
+      readings: { one: '{n} reading', other: '{n} readings' },
       none: 'No blood pressure readings in this time range.',
       hint: 'Categories follow the ACC/AHA guideline for resting readings. This is not medical advice.',
       cat: {
@@ -80,7 +80,7 @@ export const body: Dictionary = {
       category: 'Kategorie',
       latest: 'Letzte Messung',
       average: 'Durchschnitt',
-      readings: '{count} Messungen',
+      readings: { one: '{n} Messung', other: '{n} Messungen' },
       none: 'In diesem Zeitraum gibt es keine Blutdruckmessungen.',
       hint: 'Die Kategorien folgen der ACC/AHA-Leitlinie für Ruhemessungen. Das ist keine medizinische Beratung.',
       cat: {

@@ -1,5 +1,6 @@
 import { useCallback, useRef } from 'react';
 import type { ECharts } from 'echarts';
+import type { IntradayBucket } from '@cadence/shared';
 import type { Formatter } from '@/lib/format';
 
 const pad = (n: number) => (n < 10 ? `0${n}` : String(n));
@@ -23,6 +24,41 @@ export function msToDayUtc(ms: number): string {
 }
 
 export const dayAxisLabelUtc = (fmt: Formatter) => (value: number) => fmt.day(msToDayUtc(value), 'dayShort');
+
+/** Decimals a tick value needs (2000 → 0, 0.5 → 1, 0.25 → 2; at most 3), ignoring floating-point noise (0.30000000000000004). */
+export function tickDigits(v: number): number {
+  for (let d = 0; d < 3; d++) {
+    const s = v * 10 ** d;
+    if (Math.abs(s - Math.round(s)) < 1e-6 * Math.max(1, Math.abs(s))) return d;
+  }
+  return 3;
+}
+
+/**
+ * Label formatter for value axes: the ticks ECharts picks, with the separators of the locale ("6.000", "0,5" in German).
+ * Without a formatter ECharts writes every number the English way ("6,000" reads as 6 in German).
+ */
+export const numAxisLabel = (fmt: Formatter) => (value: number) => fmt.num(value, tickDigits(value));
+
+/**
+ * Line points of intraday buckets at the bucket middles; a gap of more than three buckets gets a null point at the end
+ * of the bucket before it, which breaks the line instead of drawing a misleading straight segment. `x` maps a timestamp
+ * to the axis value, so the null point lies between its neighbours (else the tooltip finds it elsewhere and shows nothing).
+ */
+export function withGaps(
+  buckets: IntradayBucket[],
+  bucketS: number,
+  x: (ts: number) => number,
+  y: (b: IntradayBucket) => number,
+): [number, number | null][] {
+  const out: [number, number | null][] = [];
+  buckets.forEach((b, i) => {
+    const prev = buckets[i - 1];
+    if (prev && b.ts - prev.ts > bucketS * 3) out.push([x(prev.ts + bucketS), null]);
+    out.push([x(b.ts + bucketS / 2), y(b)]);
+  });
+  return out;
+}
 
 /** Shared legend overrides: line icons must not inherit the 2 px surface ring of the line series (it would hide them). */
 export const LEGEND_LINE_ICON = { itemStyle: { borderWidth: 0 } } as const;

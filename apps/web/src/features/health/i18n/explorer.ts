@@ -20,7 +20,7 @@ export const explorer: Dictionary = {
     items: {
       title: 'Other data in your export',
       subtitle: 'Items that are more than plain measurements',
-      count: '{count} items',
+      count: { one: '{n} item', other: '{n} items' },
       open: 'Open',
       activitySummaries: 'Activity rings',
       workouts: 'Workouts',
@@ -52,7 +52,7 @@ export const explorer: Dictionary = {
     items: {
       title: 'Weitere Daten in deinem Export',
       subtitle: 'Einträge, die mehr als einfache Messwerte sind',
-      count: '{count} Einträge',
+      count: { one: '{n} Eintrag', other: '{n} Einträge' },
       open: 'Öffnen',
       activitySummaries: 'Aktivitätsringe',
       workouts: 'Trainings',
@@ -71,7 +71,7 @@ export const metric: Dictionary = {
   en: {
     all: 'All data',
     notFound: 'This data type is not part of your export.',
-    typeInfo: '{count} samples · {from} – {to}',
+    typeInfo: { one: '{n} sample · {from} – {to}', other: '{n} samples · {from} – {to}' },
     agg: { label: 'Group by', day: 'Day', week: 'Week', month: 'Month' },
     mode: { label: 'Show', average: 'Daily average', total: 'Total' },
     stats: {
@@ -97,13 +97,14 @@ export const metric: Dictionary = {
       events: 'Events',
       duration: 'Duration',
       other: 'Other',
-      days: '{count} days',
+      days: { one: '{count} day', other: '{count} days' },
       perDayHint: 'Average per day with data',
       value: 'Value',
       subtitleSum: 'Cumulative measure – each bar adds up the samples of its period',
       subtitleSumAvg: 'Each bar is the daily average of its period (total divided by days with data)',
       subtitleAvg: 'Mean of the daily means; the band spans the lowest to the highest sample',
       subtitleCat: 'Time per value',
+      subtitleEvents: 'Number of events in each period',
     },
     sources: {
       title: 'Sources',
@@ -147,7 +148,7 @@ export const metric: Dictionary = {
   de: {
     all: 'Alle Daten',
     notFound: 'Dieser Datentyp ist nicht in deinem Export enthalten.',
-    typeInfo: '{count} Messwerte · {from} – {to}',
+    typeInfo: { one: '{n} Messwert · {from} – {to}', other: '{n} Messwerte · {from} – {to}' },
     agg: { label: 'Gruppieren nach', day: 'Tag', week: 'Woche', month: 'Monat' },
     mode: { label: 'Anzeigen', average: 'Tagesdurchschnitt', total: 'Summe' },
     stats: {
@@ -173,13 +174,14 @@ export const metric: Dictionary = {
       events: 'Ereignisse',
       duration: 'Dauer',
       other: 'Sonstige',
-      days: '{count} Tage',
+      days: { one: '{count} Tag', other: '{count} Tage' },
       perDayHint: 'Durchschnitt pro Tag mit Daten',
       value: 'Wert',
       subtitleSum: 'Kumulierte Größe – jeder Balken addiert die Messwerte seines Zeitraums',
       subtitleSumAvg: 'Jeder Balken ist der Tagesdurchschnitt seines Zeitraums (Summe geteilt durch Tage mit Daten)',
       subtitleAvg: 'Mittelwert der Tagesmittel; das Band reicht vom niedrigsten bis zum höchsten Messwert',
       subtitleCat: 'Zeit je Wert',
+      subtitleEvents: 'Anzahl der Ereignisse je Zeitraum',
     },
     sources: {
       title: 'Quellen',

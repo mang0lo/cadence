@@ -15,6 +15,7 @@ import { useApi } from '@/lib/api';
 import { useFormat } from '@/lib/format';
 import { useI18n, useT } from '@/lib/i18n';
 import { Spark } from '../components/Spark';
+import { itemDate } from '../lib/explorer';
 
 const ITEM_LINK: Record<string, string> = {
   ecg: '/health/ecg',
@@ -51,10 +52,10 @@ function OtherItems({ items }: { items: ExplorerItem[] }) {
               </span>
               <div className="min-w-0">
                 <div className="truncate text-sm font-medium text-fg">{label}</div>
-                <div className="text-xs text-fg-3 tabular">{t('health.explorer.items.count', { count: fmt.int(it.count) })}</div>
+                <div className="text-xs text-fg-3 tabular">{t('health.explorer.items.count', { count: it.count, n: fmt.int(it.count) })}</div>
                 {it.firstTs !== null && it.lastTs !== null && (
                   <div className="truncate text-xs text-fg-3">
-                    {fmt.browserDate(it.firstTs, 'day')} – {fmt.browserDate(it.lastTs, 'day')}
+                    {itemDate(fmt, it.key, it.firstTs)} – {itemDate(fmt, it.key, it.lastTs)}
                   </div>
                 )}
               </div>

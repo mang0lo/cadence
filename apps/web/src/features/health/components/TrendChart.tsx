@@ -250,7 +250,8 @@ export function TrendChart({
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
             <span>
               {t('health.common.latest')} <b className="font-semibold text-fg">{m.value(metric, summary.last.value, unit)}</b>{' '}
-              <span className="text-fg-3">{dayLabel(summary.last.day)}</span>
+              {/* a week or month point is the mean of that period, not the value of its first day */}
+              <span className="text-fg-3">{agg === 'day' ? dayLabel(summary.last.day) : keyLabel(summary.last.day, false)}</span>
             </span>
             <span>
               {t('health.common.avg')} <b className="font-semibold text-fg">{m.value(metric, summary.avg, unit)}</b>

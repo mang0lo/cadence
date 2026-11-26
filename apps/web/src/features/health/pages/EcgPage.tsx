@@ -7,6 +7,7 @@ import { useApi } from '@/lib/api';
 import { useFormat } from '@/lib/format';
 import { useT } from '@/lib/i18n';
 import { EcgPaper } from '../components/ecg/EcgPaper';
+import { ecgCsv, saveTextFile } from '../lib/download';
 
 /** Status colors only together with icon and label (the class name inside the badge). */
 const CLASS_BADGE: Record<EcgClass, { tone: 'good' | 'warning' | 'critical' | 'neutral'; icon: LucideIcon }> = {
@@ -36,17 +37,6 @@ const ZOOMS = [
   { value: '6', px: 6, key: 'large' },
 ] as const;
 
-function downloadCsv(d: EcgDetail, name: string) {
-  const rate = d.sampleRateHz ?? 512;
-  const lines = ['time_s,voltage_uV', ...d.samples.map((v, i) => `${(i / rate).toFixed(4)},${v}`)];
-  const url = URL.createObjectURL(new Blob([lines.join('\n')], { type: 'text/csv' }));
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = name;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
 function RecordingList({ items, selected, onSelect }: { items: EcgSummary[]; selected: number; onSelect: (id: number) => void }) {
   const t = useT();
   const fmt = useFormat();
@@ -55,7 +45,7 @@ function RecordingList({ items, selected, onSelect }: { items: EcgSummary[]; sel
     <Card padded={false} className="overflow-hidden">
       <div className="flex items-baseline justify-between px-4 pb-2 pt-4">
         <h2 className="text-sm font-semibold text-fg">{t('health.ecg.recordings')}</h2>
-        <span className="text-xs text-fg-3 tabular">{t('health.ecg.count', { count: items.length })}</span>
+        <span className="text-xs text-fg-3 tabular">{t('health.ecg.count', { count: items.length, n: fmt.int(items.length) })}</span>
       </div>
       <ul className="max-h-[360px] divide-y divide-border overflow-y-auto border-t border-border scrollbar-thin xl:max-h-[720px]">
         {items.map((e) => (
@@ -145,7 +135,7 @@ function Recording({ id, summary }: { id: number; summary: EcgSummary }) {
                 size="sm"
                 icon={Download}
                 disabled={!d}
-                onClick={() => d && downloadCsv(d, `ecg-${new Date((summary.recordedTs + summary.tzMin * 60) * 1000).toISOString().slice(0, 16).replace(/[-:T]/g, '')}.csv`)}
+                onClick={() => d && saveTextFile(`ecg-${new Date((summary.recordedTs + summary.tzMin * 60) * 1000).toISOString().slice(0, 16).replace(/[-:T]/g, '')}.csv`, ecgCsv(d))}
               >
                 {t('health.ecg.paper.download')}
               </Button>

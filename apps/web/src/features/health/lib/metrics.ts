@@ -23,6 +23,15 @@ export interface ValueParts {
   unit: string;
 }
 
+/**
+ * A duration as `fmt.durationShort` writes it, split into number + unit pairs ("6 Std. 53 Min." → 6 Std., 53 Min.;
+ * "6h 53m" → 6 h, 53 m), so a tile can show the numbers large and the units small. Text without numbers stays whole.
+ */
+export function durationParts(text: string): ValueParts[] {
+  const pairs = [...text.matchAll(/(\d+)\s*([^\d\s]+)/g)].map((p) => ({ value: p[1]!, unit: p[2]! }));
+  return pairs.length ? pairs : [{ value: text, unit: '' }];
+}
+
 export interface DeltaInfo {
   /** Rounded signed change in display units – decides arrow direction and color. */
   value: number;

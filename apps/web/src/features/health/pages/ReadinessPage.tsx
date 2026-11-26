@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { BatteryCharging, Info, ListChecks, ShieldAlert } from 'lucide-react';
-import { Link, useSearchParams } from 'react-router';
+import { Link } from 'react-router';
 import { READINESS_FACTORS, type ReadinessDay, type ReadinessModelInfo } from '@cadence/shared';
 import {
   Button,
@@ -14,17 +14,17 @@ import {
   PageHeader,
   SegmentedControl,
   Skeleton,
+  cn,
 } from '@/components/ui';
 import { useFormat } from '@/lib/format';
 import { useT } from '@/lib/i18n';
 import { useStoredState } from '@/lib/storage';
-import { addDays } from '@/lib/time';
 import { DayNav } from '../components/DayNav';
 import { useDayLabel } from '../components/MetricCard';
 import { FactorList } from '../components/readiness/FactorList';
 import { HrvBaselineChart, ReadinessTrendChart, RestingHrBaselineChart } from '../components/readiness/ReadinessCharts';
 import { ReadinessBandBadge, ReadinessRing, ReasonList } from '../components/readiness/ReadinessRing';
-import { useHealthMeta } from '../lib/hooks';
+import { useDayParam, useHealthMeta } from '../lib/hooks';
 import { useReadiness, useReadinessFormat } from '../lib/readiness';
 
 const SPANS = [30, 90] as const;
@@ -32,14 +32,14 @@ const SPANS = [30, 90] as const;
 const HISTORY_DAYS = 90;
 
 /** Score ring, band, advice and the main reasons of the day – or what is missing for a score. */
-function DayCard({ day, model }: { day: ReadinessDay; model: ReadinessModelInfo }) {
+function DayCard({ day, model, dim }: { day: ReadinessDay; model: ReadinessModelInfo; dim?: boolean }) {
   const t = useT();
   const fmt = useFormat();
   const rf = useReadinessFormat();
   const dayLabel = useDayLabel();
   const used = day.factors.filter((f) => f.used).length;
   return (
-    <Card className="@container">
+    <Card className={cn('@container', dim && 'opacity-70 transition-opacity')}>
       <CardHeader title={dayLabel(day.day)} subtitle={fmt.day(day.day, 'weekday')} icon={BatteryCharging} />
       {day.score !== null && day.band ? (
         <div className="flex flex-col items-center gap-5 @md:flex-row">
@@ -116,23 +116,17 @@ function HowItWorks({ model }: { model: ReadinessModelInfo }) {
   );
 }
 
-/** `?day=YYYY-MM-DD` when it is a real calendar day. */
-const validDay = (raw: string | null): string | null =>
-  raw && /^\d{4}-\d{2}-\d{2}$/.test(raw) && addDays(raw, 0) === raw ? raw : null;
-
 export default function ReadinessPage() {
   const t = useT();
   const meta = useHealthMeta();
-  // the evaluated day lives in the URL (?day=, default: the latest day with data) so a day can be linked
-  const [params, setParams] = useSearchParams();
-  const picked = validDay(params.get('day'));
   const [span, setSpan] = useStoredState<number>('health.readiness.span', 90);
   const asOf = meta.data?.asOf ?? null;
-  const setPicked = (d: string) => setParams(d === asOf ? {} : { day: d }, { replace: true });
+  // the evaluated day lives in the URL (?day=, default: the latest day with data) so a day can be linked; the
+  // requested day wins over the day of the answer, which stays the previous one until the new day has loaded
+  const { day, picked, setDay } = useDayParam(asOf);
   const ready = !!asOf;
   const q = useReadiness(picked ?? undefined, HISTORY_DAYS, ready);
   const data = q.data;
-  const day = data?.day ?? picked ?? asOf;
   const shown = (SPANS as readonly number[]).includes(span) ? span : 90;
   const firstDay = meta.data?.firstDay ?? null;
   // no empty stretch before the data starts
@@ -150,7 +144,7 @@ export default function ReadinessPage() {
           <FilterBar>
             <DayNav
               day={day}
-              onChange={setPicked}
+              onChange={setDay}
               min={meta.data?.firstDay ?? undefined}
               max={asOf ?? undefined}
               prevLabel={t('health.readiness.day.prev')}
@@ -188,7 +182,7 @@ export default function ReadinessPage() {
         <div className="space-y-4">
           <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-4 xl:grid-cols-[minmax(0,22rem)_minmax(0,1fr)]">
             {current && data ? (
-              <DayCard day={current} model={data.model} />
+              <DayCard day={current} model={data.model} dim={fetching} />
             ) : (
               <Skeleton className="h-[264px] w-full rounded-card" />
             )}

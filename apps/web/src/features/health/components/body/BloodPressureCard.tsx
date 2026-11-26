@@ -8,7 +8,7 @@ import { useChartTheme } from '@/components/charts/theme';
 import { Badge } from '@/components/ui';
 import { useFormat } from '@/lib/format';
 import { useT } from '@/lib/i18n';
-import { LEGEND_LINE_ICON, dayAxisLabelUtc } from '../../lib/chart';
+import { LEGEND_LINE_ICON, dayAxisLabelUtc, numAxisLabel } from '../../lib/chart';
 import { measureColor } from '../../lib/colors';
 
 /** Status colors are only used together with an icon and a label (the badge text). */
@@ -62,7 +62,7 @@ export function BloodPressureCard({ readings, loading }: { readings: BloodPressu
         return tooltipHtml(fmt.date(r.ts, r.tzMin, 'dateTime'), rows, theme);
       }),
       xAxis: timeAxis(theme, { axisLabel: { color: theme.muted, fontSize: 11, hideOverlap: true, formatter: dayAxisLabelUtc(fmt) } }),
-      yAxis: valueAxis(theme, { scale: true, axisLabel: { color: theme.muted, fontSize: 11 } }),
+      yAxis: valueAxis(theme, { scale: true, axisLabel: { color: theme.muted, fontSize: 11, formatter: numAxisLabel(fmt) } }),
       series: [sys, dia],
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -113,7 +113,7 @@ export function BloodPressureCard({ readings, loading }: { readings: BloodPressu
                   <b className="font-semibold text-fg">
                     {fmt.int(avgSys)}/{fmt.int(avgDia)} mmHg
                   </b>{' '}
-                  <span className="text-fg-3">({t('health.body.bp.readings', { count: readings.length })})</span>
+                  <span className="text-fg-3">({t('health.body.bp.readings', { count: readings.length, n: fmt.int(readings.length) })})</span>
                 </span>
               )}
             </div>

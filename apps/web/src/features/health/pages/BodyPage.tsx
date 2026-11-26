@@ -6,6 +6,7 @@ import { useChartTheme } from '@/components/charts/theme';
 import { Button, Card, EmptyState, ErrorState, FilterBar, Page, PageHeader, Skeleton, Stat, StatRow } from '@/components/ui';
 import { useApi } from '@/lib/api';
 import { useT } from '@/lib/i18n';
+import { useHasMetric } from '@/lib/sources';
 import { BloodPressureCard } from '../components/body/BloodPressureCard';
 import { MonthlyChangeChart } from '../components/body/MonthlyChangeChart';
 import { RangeSelect } from '../components/RangeSelect';
@@ -13,14 +14,18 @@ import { TrendChart, type TrendPoint } from '../components/TrendChart';
 import { TrendDelta } from '../components/TrendDelta';
 import { measureColor } from '../lib/colors';
 import { useDaily, useRange } from '../lib/hooks';
+import { HK } from '../lib/identifiers';
 import { useMetricFormat } from '../lib/metrics';
 import { toPoints } from '../lib/series';
 
-const MASS = 'HKQuantityTypeIdentifierBodyMass';
-const BMI = 'HKQuantityTypeIdentifierBodyMassIndex';
-const FAT = 'HKQuantityTypeIdentifierBodyFatPercentage';
-const LEAN = 'HKQuantityTypeIdentifierLeanBodyMass';
-const HEIGHT = 'HKQuantityTypeIdentifierHeight';
+const MASS = HK.bodyMass;
+const BMI = HK.bmi;
+const FAT = HK.bodyFat;
+const LEAN = HK.leanMass;
+const HEIGHT = HK.height;
+const SYS = HK.systolic;
+/** Highest limit the endpoint accepts. */
+const BP_LIMIT = 5000;
 
 interface Tile {
   key: string;
@@ -38,7 +43,14 @@ export default function BodyPage() {
   const ready = !!meta.data?.asOf;
   // everything since the first measurement: rolling means and monthly changes need the days before the range
   const daily = useDaily([MASS, BMI, FAT, LEAN, HEIGHT], undefined, toDay, ready);
-  const bpQ = useApi<BloodPressureReading[]>(['health', 'body', 'bp'], '/health/body/blood-pressure', undefined, { enabled: ready });
+  // per range: the server returns at most `limit` readings, the oldest first
+  const bpQ = useApi<BloodPressureReading[]>(
+    ['health', 'body', 'bp'],
+    '/health/body/blood-pressure',
+    { fromDay, toDay, limit: BP_LIMIT },
+    { enabled: ready },
+  );
+  const has = useHasMetric();
 
   const data = useMemo(() => {
     const d = daily.data;
@@ -59,9 +71,12 @@ export default function BodyPage() {
   }, [daily.data]);
 
   const bpAll = bpQ.data ?? [];
-  const bpRange = useMemo(() => bpAll.filter((r) => !fromDay || r.day >= fromDay), [bpAll, fromDay]);
+  // the previous range stays visible while the next one loads
+  const bpRange = useMemo(() => bpAll.filter((r) => (!fromDay || r.day >= fromDay) && (!toDay || r.day <= toDay)), [bpAll, fromDay, toDay]);
+  // readings outside the selected range still count: the card then says the range has none
+  const hasBp = bpAll.length > 0 || has(SYS);
   const hasAny =
-    !!data && (data.weight.length > 0 || data.bmi.points.length > 0 || data.fat.length > 0 || data.lean.points.length > 0 || data.heightM !== null || bpAll.length > 0);
+    !!data && (data.weight.length > 0 || data.bmi.points.length > 0 || data.fat.length > 0 || data.lean.points.length > 0 || data.heightM !== null || hasBp);
   const noRange = t('health.common.noDataRange');
 
   const tiles: Tile[] = data
@@ -209,7 +224,7 @@ export default function BodyPage() {
                 footerExtra={data.lean.computed ? <span className="text-fg-3">{t('health.body.lean.computed')}</span> : undefined}
               />
             )}
-            {bpAll.length > 0 && (
+            {hasBp && (
               <div className="xl:col-span-2">
                 <BloodPressureCard readings={bpRange} loading={bpQ.isLoading} />
               </div>

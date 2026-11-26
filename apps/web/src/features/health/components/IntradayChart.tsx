@@ -1,7 +1,7 @@
 import { useMemo, type ReactNode } from 'react';
 import type { MarkAreaComponentOption, SeriesOption } from 'echarts';
 import type { LucideIcon } from 'lucide-react';
-import { workoutTitle, type IntradayBucket, type IntradayResponse, type Page, type WorkoutSummary } from '@cadence/shared';
+import { workoutTitle, type IntradayResponse, type Page, type WorkoutSummary } from '@cadence/shared';
 import { ChartCard } from '@/components/charts/ChartCard';
 import { EChart } from '@/components/charts/EChart';
 import { sportColor, useChartTheme } from '@/components/charts/theme';
@@ -22,8 +22,10 @@ import { useApi } from '@/lib/api';
 import { useFormat } from '@/lib/format';
 import { useI18n, useT } from '@/lib/i18n';
 import { SportIcon, sportColorVar } from '@/lib/sports';
-import { LEGEND_LINE_ICON } from '../lib/chart';
+import { dayStartTs } from '@/lib/time';
+import { LEGEND_LINE_ICON, numAxisLabel, withGaps } from '../lib/chart';
 import { useMetricFormat } from '../lib/metrics';
+import { intradayTz } from '../lib/tz';
 
 export interface IntradayChartProps {
   /** Record type identifier (quantity types only). */
@@ -43,17 +45,6 @@ export interface IntradayChartProps {
   workouts?: boolean;
   height?: number;
   actions?: ReactNode;
-}
-
-function withGaps(buckets: IntradayBucket[], bucketS: number, f: (b: IntradayBucket) => [number, number | null]): ([number, number | null])[] {
-  const out: ([number, number | null])[] = [];
-  buckets.forEach((b, i) => {
-    const prev = buckets[i - 1];
-    // a gap of more than three buckets breaks the line instead of drawing a misleading straight segment
-    if (prev && b.ts - prev.ts > bucketS * 3) out.push([(prev.ts + bucketS) * 1000, null]);
-    out.push(f(b));
-  });
-  return out;
 }
 
 /** One day of a quantity type in small buckets: min–max band + mean for rates, bars for cumulative types. */
@@ -80,25 +71,33 @@ export function IntradayChart({
   // while another day loads the previous one stays visible (dimmed) instead of flashing a skeleton
   const d = q.data ?? null;
   const stale = !!d && (d.day !== day || d.type !== type);
+  // the day's workouts load alongside the samples: a UTC window that surely holds the local day (offsets reach ±14 h),
+  // cut to the exact day of the response below
+  const dayUtc = dayStartTs(day, 0);
   const w = useApi<Page<WorkoutSummary>>(
     ['health', 'intraday-workouts'],
-    d && workouts ? '/workouts' : null,
-    d ? { from: d.dayStartTs, to: d.dayEndTs, limit: 20, sort: 'start', order: 'asc' } : undefined,
+    workouts ? '/workouts' : null,
+    { from: dayUtc - 15 * 3600, to: dayUtc + 39 * 3600, limit: 50, sort: 'start', order: 'asc' },
   );
   const wk = workouts && d && w.data ? w.data.items.filter((x) => x.startTs >= d.dayStartTs && x.startTs < d.dayEndTs) : [];
+  const wkKey = wk.map((x) => x.id).join(',');
 
   const cumulative = d?.aggregation === 'sum';
   const unitLabel = m.unitLabel(type, unit);
 
   const built = useMemo(() => {
     if (!d) return null;
+    // the axis runs in real time, its ticks on the hours of the day's first offset; every time is labelled with the
+    // offset in force at that moment, so a daylight-saving day runs 0, 1, 3, 4 … (23 h) or 0, 1, 2, 2, 3 … (25 h)
+    const tz = intradayTz(d);
     const off = d.tzMin * 60;
     const x = (ts: number) => (ts + off) * 1000;
+    const time = (ts: number) => fmt.time(ts, tz(ts));
     const conv = (v: number) => m.toDisplay(type, v, unit);
     const xs = timeAxis(theme, {
       min: x(d.dayStartTs),
       max: x(d.dayEndTs),
-      axisLabel: { color: theme.muted, fontSize: 11, hideOverlap: true, formatter: (v: number) => fmt.time(v / 1000, 0) },
+      axisLabel: { color: theme.muted, fontSize: 11, hideOverlap: true, formatter: (v: number) => time(v / 1000 - off) },
     });
     const areas: MarkAreaComponentOption | undefined =
       wk.length === 0
@@ -115,7 +114,7 @@ export function IntradayChart({
     if (cumulative) {
       const n = Math.max(1, Math.ceil((d.dayEndTs - d.dayStartTs) / d.bucketS));
       const byIdx = new Map(d.buckets.map((b) => [Math.round((b.ts - d.dayStartTs) / d.bucketS), b]));
-      const labels = Array.from({ length: n }, (_, i) => fmt.time(d.dayStartTs + i * d.bucketS, d.tzMin));
+      const labels = Array.from({ length: n }, (_, i) => time(d.dayStartTs + i * d.bucketS));
       const vals = Array.from({ length: n }, (_, i) => {
         const b = byIdx.get(i);
         return b ? conv(b.avg) : 0;
@@ -131,9 +130,10 @@ export function IntradayChart({
               const i = p?.dataIndex ?? -1;
               const b = byIdx.get(i);
               if (!b) return '';
+              // both ends with the bucket's own offset: "02:00 – 03:00" twice on the day the clocks go back
               const end = d.dayStartTs + (i + 1) * d.bucketS;
               return tooltipHtml(
-                `${fmt.time(b.ts, d.tzMin)} – ${fmt.time(end, d.tzMin)}`,
+                `${time(b.ts)} – ${fmt.time(end, tz(b.ts))}`,
                 [{ color, label: title, value: m.value(type, b.avg, unit) }],
                 theme,
               );
@@ -141,11 +141,11 @@ export function IntradayChart({
             { axisPointer: { type: 'shadow', shadowStyle: { color: theme.grid, opacity: 0.35 } } },
           ),
           xAxis: categoryAxis(theme, labels, { axisLabel: { color: theme.muted, fontSize: 11, hideOverlap: true } }),
-          yAxis: valueAxis(theme, { axisLabel: { color: theme.muted, fontSize: 11 } }),
+          yAxis: valueAxis(theme, { axisLabel: { color: theme.muted, fontSize: 11, formatter: numAxisLabel(fmt) } }),
           series: [s],
         },
         rows: d.buckets.map((b) => ({
-          time: fmt.time(b.ts, d.tzMin),
+          time: time(b.ts),
           avg: m.plain(type, b.avg, unit),
           min: '',
           max: '',
@@ -157,9 +157,9 @@ export function IntradayChart({
       };
     }
 
-    const bands = withGaps(d.buckets, d.bucketS, (b) => [x(b.ts + d.bucketS / 2), conv(b.avg)]);
-    const lows = withGaps(d.buckets, d.bucketS, (b) => [x(b.ts + d.bucketS / 2), conv(b.min)]);
-    const spans = withGaps(d.buckets, d.bucketS, (b) => [x(b.ts + d.bucketS / 2), conv(b.max) - conv(b.min)]);
+    const bands = withGaps(d.buckets, d.bucketS, x, (b) => conv(b.avg));
+    const lows = withGaps(d.buckets, d.bucketS, x, (b) => conv(b.min));
+    const spans = withGaps(d.buckets, d.bucketS, x, (b) => conv(b.max) - conv(b.min));
     const avgName = t('health.common.average');
     const rangeName = t('health.common.minMax');
     const series: SeriesOption[] = [
@@ -217,11 +217,11 @@ export function IntradayChart({
           const idx = p?.dataIndex ?? -1;
           const pt = bands[idx];
           if (!pt || pt[1] === null) return '';
-          const ts = pt[0] / 1000 - d.tzMin * 60 - d.bucketS / 2;
+          const ts = pt[0] / 1000 - off - d.bucketS / 2;
           const b = d.buckets.find((bb) => bb.ts === ts);
           if (!b) return '';
           return tooltipHtml(
-            `${fmt.time(b.ts, d.tzMin)} – ${fmt.time(b.ts + d.bucketS, d.tzMin)}`,
+            `${time(b.ts)} – ${fmt.time(b.ts + d.bucketS, tz(b.ts))}`,
             [
               { color, label: avgName, value: m.value(type, b.avg, unit) },
               { color, label: rangeName, value: `${m.plain(type, b.min, unit)} – ${m.value(type, b.max, unit)}` },
@@ -230,11 +230,11 @@ export function IntradayChart({
           );
         }),
         xAxis: xs,
-        yAxis: valueAxis(theme, { scale: true, axisLabel: { color: theme.muted, fontSize: 11 } }),
+        yAxis: valueAxis(theme, { scale: true, axisLabel: { color: theme.muted, fontSize: 11, formatter: numAxisLabel(fmt) } }),
         series,
       },
       rows: d.buckets.map((b) => ({
-        time: fmt.time(b.ts, d.tzMin),
+        time: time(b.ts),
         avg: m.plain(type, b.avg, unit),
         min: m.plain(type, b.min, unit),
         max: m.plain(type, b.max, unit),
@@ -247,7 +247,7 @@ export function IntradayChart({
       ],
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [d, wk.length, theme, fmt, m, color, reference?.value, reference?.label, lang]);
+  }, [d, wkKey, theme, fmt, m, color, reference?.value, reference?.label, lang]);
 
   const stats = useMemo(() => {
     if (!d || !d.buckets.length) return null;
@@ -287,7 +287,7 @@ export function IntradayChart({
                   </span>
                 </>
               )}
-              <span className="text-fg-3">{t('health.common.samplesCount', { count: d.sampleCount })}</span>
+              <span className="text-fg-3">{t('health.common.samplesCount', { count: d.sampleCount, n: fmt.int(d.sampleCount) })}</span>
             </div>
             {wk.length > 0 && (
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
@@ -297,7 +297,7 @@ export function IntradayChart({
                       <SportIcon sport={x.sport} size={10} strokeWidth={2.5} />
                     </span>
                     {workoutTitle(x, lang)}
-                    <span className="text-fg-3 tabular">{fmt.time(x.startTs, d.tzMin)}</span>
+                    <span className="text-fg-3 tabular">{fmt.time(x.startTs, x.tzMin)}</span>
                   </Link>
                 ))}
               </div>
