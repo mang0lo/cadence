@@ -145,18 +145,19 @@ export function HeatmapMap({
     [geo],
   );
 
+  // computed once per data set while shown; a style switch only sends it to the new style again
+  const densityData = useMemo(() => (density ? densityPoints(lines) : null), [density, lines]);
   useOverlayEffect(
     overlay,
     (map) => {
       ensureHeatLayers(map, paletteRef.current);
-      if (density) {
-        const { points, maxPasses } = densityPoints(lines);
-        setPointsData(map, points);
-        setDensityIntensity(map, maxPasses);
+      if (densityData) {
+        setPointsData(map, densityData.points);
+        setDensityIntensity(map, densityData.maxPasses);
       }
       setDensityVisible(map, density);
     },
-    [density, lines],
+    [density, densityData],
   );
 
   const done = lapse ? lapse.done : null;

@@ -173,24 +173,43 @@ export function linesCollection(lines: HeatLine[]): FeatureCollection<LineString
 }
 
 /**
- * Points along all routes for the density layer, roughly every `spacingM` meters. The spacing grows
- * automatically so that the total never exceeds `maxPoints`.
+ * Input of the density layer: points along all routes, roughly every `spacingM` meters (the spacing grows so that
+ * there are never more than `maxPoints`), summed per ~`cellM` grid cell into one point at their mean position with the
+ * count as weight `w`. The heatmap adds weights like points, so it looks the same, but routes that overlap (the
+ * streets around home) give one feature instead of one per pass: ~23× fewer features to send to the map worker.
  */
 export function densityPoints(
   lines: HeatLine[],
   spacingM = 40,
   maxPoints = 250_000,
+  cellM = 20,
 ): { points: FeatureCollection<Point>; maxPasses: number } {
   const M_PER_DEG = 111_320;
   let totalM = 0;
   for (const l of lines) totalM += (l.cum[l.cum.length - 1] ?? 0) * M_PER_DEG;
   const step = Math.max(spacingM, totalM / maxPoints) / M_PER_DEG;
-  const features: Feature<Point>[] = [];
+  // grid of ~cellM square cells: rows of cellLat degrees, each row with its own longitude width
+  const cellLat = cellM / M_PER_DEG;
+  const half = Math.ceil(180 / cellLat) + 1;
+  const sums = new Map<number, { lon: number; lat: number; n: number }>();
   // number of different routes per ~100 m cell → normalisation of the density layer
   const cells = new Map<number, number>();
   let seen = new Set<number>();
+  let lastRow = NaN;
+  let cellLon = cellLat;
   const push = (c: [number, number]) => {
-    features.push({ type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: c } });
+    const row = Math.floor(c[1] / cellLat);
+    if (row !== lastRow) {
+      lastRow = row;
+      cellLon = cellLat / Math.max(0.01, Math.cos(((row + 0.5) * cellLat * Math.PI) / 180));
+    }
+    const key = row * (2 * half + 1) + Math.floor(c[0] / cellLon) + half;
+    const sum = sums.get(key);
+    if (sum) {
+      sum.lon += c[0];
+      sum.lat += c[1];
+      sum.n++;
+    } else sums.set(key, { lon: c[0], lat: c[1], n: 1 });
     seen.add(Math.floor(c[0] / 0.0015) * 100_003 + Math.floor(c[1] / 0.001));
   };
   for (const l of lines) {
@@ -214,6 +233,9 @@ export function densityPoints(
   }
   let maxPasses = 1;
   for (const n of cells.values()) if (n > maxPasses) maxPasses = n;
+  const features: Feature<Point>[] = [];
+  for (const { lon, lat, n } of sums.values())
+    features.push({ type: 'Feature', properties: { w: n }, geometry: { type: 'Point', coordinates: [lon / n, lat / n] } });
   return { points: { type: 'FeatureCollection', features }, maxPasses };
 }
 
@@ -271,7 +293,8 @@ export function ensureHeatLayers(map: MapLibreMap, palette: HeatPalette): void {
         source: SRC.points,
         layout: { visibility: 'none' },
         paint: {
-          'heatmap-weight': 1,
+          // points of the same ~20 m cell are summed into one (densityPoints)
+          'heatmap-weight': ['get', 'w'] as unknown as ExpressionSpecification,
           'heatmap-intensity': 0.01,
           'heatmap-radius': [
             'interpolate',

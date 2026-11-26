@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { ID, ensureExplorerLayers, explorerColors, visitSteps } from '@/features/maps/lib/explorerLayers';
-import { LAYER, ensureHeatLayers, heatPalette } from '@/features/maps/lib/heatmapLayers';
+import { LAYER, densityPoints, ensureHeatLayers, heatPalette, type HeatLine } from '@/features/maps/lib/heatmapLayers';
 import { FakeLayerMap } from './fake-map';
 
 /** A basemap: background, area fills, roads, then labels. */
@@ -68,5 +68,44 @@ describe('ensureExplorerLayers', () => {
     m.resetCalls();
     ensureExplorerLayers(m.map, colors, visitSteps(10));
     expect(m.calls).toEqual([]);
+  });
+});
+
+describe('densityPoints', () => {
+  const M_PER_DEG = 111_320;
+  /** A heat line through `coords` (planar lengths as toHeatLines computes them). */
+  const line = (i: number, coords: [number, number][]): HeatLine => {
+    const k = Math.cos((coords[0]![1] * Math.PI) / 180);
+    const cum = [0];
+    for (let j = 1; j < coords.length; j++)
+      cum.push(cum[j - 1]! + Math.hypot((coords[j]![0] - coords[j - 1]![0]) * k, coords[j]![1] - coords[j - 1]![1]));
+    return { id: i + 1, i, sport: 'run', coords, starts: [0], cum };
+  };
+  /** 2 km east along 48.2° N, as 21 vertices. */
+  const east = (lat = 48.2): [number, number][] =>
+    Array.from({ length: 21 }, (_, j) => [16.3 + (j * 100) / (M_PER_DEG * Math.cos((lat * Math.PI) / 180)), lat]);
+
+  it('sums the points of overlapping routes per cell: same total weight, far fewer features', () => {
+    const one = densityPoints([line(0, east())]);
+    const ten = densityPoints(Array.from({ length: 10 }, (_, i) => line(i, east())));
+    const weight = (d: typeof one) => d.points.features.reduce((s, f) => s + Number(f.properties?.w), 0);
+    expect(weight(one)).toBeGreaterThan(45); // a point every ~40 m over 2 km
+    expect(weight(ten)).toBe(10 * weight(one));
+    expect(ten.points.features.length).toBe(one.points.features.length);
+    expect(ten.maxPasses).toBe(10);
+  });
+
+  it('keeps the points on the route (mean position of a cell)', () => {
+    const d = densityPoints([line(0, east(48.2)), line(1, east(48.2))]);
+    for (const f of d.points.features) {
+      expect(f.geometry.coordinates[1]).toBeCloseTo(48.2, 9);
+      expect(f.geometry.coordinates[0]).toBeGreaterThanOrEqual(16.3);
+    }
+  });
+
+  it('keeps routes a street apart (~60 m) in separate cells', () => {
+    const d = densityPoints([line(0, east(48.2)), line(1, east(48.2 + 60 / M_PER_DEG))]);
+    const lats = new Set(d.points.features.map((f) => f.geometry.coordinates[1]!.toFixed(6)));
+    expect(lats.size).toBe(2);
   });
 });
