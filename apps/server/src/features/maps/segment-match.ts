@@ -145,35 +145,115 @@ function sampleAlong(xs: ArrayLike<number>, ys: ArrayLike<number>, stepM: number
   return out;
 }
 
-/** Share of `points` farther than `tol` from the polyline (and the max distance), using a coarse bounding prefilter. */
-function deviation(
-  points: [number, number][],
-  px: ArrayLike<number>,
-  py: ArrayLike<number>,
-  tol: number,
-): { outlierShare: number; max: number } {
-  let outliers = 0;
-  let max = 0;
-  const tol2 = tol * tol;
-  for (const [x, y] of points) {
+/** Cell keys stay unique while |cell y| < 2^21 (40 000 km at 20 m cells). */
+const CELL_KEY = 4_194_304;
+/** Edges longer than this many cells (a GPS glitch) are not put in cells but measured by every query. */
+const LONG_EDGE_CELLS = 64;
+
+/**
+ * The edges of a polyline (local planar meters) in a uniform grid: the nearest edge to a point is found by looking at
+ * the cells around it, ring by ring, instead of at every edge. Linear to build, so a long segment or track part no
+ * longer makes the "follows the course" test quadratic.
+ */
+class EdgeGrid {
+  private readonly cells = new Map<number, number[]>();
+  private readonly long: number[] = [];
+  /** Query stamp per edge: an edge listed in several cells is measured once per query. */
+  private readonly seen: Uint32Array;
+  private query = 0;
+
+  constructor(
+    private readonly px: ArrayLike<number>,
+    private readonly py: ArrayLike<number>,
+    private readonly cell: number,
+  ) {
+    const edges = Math.max(0, px.length - 1);
+    this.seen = new Uint32Array(edges);
+    for (let i = 0; i < edges; i++) {
+      // an edge is listed in every cell that the bounding box of one of its pieces (≤ one cell long) touches, so it is
+      // listed in the cell of each of its points; distances are always measured to the whole edge
+      const ax = px[i]!;
+      const ay = py[i]!;
+      const dx = px[i + 1]! - ax;
+      const dy = py[i + 1]! - ay;
+      const pieces = Math.max(1, Math.ceil(Math.hypot(dx, dy) / cell));
+      if (pieces > LONG_EDGE_CELLS) {
+        this.long.push(i);
+        continue;
+      }
+      for (let k = 0; k < pieces; k++) {
+        const x0 = ax + (dx * k) / pieces;
+        const x1 = ax + (dx * (k + 1)) / pieces;
+        const y0 = ay + (dy * k) / pieces;
+        const y1 = ay + (dy * (k + 1)) / pieces;
+        const cx1 = Math.floor(Math.max(x0, x1) / cell);
+        const cy1 = Math.floor(Math.max(y0, y1) / cell);
+        for (let cx = Math.floor(Math.min(x0, x1) / cell); cx <= cx1; cx++)
+          for (let cy = Math.floor(Math.min(y0, y1) / cell); cy <= cy1; cy++) {
+            const key = cx * CELL_KEY + cy;
+            const list = this.cells.get(key);
+            if (list === undefined) this.cells.set(key, [i]);
+            else if (list[list.length - 1] !== i) list.push(i);
+          }
+      }
+    }
+  }
+
+  /**
+   * Squared distance from (x, y) to the nearest edge – exact whenever that distance is ≤ `maxDist`, otherwise some
+   * value above maxDist² (Infinity when no edge is that close).
+   */
+  nearest2(x: number, y: number, maxDist: number): number {
+    const { px, py, cell, cells, seen } = this;
+    const q = ++this.query;
+    const cx = Math.floor(x / cell);
+    const cy = Math.floor(y / cell);
     let best = Infinity;
-    for (let i = 0; i < px.length - 1; i++) {
-      // cheap reject: the point is farther than the best so far from the segment's bounding box
-      const minX = px[i]! < px[i + 1]! ? px[i]! : px[i + 1]!;
-      const maxX = px[i]! < px[i + 1]! ? px[i + 1]! : px[i]!;
-      const minY = py[i]! < py[i + 1]! ? py[i]! : py[i + 1]!;
-      const maxY = py[i]! < py[i + 1]! ? py[i + 1]! : py[i]!;
-      const ddx = x < minX ? minX - x : x > maxX ? x - maxX : 0;
-      const ddy = y < minY ? minY - y : y > maxY ? y - maxY : 0;
-      if (ddx * ddx + ddy * ddy >= best) continue;
-      const { d2 } = toSegment(x, y, px[i]!, py[i]!, px[i + 1]!, py[i + 1]!);
+    for (const e of this.long) {
+      const { d2 } = toSegment(x, y, px[e]!, py[e]!, px[e + 1]!, py[e + 1]!);
       if (d2 < best) best = d2;
     }
-    if (best > tol2) outliers++;
-    const d = Math.sqrt(best);
-    if (d > max) max = d;
+    for (let r = 0; ; r++) {
+      // the ring of cells r steps away from the point's cell
+      for (let i = cx - r; i <= cx + r; i++) {
+        const edge = i === cx - r || i === cx + r;
+        for (let j = cy - r; j <= cy + r; j += edge ? 1 : 2 * r) {
+          const list = cells.get(i * CELL_KEY + j);
+          if (list !== undefined)
+            for (const e of list) {
+              if (seen[e] === q) continue;
+              seen[e] = q;
+              const { d2 } = toSegment(x, y, px[e]!, py[e]!, px[e + 1]!, py[e + 1]!);
+              if (d2 < best) best = d2;
+            }
+        }
+      }
+      // every edge closer than r cells has been measured: done when the best one is that close, or beyond maxDist
+      const reach = r * cell;
+      if (best <= reach * reach || reach > maxDist) return best;
+    }
   }
-  return { outlierShare: points.length ? outliers / points.length : 0, max };
+}
+
+/**
+ * Do the `points` lie on the polyline of `grid`: at most `maxShare` of them farther than `tol` from it (GPS outliers)
+ * and none farther than `maxDist`?
+ */
+function staysNear(
+  points: [number, number][],
+  grid: EdgeGrid,
+  tol: number,
+  maxShare: number,
+  maxDist: number,
+): boolean {
+  let outliers = 0;
+  const tol2 = tol * tol;
+  for (const [x, y] of points) {
+    const best = grid.nearest2(x, y, maxDist);
+    if (best > tol2 && ++outliers / points.length > maxShare) return false;
+    if (Math.sqrt(best) > maxDist) return false;
+  }
+  return true;
 }
 
 export interface MatchOptions {
@@ -239,11 +319,13 @@ export function matchSegment(seg: SegmentPath, track: MatchTrack, opts: MatchOpt
   if (!ends.length) return [];
 
   const segPts = sampleAlong(sx, sy, 20);
+  let segGrid: EdgeGrid | null = null;
   /** The pass from `sp` to `ep`, or null when its length, course or speed rule it out. */
   const pass = (sp: Pass, ep: Pass): SegmentMatch | null => {
     const len = ep.pos - sp.pos;
     if (len < segLen * LENGTH_RATIO_MIN || len > segLen * LENGTH_RATIO_MAX) return null;
-    if (!follows(sp, ep, tx, ty, sx, sy, segPts, tol)) return null;
+    segGrid ??= new EdgeGrid(sx, sy, tol / 2);
+    if (!follows(sp, ep, tx, ty, segGrid, segPts, tol)) return null;
     const startT = interp(track.t, sp.i, sp.u);
     const endT = interp(track.t, ep.i, ep.u);
     const elapsed = endT - startT;
@@ -289,8 +371,7 @@ function follows(
   ep: Pass,
   tx: Float64Array,
   ty: Float64Array,
-  sx: Float64Array,
-  sy: Float64Array,
+  segGrid: EdgeGrid,
   segPts: [number, number][],
   tol: number,
 ): boolean {
@@ -305,11 +386,9 @@ function follows(
   ys.push(ty[ep.i]! + ep.u * (ty[ep.i + 1]! - ty[ep.i]!));
   const trackPts = sampleAlong(xs, ys, 15);
   // 1. the track stays on the segment (a few GPS outliers are tolerated, none beyond twice the tolerance)
-  const a = deviation(trackPts, sx, sy, tol);
-  if (a.outlierShare > 0.05 || a.max > 2 * tol) return false;
+  if (!staysNear(trackPts, segGrid, tol, 0.05, 2 * tol)) return false;
   // 2. the segment is covered by the track (no shortcut)
-  const b = deviation(segPts, xs, ys, tol);
-  return b.outlierShare <= 0.08 && b.max <= 2.5 * tol;
+  return staysNear(segPts, new EdgeGrid(xs, ys, tol / 2), tol, 0.08, 2.5 * tol);
 }
 
 function timeStats(track: MatchTrack, sp: Pass, ep: Pass): { movingS: number | null; avgHr: number | null } {
