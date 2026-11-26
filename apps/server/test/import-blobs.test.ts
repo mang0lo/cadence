@@ -39,3 +39,25 @@ describe('stored blobs', () => {
     expect([...decodeTrack(blob).lat].map((v) => v.toFixed(7))).toEqual([...track.lat].map((v) => v.toFixed(7)));
   });
 });
+
+describe('stored routes', () => {
+  it('keep their longitudes across the antimeridian', () => {
+    // Taveuni (Fiji): back and forth over 180°, plus both ends of the range
+    const lon = [179.9998, 179.9999, -179.9999, -179.9998, 179.9999, 180, -180, 0.5, -179.5];
+    const n = lon.length;
+    const track: Track = {
+      t: Float64Array.from({ length: n }, (_, i) => 1_750_000_000 + i),
+      lat: Float64Array.from({ length: n }, (_, i) => -16.8 - i * 1e-5),
+      lon: Float64Array.from(lon),
+      ele: null,
+      speed: null,
+      course: null,
+      hAcc: null,
+      vAcc: null,
+    };
+    const back = decodeTrack(encodeTrack(track));
+    const wrap = (v: number) => (v === -180 ? 180 : v); // the same meridian
+    expect([...back.lon].map((v) => wrap(v).toFixed(7))).toEqual(lon.map((v) => wrap(v).toFixed(7)));
+    expect([...back.lat].map((v) => v.toFixed(7))).toEqual([...track.lat].map((v) => v.toFixed(7)));
+  });
+});

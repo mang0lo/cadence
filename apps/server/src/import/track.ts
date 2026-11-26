@@ -17,6 +17,9 @@ export interface Track {
 
 const MAGIC = 0x314b5443; // 'CTK1'
 const OPTIONAL = ['ele', 'speed', 'course', 'hAcc', 'vAcc'] as const;
+/** 360° in 1e-7°. Coordinate deltas take the short way round (|Δ| ≤ 180°): an int32 only holds ±214.7°. */
+const TURN = 3_600_000_000;
+const HALF = TURN / 2;
 
 /**
  * Compact binary form stored in workout_routes.data (gzip):
@@ -52,7 +55,11 @@ export function encodeTrack(tr: Track): Uint8Array {
     prev = 0;
     for (let i = 0; i < n; i++) {
       const v = Math.round(col[i]! * 1e7);
-      dv.setInt32(o, v - prev, true);
+      let d = v - prev;
+      // across the antimeridian (179.9° → -179.9°)
+      if (d > HALF) d -= TURN;
+      else if (d < -HALF) d += TURN;
+      dv.setInt32(o, d, true);
       prev = v;
       o += 4;
     }
@@ -88,6 +95,8 @@ export function decodeTrack(blob: Uint8Array): Track {
     acc = 0;
     for (let i = 0; i < n; i++) {
       acc += dv.getInt32(o, true);
+      if (acc > HALF) acc -= TURN;
+      else if (acc < -HALF) acc += TURN;
       col[i] = acc / 1e7;
       o += 4;
     }
