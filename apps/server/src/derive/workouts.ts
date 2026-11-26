@@ -192,12 +192,16 @@ function streamCadence(b: BuiltStreams, footSport: boolean, isRide: boolean): nu
   return avg >= lo && avg <= hi ? avg : null;
 }
 
-/** Recompute everything derived for one workout (streams, metrics, splits, best efforts, polyline, HR histogram). */
-export function deriveWorkout(db: Db, cache: DeriveCache, id: number): void {
+/**
+ * Recompute everything derived for one workout of the athlete (streams, metrics, splits, best efforts, polyline, HR
+ * histogram). Ids of other athletes' workouts are ignored.
+ */
+export function deriveWorkout(db: Db, cache: DeriveCache, athleteId: number, id: number): void {
   const w = get<WorkoutRow>(
     db,
-    'SELECT id, athlete_id, sport, start_ts, end_ts, duration_s, source_name, indoor, meta, stats FROM workouts WHERE id = ?',
-    [id],
+    `SELECT id, athlete_id, sport, start_ts, end_ts, duration_s, source_name, indoor, meta, stats FROM workouts
+     WHERE id = ? AND athlete_id = ?`,
+    [id, athleteId],
   );
   if (!w) return;
   const aid = w.athlete_id;
@@ -489,7 +493,7 @@ export const workoutsStep: DeriveStep = {
       ctx.checkCancelled();
       const slice = ids.slice(i, i + BATCH);
       tx(ctx.db, () => {
-        for (const id of slice) deriveWorkout(ctx.db, cache, id);
+        for (const id of slice) deriveWorkout(ctx.db, cache, ctx.athleteId, id);
       });
       ctx.report(
         Math.min(1, (i + slice.length) / ids.length),

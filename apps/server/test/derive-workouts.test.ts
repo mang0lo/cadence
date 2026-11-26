@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { WorkoutStatistic } from '@cadence/shared';
 import { migrateAll } from '../src/app';
 import { get, openDb, run, type Db } from '../src/db/db';
-import { DeriveCache, deriveWorkout } from '../src/derive/workouts';
+import { DeriveCache, deriveWorkout, workoutsStep } from '../src/derive/workouts';
 
 const T0 = 1_780_000_000; // 2026-05-28
 const HR = 1;
@@ -68,7 +68,7 @@ function workout(sport: 'run' | 'ride', source: string, minutes: number, stats: 
 }
 
 function derived(id: number) {
-  deriveWorkout(db, new DeriveCache(db), id);
+  deriveWorkout(db, new DeriveCache(db), 1, id);
   return get<{ step_count: number | null; avg_cadence: number | null }>(
     db,
     'SELECT step_count, avg_cadence FROM workouts WHERE id = ?',
@@ -108,5 +108,32 @@ describe('cadence and steps without Apple statistics', () => {
     run(db, 'DELETE FROM records WHERE type_id = ?', [CYCLING_CADENCE]);
     for (let t = T0; t <= T0 + 1800; t += 5) rec(CYCLING_CADENCE, WATCH, t, t, 85);
     expect(derived(bad).avg_cadence).toBeCloseTo(85, 0);
+  });
+});
+
+describe('workoutsStep', () => {
+  it("does not touch another athlete's workout passed by id", async () => {
+    run(db, "INSERT INTO athletes (id, name) VALUES (2, 'Other')");
+    const own = workout('run', 'Runkeeper', 30, [stat('DistanceWalkingRunning', 5_000)]);
+    const other = run(
+      db,
+      `INSERT INTO workouts (athlete_id, ext_key, activity_type, sport, start_ts, end_ts, duration_s, source_name)
+       VALUES (2, 'other', 'HKWorkoutActivityTypeRunning', 'run', ?, ?, 1800, 'Runkeeper')`,
+      [T0, T0 + 1800],
+    ).lastInsertRowid;
+    const noop = () => {};
+    await workoutsStep.run({
+      db,
+      athleteId: 1,
+      workoutIds: [own, other],
+      sinceDay: null,
+      report: noop,
+      checkCancelled: noop,
+      log: noop,
+    });
+    const version = (id: number) =>
+      get<{ v: number }>(db, 'SELECT derived_version AS v FROM workouts WHERE id = ?', [id])!.v;
+    expect(version(own)).toBeGreaterThan(0);
+    expect(version(other)).toBe(0);
   });
 });
