@@ -449,7 +449,7 @@ export function categoryValueLabel(value: string, lang: 'en' | 'de'): string {
  */
 export type CategoryValueRole = 'add' | 'zero' | 'skip';
 
-/** Stages of the generic and the staged sleep values (a night written both ways must be counted once). */
+/** Generic and staged asleep values of SleepAnalysis (a night written both ways must be counted once). */
 export const SLEEP_GENERIC_VALUES: readonly string[] = ['Asleep', 'AsleepUnspecified'];
 export const SLEEP_STAGE_VALUES: readonly string[] = ['AsleepCore', 'AsleepDeep', 'AsleepREM'];
 

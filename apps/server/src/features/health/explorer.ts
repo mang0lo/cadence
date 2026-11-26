@@ -15,7 +15,6 @@ interface TypeRow {
   last_ts: number | null;
 }
 
-
 const dayTs = (day: string | null): number | null => {
   const n = day ? parseDay(day) : null;
   return n === null ? null : n * 86400;
