@@ -91,10 +91,28 @@ export function HeatmapMap({
       const ids = [...new Set(hit(e.point).map((f) => Number(f.properties?.id)))].filter(Number.isFinite);
       setPicked(ids.length ? { ids, lngLat: e.lngLat } : null);
     });
+    // Hover only sets the cursor, but near home thousands of routes overlap and every query materializes all of them:
+    // at most one query per frame, none while the map moves (panning fires mousemove all the time).
+    let frame = 0;
+    let pointer: { x: number; y: number } | null = null;
+    const setCursor = (c: string) => {
+      const style = map.getCanvas().style;
+      if (style.cursor !== c) style.cursor = c;
+    };
     map.on('mousemove', (e) => {
-      const over = !lapseActiveRef.current && hit(e.point).length > 0;
-      map.getCanvas().style.cursor = over ? 'pointer' : '';
+      pointer = e.point;
+      if (!frame)
+        frame = requestAnimationFrame(() => {
+          frame = 0;
+          if (!pointer || map.isMoving()) return;
+          setCursor(!lapseActiveRef.current && hit(pointer).length > 0 ? 'pointer' : '');
+        });
     });
+    map.on('mouseout', () => {
+      pointer = null;
+      setCursor('');
+    });
+    map.on('remove', () => cancelAnimationFrame(frame));
   };
   const overlay = useMapOverlay({ onReady: bindEvents });
   const popupEl = useMapPopup(overlay.mapRef, picked?.lngLat ?? null, () => setPicked(null), POPUP);
