@@ -157,4 +157,46 @@ describe('import folder watcher', () => {
       get<{ value: string }>(db, "SELECT value FROM settings WHERE key = 'core.importWatch'")!.value,
     ).toContain('export.zip');
   });
+
+  it('imports a file again when its import was interrupted, but not when the file was the problem', async () => {
+    const watchDir = path.join(dir, 'inbox');
+    fs.mkdirSync(watchDir);
+    const jobs = new Map<string, { status: string; error: string | null; file: string }>();
+    const fake = {
+      enqueueImport: (_a: number, file: string) => {
+        const id = `j${jobs.size + 1}`;
+        jobs.set(id, { status: 'queued', error: null, file: path.basename(file) });
+        return { id };
+      },
+      get: (_a: number, id: string) => jobs.get(id) ?? null,
+    } as unknown as JobManager;
+    fs.writeFileSync(path.join(watchDir, 'export.zip'), 'PK fake');
+    fs.writeFileSync(path.join(watchDir, 'broken.zip'), 'PK broken');
+    const stop = startImportWatcher(db, fake, watchDir, 1, 40);
+    const settle = () => new Promise((r) => setTimeout(r, 200));
+    await settle();
+    expect([...jobs.values()].map((j) => j.file).sort()).toEqual(['broken.zip', 'export.zip']);
+    const job = (file: string) => [...jobs.entries()].filter(([, j]) => j.file === file).at(-1)!;
+    // the server stopped during both imports (still queued: nothing happens)
+    await settle();
+    expect(jobs.size).toBe(2);
+    job('export.zip')[1].status = 'failed';
+    job('export.zip')[1].error = 'Interrupted: the server stopped while this job was running';
+    job('broken.zip')[1].status = 'failed';
+    job('broken.zip')[1].error = 'Not a readable zip file: invalid central directory';
+    await settle();
+    // the interrupted one is queued again, the broken file is not
+    expect([...jobs.values()].map((j) => j.file).sort()).toEqual(['broken.zip', 'export.zip', 'export.zip']);
+    // a worker crash twice more: three attempts in all
+    for (const error of ['Import worker crashed: out of memory', 'Import worker exited unexpectedly (code 134)']) {
+      job('export.zip')[1].status = 'failed';
+      job('export.zip')[1].error = error;
+      await settle();
+    }
+    expect([...jobs.values()].filter((j) => j.file === 'export.zip')).toHaveLength(3);
+    stop();
+    const seen = JSON.parse(get<{ value: string }>(db, "SELECT value FROM settings WHERE key = 'core.importWatch'")!.value);
+    expect(typeof seen['export.zip']).toBe('string');
+    expect(typeof seen['broken.zip']).toBe('string');
+  });
 });

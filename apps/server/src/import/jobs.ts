@@ -12,6 +12,14 @@ import { athletesWithPendingChanges, pendingScope } from './scope';
 import type { JobWorkerData, WorkerMessage } from './worker';
 import { emptyStats } from './writer';
 
+/**
+ * True when a failed job did not fail because of its input but because the server or its worker stopped (the error
+ * texts start() / close() / the worker handlers below write): trying again can succeed.
+ */
+export function wasInterrupted(error: string | null | undefined): boolean {
+  return !!error && /^(Interrupted|Import worker (crashed|exited unexpectedly)|Could not start the import worker)/.test(error);
+}
+
 /** Options of two derive requests run as one job: 'all' absorbs the other, otherwise their scopes are united. */
 export function mergeDeriveOptions(a: JobOptions, b: JobOptions): JobOptions {
   const ids = (o: JobOptions) => o.workoutIds ?? 'all';
