@@ -9,6 +9,7 @@
  * Nothing here touches the DOM at import time (the module is also imported by Node tests through shareImage.ts).
  */
 import type { ErrorEvent, Map as MapLibreMap } from 'maplibre-gl';
+import { queryClient } from '../../lib/api';
 import { DARK, FALLBACK_STYLE, LIBERTY, POSITRON } from './styles';
 import { unproject, type FitView, type ThumbnailBasemap } from './tiles';
 
@@ -138,8 +139,23 @@ function waitFor(map: MapLibreMap, event: 'idle' | 'style.load', ms: number): Pr
   });
 }
 
+/**
+ * The first render waits until the page has loaded its data and the browser is idle: downloading MapLibre (about
+ * 1.6 MB of script) and starting WebGL must not compete with the first paint of the page (a cold cache on the
+ * dashboard). Previews show the plain route until then.
+ */
+async function pageSettled(): Promise<void> {
+  const until = Date.now() + 4000;
+  while (queryClient.isFetching() > 0 && Date.now() < until) await new Promise((r) => setTimeout(r, 150));
+  await new Promise<void>((resolve) => {
+    if (typeof requestIdleCallback === 'function') requestIdleCallback(() => resolve(), { timeout: 1500 });
+    else setTimeout(resolve, 100);
+  });
+}
+
 async function renderer(style: string): Promise<Renderer> {
   rendererPromise ??= (async () => {
+    await pageSettled();
     const [{ Map: MapLibre, setWorkerUrl }, worker] = await Promise.all([
       import('maplibre-gl'),
       import('maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'),
@@ -196,7 +212,7 @@ export const SKIPPED = 'skipped';
 async function renderOne(req: SnapshotRequest, wanted: () => boolean): Promise<Rendered | null | typeof SKIPPED> {
   const wantedStyle = STYLE_URL[req.base];
   const r = await renderer(wantedStyle);
-  // the hidden map may still have been loading: the preview may be gone by now
+  // the first render waits for the page to settle: the preview may be gone by now
   if (!wanted()) return SKIPPED;
   const { map, el } = r;
   const style = failedStyles.has(wantedStyle) ? FALLBACK_STYLE : wantedStyle;
