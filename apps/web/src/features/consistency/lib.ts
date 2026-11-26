@@ -287,11 +287,32 @@ export function changeGoalForm(fmt: Formatter, form: GoalForm, change: Partial<P
   return next;
 }
 
+/** A target the goal form was filled with, kept exactly while the form still shows it (see formTarget). */
+export interface GoalFormExact {
+  form: GoalForm;
+  target: number;
+}
+
+/**
+ * The goal form filled with a stored or picked target (the input shows it rounded, in the locale's number format).
+ * A combination the catalogue does not have (an older goal, a sport without distance) falls back like a changed
+ * sport would, and then there is no exact target to keep: it was a number in another unit, and the emptied field
+ * must not stand for it (a 50 km goal would be saved as 50,000 s of time).
+ */
+export function fillGoalForm(
+  fmt: Formatter,
+  f: Omit<GoalForm, 'target'>,
+  canonical: number,
+): { form: GoalForm; exact: GoalFormExact | null } {
+  const form = changeGoalForm(fmt, { ...f, target: goalInputText(fmt, f.metric, canonical, f.period) }, {});
+  return { form, exact: form.metric === f.metric ? { form, target: canonical } : null };
+}
+
 /**
  * Canonical target of the form. `exact` is a target the form was filled with (the goal being edited, a quick pick):
  * while its number and unit are untouched, the stored value is kept as is, not re-read from the rounded text.
  */
-export function formTarget(fmt: Formatter, form: GoalForm, exact?: { form: GoalForm; target: number } | null): number {
+export function formTarget(fmt: Formatter, form: GoalForm, exact?: GoalFormExact | null): number {
   if (exact && form.target === exact.form.target && unitKey(form) === unitKey(exact.form)) return exact.target;
   return parseTarget(fmt, form);
 }

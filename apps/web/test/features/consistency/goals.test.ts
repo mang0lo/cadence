@@ -7,6 +7,7 @@ import type { GoalWithProgress } from '@cadence/shared';
 import {
   changeGoalForm,
   classicDistance,
+  fillGoalForm,
   formatGoalValue,
   formTarget,
   goalInputText,
@@ -184,6 +185,19 @@ describe('goal form', () => {
     const km100 = { form: form({ metric: 'distance', target: '62.1' }), target: 100_000 };
     expect(formTarget(enMi, form({ metric: 'distance', target: '62.1', period: 'month' }), km100)).toBe(100_000);
     expect(formTarget(enMi, form({ metric: 'distance', target: '62' }), km100)).toBeCloseTo(99_779.3, 1);
+  });
+
+  it('keeps no stored target when a stored goal falls back to time', () => {
+    // a distance goal of a sport without distance (an older catalogue): the emptied time field must not save 50,000 s
+    const filled = fillGoalForm(en, { period: 'week', sport: 'strength', metric: 'distance' }, 50_000);
+    expect(filled.form).toEqual(form({ sport: 'strength', metric: 'time', target: '' }));
+    expect(filled.exact).toBeNull();
+    expect(formTarget(en, filled.form, filled.exact)).toBeNaN();
+    expect(formTarget(en, changeGoalForm(en, filled.form, { sport: 'run' }), filled.exact)).toBeNaN();
+    // a combination that exists keeps its stored target while the number is untouched
+    const kept = fillGoalForm(en, { period: 'week', sport: 'all', metric: 'time' }, 6000);
+    expect(kept.form).toEqual(form({ metric: 'time', target: '1.67' }));
+    expect(formTarget(en, changeGoalForm(en, kept.form, { sport: 'run' }), kept.exact)).toBe(6000);
   });
 
   it('reads a typed number in the unit of the form', () => {

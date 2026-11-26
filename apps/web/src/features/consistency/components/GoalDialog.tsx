@@ -14,13 +14,14 @@ import { sortSports, sportLabel } from '@/lib/sports';
 import { useConsistencyMutations, useSports } from '../api';
 import {
   changeGoalForm,
+  fillGoalForm,
   formatGoalValue,
   formTarget,
   fromInputValue,
-  goalInputText,
   goalTargetText,
   targetUnit,
   type GoalForm,
+  type GoalFormExact,
 } from '../lib';
 import { FieldGroup } from './FieldGroup';
 
@@ -58,17 +59,17 @@ export function GoalDialog({
   const { createGoal, updateGoal } = useConsistencyMutations();
   const [form, setForm] = useState<GoalForm>({ period: 'week', sport: 'all', metric: 'active_days', target: '' });
   // the target the form was last filled with (the edited goal, a quick pick): saved exactly while its number is untouched
-  const [exact, setExact] = useState<{ form: GoalForm; target: number } | null>(null);
+  const [exact, setExact] = useState<GoalFormExact | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [saving, setSaving] = useState(false);
   const { period, sport, metric, target } = form;
 
-  // the input shows the target rounded in the display unit, in the locale's number format ("42,195" in German)
+  // the input shows the target rounded in the display unit, in the locale's number format ("42,195" in German); a
+  // stored combination the catalogue no longer has falls back like a changed sport would (and keeps no exact target)
   const fill = (f: Omit<GoalForm, 'target'>, canonical: number) => {
-    // a stored combination the catalogue no longer has falls back like a changed sport would
-    const next = changeGoalForm(fmt, { ...f, target: goalInputText(fmt, f.metric, canonical, f.period) }, {});
-    setForm(next);
-    setExact({ form: next, target: canonical });
+    const next = fillGoalForm(fmt, f, canonical);
+    setForm(next.form);
+    setExact(next.exact);
   };
 
   useEffect(() => {
