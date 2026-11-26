@@ -3,6 +3,14 @@
 All notable changes to Cadence. Versions follow [semantic versioning](https://semver.org); every `v*` tag builds a
 release (see `.github/workflows/release.yml`), whose notes are taken from the matching section below.
 
+## [Unreleased]
+
+### Changed
+
+- **License**: Cadence is now licensed under the [PolyForm Noncommercial License 1.0.0](LICENSE) (free for personal
+  and other noncommercial use; commercial use needs a separate license). Versions up to and including 1.0.0 remain
+  available under the MIT License.
+
 ## [1.0.0] – 2026-11-13
 
 Cadence 1.0: goals per day that fill in from your activities or are checked off by hand, goals by calories, a sidebar

@@ -2,6 +2,7 @@
   "name": "@cadence/desktop",
   "version": "1.0.0",
   "private": true,
+  "license": "PolyForm-Noncommercial-1.0.0",
   "description": "Cadence desktop app for Linux and Windows (Electron shell around the bundled server and web UI).",
   "main": "dist/main.cjs",
   "scripts": {

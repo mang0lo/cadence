@@ -4,7 +4,7 @@
   "private": true,
   "description": "A self-hosted, Strava-style training log fed by your complete Apple Health export.",
   "type": "module",
-  "license": "MIT",
+  "license": "PolyForm-Noncommercial-1.0.0",
   "workspaces": [
     "packages/*",
     "apps/server",

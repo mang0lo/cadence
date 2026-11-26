@@ -17,7 +17,7 @@ FROM node:26-slim
 LABEL org.opencontainers.image.title="Cadence" \
       org.opencontainers.image.description="Self-hosted, Strava-style training log fed by your Apple Health export" \
       org.opencontainers.image.source="https://github.com/mang0lo/cadence" \
-      org.opencontainers.image.licenses="MIT"
+      org.opencontainers.image.licenses="PolyForm-Noncommercial-1.0.0"
 ENV NODE_ENV=production \
     CADENCE_MODE=server \
     CADENCE_DATA_DIR=/data \
