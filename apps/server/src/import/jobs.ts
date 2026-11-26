@@ -112,6 +112,7 @@ function workerEntry(): URL {
 export class JobManager {
   private running: Running | null = null;
   private closed = false;
+  private cleanupTimer: NodeJS.Timeout | null = null;
   private listeners = new Set<(job: ImportJob) => void>();
 
   constructor(
@@ -147,6 +148,9 @@ export class JobManager {
         ]);
     }
     this.cleanupUploads();
+    // a server runs for months: what a restart left behind is not kept until the next one
+    this.cleanupTimer = setInterval(() => this.cleanupUploads(), 3600_000);
+    this.cleanupTimer.unref();
     // After an app update that changed the derivation (DERIVE_VERSION), rebuild the analysis in the background
     // so existing data picks up the fixes without the user pressing "Rebuild analysis".
     for (const r of all<{ athlete_id: number }>(
@@ -289,7 +293,7 @@ export class JobManager {
         [id],
       );
       const r = get<JobRow>(this.db, 'SELECT * FROM import_jobs WHERE id = ?', [id]);
-      if (r?.source_path) this.maybeDeleteSource(r.source_path, json<JobOptions>(r.options, {}), true);
+      if (r?.source_path) this.maybeDeleteSource(r.source_path, json<JobOptions>(r.options, {}));
     } else if (job.status === 'running' && this.running?.id === id) {
       Atomics.store(this.running.cancel, 0, 1);
       this.running.job.message = 'Cancelling…';
@@ -300,6 +304,7 @@ export class JobManager {
   /** Stop the running worker (server shutdown). */
   async close(): Promise<void> {
     this.closed = true;
+    if (this.cleanupTimer) clearInterval(this.cleanupTimer);
     const r = this.running;
     if (r && !r.done) {
       Atomics.store(r.cancel, 0, 1);
@@ -474,7 +479,7 @@ export class JobManager {
       console.error('Could not persist job result', e);
     }
     if (r.sourcePath)
-      this.maybeDeleteSource(r.sourcePath, r.options, status === 'done' || status === 'cancelled');
+      this.maybeDeleteSource(r.sourcePath, r.options);
     invalidateStatusCounts();
     if (this.running === r) this.running = null;
     // An import that stopped half way (cancelled, failed) committed data the derive has not seen: derive it right
@@ -491,30 +496,31 @@ export class JobManager {
     if (!this.closed) setImmediate(() => this.pump());
   }
 
-  /** Uploaded files are temporary: removed after a successful (or cancelled) import. Failed uploads stay for a day
-   * (see cleanupUploads). User files (local/watch imports) are never touched. */
-  private maybeDeleteSource(file: string, options: JobOptions, success: boolean): void {
-    if (!options.deleteAfter || !success) return;
+  /** Uploaded files are temporary: removed once their import ended, failed ones too (nothing can retry an upload).
+   * User files (local/watch imports) are never touched. */
+  private maybeDeleteSource(file: string, options: JobOptions): void {
+    if (!options.deleteAfter) return;
     const uploads = path.resolve(this.config.uploadsDir);
     if (!path.resolve(file).startsWith(uploads + path.sep)) return;
     fs.rm(file, { force: true }, () => {});
   }
 
-  /** Remove stale uploads (not referenced by a queued job and older than a day). */
+  /** Remove stale uploads (not referenced by a queued job and older than a day), e.g. of jobs a restart interrupted. */
   private cleanupUploads(): void {
     const dir = this.config.uploadsDir;
     let names: string[];
+    let keep: Set<string>;
     try {
       names = fs.readdirSync(dir);
+      keep = new Set(
+        all<{ source_path: string }>(
+          this.db,
+          "SELECT source_path FROM import_jobs WHERE status IN ('queued', 'running') AND source_path IS NOT NULL",
+        ).map((r) => path.resolve(r.source_path)),
+      );
     } catch {
-      return;
+      return; // no folder yet, or the database is busy: next time
     }
-    const keep = new Set(
-      all<{ source_path: string }>(
-        this.db,
-        "SELECT source_path FROM import_jobs WHERE status IN ('queued', 'running') AND source_path IS NOT NULL",
-      ).map((r) => path.resolve(r.source_path)),
-    );
     const cutoff = Date.now() - 24 * 3600 * 1000;
     for (const n of names) {
       const f = path.resolve(dir, n);

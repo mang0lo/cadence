@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { migrateAll } from '../src/app';
 import { get, openDb, run, type Db } from '../src/db/db';
 import { DERIVE_VERSION } from '../src/derive/context';
@@ -159,6 +159,33 @@ describe('job manager', () => {
       merge({ workoutIds: [1], sinceDay: null, records: false }, { workoutIds: [2], sinceDay: '2026-05-01', records: false }),
     ).toEqual({ workoutIds: [1, 2], sinceDay: '2026-05-01', records: false });
     expect(merge({ workoutIds: [1], sinceDay: '2026-05-03' }, { workoutIds: 'all' })).toEqual({ workoutIds: 'all', sinceDay: null });
+  });
+
+  it('removes the upload of a failed import right away, and what a restart left behind a day later', async () => {
+    const uploads = path.join(dir, 'uploads');
+    fs.mkdirSync(uploads);
+    const upload = path.join(uploads, 'broken.zip');
+    fs.writeFileSync(upload, 'PK but not a zip');
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    try {
+      const jobs = new JobManager(db, { dbPath: path.join(dir, 'cadence.db'), uploadsDir: uploads }, 'inline');
+      jobs.start();
+      const job = jobs.enqueueImport(1, upload, { options: { deleteAfter: true, origin: 'upload' } });
+      for (let i = 0; i < 200 && (jobs.busy(1) || fs.existsSync(upload)); i++)
+        await new Promise((r) => setTimeout(r, 10));
+      expect(jobs.get(1, job.id)?.status).toBe('failed');
+      expect(fs.existsSync(upload)).toBe(false);
+      // the upload of a job the server stopped: removed once it is a day old, without waiting for the next restart
+      const left = path.join(uploads, 'interrupted.zip');
+      fs.writeFileSync(left, 'PK');
+      const old = (Date.now() - 25 * 3600_000) / 1000;
+      fs.utimesSync(left, old, old);
+      vi.advanceTimersByTime(3600_000);
+      expect(fs.existsSync(left)).toBe(false);
+      await jobs.close();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('cancels queued jobs', async () => {
