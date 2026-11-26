@@ -23,7 +23,9 @@ function newTiles(db: WhatsNewInput['db'], athleteId: number, ids: string, z: nu
 /**
  * New activities that only replace a copy the athlete already had: the watch's own file of a workout that came from
  * Apple Health before (or the other way round) is preferred over the old copy, which turns into its duplicate. They
- * bring no new tiles, routes or efforts. "Already had" = the copy was stored before the running import job started.
+ * bring no new tiles, routes or efforts – unless the old copy had no GPS route (some vendor apps write workouts to
+ * Apple Health without it), then everything on the maps is new. "Already had" = the copy was stored before the running
+ * import job started.
  */
 function replacements(db: WhatsNewInput['db'], athleteId: number, ids: string): Set<number> {
   const job = get<{ t: number | null }>(
@@ -36,7 +38,7 @@ function replacements(db: WhatsNewInput['db'], athleteId: number, ids: string): 
     all<{ id: number }>(
       db,
       `SELECT DISTINCT duplicate_of AS id FROM workouts
-       WHERE athlete_id = ? AND hidden = 0 AND duplicate_of IN ${NEW_IDS} AND created_at < ?`,
+       WHERE athlete_id = ? AND hidden = 0 AND has_route = 1 AND duplicate_of IN ${NEW_IDS} AND created_at < ?`,
       [athleteId, ids, job.t],
     ).map((r) => r.id),
   );

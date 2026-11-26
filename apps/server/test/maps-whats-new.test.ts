@@ -83,4 +83,28 @@ describe("what's new: an import that brings the preferred copy of activities the
     // an import of nothing but replacements has no highlights at all
     expect(mapsWhatsNew({ db, athleteId: 1, workoutIds: watch, since: T0, initial: false })).toEqual([]);
   });
+
+  it('still reports the tiles of a watch file whose earlier copy had no route', async () => {
+    const { db } = ctx;
+    // the vendor app wrote the run to Apple Health without its GPS route (imported a day ago) …
+    const south = destination(VIENNA[0], VIENNA[1], 180, 6000);
+    const health = insertWorkout(db, { sport: 'run', startTs: T0 + 10 * DAY, track: null });
+    run(db, 'UPDATE workouts SET created_at = created_at - 86400 WHERE id = ?', [health]);
+    // … the running import brings the watch's own file with the route, which replaces the Health copy
+    const watch = insertWorkout(db, {
+      sport: 'run',
+      startTs: T0 + 10 * DAY,
+      track: trackAlong([south, destination(south[0], south[1], 90, 3000)], {
+        speed: 3,
+        noiseM: 3,
+        seed: 31,
+      }),
+    });
+    run(db, 'UPDATE workouts SET duplicate_of = ? WHERE id = ?', [watch, health]);
+    await runMapsSteps(db, [watch]);
+    // nothing on the maps came from the Health copy: the route's tiles are new to the Explorer
+    const h = mapsWhatsNew({ db, athleteId: 1, workoutIds: [watch], since: T0, initial: false });
+    expect(kinds(h)).toEqual(['explorerTiles']);
+    expect(Number(h[0]!.data.count)).toBeGreaterThan(0);
+  });
 });
