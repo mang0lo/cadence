@@ -408,12 +408,15 @@ export interface EffortRow {
   tz_min: number;
 }
 
-/** Efforts of visible workouts (hidden and duplicate workouts do not count), optionally of some segments only. */
+/**
+ * Efforts of visible workouts (hidden and duplicate workouts do not count), optionally of some segments only, or of
+ * the segments that one workout has an effort on.
+ */
 export function effortRows(
   db: Db,
   athleteId: number,
   segmentIds?: number[],
-  workoutId?: number,
+  onSegmentsOf?: number,
 ): EffortRow[] {
   const where = ['e.athlete_id = ?', visible()];
   const params: unknown[] = [athleteId];
@@ -421,9 +424,9 @@ export function effortRows(
     where.push(`e.segment_id IN ${IN_LIST}`);
     params.push(idList(segmentIds));
   }
-  if (workoutId !== undefined) {
-    where.push('e.workout_id = ?');
-    params.push(workoutId);
+  if (onSegmentsOf !== undefined) {
+    where.push('e.segment_id IN (SELECT segment_id FROM maps_segment_efforts WHERE workout_id = ?)');
+    params.push(onSegmentsOf);
   }
   return all<EffortRow>(
     db,

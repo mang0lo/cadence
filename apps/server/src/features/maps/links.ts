@@ -1,12 +1,10 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { MapsWorkoutLinks } from '@cadence/shared';
-import { all, get } from '../../db/db';
+import { get } from '../../db/db';
 import { notFound } from '../../lib/http';
-import { routeSummaries } from './route-api';
-import { effortRows, rankEfforts } from './segments';
-import { segmentSummaries } from './segment-api';
-import { ROUTE_TIME, visible } from './sql';
+import { routeRanks, routesWithEfforts } from './route-api';
+import { effortRows, rankEfforts, segmentRows, type EffortRow } from './segments';
 
 const idParam = z.object({ id: z.coerce.number().int().positive() });
 
@@ -29,58 +27,53 @@ export function registerLinksRoutes(app: FastifyInstance): void {
       [id],
     );
     if (g?.route_id) {
-      const [r] = routeSummaries(app.db, aid, { min: 1, ids: [g.route_id] });
+      // the summary and the rank come from the same visible efforts of the route
+      const [r] = routesWithEfforts(app.db, aid, { min: 1, ids: [g.route_id] });
       if (r) {
-        const members = all<{ id: number; t: number; start_ts: number }>(
-          app.db,
-          `SELECT w.id, ${ROUTE_TIME} AS t, w.start_ts
-           FROM maps_workout_geo g JOIN workouts w ON w.id = g.workout_id
-           WHERE g.route_id = ? AND ${visible()}`,
-          [g.route_id],
-        );
-        const me = members.find((m) => m.id === id);
-        const rank = me
-          ? 1 + members.filter((m) => m.t < me.t || (m.t === me.t && m.start_ts < me.start_ts)).length
-          : null;
+        const s = r.summary;
         route = {
-          id: r.id,
-          customName: r.customName,
-          area: r.area,
-          areaEnd: r.areaEnd,
-          kind: r.kind,
-          distanceM: r.distanceM,
-          count: r.count,
-          rank,
-          bestTimeS: r.bestTimeS,
+          id: s.id,
+          customName: s.customName,
+          area: s.area,
+          areaEnd: s.areaEnd,
+          kind: s.kind,
+          distanceM: s.distanceM,
+          count: s.count,
+          rank: routeRanks(r.efforts).get(id) ?? null,
+          bestTimeS: s.bestTimeS,
         };
       }
     }
 
-    // segment efforts of this workout, ranked among all efforts on each segment
-    const mine = effortRows(app.db, aid, undefined, id);
-    const segIds = [...new Set(mine.map((e) => e.segment_id))];
-    const summaries = new Map(segmentSummaries(app.db, aid, segIds).map((s) => [s.id, s]));
-    const allEfforts = effortRows(app.db, aid, segIds);
-    const ranked = new Map<number, ReturnType<typeof rankEfforts>>();
-    for (const sid of segIds) ranked.set(sid, rankEfforts(allEfforts.filter((e) => e.segment_id === sid)));
+    // segment efforts of this workout, ranked among all efforts on each segment: one query for the efforts of every
+    // segment it has an effort on, grouped by segment
+    const bySegment = new Map<number, EffortRow[]>();
+    for (const e of effortRows(app.db, aid, undefined, id)) {
+      const l = bySegment.get(e.segment_id);
+      if (l) l.push(e);
+      else bySegment.set(e.segment_id, [e]);
+    }
+    // a hidden or duplicate workout has no visible efforts of its own
+    const segIds = [...bySegment].filter(([, l]) => l.some((e) => e.workout_id === id)).map(([sid]) => sid);
     const segments: MapsWorkoutLinks['segments'] = [];
-    for (const e of mine) {
-      const s = summaries.get(e.segment_id);
-      const r = ranked.get(e.segment_id)?.find((x) => x.workoutId === id && x.idx === e.idx);
-      if (!s || !r) continue;
-      segments.push({
-        segmentId: s.id,
-        name: s.name,
-        starred: s.starred,
-        idx: e.idx,
-        elapsedS: e.elapsed_s,
-        avgSpeed: e.avg_speed,
-        avgHr: e.avg_hr,
-        distanceM: s.distanceM,
-        rank: r.rank,
-        efforts: s.efforts,
-        pr: r.rank === 1,
-      });
+    for (const s of segIds.length ? segmentRows(app.db, aid, segIds) : []) {
+      const list = bySegment.get(s.id)!;
+      for (const r of rankEfforts(list)) {
+        if (r.workoutId !== id) continue;
+        segments.push({
+          segmentId: s.id,
+          name: s.name,
+          starred: !!s.starred,
+          idx: r.idx,
+          elapsedS: r.elapsedS,
+          avgSpeed: r.avgSpeed,
+          avgHr: r.avgHr,
+          distanceM: s.distance_m,
+          rank: r.rank,
+          efforts: list.length,
+          pr: r.rank === 1,
+        });
+      }
     }
     segments.sort((a, b) => Number(b.starred) - Number(a.starred) || a.name.localeCompare(b.name));
     return { route, segments };

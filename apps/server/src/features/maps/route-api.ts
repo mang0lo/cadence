@@ -34,7 +34,7 @@ interface RouteRow {
   end_lon: number | null;
 }
 
-interface EffortRow {
+export interface RouteEffortRow {
   route_id: number;
   workout_id: number;
   name: string;
@@ -49,8 +49,8 @@ interface EffortRow {
   polyline: string | null;
 }
 
-function effortRows(db: Db, athleteId: number, routeIds: number[] | null, tracks = false): EffortRow[] {
-  return all<EffortRow>(
+function effortRows(db: Db, athleteId: number, routeIds: number[] | null, tracks = false): RouteEffortRow[] {
+  return all<RouteEffortRow>(
     db,
     `SELECT g.route_id, w.id AS workout_id, w.name, w.sport, w.start_ts, w.end_ts, w.tz_min, ${ROUTE_TIME} AS time_s,
             w.distance_m, w.avg_hr, ${tracks ? 'w.polyline' : 'NULL AS polyline'}
@@ -64,12 +64,27 @@ function effortRows(db: Db, athleteId: number, routeIds: number[] | null, tracks
 const speedOf = (e: { distance_m: number | null; time_s: number }, fallbackM: number): number =>
   (e.distance_m ?? fallbackM) / Math.max(1, e.time_s);
 
+/** Rank of each workout on a route by time (ties: the earlier effort first). */
+export function routeRanks(efforts: RouteEffortRow[]): Map<number, number> {
+  const ranked = [...efforts].sort((a, b) => a.time_s - b.time_s || a.start_ts - b.start_ts);
+  return new Map(ranked.map((e, i) => [e.workout_id, i + 1]));
+}
+
 /** Summaries for routes with at least `min` visible efforts, built from one pass over their efforts. */
 export function routeSummaries(
   db: Db,
   athleteId: number,
   opts: { sport?: string[]; min: number; ids?: number[] },
 ): MapsRouteSummary[] {
+  return routesWithEfforts(db, athleteId, opts).map((r) => r.summary);
+}
+
+/** Route summaries together with the visible efforts (chronological) they were built from; `tracks` adds polylines. */
+export function routesWithEfforts(
+  db: Db,
+  athleteId: number,
+  opts: { sport?: string[]; min: number; ids?: number[]; tracks?: boolean },
+): { summary: MapsRouteSummary; efforts: RouteEffortRow[] }[] {
   const where = ['athlete_id = ?'];
   const params: unknown[] = [athleteId];
   if (opts.sport?.length) {
@@ -87,14 +102,14 @@ export function routeSummaries(
     params,
   );
   if (!routes.length) return [];
-  const efforts = effortRows(db, athleteId, opts.ids ?? null);
-  const byRoute = new Map<number, EffortRow[]>();
+  const efforts = effortRows(db, athleteId, opts.ids ?? null, opts.tracks);
+  const byRoute = new Map<number, RouteEffortRow[]>();
   for (const e of efforts) {
     const l = byRoute.get(e.route_id);
     if (l) l.push(e);
     else byRoute.set(e.route_id, [e]);
   }
-  const out: MapsRouteSummary[] = [];
+  const out: { summary: MapsRouteSummary; efforts: RouteEffortRow[] }[] = [];
   for (const r of routes) {
     const list = byRoute.get(r.id);
     if (!list || list.length < opts.min) continue;
@@ -102,7 +117,7 @@ export function routeSummaries(
     for (const e of list) if (e.time_s < best.time_s) best = e;
     const first = list[0]!;
     const latest = list[list.length - 1]!;
-    out.push({
+    const summary: MapsRouteSummary = {
       id: r.id,
       sport: r.sport,
       kind: r.kind,
@@ -125,7 +140,8 @@ export function routeSummaries(
       endLat: r.end_lat,
       endLon: r.end_lon,
       trend: list.slice(-12).map((e) => Math.round(speedOf(e, r.distance_m) * 1000) / 1000),
-    });
+    };
+    out.push({ summary, efforts: list });
   }
   return out;
 }
@@ -150,12 +166,10 @@ export function registerRouteRoutes(app: FastifyInstance): void {
 
   app.get('/routes/:id', async (req): Promise<MapsRouteDetail> => {
     const { id } = idParam.parse(req.params);
-    const [route] = routeSummaries(app.db, req.athleteId, { min: 1, ids: [id] });
-    if (!route) throw notFound('Route');
-    const rows = effortRows(app.db, req.athleteId, [id], true);
-    // rank by time (ties: the earlier effort first)
-    const ranked = [...rows].sort((a, b) => a.time_s - b.time_s || a.start_ts - b.start_ts);
-    const rank = new Map(ranked.map((e, i) => [e.workout_id, i + 1]));
+    const [found] = routesWithEfforts(app.db, req.athleteId, { min: 1, ids: [id], tracks: true });
+    if (!found) throw notFound('Route');
+    const { summary: route, efforts: rows } = found;
+    const rank = routeRanks(rows);
     const efforts: MapsRouteEffort[] = rows
       .map((e) => ({
         workoutId: e.workout_id,
