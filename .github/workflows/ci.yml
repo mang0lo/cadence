@@ -111,6 +111,8 @@ jobs:
           cache: npm
       - run: npm ci --no-audit --no-fund
       - run: npm run mac -- --dmg
+      - name: Shell tests
+        run: swift test --package-path apps/macos
       - name: Disk image exists
         run: ls -l build/Cadence-*.dmg
       # like the desktop installers: kept for a few days, and a failing upload does not fail the build
