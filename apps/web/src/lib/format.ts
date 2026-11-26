@@ -57,6 +57,28 @@ function nf(locale: string, opts: Intl.NumberFormatOptions): Intl.NumberFormat {
   return f;
 }
 
+/** Weekday and month names (formatters without a fixed date style). */
+const namesCache = new Map<string, Intl.DateTimeFormat>();
+function namesFormat(locale: string, opts: Pick<Intl.DateTimeFormatOptions, 'weekday' | 'month'>): Intl.DateTimeFormat {
+  const k = `${locale}|${opts.weekday ?? ''}|${opts.month ?? ''}`;
+  let f = namesCache.get(k);
+  if (!f) {
+    f = new Intl.DateTimeFormat(locale, { ...opts, timeZone: 'UTC' });
+    namesCache.set(k, f);
+  }
+  return f;
+}
+
+const rtfCache = new Map<string, Intl.RelativeTimeFormat>();
+function rtf(locale: string): Intl.RelativeTimeFormat {
+  let f = rtfCache.get(locale);
+  if (!f) {
+    f = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' });
+    rtfCache.set(locale, f);
+  }
+  return f;
+}
+
 const two = (n: number) => (n < 10 ? `0${n}` : String(n));
 
 /** 3725 → "1:02:05", 725 → "12:05" */
@@ -192,24 +214,24 @@ export function createFormatter(units: Units, locale: string, lang: Lang) {
     day: (day: string, style: DateStyle = 'day') => dtf(locale, style).format(dayToDate(day)),
     /** "vor 3 Tagen" / "3 days ago" */
     relative(ts: number): string {
-      const rtf = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' });
+      const f = rtf(locale);
       const diff = ts - Date.now() / 1000;
       const abs = Math.abs(diff);
-      if (abs < 3600) return rtf.format(Math.round(diff / 60), 'minute');
-      if (abs < 86_400) return rtf.format(Math.round(diff / 3600), 'hour');
-      if (abs < 7 * 86_400) return rtf.format(Math.round(diff / 86_400), 'day');
-      if (abs < 30 * 86_400) return rtf.format(Math.round(diff / (7 * 86_400)), 'week');
-      if (abs < 365 * 86_400) return rtf.format(Math.round(diff / (30.44 * 86_400)), 'month');
-      return rtf.format(Math.round(diff / (365.25 * 86_400)), 'year');
+      if (abs < 3600) return f.format(Math.round(diff / 60), 'minute');
+      if (abs < 86_400) return f.format(Math.round(diff / 3600), 'hour');
+      if (abs < 7 * 86_400) return f.format(Math.round(diff / 86_400), 'day');
+      if (abs < 30 * 86_400) return f.format(Math.round(diff / (7 * 86_400)), 'week');
+      if (abs < 365 * 86_400) return f.format(Math.round(diff / (30.44 * 86_400)), 'month');
+      return f.format(Math.round(diff / (365.25 * 86_400)), 'year');
     },
     /** Localized weekday names starting at `weekStart` (short). */
     weekdayNames(weekStart: 0 | 1 = 1, style: 'short' | 'narrow' | 'long' = 'short'): string[] {
-      const fmt = new Intl.DateTimeFormat(locale, { weekday: style, timeZone: 'UTC' });
+      const fmt = namesFormat(locale, { weekday: style });
       // 2024-01-07 is a Sunday
       return Array.from({ length: 7 }, (_, i) => fmt.format(new Date(Date.UTC(2024, 0, 7 + ((i + weekStart) % 7)))));
     },
     monthNames(style: 'short' | 'long' = 'short'): string[] {
-      const fmt = new Intl.DateTimeFormat(locale, { month: style, timeZone: 'UTC' });
+      const fmt = namesFormat(locale, { month: style });
       return Array.from({ length: 12 }, (_, i) => fmt.format(new Date(Date.UTC(2024, i, 1))));
     },
   };
