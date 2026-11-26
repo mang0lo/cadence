@@ -28,25 +28,41 @@ describe('segment matching cost', () => {
   it('matches a long segment against dense tracks in linear time', () => {
     const course = windingCourse(7);
     const source = trackAlong(course, { speed: 3 });
-    const seg = thinPath(
-      sliceStream({ lat: source.lat, lon: source.lon, dist: source.dist, ele: source.ele }, 0, 39_900),
-    );
+    const segment = (lengthM: number) =>
+      thinPath(
+        sliceStream({ lat: source.lat, lon: source.lon, dist: source.dist, ele: source.ele }, 0, lengthM),
+      );
+    const short = segment(4_900);
+    const long = segment(39_900);
     // 1 Hz tracks of the same course (13 300 fixes each) and one 70 m off it
-    const tracks = Array.from({ length: 6 }, (_, k) => trackAlong(course, { speed: 3, noiseM: 4, seed: k + 1 }));
+    const tracks = Array.from({ length: 6 }, (_, k) =>
+      asTrack(trackAlong(course, { speed: 3, noiseM: 4, seed: k + 1 })),
+    );
     const off = trackAlong(
       course.map((p) => destination(p[0], p[1], 0, 70) as LatLon),
       { speed: 3 },
     );
-    const t0 = performance.now();
-    const results = tracks.map((tr) => matchSegment(seg, asTrack(tr)));
-    const offResult = matchSegment(seg, asTrack(off));
-    const ms = performance.now() - t0;
-    for (const r of results) {
+    for (const tr of tracks) {
+      expect(matchSegment(short, tr).length).toBe(1);
+      const r = matchSegment(long, tr);
       expect(r.length).toBe(1);
       expect(Math.abs(r[0]!.elapsedS - 39_900 / 3)).toBeLessThan(60);
     }
-    expect(offResult).toEqual([]);
-    // checking every edge for every sample took about 150 ms per track here; the grid needs a few ms
-    expect(ms).toBeLessThan(300);
+    expect(matchSegment(long, asTrack(off))).toEqual([]);
+    // A wall-clock budget flakes on a busy machine (the whole suite runs in parallel), so compare the cost of a segment
+    // 8 times as long, measured alternately, fastest of a few runs each: about 8 times as much when the cost is
+    // linear, about 60 times as much when every sample is checked against every edge.
+    const time = (seg: typeof long) => {
+      const t0 = performance.now();
+      for (const tr of tracks) matchSegment(seg, tr);
+      return performance.now() - t0;
+    };
+    let shortMs = Infinity;
+    let longMs = Infinity;
+    for (let i = 0; i < 5; i++) {
+      shortMs = Math.min(shortMs, time(short));
+      longMs = Math.min(longMs, time(long));
+    }
+    expect(longMs / shortMs).toBeLessThan(25);
   });
 });
