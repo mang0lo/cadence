@@ -168,3 +168,31 @@ export function uploadFailure(t: TFunction, total: number, failed: { name: strin
   const why = failed.length === 1 && failed[0]!.error instanceof Error ? ` ${failed[0]!.error.message}` : '';
   return new Error(which + why);
 }
+
+/**
+ * Files to upload one after the other. Files added while a series runs (dropped during an upload) join that series
+ * instead of being ignored.
+ */
+export function uploadQueue<T>() {
+  const waiting: T[] = [];
+  let running = false;
+  return {
+    /** Adds files; true when no series runs, so the caller starts one and takes the files with `next`. */
+    add(files: T[]): boolean {
+      waiting.push(...files);
+      if (running || !waiting.length) return false;
+      running = true;
+      return true;
+    },
+    /** The next file of the series; undefined ends it. */
+    next(): T | undefined {
+      const file = waiting.shift();
+      if (file === undefined) running = false;
+      return file;
+    },
+    /** Files still waiting in the series. */
+    get waiting(): number {
+      return waiting.length;
+    },
+  };
+}

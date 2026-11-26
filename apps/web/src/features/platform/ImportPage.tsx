@@ -25,7 +25,7 @@ import { useFormat } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
 import { isNativeShell, NATIVE_IMPORT_EVENT, postNative } from '@/lib/native';
 import { useSettings } from '@/lib/settings';
-import { isActive, jobErrorText, jobPhaseLabel, jobSourceLabel, jobStepLabel, uploadFailure } from './importJobs';
+import { isActive, jobErrorText, jobPhaseLabel, jobSourceLabel, jobStepLabel, uploadFailure, uploadQueue } from './importJobs';
 import { IMPORT_JOBS_KEY, useImportJobs } from './useImportJobs';
 import { WhatsNewCard } from './WhatsNew';
 import { latestSummaryJob } from './whatsNewState';
@@ -160,23 +160,32 @@ export default function ImportPage() {
   // the whole list, so the new job shows at once
   const started = useCallback(() => qc.invalidateQueries({ queryKey: IMPORT_JOBS_KEY }), [qc]);
 
-  /** Uploads the files one after the other (each becomes an import job); the ones that failed are reported. */
+  const [uploads] = useState(() => uploadQueue<File>());
+  /**
+   * Uploads the files one after the other (each becomes an import job); files dropped while an upload runs join it.
+   * The ones that failed are reported.
+   */
   const startUploads = async (files: File[]) => {
-    if (!files.length || upload) return;
+    if (!uploads.add(files)) {
+      // an upload runs and takes these files too
+      if (files.length) setUpload((u) => (u ? { ...u, total: u.total + files.length } : u));
+      return;
+    }
     setError(null);
     const failed: { name: string; error: unknown }[] = [];
-    for (const [i, file] of files.entries()) {
-      const shown = { name: file.name, index: i + 1, total: files.length };
-      setUpload({ ...shown, progress: 0 });
+    let count = 0;
+    for (let file = uploads.next(); file; file = uploads.next()) {
+      count += 1;
+      setUpload({ name: file.name, index: count, total: count + uploads.waiting, progress: 0 });
       try {
-        await uploadFile(file, (p) => setUpload({ ...shown, progress: p }), t('platform.import.uploadFailed'));
+        await uploadFile(file, (p) => setUpload((u) => (u ? { ...u, progress: p } : u)), t('platform.import.uploadFailed'));
       } catch (e) {
         failed.push({ name: file.name, error: e });
       }
     }
     setUpload(null);
-    if (failed.length < files.length) await started();
-    setError(uploadFailure(t, files.length, failed));
+    if (failed.length < count) await started();
+    setError(uploadFailure(t, count, failed));
   };
 
   const startLocal = useCallback(

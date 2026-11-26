@@ -12,6 +12,7 @@ import {
   loadJobs,
   stepKey,
   uploadFailure,
+  uploadQueue,
   waitingJobs,
   wantsFullList,
   type JobsIo,
@@ -184,6 +185,23 @@ describe('failed uploads', () => {
       { name: 'b.fit', error: new Error('network') },
     ];
     expect((uploadFailure(t, 5, two) as Error).message).toBe('platform.import.uploadsFailed({"count":2,"names":"a.fit, b.fit"})');
+  });
+
+  it('takes files dropped during an upload into the running series instead of ignoring them', () => {
+    const q = uploadQueue<string>();
+    expect(q.add([])).toBe(false);
+    expect(q.add(['a.fit', 'b.fit'])).toBe(true);
+    expect(q.next()).toBe('a.fit');
+    // dropped while a.fit uploads: the running series uploads it after b.fit
+    expect(q.add(['c.fit'])).toBe(false);
+    expect(q.waiting).toBe(2);
+    expect(q.next()).toBe('b.fit');
+    expect(q.next()).toBe('c.fit');
+    expect(q.next()).toBeUndefined();
+    // the series is over: the next drop starts a new one
+    expect(q.add(['d.fit'])).toBe(true);
+    expect(q.next()).toBe('d.fit');
+    expect(q.next()).toBeUndefined();
   });
 });
 
