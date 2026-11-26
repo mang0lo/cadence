@@ -1,6 +1,8 @@
 # Cadence server image: API + web UI in one Node process, data in /data.
 #   docker build -f deploy/Dockerfile -t cadence .
-#   docker run -p 8787:8787 -v cadence-data:/data -e CADENCE_PASSWORD=secret cadence
+#   docker run -d --restart unless-stopped -p 8787:8787 -v cadence-data:/data -e CADENCE_PASSWORD=secret -e TZ=<your zone> cadence
+# --restart: restoring a backup ends the server (exit code 75) so it starts again with the restored database.
+# TZ (IANA name, e.g. America/New_York): the server's local time for imports and "today"; without it, UTC.
 FROM node:26-slim AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
@@ -36,5 +38,5 @@ USER node
 VOLUME ["/data"]
 EXPOSE 8787
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s \
-  CMD node -e "fetch('http://127.0.0.1:8787/api/status').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||8787)+'/api/status').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 CMD ["node", "server/index.js"]
