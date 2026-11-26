@@ -9,10 +9,12 @@ import { useChartTheme } from '@/components/charts/theme';
 import { Skeleton } from '@/components/ui';
 import { useFormat } from '@/lib/format';
 import { useT } from '@/lib/i18n';
+import { useSettings } from '@/lib/settings';
 import { numAxisLabel } from '../../lib/chart';
 import { stageColor } from '../../lib/sleep';
 import { identifierColor } from '../../lib/colors';
 import { useMetricFormat } from '../../lib/metrics';
+import { fillPeriods, seriesKeys } from '../../lib/periods';
 import { TrendChart } from '../TrendChart';
 
 export type MetricMode = 'average' | 'total';
@@ -64,6 +66,8 @@ export function MetricChart({ series, mode, loading }: Props) {
   const identifier = type.identifier;
   const color = identifierColor(theme, identifier);
   const label = usePeriodLabel(agg);
+  const { settings } = useSettings();
+  const weekStart = settings.weekStart;
   const noData = t('health.common.noDataRange');
   const unitLabel = m.unitLabel(identifier, type.unit);
 
@@ -87,7 +91,8 @@ export function MetricChart({ series, mode, loading }: Props) {
 
   const model = useMemo(() => {
     if (type.aggregation === 'avg') return null;
-    const keys = series.points.map((p) => p.key);
+    // every period of the range, also those without data: bars of non-adjacent weeks must not stand side by side
+    const keys = seriesKeys(series, weekStart);
     const labels = keys.map((k) => label(k, false));
     const spec = m.spec(identifier, type.unit);
 
@@ -156,7 +161,8 @@ export function MetricChart({ series, mode, loading }: Props) {
     }
 
     // ---- cumulative measures: bars -------------------------------------------------------------------------
-    const raw = series.points.map((p) => shownValue(p, agg, mode));
+    const points = fillPeriods(series.points, keys);
+    const raw = points.map((p) => shownValue(p, agg, mode));
     if (spec.duration) {
       const mins = raw.map((v) => (spec.duration === 'minutes' ? v : v / 60));
       const hours = Math.max(0, ...mins) >= 180;
@@ -164,15 +170,16 @@ export function MetricChart({ series, mode, loading }: Props) {
         kind: 'sum' as const,
         keys,
         labels,
+        points,
         raw,
         values: mins.map((v) => (hours ? v / 60 : v)),
         axisUnit: hours ? 'h' : 'min',
         spec,
       };
     }
-    return { kind: 'sum' as const, keys, labels, raw, values: raw.map((v) => spec.convert(v)), axisUnit: spec.unit, spec };
+    return { kind: 'sum' as const, keys, labels, points, raw, values: raw.map((v) => spec.convert(v)), axisUnit: spec.unit, spec };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [series, mode, theme, fmt, m.units, isEvent]);
+  }, [series, mode, theme, fmt, m.units, isEvent, weekStart]);
 
   // line + band for discrete measures
   if (type.aggregation === 'avg') {
@@ -240,7 +247,7 @@ export function MetricChart({ series, mode, loading }: Props) {
         (params) => {
           const p = (params as { dataIndex: number }[])[0];
           const i = p?.dataIndex ?? -1;
-          const pt = series.points[i];
+          const pt = chart.points[i];
           if (!pt) return '';
           const rows = [{ color, label: t(titleKey), value: m.value(identifier, chart.raw[i]!, type.unit) }];
           const head = agg === 'day' ? label(pt.key, true) : `${label(pt.key, true)} · ${t('health.metric.chart.days', { count: pt.days })}`;
@@ -273,8 +280,8 @@ export function MetricChart({ series, mode, loading }: Props) {
             ),
           };
         })
-      : [...series.points].reverse().map((p) => {
-          const i = series.points.indexOf(p);
+      : [...chart.points].reverse().map((p) => {
+          const i = chart.points.indexOf(p);
           return { period: label(p.key, false), value: m.plain(identifier, chart.raw[i]!, type.unit), days: fmt.int(p.days) };
         });
 
