@@ -23,6 +23,7 @@ import { all, get, type Db } from '../../db/db';
 import { SUMMARY_COLS, toSummary, type WorkoutRow } from '../../core/workouts';
 import { haversine } from '../../lib/geo';
 import { dayString, parseDay } from '../../lib/time';
+import { topEfforts } from './best-efforts';
 import { currentAnalysisSql } from './store';
 
 // ---------------------------------------------------------------------------
@@ -156,33 +157,26 @@ export const SORT_EXPR: Record<ActivitySort, string> = {
 
 const emptyTotals = (): ActivityTotals => ({ count: 0, distanceM: 0, movingS: 0, elevationM: 0, energyKcal: 0, effort: 0 });
 
-/** Medals (current rank 1–3 among visible workouts) of the given workouts, one query for all of them. */
+/**
+ * Medals (current rank 1–3 among visible workouts, see best-efforts.ts) of the given workouts: the podium of every
+ * (sport, effort) group that occurs among them, read through the index.
+ */
 export function medalsFor(db: Db, athleteId: number, ids: number[]): Map<number, ActivityMedal[]> {
   const out = new Map<number, ActivityMedal[]>();
   if (!ids.length) return out;
-  // One ranking pass over the (sport, effort) groups that occur on this page — same order as core's
-  // bestEffortsOf (elapsed time, then workout id), among visible workouts.
-  const rows = all<{ workout_id: number; effort: string; distance_m: number; elapsed_s: number; rank: number }>(
+  const wanted = new Set(ids);
+  const groups = all<{ sport: string; effort: string }>(
     db,
-    `WITH page AS (
-       SELECT DISTINCT sport, effort FROM best_efforts WHERE workout_id IN (${ids.map(() => '?').join(',')})
-     ), ranked AS (
-       SELECT be.workout_id, be.effort, be.distance_m, be.elapsed_s,
-              ROW_NUMBER() OVER (PARTITION BY be.sport, be.effort ORDER BY be.elapsed_s, be.workout_id) AS rank
-       FROM best_efforts be
-       JOIN page p ON p.sport = be.sport AND p.effort = be.effort
-       JOIN workouts w ON w.id = be.workout_id
-       WHERE be.athlete_id = ? AND w.hidden = 0 AND w.duplicate_of IS NULL
-     )
-     SELECT workout_id, effort, distance_m, elapsed_s, rank FROM ranked
-     WHERE rank <= 3 AND workout_id IN (${ids.map(() => '?').join(',')})`,
-    [...ids, athleteId, ...ids],
+    `SELECT DISTINCT sport, effort FROM best_efforts WHERE workout_id IN (${ids.map(() => '?').join(',')})`,
+    ids,
   );
-  for (const r of rows) {
-    if (r.rank > 3) continue;
-    const list = out.get(r.workout_id) ?? [];
-    list.push({ effort: r.effort, distanceM: r.distance_m, elapsedS: r.elapsed_s, rank: r.rank as 1 | 2 | 3 });
-    out.set(r.workout_id, list);
+  for (const g of groups) {
+    topEfforts(db, athleteId, g.sport, g.effort, 3).forEach((r, i) => {
+      if (!wanted.has(r.workout_id)) return;
+      const list = out.get(r.workout_id) ?? [];
+      list.push({ effort: r.effort, distanceM: r.distance_m, elapsedS: r.elapsed_s, rank: (i + 1) as 1 | 2 | 3 });
+      out.set(r.workout_id, list);
+    });
   }
   for (const list of out.values()) list.sort((a, b) => a.rank - b.rank || b.distanceM - a.distanceM);
   return out;
@@ -349,18 +343,20 @@ export function activitySummary(db: Db, athleteId: number, today: string, weekSt
     'SELECT MIN(start_ts) AS first, MAX(start_ts) AS last FROM workouts WHERE athlete_id = ? AND hidden = 0 AND duplicate_of IS NULL',
     [athleteId],
   );
-  // PRs (still the best) set during the last 30 days
-  const since = (todayN - 29) * 86400 - 14 * 3600;
-  const recent = all<{ workout_id: number }>(
+  // PRs (still the best) set during the last 30 local days: the record of every (sport, effort) attempted since
+  // then (UTC+14 is the earliest that local day starts anywhere), counted when it was set on one of those days
+  const since = (todayN - 29) * 86400;
+  const groups = all<{ sport: string; effort: string }>(
     db,
-    `SELECT be.workout_id FROM best_efforts be JOIN workouts w ON w.id = be.workout_id
-     WHERE be.athlete_id = ? AND be.start_ts >= ? AND w.hidden = 0 AND w.duplicate_of IS NULL
-       AND NOT EXISTS (SELECT 1 FROM best_efforts b2 JOIN workouts w2 ON w2.id = b2.workout_id
-            WHERE b2.athlete_id = be.athlete_id AND b2.sport = be.sport AND b2.effort = be.effort
-              AND w2.hidden = 0 AND w2.duplicate_of IS NULL
-              AND (b2.elapsed_s < be.elapsed_s OR (b2.elapsed_s = be.elapsed_s AND b2.workout_id < be.workout_id)))`,
-    [athleteId, since],
+    `SELECT DISTINCT be.sport, be.effort FROM workouts w JOIN best_efforts be ON be.workout_id = w.id
+     WHERE w.athlete_id = ? AND w.start_ts >= ? AND w.hidden = 0 AND w.duplicate_of IS NULL`,
+    [athleteId, since - 14 * 3600],
   );
+  let recentPrs = 0;
+  for (const g of groups) {
+    const [pr] = topEfforts(db, athleteId, g.sport, g.effort, 1);
+    if (pr && pr.start_ts + pr.tz_min * 60 >= since) recentPrs++;
+  }
 
   return {
     athleteName: athlete?.name ?? '',
@@ -375,7 +371,7 @@ export function activitySummary(db: Db, athleteId: number, today: string, weekSt
     week: days,
     firstActivityTs: range?.first ?? null,
     lastActivityTs: range?.last ?? null,
-    recentPrs: recent.length,
+    recentPrs,
   };
 }
 

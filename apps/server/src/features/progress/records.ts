@@ -13,6 +13,7 @@ import { all, get, type Db } from '../../db/db';
 import { heartMetric } from '../../core/sources';
 import { SUMMARY_COLS, toSummary, type WorkoutRow } from '../../core/workouts';
 import { addDays, localDay } from '../../lib/time';
+import { compareEfforts } from '../activities/best-efforts';
 import { median, RIEGEL_EXPONENT, riegel, shiftYears, timeFromVdot } from './math';
 
 interface EffortRow {
@@ -50,10 +51,10 @@ const toRef = (r: EffortRow): ProgressEffortRef => ({
 /** Best effort definitions of a sport (own keys only: 'constructor' is no sport). */
 const effortDefs = (sport: string) => (Object.hasOwn(BEST_EFFORTS, sport) ? BEST_EFFORTS[sport]! : []);
 
-/** Fastest of a list (ties: the earlier attempt keeps the record). */
+/** Fastest of a list (ties: the earlier attempt keeps the record — the ranking rule of the activity medals). */
 function fastest(rows: EffortRow[]): EffortRow | null {
   let best: EffortRow | null = null;
-  for (const r of rows) if (!best || r.elapsed_s < best.elapsed_s) best = r;
+  for (const r of rows) if (!best || compareEfforts(r, best) < 0) best = r;
   return best;
 }
 
@@ -130,7 +131,7 @@ export function effortHistory(db: Db, athleteId: number, q: { sport: string; eff
     return { ...toRef(r), avgHr: r.avg_hr, pr };
   });
   const top = [...rows]
-    .sort((a, b) => a.elapsed_s - b.elapsed_s || a.start_ts - b.start_ts)
+    .sort(compareEfforts)
     .slice(0, 10)
     .map((r, i) => ({ ...toRef(r), avgHr: r.avg_hr, rank: i + 1 }));
   return { sport: q.sport, effort: q.effort, distanceM: def.distanceM, attempts, top };
