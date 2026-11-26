@@ -36,7 +36,14 @@ async function request<T>(method: string, path: string, body?: unknown, params?:
     (init.headers as Record<string, string>)['content-type'] = 'application/json';
     init.body = JSON.stringify(body);
   }
-  const res = await fetch(apiUrl(path, params), init);
+  let res: Response;
+  try {
+    res = await fetch(apiUrl(path, params), init);
+  } catch (e) {
+    if ((e as { name?: string } | null)?.name === 'AbortError') throw e;
+    // no answer at all (offline, server stopped …): a coded error like the server's, so it can be shown translated
+    throw new ApiError(0, 'network', e instanceof Error ? e.message : String(e));
+  }
   if (res.status === 401) window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
   if (!res.ok) {
     let code = 'http_error';
@@ -68,7 +75,8 @@ export const queryClient = new QueryClient({
     queries: {
       staleTime: 60_000,
       refetchOnWindowFocus: false,
-      retry: (count, err) => !(err instanceof ApiError && err.status < 500) && count < 2,
+      // client errors (4xx) are final; server errors and no answer at all (status 0) are tried again
+      retry: (count, err) => !(err instanceof ApiError && err.status >= 400 && err.status < 500) && count < 2,
       // Keep showing the previous data while a new key loads (no skeleton flash on filter changes).
       placeholderData: (prev: unknown) => prev,
     },
