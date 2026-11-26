@@ -91,7 +91,12 @@ final class ServerProcess: @unchecked Sendable {
         p.standardError = pipe
         pipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
             let chunk = handle.availableData
-            guard !chunk.isEmpty else { return }
+            guard !chunk.isEmpty else {
+                // EOF: the server is gone. Without this the handler fires forever with empty reads (100% CPU) when
+                // stop() took the termination handler away; dropping it also releases the log file.
+                handle.readabilityHandler = nil
+                return
+            }
             log?.write(chunk)
             if let url = self?.consume(chunk) {
                 Task { @MainActor in completion(.success(url)) }
