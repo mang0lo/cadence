@@ -3,9 +3,10 @@ import { browserTzAt, DAY_S } from '@/lib/time';
 
 /**
  * Local offsets inside one stretch of time (a day of samples, a night). The data give the UTC offset at both ends;
- * across a daylight-saving switch (or a flight) the two differ and the switch instant itself is not in the data. It
+ * across a daylight-saving switch (or a flight) the two differ and the switch instant is not exactly in the data. It
  * is taken from the browser's time zone when that zone has the same two offsets at both ends (the usual case: data
- * recorded at home), else it is assumed at 02:00 standard time, the rule of the EU, Australia, New Zealand and, in
+ * recorded at home), else from the data where they mark it (newer servers give the intraday buckets after a switch
+ * their own `tzMin`), else it is assumed at 02:00 standard time, the rule of the EU, Australia, New Zealand and, in
  * spring, North America.
  */
 
@@ -30,13 +31,22 @@ function twoAmStandard(startTs: number, std: number): number {
   return at - std * 60;
 }
 
-/** The UTC offset in minutes at any instant from `startTs` (offset `startTz`) to `endTs` (offset `endTz`). */
-export function tzSpan(startTs: number, startTz: number, endTs: number, endTz: number): (ts: number) => number {
+/**
+ * The UTC offset in minutes at any instant from `startTs` (offset `startTz`) to `endTs` (offset `endTz`); `marked` is
+ * the first moment the data know to have the end offset.
+ */
+export function tzSpan(
+  startTs: number,
+  startTz: number,
+  endTs: number,
+  endTz: number,
+  marked?: number,
+): (ts: number) => number {
   if (startTz === endTz || endTs <= startTs) return () => startTz;
   const switchTs =
     browserTzAt(startTs) === startTz && browserTzAt(endTs) === endTz
       ? browserSwitch(startTs, endTs)
-      : Math.min(endTs, twoAmStandard(startTs, Math.min(startTz, endTz)));
+      : (marked ?? Math.min(endTs, twoAmStandard(startTs, Math.min(startTz, endTz))));
   return (ts) => (ts < switchTs ? startTz : endTz);
 }
 
@@ -44,7 +54,9 @@ export function tzSpan(startTs: number, startTz: number, endTs: number, endTz: n
  * Offsets of an intraday day: `tzMin` is the offset of its first sample, and the server ends the day at the local
  * midnight after the last sample (`dayEndTs`), which gives that sample's offset. 23 or 25 hours on a switch day.
  */
-export function intradayTz(d: Pick<IntradayResponse, 'tzMin' | 'dayStartTs' | 'dayEndTs'>): (ts: number) => number {
+export function intradayTz(
+  d: Pick<IntradayResponse, 'tzMin' | 'dayStartTs' | 'dayEndTs'> & { buckets: readonly { ts: number; tzMin?: number }[] },
+): (ts: number) => number {
   const endTz = (d.dayStartTs + d.tzMin * 60 + DAY_S - d.dayEndTs) / 60;
-  return tzSpan(d.dayStartTs, d.tzMin, d.dayEndTs, endTz);
+  return tzSpan(d.dayStartTs, d.tzMin, d.dayEndTs, endTz, d.buckets.find((b) => b.tzMin === endTz)?.ts);
 }

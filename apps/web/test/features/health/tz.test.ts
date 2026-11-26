@@ -12,13 +12,15 @@ describe('health offsets across a daylight-saving switch', () => {
   });
 
   // Vienna, 29 Mar 2026: 00:00 CET (+60) … 24:00 CEST (+120), clocks jump at 01:00 UTC; the server's day is 23 hours
-  const spring = { tzMin: 60, dayStartTs: ts('2026-03-28T23:00:00Z'), dayEndTs: ts('2026-03-29T22:00:00Z') };
+  const spring = { tzMin: 60, dayStartTs: ts('2026-03-28T23:00:00Z'), dayEndTs: ts('2026-03-29T22:00:00Z'), buckets: [] };
   // Vienna, 25 Oct 2026: 00:00 CEST (+120) … 24:00 CET (+60), clocks go back at 01:00 UTC; 25 hours
-  const fall = { tzMin: 120, dayStartTs: ts('2026-10-24T22:00:00Z'), dayEndTs: ts('2026-10-25T23:00:00Z') };
+  const fall = { tzMin: 120, dayStartTs: ts('2026-10-24T22:00:00Z'), dayEndTs: ts('2026-10-25T23:00:00Z'), buckets: [] };
+  // New York, 1 Nov 2026: 00:00 EDT (−240) … 24:00 EST (−300), clocks go back at 02:00 EDT (06:00 UTC)
+  const nyFall = { tzMin: -240, dayStartTs: ts('2026-11-01T04:00:00Z'), dayEndTs: ts('2026-11-02T05:00:00Z'), buckets: [] };
 
   it('keeps one offset on a day without a switch', () => {
     process.env.TZ = 'Europe/Vienna';
-    const tz = intradayTz({ tzMin: 60, dayStartTs: ts('2026-03-27T23:00:00Z'), dayEndTs: ts('2026-03-28T23:00:00Z') });
+    const tz = intradayTz({ tzMin: 60, dayStartTs: ts('2026-03-27T23:00:00Z'), dayEndTs: ts('2026-03-28T23:00:00Z'), buckets: [] });
     expect([ts('2026-03-27T23:00:00Z'), ts('2026-03-28T12:00:00Z'), ts('2026-03-28T22:59:59Z')].map(tz)).toEqual([60, 60, 60]);
   });
 
@@ -32,9 +34,23 @@ describe('health offsets across a daylight-saving switch', () => {
     expect(f(ts('2026-10-25T00:59:59Z'))).toBe(120);
     expect(f(ts('2026-10-25T01:00:00Z'))).toBe(60);
 
-    // New York falls back at 02:00 EDT (06:00 UTC), an hour before 02:00 standard time
+    // New York falls back at 02:00 EDT, an hour before 02:00 standard time
     process.env.TZ = 'America/New_York';
-    const ny = intradayTz({ tzMin: -240, dayStartTs: ts('2026-11-01T04:00:00Z'), dayEndTs: ts('2026-11-02T05:00:00Z') });
+    const ny = intradayTz(nyFall);
+    expect(ny(ts('2026-11-01T05:59:59Z'))).toBe(-240);
+    expect(ny(ts('2026-11-01T06:00:00Z'))).toBe(-300);
+  });
+
+  it('takes the switch from buckets that carry their own offset when the browser is elsewhere', () => {
+    process.env.TZ = 'Europe/Vienna';
+    // without marks: 02:00 standard time, an hour late for New York
+    expect(intradayTz(nyFall)(ts('2026-11-01T06:30:00Z'))).toBe(-240);
+    const buckets = [
+      { ts: ts('2026-11-01T05:00:00Z') },
+      { ts: ts('2026-11-01T06:00:00Z'), tzMin: -300 },
+      { ts: ts('2026-11-01T07:00:00Z'), tzMin: -300 },
+    ];
+    const ny = intradayTz({ ...nyFall, buckets });
     expect(ny(ts('2026-11-01T05:59:59Z'))).toBe(-240);
     expect(ny(ts('2026-11-01T06:00:00Z'))).toBe(-300);
   });
