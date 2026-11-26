@@ -108,7 +108,14 @@ localServer.on('restart', () => {
 });
 localServer.on('crash', (code) => {
   if (quitting) return;
-  dialog.showErrorBox(APP_NAME, `The Cadence server stopped unexpectedly (exit code ${code}). See ${logDir}.`);
+  const message = `The Cadence server stopped unexpectedly (exit code ${code}). See ${logDir}.`;
+  if (smoke) {
+    // no dialog in tests: it would wait forever (like the Mac app's smoke run, fail at once)
+    console.error(`CADENCE_SMOKE_FAILED ${message}`);
+    app.exit(1);
+    return;
+  }
+  dialog.showErrorBox(APP_NAME, message);
   app.quit();
 });
 
