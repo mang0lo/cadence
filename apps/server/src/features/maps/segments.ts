@@ -238,11 +238,18 @@ export function matchWorkouts(
   );
   let stored = 0;
   const BATCH = 25;
+  let live = prepared;
   for (let b = 0; b < workouts.length; b += BATCH) {
     checkCancelled?.();
-    tx(db, () => {
+    const more = tx(db, () => {
+      // a segment deleted meanwhile (the user, on the main thread) is dropped; the others are still matched
+      const exists = new Set(
+        all<{ id: number }>(db, `SELECT id FROM maps_segments WHERE id IN (${inSegs})`, segIds).map((r) => r.id),
+      );
+      if (exists.size < live.length) live = live.filter((p) => exists.has(p.row.id));
+      if (!live.length) return false;
       for (const w of workouts.slice(b, b + BATCH)) {
-        const near = prepared.filter(
+        const near = live.filter(
           (p) =>
             p.sports.includes(w.sport) &&
             w.max_lat >= p.box[0] &&
@@ -299,7 +306,9 @@ export function matchWorkouts(
           });
         }
       }
+      return true;
     });
+    if (!more) break;
     onProgress?.(Math.min(workouts.length, b + BATCH), workouts.length);
   }
   return stored;
