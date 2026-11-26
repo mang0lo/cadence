@@ -618,22 +618,27 @@ export function storeCorosRings(db: Db, athleteId: number, days: MobileDay[]): n
  * watch) or an Apple import rewrote days. Runs in the connect derive step; cheap (one row per day).
  */
 export function reconcileCorosRings(db: Db, athleteId: number): void {
-  const rows = all<Record<string, unknown> & CorosRing & { day: string; replaced: string | null; has: number }>(
-    db,
-    `SELECT c.day, c.replaced, c.active_energy_kcal, c.active_energy_goal_kcal, c.exercise_min, c.exercise_goal_min,
-       a.day IS NOT NULL AS has, ${SUMMARY_COLUMNS.map((col) => `a.${col} AS a_${col}`).join(', ')}
-     FROM connect_rings c LEFT JOIN activity_summaries a ON a.athlete_id = c.athlete_id AND a.day = c.day
-     WHERE c.athlete_id = ? AND c.provider = 'coros' ORDER BY c.day`,
-    [athleteId],
-  );
-  if (!rows.length) return;
+  const has = get(db, "SELECT 1 FROM connect_rings WHERE athlete_id = ? AND provider = 'coros' LIMIT 1", [
+    athleteId,
+  ]);
+  if (!has) return;
   const preferDevice = preferred(getSettings(db, athleteId), 'heart') === 'device';
   const st = ringStatements(db);
   const setReplaced = prepare(
     db,
     "UPDATE connect_rings SET replaced = ? WHERE athlete_id = ? AND provider = 'coros' AND day = ?",
   );
+  // read inside the transaction: this runs in the import worker while a COROS sync on the main thread may store
+  // rings, and writing back what was read before its commit would show stale rings and keep them as Apple's
   tx(db, () => {
+    const rows = all<Record<string, unknown> & CorosRing & { day: string; replaced: string | null; has: number }>(
+      db,
+      `SELECT c.day, c.replaced, c.active_energy_kcal, c.active_energy_goal_kcal, c.exercise_min, c.exercise_goal_min,
+         a.day IS NOT NULL AS has, ${SUMMARY_COLUMNS.map((col) => `a.${col} AS a_${col}`).join(', ')}
+       FROM connect_rings c LEFT JOIN activity_summaries a ON a.athlete_id = c.athlete_id AND a.day = c.day
+       WHERE c.athlete_id = ? AND c.provider = 'coros' ORDER BY c.day`,
+      [athleteId],
+    );
     for (const r of rows) {
       const coros = asSummary(r);
       const cur = r.has
@@ -657,14 +662,14 @@ export function reconcileCorosRings(db: Db, athleteId: number): void {
 
 /** Take COROS' rings out of activity_summaries (Apple's come back where COROS replaced them). */
 export function deleteCorosRings(db: Db, athleteId: number): void {
-  const rows = all<CorosRing & { day: string; replaced: string | null }>(
-    db,
-    `SELECT day, active_energy_kcal, active_energy_goal_kcal, exercise_min, exercise_goal_min, replaced FROM connect_rings
-     WHERE athlete_id = ? AND provider = 'coros'`,
-    [athleteId],
-  );
   const st = ringStatements(db);
   tx(db, () => {
+    const rows = all<CorosRing & { day: string; replaced: string | null }>(
+      db,
+      `SELECT day, active_energy_kcal, active_energy_goal_kcal, exercise_min, exercise_goal_min, replaced
+       FROM connect_rings WHERE athlete_id = ? AND provider = 'coros'`,
+      [athleteId],
+    );
     for (const r of rows) {
       const row = st.summary.get(athleteId, r.day) as Record<string, unknown> | undefined;
       if (!row || !sameSummary(summaryOf(row), asSummary(r))) continue; // Apple's rings (or none): keep

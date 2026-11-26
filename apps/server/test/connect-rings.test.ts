@@ -183,4 +183,48 @@ describe('COROS rings: sources', () => {
     expect(ring('2026-06-01')).toMatchObject({ active_energy_kcal: 650, exercise_min: 35 });
     expect(all(db, 'SELECT day, replaced FROM connect_rings')).toEqual([{ day: '2026-06-01', replaced: null }]);
   });
+
+  it('never writes back rings a COROS sync replaced while the import worker reconciled', () => {
+    storeCorosRings(db, 1, [cal('2026-06-01', 150, 5)]);
+    // an Apple export import rewrote the day
+    run(
+      db,
+      `UPDATE activity_summaries SET active_energy_kcal = 512.5, active_energy_goal_kcal = 500, exercise_min = 41,
+         exercise_goal_min = 30, stand_hours = 11, stand_goal_hours = 12 WHERE athlete_id = 1 AND day = '2026-06-01'`,
+    );
+    // the import worker reconciles (db) while the sync on the main thread (another connection) stores new values
+    const main = openDb(path.join(dir, 'cadence.db'));
+    main.exec('PRAGMA busy_timeout = 0');
+    const syncStore = () => storeCorosRings(main, 1, [cal('2026-06-01', 300, 10)]);
+    let waited = false;
+    const prepareOf = db.prepare.bind(db);
+    db.prepare = (sql: string) => {
+      const st = prepareOf(sql);
+      if (!sql.includes('FROM connect_rings c LEFT JOIN activity_summaries')) return st;
+      const read = st.all.bind(st) as unknown as (...params: unknown[]) => unknown[];
+      // right after the worker read the rings, the sync tries to store (it waits for the worker's transaction)
+      st.all = ((...params: unknown[]) => {
+        const rows = read(...params);
+        try {
+          syncStore();
+        } catch {
+          waited = true;
+        }
+        return rows;
+      }) as unknown as typeof st.all;
+      return st;
+    };
+    reconcileCorosRings(db, 1);
+    if (waited) syncStore();
+    main.close();
+    expect(ring('2026-06-01')).toMatchObject({
+      active_energy_kcal: 300,
+      exercise_min: 10,
+      stand_hours: null,
+    });
+    // preferring Apple again brings back Apple's rings, not an older COROS copy
+    updateSettings(db, 1, { watch: 'apple' });
+    reconcileCorosRings(db, 1);
+    expect(ring('2026-06-01')).toMatchObject({ active_energy_kcal: 512.5, stand_hours: 11 });
+  });
 });
