@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
 
+# the jobs run npm packages and their install scripts: the token can only read
+permissions:
+  contents: read
+
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -72,7 +76,7 @@ jobs:
           $env:CADENCE_DATA_DIR = "$env:RUNNER_TEMP\cadence"
           $env:CADENCE_DESKTOP_SMOKE = "$env:RUNNER_TEMP\smoke.png"
           $p = Start-Process -FilePath "${{ matrix.app }}" -PassThru -Wait
-          # the app writes the screenshot only when the server started and the UI loaded
+          # the app writes the screenshot only when the server started and the app shell rendered
           if (-not (Test-Path $env:CADENCE_DESKTOP_SMOKE)) {
             Get-Content "$env:CADENCE_DATA_DIR\logs\server.log" -ErrorAction SilentlyContinue
             exit 1
