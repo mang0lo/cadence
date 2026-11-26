@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import yazl from 'yazl';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { openFitSource } from '../src/import/fit/import';
 import { openExportSource } from '../src/import/source';
 
 let dir: string;
@@ -88,5 +89,21 @@ describe('zip exports', () => {
     src.close();
     await settle();
     expect(openFds()).toBe(before);
+  });
+
+  it('of FIT files never read an entry that claims gigabytes', async () => {
+    const zipPath = path.join(dir, 'activities.zip');
+    const buf = await writeZip(zipPath, [
+      ['a.fit', randomBytes(64)],
+      ['b.fit', randomBytes(64)],
+    ]);
+    // a crafted zip (deflate inflates ~1000:1) would make the reader buffer all of it
+    declareSize(buf, 'b.fit', 3 * 1024 ** 3);
+    fs.writeFileSync(zipPath, buf);
+    const src = (await openFitSource(zipPath))!;
+    expect(src.files.map((f) => f.path)).toEqual(['a.fit', 'b.fit']);
+    expect((await src.files[0]!.read()).length).toBe(64);
+    await expect(src.files[1]!.read()).rejects.toThrow(/too large/);
+    src.close();
   });
 });

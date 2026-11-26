@@ -49,8 +49,8 @@ function isExportXml(name: string): boolean {
 
 export class ImportInputError extends Error {}
 
-/** Largest file read into memory from a zip (routes, ECGs, clinical files): far above any real one. */
-const READ_CAP = 256 * 1024 * 1024;
+/** Largest file read into memory from a zip (routes, ECGs, clinical files, FIT files): far above any real one. */
+export const READ_CAP = 256 * 1024 * 1024;
 
 /** export_cda.xml (clinical document, next to export.xml in the unzipped export) is no Apple Health export.xml. */
 export function isClinicalDocument(name: string): boolean {

@@ -7,7 +7,7 @@ import { tzOffsetMinutes } from '../../lib/tz';
 import type { ImportResult, RunImportOptions } from '../importer';
 import { encodeSamples } from '../samples';
 import { ChangeScope, notePending } from '../scope';
-import { ImportInputError } from '../source';
+import { ImportInputError, READ_CAP } from '../source';
 import { encodeTrack } from '../track';
 import { WarningCollector } from '../warnings';
 import { emptyStats } from '../writer';
@@ -128,6 +128,9 @@ export async function openFitSource(input: string, only?: string[]): Promise<Fit
     return null;
   }
   const readEntry = async (e: yauzl.Entry) => {
+    // yauzl stops at the size the zip declares, but that size is only a claim: a crafted zip could declare gigabytes
+    if (e.uncompressedSize > READ_CAP)
+      throw new FitError(`File too large (${Math.round(e.uncompressedSize / 1048576)} MB)`);
     const s = await zip.openReadStreamPromise(e);
     const chunks: Buffer[] = [];
     for await (const c of s) chunks.push(c as Buffer);
