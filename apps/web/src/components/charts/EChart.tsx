@@ -14,7 +14,8 @@ import { LegacyGridContainLabel } from 'echarts/features';
 import { CanvasRenderer } from 'echarts/renderers';
 import type { EChartsOption, ECharts } from 'echarts';
 import { cn } from '@/components/ui';
-import { baseOption } from './options';
+import { useI18n } from '@/lib/i18n';
+import { axisNumberFormatter, baseOption, chartLocale, localizeAxes } from './options';
 import { pointerInElement } from './pointer';
 
 export { pointerInElement };
@@ -101,8 +102,17 @@ function correctPointerPositions(container: HTMLElement, chart: ECharts): () => 
   };
 }
 
-/** Theme-aware ECharts wrapper (canvas). Resizes with its container. */
-export function EChart({
+/**
+ * Theme-aware ECharts wrapper (canvas). Resizes with its container. Numeric axes without a label formatter of their
+ * own show the user's number format, time axes the month names of the user's language.
+ */
+export function EChart(props: EChartProps) {
+  const { locale } = useI18n();
+  // ECharts takes its locale (month names on time axes) when a chart is created: another language makes a new chart
+  return <ChartCanvas key={locale} locale={locale} {...props} />;
+}
+
+function ChartCanvas({
   option,
   height = 260,
   className,
@@ -112,7 +122,8 @@ export function EChart({
   onReady,
   group,
   ariaLabel,
-}: EChartProps) {
+  locale,
+}: EChartProps & { locale: string }) {
   const el = useRef<HTMLDivElement>(null);
   const chart = useRef<ECharts | null>(null);
   const theme = useChartTheme();
@@ -121,7 +132,8 @@ export function EChart({
 
   useEffect(() => {
     const node = el.current!;
-    const c = echarts.init(node, undefined, { renderer: 'canvas' });
+    // only the time names: ECharts fills in the rest from its English locale
+    const c = echarts.init(node, undefined, { renderer: 'canvas', locale: chartLocale(locale) as never });
     chart.current = c;
     const stopPointerFix = correctPointerPositions(node, c);
     const ro = new ResizeObserver(() => c.resize());
@@ -139,8 +151,8 @@ export function EChart({
   useEffect(() => {
     const c = chart.current;
     if (!c) return;
-    c.setOption({ ...baseOption(theme), ...option }, { notMerge });
-  }, [option, theme, notMerge]);
+    c.setOption({ ...baseOption(theme), ...localizeAxes(option, axisNumberFormatter(locale)) }, { notMerge });
+  }, [option, theme, notMerge, locale]);
 
   useEffect(() => {
     const c = chart.current;
