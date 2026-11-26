@@ -215,27 +215,6 @@ export function legend(t: ChartTheme, kind: 'line' | 'rect' = 'rect', extra?: An
   };
 }
 
-/** Zoom slider/inside for long time series. */
-export function dataZoom(t: ChartTheme, opts: { slider?: boolean } = {}): AnyObj[] {
-  const inside = { type: 'inside', throttle: 50 };
-  if (!opts.slider) return [inside];
-  return [
-    inside,
-    {
-      type: 'slider',
-      height: 18,
-      bottom: 4,
-      borderColor: 'transparent',
-      backgroundColor: t.cellEmpty,
-      fillerColor: 'rgba(128,128,128,0.15)',
-      dataBackground: { lineStyle: { color: t.axis }, areaStyle: { color: t.grid } },
-      handleStyle: { color: t.surface, borderColor: t.axis },
-      textStyle: { color: t.muted },
-      moveHandleSize: 0,
-    },
-  ];
-}
-
 /** Common top-level defaults merged by <EChart>. */
 export function baseOption(t: ChartTheme): EChartsOption {
   return {
