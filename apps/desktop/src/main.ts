@@ -222,6 +222,37 @@ function buildMenu(): void {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
+/** The rendered app shell (sidebar navigation and main area): not a blank page, an error page or the login page. */
+const SMOKE_READY = "!!document.querySelector('aside nav a[href]') && !!document.querySelector('main')";
+
+/** Smoke test: rejects as soon as the page fails to load, answers with an error status or its renderer crashes. */
+function smokeFailures(w: BrowserWindow): Promise<never> {
+  const failures = new Promise<never>((_, reject) => {
+    w.webContents.on('did-fail-load', (_e, code, description, url, isMainFrame) => {
+      if (isMainFrame && code !== -3 /* aborted */) reject(new Error(`${url} did not load: ${description} (${code})`));
+    });
+    w.webContents.on('did-navigate', (_e, url, httpResponseCode) => {
+      if (httpResponseCode >= 400) reject(new Error(`${url} answered with HTTP ${httpResponseCode}`));
+    });
+    w.webContents.on('render-process-gone', (_e, details) => reject(new Error(`the page crashed (${details.reason})`)));
+  });
+  failures.catch(() => undefined); // awaited later (smokeReady)
+  return failures;
+}
+
+/** Smoke test: waits until the app shell rendered (at most 60 s), unless the page failed before. */
+async function smokeReady(w: BrowserWindow, failures: Promise<never>): Promise<void> {
+  const deadline = Date.now() + 60_000;
+  const rendered = (async () => {
+    while (!(await w.webContents.executeJavaScript(SMOKE_READY).catch(() => false))) {
+      if (Date.now() > deadline) throw new Error('the app did not render within 60 seconds');
+      await new Promise((r) => setTimeout(r, 250));
+    }
+  })();
+  await Promise.race([rendered, failures]);
+  await new Promise((r) => setTimeout(r, 1500)); // the first page draws its content for the screenshot
+}
+
 async function createWindow(): Promise<void> {
   win = new BrowserWindow({
     width: 1360,
@@ -284,10 +315,12 @@ async function createWindow(): Promise<void> {
     if (target === 'external') void shell.openExternal(url);
   });
 
+  // CADENCE_DESKTOP_SMOKE (CI): the screenshot is written only when the page loaded and the app shell rendered
+  const failures = smoke ? smokeFailures(win) : null;
   try {
     await loadApp(process.env.CADENCE_DEV_URL || remoteServer() || (await ensureLocalServer()));
-    if (smoke) {
-      await new Promise((r) => setTimeout(r, 4000));
+    if (smoke && failures) {
+      await smokeReady(win, failures);
       const img = await win.webContents.capturePage();
       fs.writeFileSync(smoke, img.toPNG());
       console.log(`CADENCE_SMOKE_OK ${serverUrl} ${img.getSize().width}x${img.getSize().height}`);
