@@ -172,7 +172,9 @@ final class WebViewController: NSViewController, WKNavigationDelegate, WKUIDeleg
         appOrigins = ShellPolicy.Origin(url).map { [$0] } ?? []
         pageLoaded = false
         overlay.hide()
-        appLoad = webView.load(URLRequest(url: url))
+        let first = pendingPath.flatMap { URL(string: $0, relativeTo: url) } ?? url
+        pendingPath = nil
+        appLoad = webView.load(URLRequest(url: first))
     }
 
     /// Until the built-in server kept its port, every launch gave the page a new origin (http://127.0.0.1:<port>)
@@ -200,8 +202,15 @@ final class WebViewController: NSViewController, WKNavigationDelegate, WKUIDeleg
         )
     }
 
+    /// A page asked for before the first load (e.g. an export dropped on the Dock icon launched the app): shown first.
+    private var pendingPath: String?
+
     func navigate(to path: String) {
-        guard let base = baseURL, let url = URL(string: path, relativeTo: base) else { return }
+        guard let base = baseURL else {
+            pendingPath = path
+            return
+        }
+        guard let url = URL(string: path, relativeTo: base) else { return }
         webView.load(URLRequest(url: url))
     }
 
@@ -214,12 +223,12 @@ final class WebViewController: NSViewController, WKNavigationDelegate, WKUIDeleg
     func pickImportFile() {
         guard let window = view.window else { return }
         let panel = NSOpenPanel()
-        panel.message = "Choose your Apple Health export (export.zip, export.xml or the unzipped folder)"
+        panel.message = "Choose your Apple Health export (export.zip, export.xml or the unzipped folder) or FIT files (a .fit file, or a zip or folder of them)"
         panel.prompt = "Import"
         panel.canChooseFiles = true
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
-        panel.allowedContentTypes = [.zip, .xml, .folder]
+        panel.allowedContentTypes = ImportFiles.contentTypes
         panel.beginSheetModal(for: window) { [weak self] response in
             guard response == .OK, let url = panel.url else { return }
             self?.startLocalImport(path: url.path)

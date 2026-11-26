@@ -51,10 +51,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 
-    /// export.zip dropped on the Dock icon or opened with Cadence → import it.
+    /// An export or FIT file dropped on the Dock icon or opened with Cadence → import it.
     func application(_ application: NSApplication, open urls: [URL]) {
-        guard let url = urls.first(where: { ["zip", "xml"].contains($0.pathExtension.lowercased()) || $0.hasDirectoryPath }) else { return }
-        web.startLocalImport(path: url.path)
+        guard let url = urls.first(where: ImportFiles.accepts) else { return }
+        // a remote server cannot read files on this Mac (and should not learn their paths): its import page uploads
+        if Preferences.remoteServerURL != nil { web.navigate(to: "/import") } else { web.startLocalImport(path: url.path) }
     }
 
     func applicationWillTerminate(_ notification: Notification) {

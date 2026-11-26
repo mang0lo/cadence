@@ -13,6 +13,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { app, BrowserWindow, dialog, ipcMain, Menu, session, shell, type MenuItemConstructorOptions } from 'electron';
+import { importDialogOptions, importPickOf, type ImportPick } from './import-picker';
 import { allowsPermission, isAppFrame, isAppUrl, isExternalUrl, navigationTarget, originOf } from './policy';
 import { DEFAULT_PORT, LocalServer, ServerStopped } from './server-process';
 
@@ -146,8 +147,8 @@ async function forgetOldLocalOrigins(keep: (string | null)[]): Promise<void> {
     .catch(() => undefined);
 }
 
-/** Native open dialog → import the file in place, like the macOS shell. */
-async function pickImportFile(): Promise<void> {
+/** Native open dialog (a file, or a folder) → import it in place, like the macOS shell. */
+async function pickImportFile(pick: ImportPick = 'file'): Promise<void> {
   if (!win) return;
   // a remote server cannot read files on this computer: its import page uploads the file instead
   const remote = remoteServer();
@@ -155,14 +156,7 @@ async function pickImportFile(): Promise<void> {
     await win.loadURL(`${remote}/import`).catch(() => undefined);
     return;
   }
-  const r = await dialog.showOpenDialog(win, {
-    title: 'Import',
-    properties: ['openFile'],
-    filters: [
-      { name: 'Apple Health export or FIT files', extensions: ['zip', 'xml', 'fit'] },
-      { name: 'All files', extensions: ['*'] },
-    ],
-  });
+  const r = await dialog.showOpenDialog(win, importDialogOptions(pick));
   const file = r.filePaths[0];
   if (r.canceled || !file) return;
   const onImportPage = (win.webContents.getURL() ?? '').includes('/import');
@@ -181,6 +175,8 @@ function buildMenu(): void {
       label: '&File',
       submenu: [
         { label: '&Import…', accelerator: 'CmdOrCtrl+O', click: () => void pickImportFile() },
+        // an unzipped export or a folder of FIT files: the file dialog cannot pick folders on Windows and Linux
+        { label: 'Import &folder…', accelerator: 'CmdOrCtrl+Shift+O', click: () => void pickImportFile('folder') },
         { label: 'Open &data folder', click: () => void shell.openPath(dataDir) },
         { type: 'separator' },
         { role: 'quit' },
@@ -381,10 +377,19 @@ async function saveFile(filename: string, base64: string): Promise<void> {
   await fs.promises.writeFile(r.filePath, Buffer.from(base64, 'base64'));
 }
 
-ipcMain.on('cadence', (event, msg: { type?: string; filename?: string; base64?: string; url?: string }) => {
+/** What the web UI posts through the bridge (apps/web/src/lib/native.ts postNative). */
+interface BridgeMessage {
+  type?: string;
+  filename?: string;
+  base64?: string;
+  url?: string;
+  folder?: unknown;
+}
+
+ipcMain.on('cadence', (event, msg: BridgeMessage) => {
   // only the app's own page reaches the bridge, not another site that ended up in the window (policy.ts)
   if (!win || event.sender !== win.webContents || !isAppFrame(event.senderFrame, appOrigins)) return;
-  if (msg?.type === 'pickImportFile') void pickImportFile();
+  if (msg?.type === 'pickImportFile') void pickImportFile(importPickOf(msg));
   else if (msg?.type === 'openDataFolder') void shell.openPath(dataDir);
   else if (msg?.type === 'saveFile' && msg.filename && msg.base64) void saveFile(msg.filename, msg.base64);
   else if (msg?.type === 'connectServer') {
