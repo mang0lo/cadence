@@ -2,18 +2,18 @@
  * Cadence desktop app for Linux and Windows: the same design as the macOS shell (apps/macos), in Electron.
  *
  *  - Starts the bundled server (server/index.js) as a child process of Electron's own binary in Node mode
- *    (ELECTRON_RUN_AS_NODE; Electron ships Node 24 with node:sqlite), on a free port (PORT=0). The server announces
- *    itself on stdout as `CADENCE_LISTENING {"url","port"}` and exits when this process is gone (CADENCE_PARENT_PID).
+ *    (ELECTRON_RUN_AS_NODE; Electron ships Node 24 with node:sqlite), see server-process.ts. It keeps the port of
+ *    the last launch (desktop.json), so the page keeps its origin and with it its browser storage.
  *  - Shows the web UI in a window; the File → Import menu and the import page use a native open dialog
  *    (preload bridge, see apps/web/src/lib/native.ts) and import the picked file in place (no upload copy).
  *  - Data lives in the per-user app data folder (Linux ~/.config/Cadence, Windows %APPDATA%\Cadence).
  *
  * CADENCE_DEV_URL=http://localhost:5173 shows a running dev server instead (npm run dev).
  */
-import { spawn, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { app, BrowserWindow, dialog, ipcMain, Menu, shell, type MenuItemConstructorOptions } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, session, shell, type MenuItemConstructorOptions } from 'electron';
+import { DEFAULT_PORT, LocalServer, ServerStopped } from './server-process';
 
 const APP_NAME = 'Cadence';
 app.setName(APP_NAME);
@@ -22,17 +22,9 @@ app.setName(APP_NAME);
 const dataDir = process.env.CADENCE_DATA_DIR || path.join(app.getPath('appData'), APP_NAME);
 const smoke = process.env.CADENCE_DESKTOP_SMOKE || null;
 const logDir = path.join(dataDir, 'logs');
-let server: ChildProcess | null = null;
 let serverUrl: string | null = null;
 let win: BrowserWindow | null = null;
 let quitting = false;
-/** URL of the built-in server while it runs. */
-let localUrl: string | null = null;
-/** The built-in server is being stopped on purpose (switched to a remote server). */
-let stoppingLocal = false;
-
-/** Exit code of the server when it restarts itself on purpose (e.g. to apply a restored backup). */
-const RESTART_EXIT_CODE = 75;
 
 /** "Cadence 0.3.0": the version in the title bar, next to the window buttons. */
 const WINDOW_TITLE = `${APP_NAME} ${app.getVersion()}`;
@@ -41,6 +33,8 @@ const WINDOW_TITLE = `${APP_NAME} ${app.getVersion()}`;
 interface DesktopPrefs {
   /** A Cadence server (e.g. Docker on a home server) to show instead of the built-in one. */
   remoteServerUrl?: string | null;
+  /** The port the built-in server listened on last time (the page's origin, and so its browser storage, depend on it). */
+  port?: number;
 }
 const prefsFile = path.join(dataDir, 'desktop.json');
 function readPrefs(): DesktopPrefs {
@@ -78,95 +72,66 @@ function resources(): { entry: string; web: string } {
   return { entry: path.join(apps, 'server', 'dist', 'index.js'), web: path.join(apps, 'web', 'dist') };
 }
 
-function startServer(): Promise<string> {
-  const { entry, web } = resources();
-  if (!fs.existsSync(entry)) {
-    return Promise.reject(
-      new Error(
-        `The bundled server is missing (${entry}). Run \`npm run build\` first, or set CADENCE_DEV_URL.`,
-      ),
-    );
-  }
-  fs.mkdirSync(logDir, { recursive: true });
-  const log = fs.createWriteStream(path.join(logDir, 'server.log'), { flags: 'w' });
-  return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', entry], {
-      cwd: dataDir,
-      env: {
-        ...process.env,
-        ELECTRON_RUN_AS_NODE: '1',
-        CADENCE_MODE: 'desktop',
-        PORT: '0',
-        HOST: '127.0.0.1',
-        CADENCE_DATA_DIR: dataDir,
-        CADENCE_WEB_DIR: web,
-        CADENCE_PARENT_PID: String(process.pid),
-        NODE_ENV: 'production',
-      },
-      stdio: ['ignore', 'pipe', 'pipe'],
-      windowsHide: true,
+const localServer = new LocalServer({
+  execPath: process.execPath,
+  entry: resources().entry,
+  webDir: resources().web,
+  dataDir,
+  logDir,
+  env: { ELECTRON_RUN_AS_NODE: '1' },
+  preferredPort: () => {
+    const port = readPrefs().port;
+    return typeof port === 'number' && Number.isInteger(port) && port > 0 && port < 65536 ? port : DEFAULT_PORT;
+  },
+  onPort: (port) => {
+    const prefs = readPrefs();
+    if (prefs.port !== port) writePrefs({ ...prefs, port });
+  },
+});
+// restored backup: the server stops itself; start it again (same port: the page keeps its origin) and reload the UI
+localServer.on('restart', () => {
+  if (quitting) return;
+  localServer
+    .start()
+    .then((url) => {
+      serverUrl = url;
+      // the page reloads itself as soon as the server answers again (BackupSection): either load may abort the other
+      void win?.loadURL(url).catch(() => undefined);
+    })
+    .catch((e: Error) => {
+      if (e instanceof ServerStopped) return;
+      dialog.showErrorBox(APP_NAME, e.message);
+      app.quit();
     });
-    server = child;
-    let buffer = '';
-    let resolved = false;
-    const timer = setTimeout(() => {
-      if (resolved) return;
-      resolved = true;
-      child.kill();
-      reject(new Error('The Cadence server did not start within 60 seconds.'));
-    }, 60_000);
-    child.stdout!.on('data', (chunk: Buffer) => {
-      log.write(chunk);
-      if (resolved) return;
-      buffer += chunk.toString('utf8');
-      const m = /CADENCE_LISTENING (\{.*\})/.exec(buffer);
-      if (m) {
-        resolved = true;
-        clearTimeout(timer);
-        resolve((JSON.parse(m[1]!) as { url: string }).url);
-      }
-    });
-    child.stderr!.on('data', (chunk: Buffer) => log.write(chunk));
-    child.on('exit', (code) => {
-      server = null;
-      localUrl = null;
-      log.end();
-      if (stoppingLocal) {
-        stoppingLocal = false;
-        return;
-      }
-      if (!resolved) {
-        resolved = true;
-        clearTimeout(timer);
-        reject(new Error(`The Cadence server stopped while starting (exit code ${code}). See ${logDir}.`));
-      } else if (!quitting && code === RESTART_EXIT_CODE) {
-        // restored backup: start again (the new server picks a new port) and reload the UI
-        void startServer()
-          .then((url) => {
-            serverUrl = url;
-            localUrl = url;
-            return win?.loadURL(url);
-          })
-          .catch((e: Error) => {
-            dialog.showErrorBox(APP_NAME, e.message);
-            app.quit();
-          });
-      } else if (!quitting) {
-        dialog.showErrorBox(
-          APP_NAME,
-          `The Cadence server stopped unexpectedly (exit code ${code}). See ${logDir}.`,
-        );
-        app.quit();
-      }
-    });
-  });
+});
+localServer.on('crash', (code) => {
+  if (quitting) return;
+  dialog.showErrorBox(APP_NAME, `The Cadence server stopped unexpectedly (exit code ${code}). See ${logDir}.`);
+  app.quit();
+});
+
+/** The built-in server's URL, starting it when it does not run. `keep`: a remote server that was just left. */
+async function ensureLocalServer(keep: string | null = null): Promise<string> {
+  const firstOnLastingPort = readPrefs().port === undefined;
+  const url = await localServer.ensure();
+  if (firstOnLastingPort) await forgetOldLocalOrigins([remoteServer(), keep]);
+  return url;
 }
 
-/** The built-in server's URL, starting it when it does not run. */
-async function ensureLocalServer(): Promise<string> {
-  if (server && localUrl) return localUrl;
-  localUrl = await startServer();
-  return localUrl;
+/**
+ * Until the built-in server kept its port, every launch gave the page a new origin (http://127.0.0.1:<port>) and
+ * left what it had stored under the old one behind for good. Removes that once, before the page first loads on its
+ * lasting port. The storage of remote servers (`keep`), every cookie and the HTTP cache (map tiles, keyed by site
+ * and not by port) stay.
+ */
+async function forgetOldLocalOrigins(keep: (string | null)[]): Promise<void> {
+  const origins = keep.flatMap((u) => (u ? [new URL(u).origin] : []));
+  await session.defaultSession
+    .clearData({
+      dataTypes: ['backgroundFetch', 'fileSystems', 'indexedDB', 'localStorage', 'serviceWorkers', 'webSQL'],
+      ...(origins.length ? { excludeOrigins: origins } : {}),
+    })
+    .catch(() => undefined);
 }
 
 /** Native open dialog → import the file in place, like the macOS shell. */
@@ -316,6 +281,7 @@ async function createWindow(): Promise<void> {
       app.quit();
     }
   } catch (e) {
+    if (e instanceof ServerStopped) return; // replaced by another start (e.g. Settings → Server)
     if (smoke) {
       // no dialog in tests: it would wait forever
       console.error(`CADENCE_SMOKE_FAILED ${(e as Error).message}`);
@@ -330,16 +296,14 @@ async function createWindow(): Promise<void> {
 /** Settings → Server: show another Cadence server (null = the built-in one, started again when needed). */
 async function connectServer(url: string | null): Promise<void> {
   if (!win) return;
+  const previous = remoteServer();
   writePrefs({ ...readPrefs(), remoteServerUrl: url });
   if (url) {
     // the built-in server is not needed while another one is shown
-    if (server) {
-      stoppingLocal = true;
-      server.kill();
-    }
+    void localServer.stop();
     serverUrl = url;
   } else {
-    serverUrl = process.env.CADENCE_DEV_URL || (await ensureLocalServer());
+    serverUrl = process.env.CADENCE_DEV_URL || (await ensureLocalServer(previous));
   }
   win.setTitle(url ? `${WINDOW_TITLE} – ${new URL(url).host}` : WINDOW_TITLE);
   await win.loadURL(serverUrl).catch(() => undefined);
@@ -363,7 +327,9 @@ ipcMain.on('cadence', (_e, msg: { type?: string; filename?: string; base64?: str
     const text = (msg.url ?? '').trim();
     const url = text ? serverUrlOf(text) : null;
     if (text && !url) return;
-    void connectServer(url).catch((e: Error) => dialog.showErrorBox(APP_NAME, e.message));
+    void connectServer(url).catch((e: Error) => {
+      if (!(e instanceof ServerStopped)) dialog.showErrorBox(APP_NAME, e.message);
+    });
   }
 });
 
@@ -389,6 +355,6 @@ if (!app.requestSingleInstanceLock()) {
   app.on('window-all-closed', () => app.quit());
   app.on('before-quit', () => {
     quitting = true;
-    server?.kill();
+    void localServer.stop();
   });
 }
