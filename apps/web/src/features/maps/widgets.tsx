@@ -8,9 +8,8 @@ import { ArrowRight, Grid3x3, Route as RouteIcon, Star, Trophy } from 'lucide-re
 import type { MapsExplorerSummary, MapsWorkoutLinks } from '@cadence/shared';
 import { Badge, Card, CardHeader, Delta, ErrorState, Skeleton, Stat, Table, TD, TH } from '@/components/ui';
 import { useApi } from '@/lib/api';
-import { useFormat } from '@/lib/format';
+import { speedLabelKey, useFormat } from '@/lib/format';
 import { useI18n, useT } from '@/lib/i18n';
-import { speedLabelKey } from './lib/effortSort';
 import { routeTitle } from './lib/routeName';
 
 /** Explorer tiles at a glance: visited tiles, max square and the tiles that are new this month. */
@@ -58,7 +57,7 @@ export function ExplorerWidget() {
         <Stat label={t('maps.explorer.stats.tiles')} value={fmt.int(d.tiles)} size="md" />
         <Stat
           label={t('maps.explorer.stats.maxSquare')}
-          value={d.maxSquare ? `${d.maxSquare} × ${d.maxSquare}` : '–'}
+          value={d.maxSquare ? `${fmt.int(d.maxSquare)} × ${fmt.int(d.maxSquare)}` : '–'}
           hint={d.maxSquare ? t('maps.explorer.stats.maxSquareHint', { count: d.maxSquare ** 2 }) : undefined}
           size="md"
         />
