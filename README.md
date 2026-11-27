@@ -147,8 +147,8 @@ docker run -d --name cadence --restart unless-stopped -p 8787:8787 -v cadence-da
 - `CADENCE_PASSWORD` protects the server with one password (repeated wrong passwords are locked out for a few
   minutes); browsers log in, scripts send `Authorization: Bearer <password>`.
 - **Time zone**: set `TZ` to your IANA time zone (`Europe/Berlin`, `America/New_York` …). It decides "today" on the
-  server, sleep nights, the intraday heart rate and FIT workouts without a local time; without it the container runs
-  on UTC and the server warns at startup.
+  server, sleep nights, the intraday heart rate and FIT workouts without a local time. Without it the container runs
+  on UTC: the compose file sets `TZ=UTC` without a warning, a container started without `TZ` warns at startup.
 - **Move your data**: Settings → *Backup & moving to a server* → download the backup in the app, restore it on the
   server (keeps renamed activities, goals and segments; watch-account logins are not part of a backup).
 - Point the desktop app at the server in **Settings → Server** (Mac also **Cadence → Connect to Server…**).

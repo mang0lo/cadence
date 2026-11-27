@@ -22,8 +22,8 @@ and texts, numbers and errors in your language.
     and warns at startup when it is reachable from the network without a password. The Docker image sets
     `HOST=0.0.0.0` itself.
   - Set `TZ` to your time zone (e.g. `TZ=America/New_York` in `deploy/.env`): the compose file defaults to UTC instead
-    of Europe/Vienna, and a server without `TZ` warns at startup. The zone decides "today", sleep nights, the intraday
-    heart rate and FIT workouts without a local time.
+    of Europe/Vienna, without a warning (a server started without any `TZ` warns at startup). The zone decides
+    "today", sleep nights, the intraday heart rate and FIT workouts without a local time.
   - Behind a reverse proxy, set `CADENCE_TRUST_PROXY` to the proxy's address: only then does the login brake count each
     client on its own instead of everyone as the proxy. A proxy that rewrites the `Host` header should pass the
     original one (nginx: `proxy_set_header Host $host`), or older browsers cannot save changes.
