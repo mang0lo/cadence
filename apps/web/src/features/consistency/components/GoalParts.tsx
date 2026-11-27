@@ -102,7 +102,7 @@ export function GoalHistoryStrip({
     >
       {history.map((h) => {
         const state = h.manual ? 'manual' : h.hit ? 'hit' : h.pending ? 'pending' : 'miss';
-        const value = formatGoalValue(fmt, t, goal.metric, h.value, reachedRounding(h.value, goal.target));
+        const value = formatGoalValue(fmt, t, goal.metric, h.value, reachedRounding(h.value, goal.target, goal.metric));
         const result = `${periodLabel(fmt, goal.period, h.start, h.end)}: ${value} — ${t(`consistency.goals.result.${state}`)}`;
         const canToggle = !!onToggle && state !== 'hit';
         const text = canToggle ? `${result} · ${t(h.manual ? 'consistency.goals.clickUncheck' : 'consistency.goals.clickCheck')}` : result;
@@ -193,7 +193,7 @@ export function GoalCard({
           </div>
           <div className="mt-0.5 flex flex-wrap items-baseline gap-x-1.5">
             <span className="text-3xl font-semibold tracking-tight text-fg">
-              {formatGoalValue(fmt, t, goal.metric, c.value, reachedRounding(c.value, c.target))}
+              {formatGoalValue(fmt, t, goal.metric, c.value, reachedRounding(c.value, c.target, goal.metric))}
             </span>
             <span className="text-sm text-fg-3">{t('consistency.goals.of', { target: formatGoalValue(fmt, t, goal.metric, c.target) })}</span>
           </div>

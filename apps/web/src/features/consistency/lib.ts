@@ -72,8 +72,19 @@ function roundTo(v: number, digits: number, rounding: GoalRounding): number {
   return r / f;
 }
 
-/** Rounding of a progress value: down while it is below the target, to the nearest once it is reached. */
-export const reachedRounding = (value: number, target: number): GoalRounding => (value < target ? 'down' : 'nearest');
+/**
+ * Share of its target from which a single distance ('longest' goal) counts as reached: the GPS tolerance of the
+ * distance trophies, the same as the server's DISTANCE_TOLERANCE (apps/server/src/features/consistency/challenges.ts).
+ */
+export const DISTANCE_TOLERANCE = 0.995;
+
+/**
+ * Rounding of a progress value: down while it is below the target, to the nearest once it is reached. A single
+ * distance is reached within DISTANCE_TOLERANCE like on the server, so 42,150 m of a 42,195 m goal show as 42.2 km,
+ * not as 42.1 km next to a reached goal; pass the goal's `metric` for that.
+ */
+export const reachedRounding = (value: number, target: number, metric?: GoalMetric): GoalRounding =>
+  value < (metric === 'longest' ? target * DISTANCE_TOLERANCE : target) ? 'down' : 'nearest';
 
 /** A small remainder (< 1 km / mi) in m or yd, rounded up: "45 m more" instead of "0 km more". */
 function smallDistanceUp(fmt: Formatter, m: number): string {
@@ -285,7 +296,7 @@ export function goalTargetText(fmt: Formatter, t: TFunction, g: Pick<GoalInput, 
 export function goalOutlook(g: GoalWithProgress, t: TFunction, fmt: Formatter, asOfActive = false): string {
   const c = g.current;
   const v = (x: number, rounding: GoalRounding = 'nearest') => formatGoalValue(fmt, t, g.metric, x, rounding);
-  const reached = (x: number) => v(x, reachedRounding(x, c.target));
+  const reached = (x: number) => v(x, reachedRounding(x, c.target, g.metric));
   if (c.checked) return t('consistency.goals.checkedText', { value: reached(c.value) });
   if (c.status === 'done') return t('consistency.goals.doneText', { pct: fmt.pct(c.fraction) });
   // a day has no pace: what is left, or that nothing was tracked yet

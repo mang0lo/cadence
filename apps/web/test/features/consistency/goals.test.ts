@@ -111,6 +111,18 @@ describe('formatGoalValue', () => {
     expect(reachedRounding(50, 50)).toBe('nearest');
     expect(reachedRounding(42_196, 42_195)).toBe('nearest');
   });
+
+  it('takes a single distance within the GPS tolerance as reached, like the server', () => {
+    // 42,150 m reach a 42,195 m 'longest' goal (and earn the marathon trophy): shown as reached, not rounded below it
+    expect(reachedRounding(42_150, 42_195, 'longest')).toBe('nearest');
+    expect(formatGoalValue(en, tEn, 'longest', 42_150, reachedRounding(42_150, 42_195, 'longest'))).toBe('42.2 km');
+    expect(formatGoalValue(de, tDe, 'longest', 42_150, reachedRounding(42_150, 42_195, 'longest'))).toBe('42,2 km');
+    // below the tolerance it is still open
+    expect(reachedRounding(41_900, 42_195, 'longest')).toBe('down');
+    expect(formatGoalValue(en, tEn, 'longest', 41_960, reachedRounding(41_960, 42_195, 'longest'))).toBe('41.9 km');
+    // totals need their exact target
+    expect(reachedRounding(42_150, 42_195, 'distance')).toBe('down');
+  });
 });
 
 describe('goal form', () => {
@@ -219,11 +231,12 @@ describe('goalOutlook', () => {
   });
 
   it('prints a remainder below the target precision instead of "0 km more"', () => {
+    // (42,150 m would already reach it within the GPS tolerance: the server sends 'done' then)
     const longest = goal(
-      { value: 42_150, target: 42_195, remaining: 45, remainingDays: 38, status: 'open', projected: 42_150 },
+      { value: 41_950, target: 42_195, remaining: 245, remainingDays: 38, status: 'open', projected: 41_950 },
       { period: 'year', metric: 'longest', target: 42_195 },
     );
-    expect(goalOutlook(longest, tEn, en)).toBe('Longest so far 42.1 km — 45 m more in one go, 38 days left');
+    expect(goalOutlook(longest, tEn, en)).toBe('Longest so far 41.9 km — 245 m more in one go, 38 days left');
   });
 });
 
