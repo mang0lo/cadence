@@ -34,12 +34,18 @@ export interface ListFilter {
   sport?: string;
   from?: number;
   to?: number;
+  /** Local days (inclusive), each activity in its own time zone. */
+  fromDay?: string;
+  toDay?: string;
   q?: string;
   hasRoute?: boolean;
   includeHidden?: boolean;
 }
 
 const escapeLike = (s: string) => s.replace(/[\\%_]/g, (c) => `\\${c}`);
+
+/** Largest UTC offset (s) of a local time: a local day lies within its UTC day ± this margin. */
+const TZ_MARGIN_S = 14 * 3600;
 
 /** Local hour ranges [from, to) of the default-name time of day (see timeOfDay in @cadence/shared). */
 const TOD_HOURS: Record<TimeOfDay, [number, number][]> = {
@@ -97,6 +103,17 @@ export function listWhere(athleteId: number, f: ListFilter): { sql: string; para
   if (f.to !== undefined) {
     where.push('start_ts < ?');
     params.push(f.to);
+  }
+  // local days in each activity's own time zone; the UTC bounds widened by the largest offset keep the start index
+  const fromDay = f.fromDay ? parseDay(f.fromDay) : null;
+  if (fromDay !== null) {
+    where.push('start_ts >= ?', 'start_ts + tz_min * 60 >= ?');
+    params.push(fromDay * 86400 - TZ_MARGIN_S, fromDay * 86400);
+  }
+  const toDay = f.toDay ? parseDay(f.toDay) : null;
+  if (toDay !== null) {
+    where.push('start_ts < ?', 'start_ts + tz_min * 60 < ?');
+    params.push((toDay + 1) * 86400 + TZ_MARGIN_S, (toDay + 1) * 86400);
   }
   if (f.hasRoute !== undefined) {
     where.push('has_route = ?');
@@ -363,7 +380,7 @@ export function activitySummary(db: Db, athleteId: number, today: string, weekSt
     db,
     `SELECT DISTINCT be.sport, be.effort FROM workouts w JOIN best_efforts be ON be.workout_id = w.id
      WHERE w.athlete_id = ? AND w.start_ts >= ? AND w.hidden = 0 AND w.duplicate_of IS NULL`,
-    [athleteId, since - 14 * 3600],
+    [athleteId, since - TZ_MARGIN_S],
   );
   let recentPrs = 0;
   for (const g of groups) {

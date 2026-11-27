@@ -26,6 +26,8 @@ const listQuery = z.object({
   sport: z.string().max(500).optional(),
   from: z.coerce.number().int().optional(),
   to: z.coerce.number().int().optional(),
+  fromDay: day.optional(),
+  toDay: day.optional(),
   q: z.string().max(200).optional(),
   hasRoute: bool.optional(),
   includeHidden: bool.optional(),

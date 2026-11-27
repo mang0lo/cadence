@@ -17,7 +17,16 @@ import type { RowActions } from '../components/list/RowActions';
 import { Totals } from '../components/list/Totals';
 import { ToggleChip, chipClass } from '../components/ToggleChip';
 import { SportDialog } from '../components/SportDialog';
-import { RANGES, SORT_OPTIONS, parseListParams, patchListParams, sortOption, sortPatch, toListQuery } from '../lib/listParams';
+import {
+  RANGES,
+  SORT_OPTIONS,
+  parseListParams,
+  patchListParams,
+  rangeDays,
+  sortOption,
+  sortPatch,
+  toListQuery,
+} from '../lib/listParams';
 import { useMediaQuery } from '../lib/useMediaQuery';
 
 /** Filters, sorting and paging live in the URL (shareable, back button friendly); see lib/listParams.ts. */
@@ -79,7 +88,12 @@ export default function ActivitiesPage() {
     setSearchKey((k) => k + 1);
   };
 
-  const query = useMemo<ActivityListQuery>(() => toListQuery(s, settings.weekStart, todayKey()), [s, settings.weekStart]);
+  // the period as local days: the server puts every activity on the day of its own time zone, not the browser's
+  const query = useMemo<ActivityListQuery>(() => {
+    const today = todayKey();
+    const { from: _from, to: _to, ...rest } = toListQuery(s, settings.weekStart, today);
+    return { ...rest, ...rangeDays(s.range, s.fromDay, s.toDay, settings.weekStart, today) };
+  }, [s, settings.weekStart]);
   const list = useActivityList(query);
   const data = list.data;
   // the same selection as a spreadsheet (all pages)
