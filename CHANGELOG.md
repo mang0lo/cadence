@@ -14,8 +14,8 @@ and texts, numbers and errors in your language.
 - **One-time rebuild**: after the update Cadence rebuilds its analysis once in the background (progress on the Import
   page), so existing activities get the corrected duplicates, cadence, start points, countries, training kinds,
   relative effort and activity analyses below. Water intake stored in imperial units is converted to litres.
-- **COROS**: with *Sleep & daily data* on, the first sync after the update reads the COROS app history once more (a
-  few minutes) to repair stored activity rings.
+- **COROS**: with *Sleep, steps & all-day heart rate* on, the first sync after the update reads the COROS app history
+  once more (a few minutes) to repair stored activity rings.
 - **Password-protected servers**: browsers log in once more (every login now gets a session of its own).
 - **Self-hosting** — check your setup (see *Run it as a server* in the README):
   - A server started without `CADENCE_PASSWORD` (e.g. `npm start`) now listens on `127.0.0.1` unless `HOST` is set,
@@ -109,8 +109,8 @@ and texts, numbers and errors in your language.
   - Activities of a sync that was cancelled or cut short are imported from the cache by the next sync, failed downloads
     are retried (after 3 h, 12 h, 1 d, 3 d and 7 d), and "Full sync" imports only what is missing.
   - Connecting for the first time rebuilds the analysis like a change of Settings → My watch, so duplicates show the
-    watch's copy right away; connecting again keeps your *Sleep & daily data* choice and does not fetch the whole
-    history again.
+    watch's copy right away; connecting again keeps your choice for *Sleep, steps & all-day heart rate* and does not
+    fetch the whole history again.
   - Login and sync errors are shown in your language; the sidebar badge, Settings and the pages update without a
     reload.
 - **Activities**:
@@ -223,10 +223,11 @@ and texts, numbers and errors in your language.
 
 ### Added
 
-- **Import folders**: the Linux and Windows apps import an unzipped Apple Health export or a folder of FIT files
-  (File → Import folder…, Ctrl+Shift+O, and *Choose folder…* on the import page). The Mac app takes FIT files in its
-  import panel (*Choose FIT files…*) and FIT files or the unzipped folder on its Dock icon; a file dropped while it
-  shows a remote server opens that server's import page.
+- **Import folders and FIT files in the apps**: the Linux and Windows apps import an unzipped Apple Health export or a
+  folder of FIT files (File → Import folder…, Ctrl+Shift+O, and *Choose folder…* on the import page). The Mac app's
+  import panel and Dock icon take FIT files and the unzipped folder too, and the import page of both apps has *Choose
+  FIT files…* for several at once. A file dropped on the Mac app while it shows a remote server opens that server's
+  import page.
 - **Server settings** `CADENCE_TRUST_PROXY` (believe a reverse proxy's `X-Forwarded-*` headers) and
   `CADENCE_ALLOWED_HOSTS` (host names a password-less local server answers to), and startup warnings for a server
   that is reachable without a password or runs without `TZ`.

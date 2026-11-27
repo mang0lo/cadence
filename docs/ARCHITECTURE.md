@@ -322,8 +322,9 @@ paths, `navGroups`: groups) and is applied by `components/layout/navOrder.ts`: p
   `COROSLoadRatio`, `COROSFatigue`, `COROSVO2Max`, `COROSStaminaLevel` (source `COROS`, one value per day), and their
   `daily_metrics` are refreshed directly (`coros-health.ts`).
 - The COROS phone app's API (`coros-mobile.ts`; own login, its token kept as `mobileToken`; the first login can sign
-  the phone app out once), unless *Sleep & daily data* is off (`mobileData`, `PATCH /api/connect/coros`): 31-day
-  windows of `COROSSteps`, `COROSCalories`, `COROSActiveMinutes` (daily totals that add up over weeks and months),
+  the phone app out once), unless *Sleep, steps & all-day heart rate* is off on the Watches page (`mobileData`,
+  `PATCH /api/connect/coros`): 31-day windows of `COROSSteps`, `COROSCalories`, `COROSActiveMinutes` (daily totals
+  that add up over weeks and months),
   `COROSHeartRate` with `COROSHeartRateMin` / `Max` as its daily band, sleep nights per stage in
   `health_external_nights` (merged into `health_sleep_nights` by `features/health/sleep.ts`: they fill days without an
   Apple night and replace Apple's when the watch is preferred), and the daily goals as rings in `connect_rings` (Move =
