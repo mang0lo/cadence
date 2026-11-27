@@ -98,15 +98,16 @@ export function classifyEcg(raw: string | null | undefined): EcgClass {
   if (!s.trim()) return 'unrecognized';
   if (/sinus|洞調律/.test(s)) return 'sinus';
   if (/atrial|fibril|vorhofflimmern|auricul|心房細動/.test(s)) return 'afib';
-  const heart = /(heart|herz|cardiaque|cardiac|cardíac|bpm|心拍)/;
-  if (/(high|over|hohe|über|ueber|élevée|elevee|supérieure|superieure|alta|elevada|superior|高心拍|心拍数が高)/.test(s) && (heart.test(s) || /(150|120)/.test(s)))
-    return 'highHr';
-  if (/(low|under|niedrige|unter|faible|basse|inférieure|inferieure|baja|inferior|低心拍|心拍数が低)/.test(s) && (heart.test(s) || /(50|40)/.test(s)))
-    return 'lowHr';
+  const heart = /(heart|herz|cardiaque|cardiac|cardíac|bpm|心拍)/.test(s);
+  const high = /(high|over|hohe|über|ueber|élevée|elevee|supérieure|superieure|alta|elevada|superior|高心拍|心拍数が高)/;
+  if (high.test(s) && (heart || /(150|120)/.test(s))) return 'highHr';
+  const low = /(low|under|niedrige|unter|faible|basse|inférieure|inferieure|baja|inferior|低心拍|心拍数が低)/;
+  if (low.test(s) && (heart || /(50|40)/.test(s))) return 'lowHr';
   if (/(poor|schlecht|unzureichend|quality|qualität|mauvais|qualité|deficiente|calidad|不良)/.test(s)) return 'poor';
   if (/(inconclusive|nicht eindeutig|unklar|concluant|concluyente|判定不能)/.test(s)) return 'inconclusive';
-  if (/(unrecogni|not classified|nicht klassifiziert|nicht erkannt|notset|non reconnu|non classé|no reconocido|no clasificado|未分類|分類不能)/.test(s))
-    return 'unrecognized';
+  const unrecognized =
+    /(unrecogni|not classified|nicht klassifiziert|nicht erkannt|notset|non reconnu|non classé|no reconocido|no clasificado|未分類|分類不能)/;
+  if (unrecognized.test(s)) return 'unrecognized';
   return 'other';
 }
 

@@ -76,7 +76,12 @@ const TZ_MARGIN_S = 14 * 3600;
  * The biggest activities of a sport, optionally only those with a local start day in [fromDay, toDay] (each in its own
  * time zone; the widened UTC bounds keep the sport index).
  */
-function highlightsOf(db: Db, athleteId: number, sport: string, days?: { fromDay: string; toDay: string }): ProgressHighlight[] {
+function highlightsOf(
+  db: Db,
+  athleteId: number,
+  sport: string,
+  days?: { fromDay: string; toDay: string },
+): ProgressHighlight[] {
   let range = '';
   const rangeParams: number[] = [];
   if (days) {
@@ -110,8 +115,10 @@ export function records(db: Db, athleteId: number, q: { sport: string | null; to
     [athleteId],
   );
   const sport = q.sport ?? sports.find((s) => s.efforts > 0)?.sport ?? sports[0]?.sport ?? null;
-  if (!sport)
-    return { sport: null, sports: [], efforts: [], highlights: [], scopeHighlights: { allTime: [], thisYear: [], last12m: [] } };
+  if (!sport) {
+    const scopeHighlights = { allTime: [], thisYear: [], last12m: [] };
+    return { sport: null, sports: [], efforts: [], highlights: [], scopeHighlights };
+  }
 
   const yearStart = `${q.today.slice(0, 4)}-01-01`;
   const last12From = addDays(shiftYears(q.today, -1), 1);

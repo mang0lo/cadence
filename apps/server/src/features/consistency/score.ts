@@ -30,7 +30,9 @@ export function computeScore(o: {
     const activeDays = goalValue(list, 'active_days', null);
     const met = useGoals
       ? goals.every(
-          (g) => goalReached(g.metric, goalValue(list, g.metric, g.sport), g.target) || isChecked(g.checks, ws, plusDays(ws, 6)),
+          (g) =>
+            goalReached(g.metric, goalValue(list, g.metric, g.sport), g.target) ||
+            isChecked(g.checks, ws, plusDays(ws, 6)),
         )
       : activeDays >= minDays;
     return {

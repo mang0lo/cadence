@@ -184,7 +184,10 @@ export function PowerWidget() {
   const { lang } = useI18n();
   // one cheap request: the estimate of the default power sport with the bests of its window, without the monthly
   // history the power page charts
-  const ftp = useApi<ProgressFtpResponse>(['progress', 'power-ftp'], '/progress/power/ftp', { today: todayKey(), history: 0 });
+  const ftp = useApi<ProgressFtpResponse>(['progress', 'power-ftp'], '/progress/power/ftp', {
+    today: todayKey(),
+    history: 0,
+  });
   const title = t('progress.widgets.power.title');
   if (ftp.error)
     return (
