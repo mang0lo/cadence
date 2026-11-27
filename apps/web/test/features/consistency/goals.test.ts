@@ -3,7 +3,7 @@
  * locale-aware number input and the goal form's measure fallback.
  */
 import { describe, expect, it } from 'vitest';
-import type { GoalWithProgress } from '@cadence/shared';
+import { DISTANCE_TOLERANCE, type GoalWithProgress } from '@cadence/shared';
 import {
   changeGoalForm,
   classicDistance,
@@ -122,6 +122,11 @@ describe('formatGoalValue', () => {
     expect(formatGoalValue(en, tEn, 'longest', 41_960, reachedRounding(41_960, 42_195, 'longest'))).toBe('41.9 km');
     // totals need their exact target
     expect(reachedRounding(42_150, 42_195, 'distance')).toBe('down');
+  });
+
+  it("uses the shared contract's tolerance, the one the server's goals and trophies use", () => {
+    expect(reachedRounding(42_195 * DISTANCE_TOLERANCE, 42_195, 'longest')).toBe('nearest');
+    expect(reachedRounding(42_195 * DISTANCE_TOLERANCE - 1, 42_195, 'longest')).toBe('down');
   });
 });
 

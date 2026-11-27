@@ -254,6 +254,13 @@ export const LONGEST_PRESETS: Record<'run' | 'ride' | 'swim', { key: string; dis
   ],
 };
 
+/**
+ * GPS/rounding tolerance of single-activity distances: an activity of at least this share of a distance counts
+ * ("a 5K" = ≥ 4,975 m; 42,150 m earn the marathon trophy and reach a 42,195 m 'longest' goal). The server's
+ * trophies, challenges and goals and the web's goal display use this one value.
+ */
+export const DISTANCE_TOLERANCE = 0.995;
+
 /** Triathlon distances (m) per leg: swim, bike, run. */
 export const TRIATHLON_DISTANCES: { key: 'olympicTri' | 'halfIronman' | 'ironman'; swim: number; ride: number; run: number }[] = [
   { key: 'olympicTri', swim: 1500, ride: 40000, run: 10000 },
