@@ -402,7 +402,12 @@ final class WebViewController: NSViewController, WKNavigationDelegate, WKUIDeleg
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
                  decisionHandler: @escaping @MainActor (WKNavigationActionPolicy) -> Void) {
         if navigationAction.shouldPerformDownload {
-            decisionHandler(.download)
+            // a link with `download`: saved only when the main frame of an app page asks (ShellPolicy)
+            let source = navigationAction.sourceFrame
+            let origin = ShellPolicy.Origin(scheme: source.securityOrigin.protocol, host: source.securityOrigin.host,
+                                            port: source.securityOrigin.port)
+            decisionHandler(ShellPolicy.allowsDownload(isMainFrame: source.isMainFrame, from: origin, appOrigins: appOrigins)
+                ? .download : .cancel)
             return
         }
         // Links to other sites open in the default browser (ShellPolicy). New windows (no target frame) go to
@@ -425,13 +430,16 @@ final class WebViewController: NSViewController, WKNavigationDelegate, WKUIDeleg
 
     func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse,
                  decisionHandler: @escaping @MainActor (WKNavigationResponsePolicy) -> Void) {
-        if let http = navigationResponse.response as? HTTPURLResponse,
-           let disposition = http.value(forHTTPHeaderField: "Content-Disposition"),
-           disposition.lowercased().hasPrefix("attachment") {
-            decisionHandler(.download)
+        let attachment = (navigationResponse.response as? HTTPURLResponse)?
+            .value(forHTTPHeaderField: "Content-Disposition")?.lowercased().hasPrefix("attachment") ?? false
+        guard attachment || !navigationResponse.canShowMIMEType else {
+            decisionHandler(.allow)
             return
         }
-        decisionHandler(navigationResponse.canShowMIMEType ? .allow : .download)
+        // saved only for the main frame of an app page (ShellPolicy); anything else is not loaded at all
+        let origin = ShellPolicy.downloadOrigin(of: navigationResponse.response.url, shownPage: webView.url)
+        decisionHandler(ShellPolicy.allowsDownload(isMainFrame: navigationResponse.isForMainFrame, from: origin, appOrigins: appOrigins)
+            ? .download : .cancel)
     }
 
     func webView(_ webView: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) {

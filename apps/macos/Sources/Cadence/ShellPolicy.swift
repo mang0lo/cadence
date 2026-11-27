@@ -5,7 +5,8 @@ import Foundation
 ///
 ///  - The app's pages are those of the Cadence server it shows: the origin (scheme, host, port) of that server, and
 ///    the origin the server sent the app's own load to (e.g. a redirect from http to https).
-///  - Only the main frame of an app page reaches the native bridge (import panel, saving files, Settings → Server).
+///  - Only the main frame of an app page reaches the native bridge (import panel, saving files, Settings → Server)
+///    and saves downloads into ~/Downloads (links with `download`, attachments, files the window cannot show).
 ///  - Links and form submissions to other sites open in the default browser instead of the window. Other
 ///    navigations (server redirects, scripts) may still bring another site into the window, but its pages never
 ///    reach the bridge.
@@ -70,5 +71,18 @@ enum ShellPolicy {
     static func acceptsMessage(isMainFrame: Bool, from origin: Origin?, appOrigins: [Origin]) -> Bool {
         guard isMainFrame, let origin else { return false }
         return appOrigins.contains(origin)
+    }
+
+    /// A download into ~/Downloads: like the bridge, only for the main frame of an app page. Frames inside the page
+    /// and pages of other sites in the window (e.g. brought there by a redirect) save nothing.
+    static func allowsDownload(isMainFrame: Bool, from origin: Origin?, appOrigins: [Origin]) -> Bool {
+        acceptsMessage(isMainFrame: isMainFrame, from: origin, appOrigins: appOrigins)
+    }
+
+    /// Where a download the main frame received comes from: its URL's origin, or for a data: or blob: URL (made by
+    /// the page itself) the origin of the page shown in the window.
+    static func downloadOrigin(of url: URL?, shownPage: URL?) -> Origin? {
+        if let origin = Origin(url) { return origin }
+        return ["data", "blob"].contains(url?.scheme?.lowercased() ?? "") ? Origin(shownPage) : nil
     }
 }
