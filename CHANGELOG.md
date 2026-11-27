@@ -218,8 +218,9 @@ and texts, numbers and errors in your language.
 - **Segments**: creating and matching long segments is up to 50× faster, and creating one no longer blocks the app.
 - **Heatmap**: the density layer uses about 20× fewer points and the time-lapse stays smooth with thousands of
   activities.
-- **Web app**: fewer and smaller files at start, a chart bundle about 50 KB smaller, map styles only with the maps,
-  superseded requests cancelled, and route previews that render their map only near the screen and free it again.
+- **Web app**: fewer and smaller files at start, a chart bundle about 50 KB smaller, map styles only with the maps (the
+  Settings page loads its privacy-zone map last), superseded requests cancelled, and route previews that render their
+  map only near the screen and free it again.
 
 ### Added
 
@@ -244,7 +245,8 @@ and texts, numbers and errors in your language.
   `fmt.parseNumber`; `t()` formats numbers itself. See docs/ARCHITECTURE.md.
 - Releases: the app builds run without a token that can publish, the Mac, Linux and Windows apps are started once
   before they are attached, and a failing platform no longer holds back the others. The Docker build ignores health
-  data in the source folder and reuses its layers when only other parts change.
+  data in the source folder and reuses its layers when only other parts change; the image's health check follows
+  `PORT`.
 
 ## [1.0.0] – 2026-11-13
 
