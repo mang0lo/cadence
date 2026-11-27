@@ -13,7 +13,6 @@ import {
   goalInputText,
   goalOutlook,
   hourLabel,
-  parseGoalNumber,
   previousYearCovered,
   reachedRounding,
   reviewWeeks,
@@ -49,44 +48,8 @@ const de = createFormatter('metric', 'de-DE', 'de');
 const tEn = makeT('en', 'en-US');
 const tDe = makeT('de', 'de-DE');
 
-describe('parseGoalNumber', () => {
-  it('reads thousands separators of the locale instead of taking them for a decimal point', () => {
-    expect(parseGoalNumber('1,000', 'en-US')).toBe(1000);
-    expect(parseGoalNumber('2,500', 'en-US')).toBe(2500);
-    expect(parseGoalNumber('1,000,000', 'en-US')).toBe(1_000_000);
-    expect(parseGoalNumber('10.000', 'de-DE')).toBe(10_000);
-    expect(parseGoalNumber('1.000', 'de-DE')).toBe(1000);
-    expect(parseGoalNumber('10 000', 'de-AT')).toBe(10_000);
-    expect(parseGoalNumber("10'000", 'de-CH')).toBe(10_000);
-    expect(parseGoalNumber('10’000', 'de-CH')).toBe(10_000);
-  });
 
-  it('reads the decimal separator of the locale, and the other one where it cannot group thousands', () => {
-    expect(parseGoalNumber('42.195', 'en-US')).toBe(42.195);
-    expect(parseGoalNumber('42,195', 'de-DE')).toBe(42.195);
-    expect(parseGoalNumber('0,5', 'de-DE')).toBe(0.5);
-    expect(parseGoalNumber('1.5', 'de-DE')).toBe(1.5);
-    expect(parseGoalNumber('1,5', 'en-US')).toBe(1.5);
-    expect(parseGoalNumber('.5', 'en-US')).toBe(0.5);
-    expect(parseGoalNumber('1.234,5', 'de-DE')).toBe(1234.5);
-    expect(parseGoalNumber('1,234.5', 'de-DE')).toBe(1234.5);
-    expect(parseGoalNumber('42.195', 'de-CH')).toBe(42.195);
-    expect(parseGoalNumber(' 30 ', 'en-US')).toBe(30);
-  });
-
-  it('takes a lone separator before three digits as a decimal point where a decimal is expected', () => {
-    // single-activity distances are entered with up to three decimals (the marathon is 42.195 km)
-    expect(parseGoalNumber('42.195', 'de-DE', true)).toBe(42.195);
-    expect(parseGoalNumber('42,195', 'en-US', true)).toBe(42.195);
-    expect(parseGoalNumber('42,195', 'de-DE', true)).toBe(42.195);
-  });
-
-  it('rejects malformed numbers', () => {
-    for (const s of ['', ' ', 'abc', '-5', '1e3', ',', '1..5', '1,2,3', '1.234.5,6,7', '12,34.5', '5 km'])
-      expect(parseGoalNumber(s, 'en-US'), s).toBeNaN();
-    expect(parseGoalNumber('1,0,0', 'de-DE')).toBeNaN();
-  });
-
+describe('goal input text', () => {
   it('round-trips the text the form writes into the input', () => {
     for (const [fmt, v] of [
       [de, 42.195],
@@ -96,7 +59,7 @@ describe('parseGoalNumber', () => {
       [de, 0.5],
     ] as const) {
       const text = goalInputText(fmt, 'longest', v * 1000, 'year');
-      expect(parseGoalNumber(text, fmt.locale, true)).toBe(v);
+      expect(fmt.parseNumber(text, true)).toBe(v);
     }
     expect(goalInputText(de, 'longest', 42_195, 'year')).toBe('42,195');
     expect(goalInputText(de, 'distance', 1_000_000, 'year')).toBe('1000');

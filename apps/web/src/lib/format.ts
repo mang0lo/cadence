@@ -99,6 +99,62 @@ export function clock(seconds: number): string {
   return h > 0 ? `${sign}${h}:${two(m)}:${two(sec)}` : `${sign}${m}:${two(sec)}`;
 }
 
+// ---- numbers typed by the user ----------------------------------------------------------------------------------
+
+const decimalCache = new Map<string, string>();
+
+/** Decimal separator of a locale ("," in German, "." in English and Swiss German). */
+function decimalSeparator(locale: string): string {
+  let d = decimalCache.get(locale);
+  if (d === undefined) {
+    d = new Intl.NumberFormat(locale).formatToParts(1.5).find((p) => p.type === 'decimal')?.value ?? '.';
+    decimalCache.set(locale, d);
+  }
+  return d;
+}
+
+/** Integer digits with group separators: 1–3 digits, then groups of 2 (Indian lakh style) or 3, the last one 3. */
+function ungroup(int: string, group: string): string | null {
+  if (!int.includes(group)) return int;
+  const parts = int.split(group);
+  const ok =
+    /^\d{1,3}$/.test(parts[0]!) &&
+    parts.slice(1, -1).every((p) => /^\d{2,3}$/.test(p)) &&
+    /^\d{3}$/.test(parts[parts.length - 1]!);
+  return ok ? parts.join('') : null;
+}
+
+/**
+ * A number the user typed, read with the locale's separators: "1,000" is a thousand in English and "10.000" ten
+ * thousand in German (not 1 and 10). The locale's decimal separator is always a decimal point; the other one is a
+ * decimal point too where it cannot group thousands ("1.5" in German). A lone separator before exactly three digits
+ * ("42.195" in German) groups thousands, unless `preferDecimal` (e.g. single distances, entered with up to three
+ * decimals). Spaces and apostrophes are group separators. Anything else (signs, letters, exponents, broken groups) is
+ * NaN. Use `fmt.parseNumber(text)` in components.
+ */
+export function parseNumber(text: string, locale: string, preferDecimal = false): number {
+  const s = text.replace(/[\s  '’]/g, '');
+  if (!/^[\d.,]+$/.test(s) || !/\d/.test(s)) return NaN;
+  const dots = s.split('.').length - 1;
+  const commas = s.split(',').length - 1;
+  let decimal: '.' | ',' | null = null;
+  if (dots && commas) decimal = s.lastIndexOf('.') > s.lastIndexOf(',') ? '.' : ',';
+  else if (dots + commas === 1) {
+    const sep = dots ? '.' : ',';
+    const [int, frac] = s.split(sep) as [string, string];
+    const groupsThousands = frac.length === 3 && int.length >= 1 && int.length <= 3;
+    decimal = sep === decimalSeparator(locale) || !groupsThousands || preferDecimal ? sep : null;
+  }
+  const group = decimal === '.' ? ',' : decimal === ',' ? '.' : dots ? '.' : ',';
+  const parts = decimal ? s.split(decimal) : [s];
+  if (parts.length > 2) return NaN;
+  const int = parts[0] ?? '';
+  const frac = parts[1] ?? '';
+  const digits = ungroup(int, group);
+  if (digits === null || frac.includes(group)) return NaN;
+  return Number(`${digits || '0'}.${frac || '0'}`);
+}
+
 export function createFormatter(units: Units, locale: string, lang: Lang) {
   const imperial = units === 'imperial';
   const num = (v: number, digits = 0) =>
@@ -114,6 +170,8 @@ export function createFormatter(units: Units, locale: string, lang: Lang) {
     lang,
     num,
     int: (v: number) => num(Math.round(v)),
+    /** A number the user typed, read with this locale's separators (parseNumber); NaN when it is none. */
+    parseNumber: (text: string, preferDecimal = false) => parseNumber(text, locale, preferDecimal),
     compact: (v: number) => nf(locale, { notation: 'compact', maximumFractionDigits: 1 }).format(unsignedZero(v, 1)),
     pct: (fraction: number, digits = 0) =>
       nf(locale, { style: 'percent', maximumFractionDigits: digits, minimumFractionDigits: digits }).format(

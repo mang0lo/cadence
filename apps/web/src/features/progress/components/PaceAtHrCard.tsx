@@ -163,8 +163,8 @@ export function PaceAtHrCard({ sport, range }: { sport: string; range: RangePara
     });
   };
   const applyCustom = () => {
-    const a = Math.round(Number(lo));
-    const b = Math.round(Number(hi)) + 1;
+    const a = Math.round(fmt.parseNumber(lo));
+    const b = Math.round(fmt.parseNumber(hi)) + 1;
     if (!Number.isFinite(a) || !Number.isFinite(b) || a < 30 || b > 240 || b <= a) return;
     if (data && data.band.lo === a && data.band.hi === b) return;
     pick({ lo: a, hi: b });

@@ -1,4 +1,5 @@
 import type { PrivacyZone } from '@cadence/shared';
+import { parseNumber } from '@/lib/format';
 
 /** Pure checks of the settings form: what may be saved, and how zones are framed and written. */
 
@@ -28,9 +29,12 @@ export function birthDateCommit(
   return isPlausibleBirthDate(input.value, today) ? { save: input.value } : null;
 }
 
-/** The four zone limits as typed: whole numbers, null for an empty or unreadable field. */
-export const parseBounds = (texts: string[]): (number | null)[] =>
-  texts.map((s) => (s.trim() === '' || !Number.isFinite(Number(s)) ? null : Math.round(Number(s))));
+/** The four zone limits as typed (read with the locale's separators): whole numbers, null for an empty or unreadable field. */
+export const parseBounds = (texts: string[], locale: string): (number | null)[] =>
+  texts.map((s) => {
+    const v = parseNumber(s, locale);
+    return Number.isFinite(v) ? Math.round(v) : null;
+  });
 
 export type ZoneBoundsProblem = 'range' | 'order';
 
