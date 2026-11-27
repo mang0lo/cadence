@@ -165,10 +165,10 @@ export function AthleteCard({ summary }: { summary: ActivitiesSummary }) {
           <div className="text-xs text-fg-3">
             {t('activities.athlete.activities', { count: summary.allTime.count, n: fmt.int(summary.allTime.count) })}
           </div>
-          {summary.firstActivityTs && (
-            // the summary has no time zone for it: the browser's zone at that time, not UTC
+          {summary.firstActivityDay && (
+            // the first activity's own local day, whatever the browser's time zone
             <div className="text-xs text-fg-3">
-              {t('activities.athlete.since', { date: fmt.browserDate(summary.firstActivityTs, 'month') })}
+              {t('activities.athlete.since', { date: fmt.day(summary.firstActivityDay, 'month') })}
             </div>
           )}
         </div>

@@ -61,6 +61,8 @@ export interface ActivitiesSummary {
   /** The 7 days of the current week. */
   week: ActivityWeekDay[];
   firstActivityTs: number | null;
+  /** Local day 'YYYY-MM-DD' of the first activity, in its own time zone ("training since"). */
+  firstActivityDay: string | null;
   lastActivityTs: number | null;
   /** Best efforts set in the last 30 days that are still the all-time best (rank 1). */
   recentPrs: number;

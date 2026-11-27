@@ -3,7 +3,7 @@ import { migrateAll } from '../src/app';
 import { openDb, run, type Db } from '../src/db/db';
 import { DERIVE_VERSION } from '../src/derive/context';
 import { bestEffortsOf } from '../src/core/workouts';
-import { medalsFor } from '../src/features/activities/queries';
+import { activitySummary, medalsFor } from '../src/features/activities/queries';
 import { parseDay } from '../src/lib/time';
 
 let db: Db;
@@ -68,5 +68,21 @@ describe('best effort ranks on the activity page', () => {
     const b = runOn('2026-03-01', { '5k': 1500 });
     expect(detailRank(a, '5k')).toBe(1);
     expect(detailRank(b, '5k')).toBe(2);
+  });
+});
+
+describe('dashboard summary: training since', () => {
+  it('names the local day of the first activity in its own time zone', () => {
+    // 23:00 on Jan 31 at UTC−05:00 is already Feb 1 in UTC (and in every browser east of it)
+    runOn('2026-01-31', {}, { hour: 23, tzMin: -300 });
+    runOn('2026-03-01');
+    runOn('2025-12-30', {}, { hidden: true }); // hidden activities do not count
+    const s = activitySummary(db, 1, '2026-03-02', 1);
+    expect(s.firstActivityDay).toBe('2026-01-31');
+    expect(s.firstActivityTs).toBe(parseDay('2026-02-01')! * 86400 + 4 * 3600);
+  });
+
+  it('is null without activities', () => {
+    expect(activitySummary(db, 1, '2026-03-02', 1).firstActivityDay).toBeNull();
   });
 });

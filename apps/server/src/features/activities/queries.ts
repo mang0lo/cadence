@@ -350,9 +350,10 @@ export function activitySummary(db: Db, athleteId: number, today: string, weekSt
   }
 
   const athlete = get<{ name: string }>(db, 'SELECT name FROM athletes WHERE id = ?', [athleteId]);
-  const range = get<{ first: number | null; last: number | null }>(
+  const range = get<{ first: number | null; last: number | null; firstDay: string | null }>(
     db,
-    'SELECT MIN(start_ts) AS first, MAX(start_ts) AS last FROM workouts WHERE athlete_id = ? AND hidden = 0 AND duplicate_of IS NULL',
+    `SELECT MIN(start_ts) AS first, MAX(start_ts) AS last, MIN(date(start_ts + tz_min * 60, 'unixepoch')) AS firstDay
+     FROM workouts WHERE athlete_id = ? AND hidden = 0 AND duplicate_of IS NULL`,
     [athleteId],
   );
   // PRs (still the best) set during the last 30 local days: the record of every (sport, effort) attempted since
@@ -382,6 +383,7 @@ export function activitySummary(db: Db, athleteId: number, today: string, weekSt
     sports,
     week: days,
     firstActivityTs: range?.first ?? null,
+    firstActivityDay: range?.firstDay ?? null,
     lastActivityTs: range?.last ?? null,
     recentPrs,
   };
