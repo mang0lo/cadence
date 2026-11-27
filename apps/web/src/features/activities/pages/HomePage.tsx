@@ -1,8 +1,8 @@
-import { use, type ComponentType } from 'react';
+import { use } from 'react';
 import { Link } from 'react-router';
 import { Activity, Upload } from 'lucide-react';
 import { Button, Card, EmptyState, ErrorState, Page } from '@/components/ui';
-import { dashboardWidgets, dashboardWidgetsFor } from '@/features/registry';
+import { dashboardWidgetsFor, loadedWidgets, loadWidgets } from '@/features/registry';
 import { useT } from '@/lib/i18n';
 import { useDataSources } from '@/lib/sources';
 import { useActivitiesSummary, useFeed } from '../api';
@@ -10,31 +10,14 @@ import { AthleteCard, AthleteCardSkeleton } from '../components/AthleteCard';
 import { FeedCard, FeedCardSkeleton } from '../components/FeedCard';
 import { WidgetBoundary } from '../components/WidgetBoundary';
 
-type WidgetComponents = Map<string, ComponentType>;
-
-let loaded: WidgetComponents | undefined;
-let loading: Promise<WidgetComponents> | undefined;
-
 /**
- * Loads the code of every feature's dashboard widgets (FeatureModule.widgets). The route waits for it, so the dashboard
- * shows up with all its widgets at once. A failed load fails the route (it offers a reload) and is tried again later.
+ * The features' dashboard widgets in their order. Each renders its own Card (or null). Their code is loaded already: the
+ * route loads it together with this page (withDashboardWidgets in the registry).
  */
-export function loadWidgets(): Promise<WidgetComponents> {
-  loading ??= Promise.all(dashboardWidgets.map(async (w) => [w.id, await w.component()] as const)).then(
-    (entries) => (loaded = new Map(entries)),
-    (e: unknown) => {
-      loading = undefined;
-      throw e;
-    },
-  );
-  return loading;
-}
-
-/** The features' dashboard widgets in their order. Each renders its own Card (or null). */
 function Widgets() {
   const t = useT();
   const sources = useDataSources().data;
-  const components = loaded ?? use(loadWidgets());
+  const components = loadedWidgets() ?? use(loadWidgets());
   return (
     // minmax(0,1fr): an `auto` track would grow with the widest widget and overflow the side column
     <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-4">

@@ -1,3 +1,4 @@
+import { isRouteErrorResponse } from 'react-router';
 import { ApiError } from './api';
 import type { TFunction } from './i18n';
 
@@ -42,4 +43,15 @@ export function describeError(error: unknown, t: TFunction): ErrorText {
   if (error instanceof Error && error.message)
     return { message: error.message, detail: error.cause === undefined ? null : describeError(error.cause, t).detail };
   return { message: t('common.errors.unknown'), detail: error == null || typeof error === 'object' ? null : String(error) };
+}
+
+/**
+ * The error a route's error element shows. React Router reports its own failures (a URL no route matches, a loader
+ * that throws `data(…, { status })`) as an error response with an English status text; as an ApiError coded like the
+ * API's (404 → not_found, else the generic message with the status) ErrorState shows them in the user's language.
+ */
+export function fromRouteError(error: unknown): unknown {
+  if (!isRouteErrorResponse(error)) return error;
+  const message = `${error.status} ${error.statusText}`.trim();
+  return new ApiError(error.status, error.status === 404 ? 'not_found' : 'http_error', message);
 }

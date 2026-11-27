@@ -1,5 +1,6 @@
 /** Formatting helpers of the consistency feature (pure; pass `fmt`/`t` from the hooks). */
 import {
+  DISTANCE_TOLERANCE,
   M_PER_FT,
   M_PER_KM,
   M_PER_MI,
@@ -73,17 +74,11 @@ function roundTo(v: number, digits: number, rounding: GoalRounding): number {
 }
 
 /**
- * Share of its target from which a single distance ('longest' goal) counts as reached: the GPS tolerance of the
- * distance trophies, the same as the server's DISTANCE_TOLERANCE (apps/server/src/features/consistency/challenges.ts).
- */
-export const DISTANCE_TOLERANCE = 0.995;
-
-/**
  * Rounding of a progress value: down while it is below the target, to the nearest once it is reached. A single
- * distance is reached within DISTANCE_TOLERANCE like on the server, so 42,150 m of a 42,195 m goal show as 42.2 km,
- * not as 42.1 km next to a reached goal; pass the goal's `metric` for that.
+ * distance ('longest', the goal's `metric`) is reached within the trophies' GPS tolerance like on the server,
+ * so 42,150 m of a 42,195 m goal show as 42.2 km, not as 42.1 km next to a reached goal.
  */
-export const reachedRounding = (value: number, target: number, metric?: GoalMetric): GoalRounding =>
+export const reachedRounding = (value: number, target: number, metric: GoalMetric): GoalRounding =>
   value < (metric === 'longest' ? target * DISTANCE_TOLERANCE : target) ? 'down' : 'nearest';
 
 /** A small remainder (< 1 km / mi) in m or yd, rounded up: "45 m more" instead of "0 km more". */
@@ -139,7 +134,7 @@ export function formatGoalValue(
     case 'activities':
     case 'active_days': {
       const n = roundTo(v, 0, rounding);
-      return t(`consistency.common.${metric === 'activities' ? 'activities' : 'days'}`, { count: n, n: fmt.int(n) });
+      return t(`consistency.common.${metric === 'activities' ? 'activities' : 'days'}`, { count: n });
     }
   }
 }

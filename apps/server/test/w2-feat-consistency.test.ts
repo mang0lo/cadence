@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_CONSISTENCY_PREFS, type Goal } from '@cadence/shared';
-import { DISTANCE_TOLERANCE } from '../src/features/consistency/challenges';
+import { DEFAULT_CONSISTENCY_PREFS, DISTANCE_TOLERANCE, type Goal } from '@cadence/shared';
 import { bucketByPeriod, goalHistory, goalProjection, goalReached, type DailyRow } from '../src/features/consistency/goals';
 import { goalWithProgress, periodBuckets } from '../src/features/consistency/goals-service';
 import { computeScore } from '../src/features/consistency/score';

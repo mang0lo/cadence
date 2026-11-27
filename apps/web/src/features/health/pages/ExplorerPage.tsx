@@ -52,7 +52,7 @@ function OtherItems({ items }: { items: ExplorerItem[] }) {
               </span>
               <div className="min-w-0">
                 <div className="truncate text-sm font-medium text-fg">{label}</div>
-                <div className="text-xs text-fg-3 tabular">{t('health.explorer.items.count', { count: it.count, n: fmt.int(it.count) })}</div>
+                <div className="text-xs text-fg-3 tabular">{t('health.explorer.items.count', { count: it.count })}</div>
                 {it.firstTs !== null && it.lastTs !== null && (
                   <div className="truncate text-xs text-fg-3">
                     {itemDate(fmt, it.key, it.firstTs)} – {itemDate(fmt, it.key, it.lastTs)}

@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
-import type { ImportJob, ImportStatus } from '@cadence/shared';
+import type { ImportErrorCode, ImportJob, ImportStatus } from '@cadence/shared';
 import {
   currentJob,
   finishedSince,
@@ -18,6 +18,7 @@ import {
   wantsFullList,
   type JobsIo,
 } from '@/features/platform/importJobs';
+import { messages as platformMessages } from '@/features/platform/messages';
 import { ApiError } from '@/lib/api';
 import { describeError } from '@/lib/errors';
 import type { TFunction } from '@/lib/i18n';
@@ -244,14 +245,42 @@ describe('job labels', () => {
     expect(jobErrorText(t, 'Import worker exited unexpectedly (code 1)', 'worker_crashed')).toBe('platform.import.errors.crashed');
     // the code decides, not the wording
     expect(jobErrorText(t, 'Der Import-Thread ist abgestürzt', 'worker_crashed')).toBe('platform.import.errors.crashed');
+    // any other error: the server's text is all there is
     expect(jobErrorText(t, 'Interrupted by nothing we know', 'failed')).toBe('Interrupted by nothing we know');
-    // codes without a translation keep the English detail
+    // a file Cadence cannot read: the server's English details stay in the tooltip of the history cell
     const unreadable = 'Not a readable zip file: End of central directory record signature not found';
-    expect(jobErrorText(t, unreadable, 'invalid_input')).toBe(unreadable);
+    expect(jobErrorText(t, unreadable, 'invalid_input')).toBe('platform.import.errors.invalidInput');
+    expect(jobErrorText(t, 'Not resumed: local imports are disabled on this server', 'not_resumed')).toBe(
+      'platform.import.errors.notResumed',
+    );
     // without a code (a caller that passes only the text): the server's known wording
     expect(jobErrorText(t, 'Interrupted: the server stopped')).toBe('platform.import.errors.interrupted');
     expect(jobErrorText(t, 'File not found: /Users/me/Downloads/export.zip')).toBe('platform.import.errors.sourceGone');
+    expect(jobErrorText(t, 'Not resumed: local imports are disabled on this server')).toBe('platform.import.errors.notResumed');
+    // a code this version does not know yet
+    expect(jobErrorText(t, 'Something new', 'toString' as ImportErrorCode)).toBe('Something new');
     expect(jobErrorText(t, 'Something else')).toBe('Something else');
+  });
+
+  it('has an English and a German message for every error code of the server but the catch-all', () => {
+    // the codes of the shared contract (ImportErrorCode): a code added there needs a message in both languages
+    const core = fs.readFileSync(fileURLToPath(new URL('../../../../../packages/shared/src/core.ts', import.meta.url)), 'utf8');
+    const union = /export type ImportErrorCode =([^;]+);/.exec(core)?.[1] ?? '';
+    const codes = [...union.matchAll(/'([a-z_]+)'/g)].map((m) => m[1] as ImportErrorCode);
+    expect(codes).toEqual(expect.arrayContaining(['interrupted', 'not_resumed', 'source_gone', 'worker_crashed', 'invalid_input']));
+    for (const lang of ['en', 'de'] as const) {
+      // this language only, without the English fallback of the app's t()
+      const only: TFunction = (key) => {
+        let cur: unknown = platformMessages[lang];
+        for (const p of key.split('.').slice(1)) cur = (cur as Record<string, unknown> | undefined)?.[p];
+        return typeof cur === 'string' ? cur : `missing ${key}`;
+      };
+      for (const code of codes.filter((c) => c !== 'failed')) {
+        const text = jobErrorText(only, 'The server says', code);
+        expect(text, `${lang} ${code}`).not.toBe('The server says');
+        expect(text, `${lang} ${code}`).not.toMatch(/^missing /);
+      }
+    }
   });
 
   it('names COROS batches and rebuilds in the language of the interface', () => {

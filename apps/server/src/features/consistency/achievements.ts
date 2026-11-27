@@ -4,13 +4,13 @@
  * whole history in order, so earned dates and activities are deterministic.
  */
 import {
+  DISTANCE_TOLERANCE,
   TRIATHLON_DISTANCES,
   sportInfo,
   type AchievementGroup,
   type AchievementKind,
   type AchievementTier,
 } from '@cadence/shared';
-import { DISTANCE_TOLERANCE } from './challenges';
 import { epoch, fromEpoch, plusDays, weekStartEpoch } from './days';
 import { dayRuns, firstDayReaching, weekRuns } from './streaks';
 

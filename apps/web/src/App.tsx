@@ -4,9 +4,10 @@ import { createBrowserRouter, Link, RouterProvider, useRouteError, type RouteObj
 import { Compass, RefreshCw } from 'lucide-react';
 import { AppShell } from '@/components/layout/AppShell';
 import { Button, EmptyState, ErrorState, Page, Spinner } from '@/components/ui';
-import { featureModules, namespaces } from '@/features/registry';
+import { featureModules, namespaces, withDashboardWidgets } from '@/features/registry';
 import { LoginPage } from '@/features/platform/LoginPage';
 import { queryClient, UNAUTHORIZED_EVENT } from '@/lib/api';
+import { fromRouteError } from '@/lib/errors';
 import { I18nProvider, useT } from '@/lib/i18n';
 import { SettingsProvider, useSettings } from '@/lib/settings';
 
@@ -31,7 +32,7 @@ function RouteError() {
   const error = useRouteError();
   return (
     <Page>
-      <ErrorState error={error instanceof Error ? error : new Error(String((error as { statusText?: string })?.statusText ?? error))} />
+      <ErrorState error={fromRouteError(error)} />
     </Page>
   );
 }
@@ -103,7 +104,7 @@ const router = createBrowserRouter([
       </div>
     ),
     children: [
-      ...withChunkFallback(featureModules.flatMap((f) => f.routes)),
+      ...withChunkFallback(featureModules.flatMap((f) => f.routes).map(withDashboardWidgets)),
       { path: '*', element: <NotFound /> },
     ],
   },

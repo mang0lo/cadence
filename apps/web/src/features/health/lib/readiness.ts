@@ -189,8 +189,8 @@ export function useReadinessFormat() {
           return k('factors.missing.never');
         case 'baseline':
           return f.key === 'load'
-            ? k('factors.missing.baselineLoad', { count: fmt.int(f.baselineDays), min: model.minLoadDays })
-            : k('factors.missing.baseline', { count: fmt.int(f.baselineDays), min: model.minBaselineDays });
+            ? k('factors.missing.baselineLoad', { count: f.baselineDays, min: model.minLoadDays })
+            : k('factors.missing.baseline', { count: f.baselineDays, min: model.minBaselineDays });
         case 'noValue':
           return k(`factors.missing.noValue.${f.key}`, { days: model.hrvDays });
         default:

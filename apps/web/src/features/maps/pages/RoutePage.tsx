@@ -27,7 +27,6 @@ import { decodePolyline, toLngLat } from '@/lib/polyline';
 import { EffortTable, type EffortRow } from '../components/EffortTable';
 import { EffortTrend } from '../components/EffortTrend';
 import { LineMap, useShownOverlayColors, type MapLine } from '../components/LineMap';
-import { countVars } from '../lib/counts';
 import { unionBox, type BBox } from '../lib/home';
 import { kindLabel, routeTitle } from '../lib/routeName';
 
@@ -236,7 +235,7 @@ function RouteBody({ detail }: { detail: MapsRouteDetail }) {
       />
       <EffortTable
         title={t('maps.routes.efforts')}
-        subtitle={t('maps.routes.effortsSubtitle', countVars(fmt, efforts.length))}
+        subtitle={t('maps.routes.effortsSubtitle', { count: efforts.length })}
         rows={rows}
         sport={route.sport}
         bestLabel={t('maps.routes.rankBest')}

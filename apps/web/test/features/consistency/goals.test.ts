@@ -3,7 +3,7 @@
  * locale-aware number input and the goal form's measure fallback.
  */
 import { describe, expect, it } from 'vitest';
-import type { GoalWithProgress } from '@cadence/shared';
+import { DISTANCE_TOLERANCE, type GoalWithProgress } from '@cadence/shared';
 import {
   changeGoalForm,
   classicDistance,
@@ -21,25 +21,12 @@ import {
 } from '@/features/consistency/lib';
 import { messages } from '@/features/consistency/messages';
 import { createFormatter } from '@/lib/format';
-import type { Dictionary, Lang, Messages, TFunction } from '@/lib/i18n';
+import { createT, type Lang, type TFunction } from '@/lib/i18n';
 import { commonMessages } from '@/lib/messages';
 
-/** Same lookup, plural and interpolation rules as I18nProvider. */
+/** The t() of I18nProvider for the 'common' and 'consistency' namespaces. */
 function makeT(lang: Lang, locale: string): TFunction {
-  const namespaces: Record<string, Dictionary> = { common: commonMessages, consistency: messages };
-  const plural = new Intl.PluralRules(locale);
-  const lookup = (m: Messages | undefined, path: string[]) => {
-    let cur: string | Messages | undefined = m;
-    for (const p of path) cur = cur && typeof cur !== 'string' ? cur[p] : undefined;
-    return cur;
-  };
-  return (key, vars) => {
-    const [ns, ...path] = key.split('.');
-    let msg = lookup(namespaces[ns!]?.[lang], path) ?? lookup(namespaces[ns!]?.en, path);
-    if (msg && typeof msg === 'object') msg = (msg[plural.select(Number(vars?.count ?? 0))] ?? msg.other) as string;
-    if (typeof msg !== 'string') return key;
-    return vars ? msg.replace(/\{(\w+)\}/g, (_, n: string) => (n in vars ? String(vars[n]) : `{${n}}`)) : msg;
-  };
+  return createT(lang, locale, { common: commonMessages, consistency: messages });
 }
 
 const en = createFormatter('metric', 'en-US', 'en');
@@ -107,9 +94,9 @@ describe('formatGoalValue', () => {
   });
 
   it('rounds reached values to the nearest and open ones down', () => {
-    expect(reachedRounding(49.6, 50)).toBe('down');
-    expect(reachedRounding(50, 50)).toBe('nearest');
-    expect(reachedRounding(42_196, 42_195)).toBe('nearest');
+    expect(reachedRounding(49.6, 50, 'distance')).toBe('down');
+    expect(reachedRounding(50, 50, 'distance')).toBe('nearest');
+    expect(reachedRounding(42_196, 42_195, 'longest')).toBe('nearest');
   });
 
   it('takes a single distance within the GPS tolerance as reached, like the server', () => {
@@ -122,6 +109,11 @@ describe('formatGoalValue', () => {
     expect(formatGoalValue(en, tEn, 'longest', 41_960, reachedRounding(41_960, 42_195, 'longest'))).toBe('41.9 km');
     // totals need their exact target
     expect(reachedRounding(42_150, 42_195, 'distance')).toBe('down');
+  });
+
+  it("uses the shared contract's tolerance, the one the server's goals and trophies use", () => {
+    expect(reachedRounding(42_195 * DISTANCE_TOLERANCE, 42_195, 'longest')).toBe('nearest');
+    expect(reachedRounding(42_195 * DISTANCE_TOLERANCE - 1, 42_195, 'longest')).toBe('down');
   });
 });
 

@@ -20,8 +20,8 @@ export const messages: Dictionary = {
     whatsNew: {
       title: "What's new",
       subtitle: 'Import of {date}',
-      activities: { one: '1 new activity', other: '{n} new activities' },
-      initial: { one: '1 activity imported', other: '{n} activities imported' },
+      activities: { one: '1 new activity', other: '{count} new activities' },
+      initial: { one: '1 activity imported', other: '{count} activities imported' },
       healthRecords: { one: '{count} new health record', other: '{count} new health records' },
       nothing: 'No new activities — everything in this export was already here.',
       bySport: 'New activities by sport',
@@ -57,7 +57,7 @@ export const messages: Dictionary = {
       confirmTitle: 'Import this file?',
       confirmText: 'Cadence was asked to import this file or folder from your computer:',
       current: 'Current import',
-      waiting: { one: '1 more job is waiting.', other: '{n} more jobs are waiting.' },
+      waiting: { one: '1 more job is waiting.', other: '{count} more jobs are waiting.' },
       history: 'Import history',
       noHistory: 'No imports yet.',
       cancel: 'Cancel import',
@@ -93,8 +93,10 @@ export const messages: Dictionary = {
       status: { queued: 'Queued', running: 'Running', done: 'Done', failed: 'Failed', cancelled: 'Cancelled' },
       errors: {
         interrupted: 'Interrupted: Cadence was closed while this job was running.',
+        notResumed: 'Not resumed after the restart: this server no longer imports from that folder.',
         sourceGone: 'The file to import is no longer there.',
         crashed: 'The import stopped unexpectedly.',
+        invalidInput: 'This is not an Apple Health export or FIT file that Cadence can read.',
       },
       corosBatch: { one: 'COROS (1 activity)', other: 'COROS ({count} activities)' },
       stats: {
@@ -227,8 +229,8 @@ export const messages: Dictionary = {
     whatsNew: {
       title: 'Was ist neu',
       subtitle: 'Import vom {date}',
-      activities: { one: '1 neue Aktivität', other: '{n} neue Aktivitäten' },
-      initial: { one: '1 Aktivität importiert', other: '{n} Aktivitäten importiert' },
+      activities: { one: '1 neue Aktivität', other: '{count} neue Aktivitäten' },
+      initial: { one: '1 Aktivität importiert', other: '{count} Aktivitäten importiert' },
       healthRecords: { one: '{count} neuer Gesundheitswert', other: '{count} neue Gesundheitswerte' },
       nothing: 'Keine neuen Aktivitäten – alles aus diesem Export war schon da.',
       bySport: 'Neue Aktivitäten nach Sportart',
@@ -267,7 +269,7 @@ export const messages: Dictionary = {
       confirmTitle: 'Diese Datei importieren?',
       confirmText: 'Cadence soll diese Datei bzw. diesen Ordner von deinem Computer importieren:',
       current: 'Aktueller Import',
-      waiting: { one: '1 weiterer Auftrag wartet.', other: '{n} weitere Aufträge warten.' },
+      waiting: { one: '1 weiterer Auftrag wartet.', other: '{count} weitere Aufträge warten.' },
       history: 'Import-Verlauf',
       noHistory: 'Noch keine Importe.',
       cancel: 'Import abbrechen',
@@ -303,8 +305,10 @@ export const messages: Dictionary = {
       status: { queued: 'Wartend', running: 'Läuft', done: 'Fertig', failed: 'Fehlgeschlagen', cancelled: 'Abgebrochen' },
       errors: {
         interrupted: 'Unterbrochen: Cadence wurde beendet, während dieser Auftrag lief.',
+        notResumed: 'Nach dem Neustart nicht fortgesetzt: Dieser Server importiert nicht mehr aus diesem Ordner.',
         sourceGone: 'Die Datei zum Importieren ist nicht mehr da.',
         crashed: 'Der Import wurde unerwartet beendet.',
+        invalidInput: 'Das ist kein Apple-Health-Export und keine FIT-Datei, die Cadence lesen kann.',
       },
       corosBatch: { one: 'COROS (1 Aktivität)', other: 'COROS ({count} Aktivitäten)' },
       stats: {

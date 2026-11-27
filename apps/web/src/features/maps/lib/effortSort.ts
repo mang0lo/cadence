@@ -1,6 +1,5 @@
 // Which sports show a pace, and their "Pace" / "Speed" label, are the app-wide rule in lib/format.ts (showsPace,
-// speedLabelKey); the dashboard widget still imports the label key from here.
-export { speedLabelKey } from '@/lib/format';
+// speedLabelKey).
 
 export type EffortSortCol = 'date' | 'time' | 'pace' | 'hr' | 'rank';
 export interface EffortSort {

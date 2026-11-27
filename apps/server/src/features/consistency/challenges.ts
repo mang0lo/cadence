@@ -2,7 +2,12 @@
  * Monthly challenges (pure, unit-tested): fixed targets that reset every calendar month.
  * Completion day = the local day on which the month's running total reached the target.
  */
-import type { ChallengeDef, ChallengeMonth, ChallengeProgress } from '@cadence/shared';
+import {
+  DISTANCE_TOLERANCE,
+  type ChallengeDef,
+  type ChallengeMonth,
+  type ChallengeProgress,
+} from '@cadence/shared';
 
 export const CHALLENGES: ChallengeDef[] = [
   { key: 'run50', metric: 'distance', sport: 'run', target: 50_000 },
@@ -13,9 +18,6 @@ export const CHALLENGES: ChallengeDef[] = [
   { key: 'runs5k', metric: 'runs5k', sport: 'run', target: 5 },
   { key: 'active20', metric: 'active_days', sport: null, target: 20 },
 ];
-
-/** GPS/rounding tolerance for distance thresholds of single activities ("a 5K" = ≥ 4,975 m). */
-export const DISTANCE_TOLERANCE = 0.995;
 
 export interface ChallengeWorkout {
   id: number;

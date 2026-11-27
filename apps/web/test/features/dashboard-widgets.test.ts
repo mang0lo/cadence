@@ -4,9 +4,16 @@
  */
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import type { ComponentType } from 'react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { DataSourcesInfo } from '@cadence/shared';
-import { dashboardWidgets, dashboardWidgetsFor, featureModules } from '@/features/registry';
+import {
+  dashboardWidgets,
+  dashboardWidgetsFor,
+  featureModules,
+  loadedWidgets,
+  withDashboardWidgets,
+} from '@/features/registry';
 import type { DashboardWidget } from '@/features/types';
 
 const src = (path: string) =>
@@ -25,6 +32,8 @@ const sources = (over: Partial<DataSourcesInfo> = {}): DataSourcesInfo => ({
 });
 
 describe('dashboard widgets', () => {
+  afterEach(() => vi.restoreAllMocks());
+
   it('come in the dashboard order', () => {
     expect(dashboardWidgets.map((w) => w.id)).toEqual([
       'weekly-snapshot',
@@ -58,6 +67,32 @@ describe('dashboard widgets', () => {
 
   it('each load their component', async () => {
     for (const w of dashboardWidgets) expect(typeof (await w.component()), w.id).toBe('function');
+  });
+
+  it('load in parallel with the dashboard page, whose route waits for both', async () => {
+    const loaders = dashboardWidgets.map((w) => vi.spyOn(w, 'component'));
+    loaders[0]!.mockRejectedValueOnce(new Error('chunk gone'));
+    const Page = () => null;
+    let open = (_: { Component: ComponentType }) => {};
+    const route = withDashboardWidgets({
+      index: true,
+      lazy: () => new Promise<{ Component: ComponentType }>((resolve) => (open = resolve)),
+    });
+    const lazy = route.lazy as () => Promise<{ Component: ComponentType }>;
+    // a widget chunk that cannot be loaded fails the route (App.tsx shows ChunkError)
+    const failed = lazy();
+    open({ Component: Page });
+    await expect(failed).rejects.toThrow('chunk gone');
+    expect(loadedWidgets()).toBeUndefined();
+    // the next try loads every widget again, while the page is still on its way
+    const done = lazy();
+    for (const l of loaders) expect(l).toHaveBeenCalledTimes(2);
+    open({ Component: Page });
+    await expect(done).resolves.toEqual({ Component: Page });
+    expect([...loadedWidgets()!.keys()]).toEqual(dashboardWidgets.map((w) => w.id));
+    // the other routes stay as they are
+    const other = { path: 'activities', lazy: route.lazy };
+    expect(withDashboardWidgets(other)).toBe(other);
   });
 
   it('leave out a widget whose data cannot exist for the athlete, once the data sources are known', () => {

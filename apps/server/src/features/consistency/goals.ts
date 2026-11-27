@@ -3,6 +3,7 @@
  * periods, suggestions from recent averages and the defaults used when an athlete has no goals.
  */
 import {
+  DISTANCE_TOLERANCE,
   LONGEST_PRESETS,
   M_PER_FT,
   M_PER_MI,
@@ -16,7 +17,6 @@ import {
   type GoalSuggestion,
   type Units,
 } from '@cadence/shared';
-import { DISTANCE_TOLERANCE } from './challenges';
 import { daysBetween, periodRange, plusDays, previousPeriodStart } from './days';
 
 /** One row of daily_activity (workout totals of one sport on one local day). */

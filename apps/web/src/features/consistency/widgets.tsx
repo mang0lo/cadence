@@ -176,7 +176,7 @@ export function GoalsWidget() {
               <div className="mt-1.5 flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-xs text-fg-3">
                 <span className="tabular">
                   <span className="font-medium text-fg">
-                    {formatGoalValue(fmt, t, g.metric, g.current.value, reachedRounding(g.current.value, g.current.target))}
+                    {formatGoalValue(fmt, t, g.metric, g.current.value, reachedRounding(g.current.value, g.current.target, g.metric))}
                   </span>
                   {' / '}
                   {formatGoalValue(fmt, t, g.metric, g.current.target)}
