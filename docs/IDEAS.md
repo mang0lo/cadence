@@ -126,8 +126,8 @@ feature module per product area ([ARCHITECTURE.md](ARCHITECTURE.md#adding-a-feat
   `PATCH /api/workouts/:id` accepts rpe / feel. Labelled *Perceived effort* so it does not clash with the TRIMP-based
   *Effort*.
 - **Why not niche**: shown on every activity; nothing to type for watchOS 11+ users or FIT users. Strength, yoga and
-  HIIT (20 % of the sample's activities) finally get a real training load. Score ≈ 50 % × 3 ÷ 2 = 0.75, ranked above
-  #7 at the same score because it also corrects the load model.
+  HIIT (about a sixth of the sample's activities) finally get a real training load. Score ≈ 50 % × 3 ÷ 2 = 0.75,
+  ranked above #7 at the same score because it also corrects the load model.
 
 ### 7. Week and month in review (effort M)
 
