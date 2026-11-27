@@ -130,7 +130,7 @@ export default function SleepPage() {
                 onChange={(v) => void setGoal(Number(v))}
                 options={goalOptions.map((m) => ({ value: String(m), label: fmt.durationShort(m * 60) }))}
                 aria-label={t('health.sleep.goal.label')}
-                className="h-8 text-xs"
+                size="sm"
               />
             </label>
           )

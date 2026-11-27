@@ -42,15 +42,9 @@ export function ListTable({
       numeric={numeric}
       onClick={key ? () => onSort(key) : undefined}
       sorted={key && sort === key ? order : null}
+      title={key ? t('activities.list.sortBy', { column: label }) : undefined}
     >
-      {key ? (
-        // a button, so the sort can be reached and changed with the keyboard; its click bubbles to the header cell
-        <button type="button" title={t('activities.list.sortBy', { column: label })}>
-          {label}
-        </button>
-      ) : (
-        label
-      )}
+      {label}
     </TH>
   );
   return (

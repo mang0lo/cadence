@@ -30,7 +30,7 @@ export function Pagination({
         <label className="flex items-center gap-2 text-xs text-fg-3">
           {t('activities.list.perPage')}
           <span className="w-20">
-            <Select value={String(size)} onChange={onSize} options={SIZES.map((s) => ({ value: s, label: s }))} className="h-8" />
+            <Select value={String(size)} onChange={onSize} options={SIZES.map((s) => ({ value: s, label: s }))} size="sm" />
           </span>
         </label>
         <IconButton icon={ChevronLeft} label={t('activities.list.prev')} disabled={page <= 1} onClick={() => onPage(page - 1)} />

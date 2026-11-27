@@ -100,8 +100,7 @@ export function ScoreCard({ score, prefs }: { score: ConsistencyScore; prefs: Co
             <Select
               value={String(prefs.minActiveDays)}
               onChange={(v) => savePrefs({ minActiveDays: Number(v) })}
-              // h-8! — Select sets h-9 itself and cn does not merge conflicting utilities (h-9 comes later in the CSS)
-              className="h-8! text-xs"
+              size="sm"
               options={[1, 2, 3, 4, 5, 6, 7].map((n) => ({ value: String(n), label: t('consistency.score.perWeek', { count: n }) }))}
             />
           </Field>

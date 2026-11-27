@@ -141,14 +141,14 @@ export function CompareCard({ sport }: { sport: string }) {
         />
         {mode === 'custom' && (
           <div className="flex flex-wrap items-center gap-2">
-            {/* h-8! — Input sets h-9 itself and cn does not merge conflicting utilities (h-9 comes later in the CSS) */}
             <Input
               type="date"
               aria-label={t('progress.compare.from')}
               value={custom.fromDay}
               max={custom.toDay || today}
               onChange={(e) => setCustom({ ...custom, fromDay: e.target.value })}
-              className="h-8! w-auto text-xs"
+              size="sm"
+              className="w-auto"
             />
             <span className="text-xs text-fg-3">–</span>
             <Input
@@ -158,7 +158,8 @@ export function CompareCard({ sport }: { sport: string }) {
               min={custom.fromDay}
               max={today}
               onChange={(e) => setCustom({ ...custom, toDay: e.target.value })}
-              className="h-8! w-auto text-xs"
+              size="sm"
+              className="w-auto"
             />
           </div>
         )}

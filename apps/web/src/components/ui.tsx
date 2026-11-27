@@ -178,15 +178,17 @@ export function IconButton({
   label,
   className,
   active,
+  size = 'md',
   ...rest
-}: ButtonHTMLAttributes<HTMLButtonElement> & { icon: LucideIcon; label: string; active?: boolean }) {
+}: ButtonHTMLAttributes<HTMLButtonElement> & { icon: LucideIcon; label: string; active?: boolean; size?: 'sm' | 'md' }) {
   return (
     <button
       type="button"
       aria-label={label}
       title={label}
       className={cn(
-        'grid size-8 place-items-center rounded-control text-fg-2 transition-colors hover:bg-surface-2 hover:text-fg',
+        'grid place-items-center rounded-control text-fg-2 transition-colors hover:bg-surface-2 hover:text-fg',
+        size === 'sm' ? 'size-7' : 'size-8',
         active && 'bg-accent-soft text-accent-fg',
         className,
       )}
@@ -414,7 +416,11 @@ export function SegmentedControl<T extends string>({
 // ---------------------------------------------------------------------------
 
 const controlBase =
-  'rounded-control border border-border-strong bg-surface px-3 text-sm text-fg placeholder:text-fg-3 focus:border-accent focus:outline-none';
+  'rounded-control border border-border-strong bg-surface px-3 text-fg placeholder:text-fg-3 focus:border-accent focus:outline-none';
+
+/** Size of a one-line control (Input, Select): 'sm' matches the small Button and SegmentedControl rows. */
+export type ControlSize = 'sm' | 'md';
+const controlSize = (size: ControlSize = 'md') => (size === 'sm' ? 'h-8 text-xs' : 'h-9 text-sm');
 
 /** True when the caller sets its own width (e.g. 'w-40', 'sm:w-auto'); `cn` does not merge conflicting utilities. */
 const hasWidth = (className?: string) => !!className && /(^|\s)([a-z0-9]+:)*w-/.test(className);
@@ -462,18 +468,18 @@ export function Field({
   );
 }
 
-export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(function Input(
-  { className, ...rest },
-  ref,
-) {
-  return <input ref={ref} className={controlClass('h-9', className)} {...rest} />;
+export const Input = forwardRef<
+  HTMLInputElement,
+  Omit<InputHTMLAttributes<HTMLInputElement>, 'size'> & { size?: ControlSize }
+>(function Input({ className, size, ...rest }, ref) {
+  return <input ref={ref} className={controlClass(controlSize(size), className)} {...rest} />;
 });
 
 export const Textarea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<HTMLTextAreaElement>>(function Textarea(
   { className, ...rest },
   ref,
 ) {
-  return <textarea ref={ref} className={controlClass('min-h-20 py-2', className)} {...rest} />;
+  return <textarea ref={ref} className={controlClass('min-h-20 py-2 text-sm', className)} {...rest} />;
 });
 
 export function Select<T extends string>({
@@ -481,17 +487,19 @@ export function Select<T extends string>({
   onChange,
   options,
   className,
+  size,
   ...rest
-}: Omit<SelectHTMLAttributes<HTMLSelectElement>, 'onChange' | 'value'> & {
+}: Omit<SelectHTMLAttributes<HTMLSelectElement>, 'onChange' | 'value' | 'size'> & {
   value: T;
   onChange: (v: T) => void;
   options: { value: T; label: string }[];
+  size?: ControlSize;
 }) {
   return (
     <select
       value={value}
       onChange={(e) => onChange(e.target.value as T)}
-      className={controlClass('h-9 cursor-pointer pr-8', className)}
+      className={controlClass(cn(controlSize(size), 'cursor-pointer pr-8'), className)}
       {...rest}
     >
       {options.map((o) => (
@@ -676,32 +684,47 @@ export function Table({ children, className }: { children: ReactNode; className?
   );
 }
 
+/**
+ * Table header cell. With `onClick` it sorts: the label is a button (focusable, Enter / Space), `title` says what it
+ * sorts by, and `sorted` marks the sorted column (aria-sort and an arrow).
+ */
 export function TH({
   children,
   className,
   numeric,
   onClick,
   sorted,
+  title,
 }: {
   children?: ReactNode;
   className?: string;
   numeric?: boolean;
   onClick?: () => void;
   sorted?: 'asc' | 'desc' | null;
+  /** Tooltip of the sort button, e.g. "Sort by distance". */
+  title?: string;
 }) {
+  const arrow = sorted && <span className="ml-1">{sorted === 'asc' ? '↑' : '↓'}</span>;
   return (
     <th
-      onClick={onClick}
       aria-sort={sorted === 'asc' ? 'ascending' : sorted === 'desc' ? 'descending' : undefined}
       className={cn(
         'whitespace-nowrap border-b border-border px-3 py-2 text-xs font-medium text-fg-3',
         numeric ? 'text-right' : 'text-left',
-        onClick && 'cursor-pointer select-none hover:text-fg',
         className,
       )}
     >
-      {children}
-      {sorted && <span className="ml-1">{sorted === 'asc' ? '↑' : '↓'}</span>}
+      {onClick ? (
+        <button type="button" onClick={onClick} title={title} className="cursor-pointer select-none font-medium hover:text-fg">
+          {children}
+          {arrow}
+        </button>
+      ) : (
+        <>
+          {children}
+          {arrow}
+        </>
+      )}
     </th>
   );
 }

@@ -43,9 +43,8 @@ export function GoalCheckButton({
   const c = goal.current;
   if (c.status === 'done' && !c.checked) return null;
   const label = t(c.checked ? 'consistency.goals.uncheck' : `consistency.goals.checkHint.${goal.period}`);
-  // size-7! — IconButton sets size-8 itself, and cn does not merge conflicting utilities
   if (compact)
-    return <IconButton icon={c.checked ? Undo2 : Check} label={label} className="size-7!" onClick={() => onCheck(!c.checked, c.start)} />;
+    return <IconButton icon={c.checked ? Undo2 : Check} label={label} size="sm" onClick={() => onCheck(!c.checked, c.start)} />;
   return (
     <Button size="sm" variant={c.checked ? 'ghost' : 'secondary'} icon={c.checked ? Undo2 : Check} title={label} onClick={() => onCheck(!c.checked, c.start)}>
       {t(c.checked ? 'consistency.goals.uncheck' : 'consistency.goals.check')}

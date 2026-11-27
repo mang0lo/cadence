@@ -41,7 +41,7 @@ export const ReplayTransport = memo(function ReplayTransport({ playback }: { pla
           onChange={(v) => playback.setSpeed((v === 'fit' ? 'fit' : Number(v)) as Speed)}
           options={SPEEDS.map((s) => ({ value: String(s), label: speedLabel(s) }))}
           aria-label={t('activities.playback.speed')}
-          className="h-8"
+          size="sm"
         />
       </div>
     </div>
