@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { createMemoryRouter, UNSAFE_ErrorResponseImpl as ErrorResponse } from 'react-router';
 import { api, ApiError, queryClient } from '@/lib/api';
-import { describeError, ERROR_CODES } from '@/lib/errors';
+import { describeError, ERROR_CODES, fromRouteError } from '@/lib/errors';
 import type { Messages, TFunction } from '@/lib/i18n';
 import { commonMessages } from '@/lib/messages';
 
@@ -65,6 +66,37 @@ describe('error states in the user language', () => {
         expect(t(`common.errors.${key}`), `${lang} ${key}`).not.toBe(`common.errors.${key}`);
       }
     }
+  });
+});
+
+describe('route errors', () => {
+  const de = tFor('de');
+
+  it("translates the router's own error responses by status instead of showing their English status text", () => {
+    // what React Router reports for a URL that no route matches
+    const router = createMemoryRouter([{ path: '/', element: null }], { initialEntries: ['/missing'] });
+    const notFound = Object.values(router.state.errors ?? {})[0];
+    router.dispose();
+    expect(describeError(fromRouteError(notFound), de)).toEqual({
+      message: 'Das wurde nicht gefunden. Vielleicht wurde es gelöscht.',
+      detail: '404 Not Found',
+    });
+    expect(describeError(fromRouteError(new ErrorResponse(405, 'Method Not Allowed', null)), de)).toEqual({
+      message: 'Etwas ist schiefgegangen (Fehler 405).',
+      detail: '405 Method Not Allowed',
+    });
+    expect(describeError(fromRouteError(new ErrorResponse(503, '', null)), de).message).toBe(
+      'Auf dem Server ist ein Problem aufgetreten (Fehler 503). Versuch es später noch einmal.',
+    );
+  });
+
+  it('passes every other error through unchanged', () => {
+    const plain = new Error('Messwert nicht gefunden');
+    const api404 = new ApiError(404, 'not_found', 'Workout not found');
+    expect(fromRouteError(plain)).toBe(plain);
+    expect(fromRouteError(api404)).toBe(api404);
+    expect(fromRouteError('Falsches Passwort')).toBe('Falsches Passwort');
+    expect(describeError(fromRouteError({ weird: true }), de)).toEqual({ message: 'Etwas ist schiefgegangen.', detail: null });
   });
 });
 
