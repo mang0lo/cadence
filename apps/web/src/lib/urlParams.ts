@@ -18,6 +18,8 @@ export function patchParams(prev: URLSearchParams, patch: ParamsPatch): URLSearc
  * Filters kept in the URL (linkable, back button friendly): the page's search params, a patcher and `clear`. Changes
  * replace the history entry, so filter clicks do not pile up behind the back button. `apply` turns a patch into the
  * new params (default patchParams; a page adds its own rules, e.g. back to page 1); pass a module-level function.
+ * Like setSearchParams, a patch starts from the params of the render it came from: one event makes one patch with all
+ * its changes (a second patch in the same event would drop the first).
  */
 export function useUrlParams(apply: (prev: URLSearchParams, patch: ParamsPatch) => URLSearchParams = patchParams) {
   const [params, setParams] = useSearchParams();
