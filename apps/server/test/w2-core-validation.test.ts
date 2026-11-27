@@ -8,6 +8,7 @@ import { loadConfig } from '../src/config';
 import { get, openDb, run, type Db } from '../src/db/db';
 import { gzipJson } from '../src/lib/gzip';
 import { zDay } from '../src/lib/params';
+import { dayString } from '../src/lib/time';
 
 let dir: string;
 let db: Db;
@@ -102,5 +103,55 @@ describe('days in requests', () => {
       expect(res.statusCode, d).toBe(400);
     }
     expect(jobs()).toBe(before);
+  });
+});
+
+describe('PATCH /api/settings', () => {
+  const idle = async () => {
+    for (let i = 0; i < 500 && app.jobs.busy(1); i++) await new Promise((r) => setTimeout(r, 10));
+  };
+  const lastDerive = () =>
+    JSON.parse(
+      get<{ options: string }>(db, "SELECT options FROM import_jobs WHERE kind = 'rederive' ORDER BY created_at DESC, rowid DESC LIMIT 1")!
+        .options,
+    ) as Record<string, unknown>;
+
+  it('derives zones and effort again after a heart rate change without recomputing the daily metrics', async () => {
+    await idle();
+    for (const body of [{ maxHr: 187 }, { hrZoneMethod: 'hrr' }, { birthDate: '1985-06-15' }, { sex: 'female' }]) {
+      const res = await patch('/api/settings', body);
+      expect(res.statusCode, JSON.stringify(body)).toBe(200);
+      expect(lastDerive(), JSON.stringify(body)).toMatchObject({ origin: 'settings', workoutIds: [], records: false });
+      await idle();
+    }
+  });
+
+  it('takes a birth date only when it is a calendar day from 1900 up to today', async () => {
+    const tomorrow = dayString(Math.floor(Date.now() / 86_400_000) + 2);
+    for (const birthDate of ['1985-02-30', '1985-13-01', '1899-12-31', '0985-06-15', tomorrow, '1985-6-15', 'yesterday']) {
+      const res = await patch('/api/settings', { birthDate });
+      expect(res.statusCode, birthDate).toBe(400);
+      expect(res.json().error.code).toBe('invalid_request');
+    }
+    expect((await app.inject({ url: '/api/settings' })).json().birthDate).toBe('1985-06-15');
+    for (const birthDate of ['1900-01-01', '2000-02-29', dayString(Math.floor(Date.now() / 86_400_000)), null]) {
+      const res = await patch('/api/settings', { birthDate });
+      expect(res.statusCode, String(birthDate)).toBe(200);
+      expect(res.json().birthDate).toBe(birthDate);
+    }
+    await idle();
+  });
+
+  it('refuses custom zone limits that do not ascend', async () => {
+    for (const hrZones of [[120, 120, 150, 170], [150, 140, 160, 175], [120, 140, 160, 155]]) {
+      const res = await patch('/api/settings', { hrZoneMethod: 'custom', hrZones });
+      expect(res.statusCode, JSON.stringify(hrZones)).toBe(400);
+    }
+    expect((await app.inject({ url: '/api/settings' })).json().hrZones).toBeNull();
+    const ok = await patch('/api/settings', { hrZoneMethod: 'custom', hrZones: [120, 140, 160, 175] });
+    expect(ok.statusCode).toBe(200);
+    expect(ok.json()).toMatchObject({ hrZoneMethod: 'custom', hrZones: [120, 140, 160, 175] });
+    expect((await patch('/api/settings', { hrZones: null })).statusCode).toBe(200);
+    await idle();
   });
 });
