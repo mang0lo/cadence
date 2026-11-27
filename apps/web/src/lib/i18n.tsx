@@ -64,7 +64,8 @@ function numberParser(locale: string): (text: string) => number {
   const group = part('group', ',');
   const decimal = part('decimal', '.');
   const minus = part('minusSign', '-');
-  return (text) => Number(text.replaceAll(group, '').replace(/\s/g, '').replace(decimal, '.').replace(minus, '-'));
+  return (text) =>
+    Number(text.replaceAll(group, '').replace(/\s/g, '').replace(decimal, '.').replace(minus, '-'));
 }
 
 /** The t() of I18nProvider for one language (lookup, plurals, interpolation, numbers as the locale writes them). */

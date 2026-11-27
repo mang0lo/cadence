@@ -40,7 +40,9 @@ const feature: FeatureModule = {
     { path: '/maps/routes', labelKey: 'maps.nav.routes', icon: Route, group: 'explore', order: 20 },
     { path: '/maps/segments', labelKey: 'maps.nav.segments', icon: Waypoints, group: 'explore', order: 30 },
   ],
-  widgets: [{ id: 'explorer', order: 90, component: () => import('./widgets').then((m) => m.ExplorerWidget) }],
+  widgets: [
+    { id: 'explorer', order: 90, component: () => import('./widgets').then((m) => m.ExplorerWidget) },
+  ],
   whatsNew: lazy(() => import('./components/WhatsNewMaps')),
 };
 

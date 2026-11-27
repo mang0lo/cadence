@@ -9,7 +9,8 @@ import type { DataSourcesInfo } from '@cadence/shared';
 import { dashboardWidgets, dashboardWidgetsFor, featureModules } from '@/features/registry';
 import type { DashboardWidget } from '@/features/types';
 
-const src = (path: string) => fs.readFileSync(fileURLToPath(new URL(`../../src/${path}`, import.meta.url)), 'utf8');
+const src = (path: string) =>
+  fs.readFileSync(fileURLToPath(new URL(`../../src/${path}`, import.meta.url)), 'utf8');
 
 const sources = (over: Partial<DataSourcesInfo> = {}): DataSourcesInfo => ({
   watch: 'apple',
@@ -60,9 +61,15 @@ describe('dashboard widgets', () => {
   });
 
   it('leave out a widget whose data cannot exist for the athlete, once the data sources are known', () => {
-    const ecg: DashboardWidget = { id: 'ecg', order: 1, component: async () => () => null, available: (s) => s.ecgCount > 0 };
+    const ecg: DashboardWidget = {
+      id: 'ecg',
+      order: 1,
+      component: async () => () => null,
+      available: (s) => s.ecgCount > 0,
+    };
     const all = [ecg, ...dashboardWidgets];
-    expect(dashboardWidgetsFor(undefined, all).map((w) => w.id)).toContain('ecg'); // still unknown: nothing flickers away
+    // still unknown: nothing flickers away
+    expect(dashboardWidgetsFor(undefined, all).map((w) => w.id)).toContain('ecg');
     expect(dashboardWidgetsFor(sources(), all).map((w) => w.id)).not.toContain('ecg');
     expect(dashboardWidgetsFor(sources({ ecgCount: 2 }), all)[0]?.id).toBe('ecg');
     // the current widgets show for every athlete (each renders nothing without its data)
