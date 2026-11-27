@@ -447,7 +447,7 @@ final class WebViewController: NSViewController, WKNavigationDelegate, WKUIDeleg
             return
         }
         // saved only for the main frame of an app page (ShellPolicy); anything else is not loaded at all
-        let origin = ShellPolicy.downloadOrigin(of: navigationResponse.response.url, shownPage: webView.url)
+        let origin = ShellPolicy.downloadOrigin(of: navigationResponse.response.url)
         decisionHandler(ShellPolicy.allowsDownload(isMainFrame: navigationResponse.isForMainFrame, from: origin, appOrigins: appOrigins)
             ? .download : .cancel)
     }

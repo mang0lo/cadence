@@ -79,10 +79,14 @@ enum ShellPolicy {
         acceptsMessage(isMainFrame: isMainFrame, from: origin, appOrigins: appOrigins)
     }
 
-    /// Where a download the main frame received comes from: its URL's origin, or for a data: or blob: URL (made by
-    /// the page itself) the origin of the page shown in the window.
-    static func downloadOrigin(of url: URL?, shownPage: URL?) -> Origin? {
+    /// Where a download the main frame received comes from: its URL's origin, or for a blob: URL the origin of the page
+    /// that made it, which the URL names (`blob:http://127.0.0.1:28787/<uuid>`). The window's own URL cannot tell:
+    /// while the download loads, it already is the download's URL. data: URLs have no origin (and WebKit does not
+    /// navigate the window to them; the app's pages save them through links with `download`).
+    static func downloadOrigin(of url: URL?) -> Origin? {
+        guard let url else { return nil }
         if let origin = Origin(url) { return origin }
-        return ["data", "blob"].contains(url?.scheme?.lowercased() ?? "") ? Origin(shownPage) : nil
+        guard url.scheme?.lowercased() == "blob" else { return nil }
+        return Origin(URL(string: String(url.absoluteString.dropFirst("blob:".count))))
     }
 }

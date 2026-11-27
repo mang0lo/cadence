@@ -65,18 +65,19 @@ final class ShellPolicyTests: XCTestCase {
         XCTAssertFalse(ShellPolicy.allowsDownload(isMainFrame: true, from: nil, appOrigins: local))
     }
 
-    func testADownloadTheAppPageMadeComesFromThatPage() {
-        let page = URL(string: "http://127.0.0.1:28787/health/ecg")!
+    func testADownloadComesFromItsURLOrFromThePageThatMadeTheBlob() {
         // GPX and backup links, attachments: the origin of their URL
-        XCTAssertEqual(ShellPolicy.downloadOrigin(of: URL(string: "http://127.0.0.1:28787/api/backup"), shownPage: page), local[0])
-        XCTAssertEqual(ShellPolicy.downloadOrigin(of: URL(string: "https://evil.example/x.zip"), shownPage: page),
-                       origin("https://evil.example/"))
-        // the ECG as CSV (a data: URL), blobs: the page that made them
-        for s in ["data:text/csv;charset=utf-8;base64,YSxi", "blob:http://127.0.0.1:28787/0b6e4c1e-5f3a-4f0e-9d2c-1a2b3c4d5e6f"] {
-            XCTAssertEqual(ShellPolicy.downloadOrigin(of: URL(string: s), shownPage: page), local[0], s)
+        XCTAssertEqual(ShellPolicy.downloadOrigin(of: URL(string: "http://127.0.0.1:28787/api/backup")), local[0])
+        XCTAssertEqual(ShellPolicy.downloadOrigin(of: URL(string: "https://evil.example/x.zip")), origin("https://evil.example/"))
+        // a blob: URL names the page that made it (while it loads, WebKit reports the blob itself as the window's URL)
+        let blob = "blob:http://127.0.0.1:28787/0b6e4c1e-5f3a-4f0e-9d2c-1a2b3c4d5e6f"
+        XCTAssertEqual(ShellPolicy.downloadOrigin(of: URL(string: blob)), local[0])
+        XCTAssertEqual(ShellPolicy.downloadOrigin(of: URL(string: "blob:https://evil.example/0b6e4c1e")), origin("https://evil.example/"))
+        // no origin: data: (WebKit does not navigate the window to it), files, blobs of pages without an origin
+        for s in ["data:text/csv;charset=utf-8;base64,YSxi", "file:///etc/passwd", "blob:null/0b6e4c1e", "blob:blob:http://127.0.0.1:28787/x"] {
+            XCTAssertNil(ShellPolicy.downloadOrigin(of: URL(string: s)), s)
         }
-        XCTAssertNil(ShellPolicy.downloadOrigin(of: URL(string: "file:///etc/passwd"), shownPage: page))
-        XCTAssertNil(ShellPolicy.downloadOrigin(of: nil, shownPage: page))
+        XCTAssertNil(ShellPolicy.downloadOrigin(of: nil))
     }
 
     func testTheOriginAServerRedirectedTheAppToCountsAsTheApp() {
