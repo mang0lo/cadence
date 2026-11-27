@@ -1,4 +1,5 @@
 import type { ImportErrorCode, ImportJob } from '@cadence/shared';
+import { describeError } from '@/lib/errors';
 import type { TFunction } from '@/lib/i18n';
 
 /** Pure logic of the import job list: which job is current, what finished, how to poll, translated labels. */
@@ -156,14 +157,16 @@ export function jobSourceLabel(t: TFunction, job: ImportJob): string {
 
 /**
  * The error to show after uploading `total` files, null when none failed: for a single file what the server said, for
- * several which of them failed (and why, when only one did).
+ * several which of them failed (and why, in the user's language with the server's text as the detail, when only one
+ * did).
  */
 export function uploadFailure(t: TFunction, total: number, failed: { name: string; error: unknown }[]): unknown {
   if (!failed.length) return null;
   if (total === 1) return failed[0]!.error;
   const which = t('platform.import.uploadsFailed', { count: failed.length, names: failed.map((f) => f.name).join(', ') });
-  const why = failed.length === 1 && failed[0]!.error instanceof Error ? ` ${failed[0]!.error.message}` : '';
-  return new Error(which + why);
+  if (failed.length > 1) return new Error(which);
+  const cause = failed[0]!.error;
+  return new Error(`${which} ${describeError(cause, t).message}`, { cause });
 }
 
 /**

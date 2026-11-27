@@ -482,7 +482,7 @@ function UseAsFtp({ ftp }: { ftp: number }) {
   const t = useT();
   const fmt = useFormat();
   const { settings, update } = useSettings();
-  const [state, setState] = useState<'idle' | 'saving' | 'saved' | Error>('idle');
+  const [state, setState] = useState<'idle' | 'saving' | 'saved' | { error: unknown }>('idle');
   const target = Math.round(ftp);
   const inRange = target >= 50 && target <= 600;
   const current = settings.ftp;
@@ -492,7 +492,8 @@ function UseAsFtp({ ftp }: { ftp: number }) {
       await update({ ftp: target });
       setState('saved');
     } catch (e) {
-      setState(e instanceof Error ? e : new Error(String(e)));
+      // ErrorState translates it (an API error by its code)
+      setState({ error: e });
     }
   };
   return (
@@ -522,7 +523,7 @@ function UseAsFtp({ ftp }: { ftp: number }) {
         )}
       </div>
       {!inRange && <p className="mt-2 text-xs text-fg-3">{t('progress.power.ftp.outOfRange')}</p>}
-      {state instanceof Error && <ErrorState error={state} className="mt-2" />}
+      {typeof state === 'object' && <ErrorState error={state.error} className="mt-2" />}
     </div>
   );
 }

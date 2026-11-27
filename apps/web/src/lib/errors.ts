@@ -27,7 +27,8 @@ export interface ErrorText {
 
 /**
  * What an error state shows. API errors are translated by their code; the server's message (English by design) is
- * kept as a detail. Strings and other errors are taken as already translated (callers pass `t(...)` texts).
+ * kept as a detail. Strings and other errors are taken as already translated (callers pass `t(...)` texts); an error
+ * that wraps another one (`new Error(t(...), { cause })`) shows the technical text of its cause as the detail.
  */
 export function describeError(error: unknown, t: TFunction): ErrorText {
   if (typeof error === 'string') return { message: error, detail: null };
@@ -38,6 +39,7 @@ export function describeError(error: unknown, t: TFunction): ErrorText {
     const raw = error.message.trim();
     return { message, detail: raw && raw !== message ? raw : null };
   }
-  if (error instanceof Error && error.message) return { message: error.message, detail: null };
+  if (error instanceof Error && error.message)
+    return { message: error.message, detail: error.cause === undefined ? null : describeError(error.cause, t).detail };
   return { message: t('common.errors.unknown'), detail: error == null || typeof error === 'object' ? null : String(error) };
 }
