@@ -42,6 +42,15 @@ export function shellInfo(): ShellInfo | null {
   return window.cadenceShell ?? window.cadenceNative?.info ?? null;
 }
 
+/**
+ * The page runs in a shell that shows the server built into it (or a dev server), which imports files on this
+ * computer in place: the shell's own picker may hand it their paths. A remote server cannot read them (and should not
+ * learn them): its import page uploads the files instead.
+ */
+export function importsInPlace(): boolean {
+  return isNativeShell() && !shellInfo()?.remote;
+}
+
 /** The fields of message `T` besides its type. */
 type Fields<T extends NativeMessage['type']> = Omit<Extract<NativeMessage, { type: T }>, 'type'>;
 

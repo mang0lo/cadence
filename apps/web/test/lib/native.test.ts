@@ -4,15 +4,27 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NATIVE_CANCELLED_EVENT, NATIVE_IMPORT_EVENT, type NativeImportDetail } from '@cadence/shared';
-import { isNativeShell, onNativeCancelled, onNativeImport, postNative } from '@/lib/native';
+import { importsInPlace, isNativeShell, onNativeCancelled, onNativeImport, postNative } from '@/lib/native';
 
-/** A window of the Mac app, the desktop app or a browser: what the page posted to the shell. */
-function fakeWindow(shell: 'macos' | 'desktop' | null) {
+/**
+ * A window of the Mac app, the desktop app or a browser: what the page posted to the shell. `remote`: the server the
+ * app shows instead of its built-in one (ShellInfo).
+ */
+function fakeWindow(shell: 'macos' | 'desktop' | null, remote: string | null = null) {
   const posted: unknown[] = [];
   const postMessage = (msg: unknown) => posted.push(msg);
   const win = new EventTarget() as EventTarget & Record<string, unknown>;
-  if (shell === 'macos') win.webkit = { messageHandlers: { cadence: { postMessage } } };
-  if (shell === 'desktop') win.cadenceNative = { platform: 'linux', postMessage };
+  if (shell === 'macos') {
+    win.webkit = { messageHandlers: { cadence: { postMessage } } };
+    win.cadenceShell = { app: 'macos', version: '1.0.0', remote };
+  }
+  if (shell === 'desktop') {
+    win.cadenceNative = {
+      platform: 'linux',
+      postMessage,
+      info: { app: 'desktop', version: '1.0.0', remote },
+    };
+  }
   vi.stubGlobal('window', win);
   return { win, posted };
 }
@@ -45,6 +57,20 @@ describe('postNative', () => {
     fakeWindow(null);
     expect(isNativeShell()).toBe(false);
     expect(postNative('openDataFolder')).toBe(false);
+  });
+});
+
+describe('importsInPlace', () => {
+  it('only in an app that shows the server built into it, which reads files on this computer', () => {
+    for (const shell of ['macos', 'desktop'] as const) {
+      fakeWindow(shell);
+      expect(importsInPlace(), shell).toBe(true);
+      // a remote server (even one that may import from its own disk) gets uploads, never a path on this computer
+      fakeWindow(shell, 'http://homeserver.local:8787');
+      expect(importsInPlace(), `${shell} with a remote server`).toBe(false);
+    }
+    fakeWindow(null);
+    expect(importsInPlace()).toBe(false);
   });
 });
 

@@ -82,9 +82,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private func startBackend() {
         server.stop()
         web.shellInfo = ShellContract.shellInfo(version: version ?? "dev", remote: Preferences.remoteServerURL)
+        // a remote server cannot read files on this Mac (and should not learn their paths): no panel, no path for it
+        web.importsLocally = Preferences.remoteServerURL == nil
         if let remote = Preferences.remoteServerURL {
             window.subtitle = remote.host ?? ""
-            web.cancelPendingImport() // a path picked for the built-in server is not for this one
             web.load(remote)
             return
         }

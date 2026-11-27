@@ -238,18 +238,21 @@ final class WebViewController: NSViewController, WKNavigationDelegate, WKUIDeleg
     /// The page finished loading since `load(_:)`; until then a path to import waits for it.
     private var pageLoaded = false
 
+    /// The app shows the server built into it (or a dev server), which imports files on this Mac in place. A remote
+    /// server cannot read them and should not learn their paths: its pages get neither the import panel nor a path
+    /// (its import page uploads), and a path picked for the built-in server is dropped.
+    var importsLocally = true {
+        didSet { if !importsLocally { pendingImport = nil } }
+    }
+
     /// Hands a local path to the import page (no upload copy needed for multi-GB exports). An open import page imports
     /// it at once; otherwise the app opens the import page, which asks for the path (`importReady`) and shows it for
     /// confirmation. No URL carries the path, so no link from elsewhere can start a local import.
     /// Called from the open panel and when an export is dropped on the Dock icon / opened with Cadence.
     func startLocalImport(path: String) {
+        guard importsLocally else { return }
         pendingImport = path
         if pageLoaded { offerImport(path) } // else once the page has loaded (didFinish)
-    }
-
-    /// The app shows another server, which cannot read files on this Mac and should not learn their paths.
-    func cancelPendingImport() {
-        pendingImport = nil
     }
 
     private func offerImport(_ path: String) {
@@ -285,7 +288,9 @@ final class WebViewController: NSViewController, WKNavigationDelegate, WKUIDeleg
         guard let body = message.body as? [String: Any], let type = body["type"] as? String,
               let kind = ShellContract.Message(rawValue: type) else { return }
         switch kind {
-        case .pickImportFile: pickImportFile() // the panel picks files and folders: `folder` needs no answer here
+        case .pickImportFile:
+            // the panel picks files and folders: `folder` needs no answer here. A remote server's page gets no panel.
+            if importsLocally { pickImportFile() } else { NSSound.beep() }
         case .importReady: handOverPendingImport()
         case .openDataFolder: NSWorkspace.shared.open(ServerProcess.dataDirectory)
         case .saveFile: saveFile(body)
