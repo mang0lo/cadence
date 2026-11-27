@@ -365,9 +365,9 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const t = useT();
   const { athlete, settings, update } = useSettings();
   const [editing, setEditing] = useState(false);
-  // the order being edited: shown at once, saved in the background (one request after the other)
+  // the order being edited, shown at once (also every move of a drag, saved when it ends). update() shows a saved
+  // order at once too and sends the changes one after the other; the order loads nothing again.
   const [draft, setDraft] = useState<NavPrefs | null>(null);
-  const saving = useRef<Promise<unknown>>(Promise.resolve());
   const savedPrefs = useMemo<NavPrefs>(
     () => ({ order: settings.navOrder ?? [], groups: settings.navGroups ?? [] }),
     [settings.navOrder, settings.navGroups],
@@ -375,13 +375,11 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const nav = useNav(draft ?? savedPrefs);
   const save = (next: NavPrefs) => {
     setDraft(next);
-    saving.current = saving.current
-      .then(() => update({ navOrder: [...next.order], navGroups: [...next.groups] }, { refetch: false }))
-      .catch(() => undefined);
+    void update({ navOrder: [...next.order], navGroups: [...next.groups] }).catch(() => undefined);
   };
   const finish = () => {
     setEditing(false);
-    void saving.current.then(() => setDraft(null));
+    setDraft(null);
   };
   const shownPrefs = draft ?? savedPrefs;
   const custom = shownPrefs.order.length > 0 || shownPrefs.groups.length > 0;
