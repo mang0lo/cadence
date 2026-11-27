@@ -91,7 +91,7 @@ function distributionOption(
     yAxis: { type: 'value', show: false },
     tooltip: itemTooltip(theme, (p: unknown) => {
       const { dataIndex } = p as { dataIndex: number };
-      return tooltipHtml(`${bpms[dataIndex]} bpm`, [{ color, label: '', value: fmt.durationShort(dist.seconds[dataIndex]!) }], theme);
+      return tooltipHtml(fmt.hr(bpms[dataIndex]), [{ color, label: '', value: fmt.durationShort(dist.seconds[dataIndex]!) }], theme);
     }),
     series: [
       barSeries(

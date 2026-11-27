@@ -222,7 +222,7 @@ export default function ExplorerPage() {
                 <Stat
                   label={t('maps.explorer.stats.maxSquare')}
                   value={
-                    shown.totals.maxSquare ? `${shown.totals.maxSquare} × ${shown.totals.maxSquare}` : '–'
+                    shown.totals.maxSquare ? `${fmt.int(shown.totals.maxSquare)} × ${fmt.int(shown.totals.maxSquare)}` : '–'
                   }
                   hint={t('maps.explorer.stats.maxSquareHint', countVars(fmt, shown.totals.maxSquare ** 2))}
                 />
