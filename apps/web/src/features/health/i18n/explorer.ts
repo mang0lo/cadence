@@ -20,7 +20,7 @@ export const explorer: Dictionary = {
     items: {
       title: 'Other data in your export',
       subtitle: 'Items that are more than plain measurements',
-      count: { one: '{n} item', other: '{n} items' },
+      count: { one: '{count} item', other: '{count} items' },
       open: 'Open',
       activitySummaries: 'Activity rings',
       workouts: 'Workouts',
@@ -52,7 +52,7 @@ export const explorer: Dictionary = {
     items: {
       title: 'Weitere Daten in deinem Export',
       subtitle: 'Einträge, die mehr als einfache Messwerte sind',
-      count: { one: '{n} Eintrag', other: '{n} Einträge' },
+      count: { one: '{count} Eintrag', other: '{count} Einträge' },
       open: 'Öffnen',
       activitySummaries: 'Aktivitätsringe',
       workouts: 'Trainings',
@@ -71,7 +71,7 @@ export const metric: Dictionary = {
   en: {
     all: 'All data',
     notFound: 'This data type is not part of your export.',
-    typeInfo: { one: '{n} sample · {from} – {to}', other: '{n} samples · {from} – {to}' },
+    typeInfo: { one: '{count} sample · {from} – {to}', other: '{count} samples · {from} – {to}' },
     agg: { label: 'Group by', day: 'Day', week: 'Week', month: 'Month' },
     mode: { label: 'Show', average: 'Daily average', total: 'Total' },
     stats: {
@@ -148,7 +148,7 @@ export const metric: Dictionary = {
   de: {
     all: 'Alle Daten',
     notFound: 'Dieser Datentyp ist nicht in deinem Export enthalten.',
-    typeInfo: { one: '{n} Messwert · {from} – {to}', other: '{n} Messwerte · {from} – {to}' },
+    typeInfo: { one: '{count} Messwert · {from} – {to}', other: '{count} Messwerte · {from} – {to}' },
     agg: { label: 'Gruppieren nach', day: 'Tag', week: 'Woche', month: 'Monat' },
     mode: { label: 'Anzeigen', average: 'Tagesdurchschnitt', total: 'Summe' },
     stats: {

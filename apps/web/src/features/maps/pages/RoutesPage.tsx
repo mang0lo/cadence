@@ -44,7 +44,6 @@ function sortRoutes(items: MapsRouteSummary[], sort: SortKey): MapsRouteSummary[
 
 export default function RoutesPage() {
   const t = useT();
-  const fmt = useFormat();
   const sportLabel = useSportLabel();
   const [picked, setSport] = useState<string>('all');
   const [min, setMin] = useStoredState<'2' | '3' | '5'>('maps.routes.min', '2');
@@ -156,7 +155,7 @@ export default function RoutesPage() {
           {items.length > shown && (
             <div className="mt-5 flex justify-center">
               <Button onClick={() => setShown((n) => n + PAGE_SIZE)}>
-                {t('maps.routes.showMore', { count: fmt.int(items.length - shown) })}
+                {t('maps.routes.showMore', { count: items.length - shown })}
               </Button>
             </div>
           )}

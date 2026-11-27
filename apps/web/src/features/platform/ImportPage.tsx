@@ -121,7 +121,7 @@ function ActiveJob({ job, waiting }: { job: ImportJob; waiting: number }) {
         <MiniStat label={t('platform.import.stats.routes')} value={fmt.int(s.routesParsed)} />
         <MiniStat label={t('platform.import.stats.types')} value={fmt.int(s.recordTypes)} />
       </div>
-      {waiting > 0 && <p className="mt-3 text-xs text-fg-3">{t('platform.import.waiting', { count: waiting, n: fmt.int(waiting) })}</p>}
+      {waiting > 0 && <p className="mt-3 text-xs text-fg-3">{t('platform.import.waiting', { count: waiting })}</p>}
       {cancelError ? <ErrorState className="mt-3" error={cancelError} /> : null}
     </Card>
   );

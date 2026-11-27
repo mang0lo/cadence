@@ -7,7 +7,6 @@ import { describe, expect, it } from 'vitest';
 import { createT, type Messages } from '@/lib/i18n';
 import { createFormatter } from '@/lib/format';
 import { messages } from '@/features/maps/messages';
-import { countVars } from '@/features/maps/lib/counts';
 import { speedLabel } from '@/features/maps/lib/timelapse';
 
 /** The texts of a message tree as [path, text]. */
@@ -50,16 +49,12 @@ describe('maps messages', () => {
     expect(tDe('routes.showAllEfforts', { count: de.int(1000) })).toBe(tDe('routes.showAllEfforts', { count: 1000 }));
     expect(tEn('workoutCard.rank', { rank: 1234, count: 5678 })).toBe('#1,234 of 5,678');
     expect(tDe('workoutCard.routeDone', { count: 1 })).toBe('Einmal absolviert');
-    // the callers that still use countVars get the same texts
-    expect(tEn('heatmap.activities', countVars(en, 1234))).toBe('1,234 activities');
-    expect(tDe('heatmap.activities', countVars(de, 1234))).toBe('1.234 Aktivitäten');
-    expect(tDe('heatmap.activities', countVars(de, 1000))).toBe('1.000 Aktivitäten');
-    expect(tDe('explorer.visitsCount', countVars(de, 1))).toBe('1 Besuch');
+    expect(tDe('explorer.visitsCount', { count: 1 })).toBe('1 Besuch');
     // a 1×1 max square, and a 32×32 one
-    expect(tEn('explorer.stats.maxSquareHint', countVars(en, 1))).toBe('1 tile in one block');
-    expect(tDe('explorer.stats.maxSquareHint', countVars(de, 1))).toBe('1 Kachel in einem Block');
-    expect(tEn('explorer.stats.maxSquareHint', countVars(en, 32 ** 2))).toBe('1,024 tiles in one block');
-    expect(tEn('explorer.next.text', countVars(en, 1, { size: 12 }))).toBe(
+    expect(tEn('explorer.stats.maxSquareHint', { count: 1 })).toBe('1 tile in one block');
+    expect(tDe('explorer.stats.maxSquareHint', { count: 1 })).toBe('1 Kachel in einem Block');
+    expect(tEn('explorer.stats.maxSquareHint', { count: 32 ** 2 })).toBe('1,024 tiles in one block');
+    expect(tEn('explorer.next.text', { size: 12, count: 1 })).toBe(
       'Visit 1 more tile to reach a 12 × 12 square.',
     );
   });

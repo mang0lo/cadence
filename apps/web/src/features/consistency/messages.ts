@@ -27,8 +27,8 @@ export const messages: Dictionary = {
       noDataHint: 'Import your Apple Health export to see your streaks, goals and trophies.',
       dayUnit: { one: 'day', other: 'days' },
       weekUnit: { one: 'week', other: 'weeks' },
-      activities: { one: '{n} activity', other: '{n} activities' },
-      days: { one: '{n} day', other: '{n} days' },
+      activities: { one: '{count} activity', other: '{count} activities' },
+      days: { one: '{count} day', other: '{count} days' },
     },
     page: {
       title: 'Consistency',
@@ -324,8 +324,8 @@ export const messages: Dictionary = {
       },
       kinds: {
         activities: {
-          title: { one: 'First activity', other: '{n} activities' },
-          desc: { one: 'Record your first activity', other: 'Record {n} activities' },
+          title: { one: 'First activity', other: '{count} activities' },
+          desc: { one: 'Record your first activity', other: 'Record {count} activities' },
         },
         sport_distance: { title: '{sport}: {distance}', desc: 'Cover {distance} in total ({sport})' },
         longest: { title: '{sport}: {distance} in one go', desc: 'A single activity ({sport}) of at least {distance}' },
@@ -483,8 +483,8 @@ export const messages: Dictionary = {
       noDataHint: 'Importiere deinen Apple-Health-Export, um deine Serien, Ziele und Trophäen zu sehen.',
       dayUnit: { one: 'Tag', other: 'Tage' },
       weekUnit: { one: 'Woche', other: 'Wochen' },
-      activities: { one: '{n} Aktivität', other: '{n} Aktivitäten' },
-      days: { one: '{n} Tag', other: '{n} Tage' },
+      activities: { one: '{count} Aktivität', other: '{count} Aktivitäten' },
+      days: { one: '{count} Tag', other: '{count} Tage' },
     },
     page: {
       title: 'Konstanz',
@@ -781,8 +781,8 @@ export const messages: Dictionary = {
       },
       kinds: {
         activities: {
-          title: { one: 'Erste Aktivität', other: '{n} Aktivitäten' },
-          desc: { one: 'Zeichne deine erste Aktivität auf', other: 'Zeichne {n} Aktivitäten auf' },
+          title: { one: 'Erste Aktivität', other: '{count} Aktivitäten' },
+          desc: { one: 'Zeichne deine erste Aktivität auf', other: 'Zeichne {count} Aktivitäten auf' },
         },
         sport_distance: { title: '{sport}: {distance}', desc: 'Insgesamt {distance} ({sport})' },
         longest: { title: '{sport}: {distance} am Stück', desc: 'Eine einzelne Aktivität ({sport}) über mindestens {distance}' },

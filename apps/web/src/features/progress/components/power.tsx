@@ -235,7 +235,7 @@ export function PowerBestsCard({ data, unit }: { data: ProgressPowerCurveRespons
     <Card className="min-w-0">
       <CardHeader
         title={t('progress.power.bests.title')}
-        subtitle={`${name} · ${t('progress.common.activityCount', { count: data.current.workouts, n: fmt.int(data.current.workouts) })}`}
+        subtitle={`${name} · ${t('progress.common.activityCount', { count: data.current.workouts })}`}
         icon={Zap}
       />
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">

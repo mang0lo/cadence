@@ -50,7 +50,6 @@ import {
   visitSteps,
   type ExplorerColorBy,
 } from '../lib/explorerLayers';
-import { countVars } from '../lib/counts';
 import type { HeatBase } from '../lib/heatmapLayers';
 import { homeRegion, type BBox } from '../lib/home';
 import { overlayColors } from '@/components/map/styles';
@@ -224,7 +223,7 @@ export default function ExplorerPage() {
                   value={
                     shown.totals.maxSquare ? `${fmt.int(shown.totals.maxSquare)} × ${fmt.int(shown.totals.maxSquare)}` : '–'
                   }
-                  hint={t('maps.explorer.stats.maxSquareHint', countVars(fmt, shown.totals.maxSquare ** 2))}
+                  hint={t('maps.explorer.stats.maxSquareHint', { count: shown.totals.maxSquare ** 2 })}
                 />
                 <Stat
                   label={t('maps.explorer.stats.maxCluster')}
@@ -232,7 +231,7 @@ export default function ExplorerPage() {
                   hint={
                     <Hint content={t('maps.explorer.stats.maxClusterHelp')}>
                       <span className="inline-flex items-center gap-1">
-                        {t('maps.explorer.stats.maxClusterHint', countVars(fmt, shown.totals.interior))}
+                        {t('maps.explorer.stats.maxClusterHint', { count: shown.totals.interior })}
                         <Info size={12} aria-hidden />
                       </span>
                     </Hint>
@@ -285,7 +284,7 @@ export default function ExplorerPage() {
               <div className="flex min-w-0 items-center gap-2 text-sm text-fg-2">
                 <Target size={16} className="shrink-0 text-accent-fg" aria-hidden />
                 <span className="min-w-0">
-                  {t('maps.explorer.next.text', countVars(fmt, next.missing.length, { size: next.size }))}
+                  {t('maps.explorer.next.text', { size: next.size, count: next.missing.length })}
                 </span>
                 <Button
                   size="sm"

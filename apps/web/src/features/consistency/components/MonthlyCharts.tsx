@@ -76,7 +76,7 @@ export function MonthlyActiveDays({
   return (
     <ChartCard
       title={t('consistency.months.title')}
-      subtitle={hasPrev ? t('consistency.months.subtitle', { year, prev: year - 1 }) : t('common.days', { count: total })}
+      subtitle={hasPrev ? t('consistency.months.subtitle', { year, prev: String(year - 1) }) : t('common.days', { count: total })}
       icon={BarChart3}
       table={{
         columns: [

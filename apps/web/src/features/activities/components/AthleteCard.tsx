@@ -163,7 +163,7 @@ export function AthleteCard({ summary }: { summary: ActivitiesSummary }) {
         <div className="min-w-0 flex-1">
           <div className="truncate text-base font-semibold text-fg">{name}</div>
           <div className="text-xs text-fg-3">
-            {t('activities.athlete.activities', { count: summary.allTime.count, n: fmt.int(summary.allTime.count) })}
+            {t('activities.athlete.activities', { count: summary.allTime.count })}
           </div>
           {summary.firstActivityDay && (
             // the first activity's own local day, whatever the browser's time zone

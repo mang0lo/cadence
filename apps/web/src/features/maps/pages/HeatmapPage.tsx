@@ -25,7 +25,6 @@ import { useStoredState } from '@/lib/storage';
 import { Store, useThrottledStore } from '@/lib/store';
 import { addDays, todayKey } from '@/lib/time';
 import { HeatmapMap } from '../components/HeatmapMap';
-import { countVars } from '../lib/counts';
 import { lapseAt, mainBounds, toHeatLines, type HeatBase, type HeatTheme } from '../lib/heatmapLayers';
 import { sameBounds } from '../lib/home';
 import { speedLabel } from '../lib/timelapse';
@@ -269,7 +268,7 @@ export default function HeatmapPage() {
           >
             <div className="pointer-events-none absolute left-3 top-3 z-10 flex flex-col items-start gap-1.5">
               <div className="rounded-lg border border-border bg-surface/90 px-2.5 py-1.5 text-xs text-fg-2 shadow-card backdrop-blur">
-                <span className="font-semibold text-fg tabular">{t('maps.heatmap.activities', countVars(fmt, count))}</span> ·{' '}
+                <span className="font-semibold text-fg tabular">{t('maps.heatmap.activities', { count })}</span> ·{' '}
                 <span className="font-semibold text-fg tabular">{fmt.distance(data.totalDistanceM, 0)}</span>
               </div>
               {data.privacyApplied && (

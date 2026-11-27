@@ -295,7 +295,7 @@ export function IntradayChart({
                   </span>
                 </>
               )}
-              <span className="text-fg-3">{t('health.common.samplesCount', { count: d.sampleCount, n: fmt.int(d.sampleCount) })}</span>
+              <span className="text-fg-3">{t('health.common.samplesCount', { count: d.sampleCount })}</span>
             </div>
             {wk.length > 0 && (
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1">

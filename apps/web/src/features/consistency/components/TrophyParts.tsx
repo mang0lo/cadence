@@ -20,7 +20,6 @@ export function achievementTitle(a: Achievement, t: TFunction, fmt: Formatter, l
   if (a.name) return t(`consistency.trophies.names.${a.name}`);
   const vars = {
     count: a.threshold,
-    n: fmt.int(a.threshold),
     distance: classicDistance(fmt, a.threshold),
     elevation: fmt.elevation(a.threshold),
     sport: a.sport ? sportLabel(a.sport, lang) : '',
@@ -31,7 +30,6 @@ export function achievementTitle(a: Achievement, t: TFunction, fmt: Formatter, l
 export function achievementDesc(a: Achievement, t: TFunction, fmt: Formatter, lang: Lang): string {
   const vars = {
     count: a.threshold,
-    n: fmt.int(a.threshold),
     distance: classicDistance(fmt, a.threshold),
     elevation: fmt.elevation(a.threshold),
     sport: a.sport ? sportLabel(a.sport, lang) : '',

@@ -134,7 +134,7 @@ export function formatGoalValue(
     case 'activities':
     case 'active_days': {
       const n = roundTo(v, 0, rounding);
-      return t(`consistency.common.${metric === 'activities' ? 'activities' : 'days'}`, { count: n, n: fmt.int(n) });
+      return t(`consistency.common.${metric === 'activities' ? 'activities' : 'days'}`, { count: n });
     }
   }
 }
