@@ -125,6 +125,7 @@ export function CalendarCard({
             gap={3}
             selectedDay={selectedDay}
             onSelectDay={onSelectDay}
+            formatValue={(v) => formatCalendarValue(fmt, t, m, v)}
             tooltip={(day) => {
               const d = byDay.get(day);
               const v = d ? calendarValue(d, m) : 0;
