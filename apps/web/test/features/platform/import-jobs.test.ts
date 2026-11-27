@@ -239,6 +239,7 @@ describe('job labels', () => {
     expect(jobErrorText(t, unreadable, 'invalid_input')).toBe(unreadable);
     // without a code (a caller that passes only the text): the server's known wording
     expect(jobErrorText(t, 'Interrupted: the server stopped')).toBe('platform.import.errors.interrupted');
+    expect(jobErrorText(t, 'File not found: /Users/me/Downloads/export.zip')).toBe('platform.import.errors.sourceGone');
     expect(jobErrorText(t, 'Something else')).toBe('Something else');
   });
 

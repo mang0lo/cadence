@@ -105,6 +105,27 @@ describe('error codes of failed jobs', () => {
     expect(jobs.get(1, 'local')).toMatchObject({ status: 'failed', errorCode: 'not_resumed' });
   });
 
+  it('says that the file to import is gone when it was moved or deleted while the job waited', async () => {
+    const jobs = new JobManager(db, cfg, 'inline');
+    jobs.start();
+    for (const name of ['export.zip', 'export.xml', 'ride.fit', 'folder']) {
+      const file = path.join(dir, 'moved', name);
+      const job = jobs.enqueueImport(1, file);
+      await idle(jobs);
+      expect(jobs.get(1, job.id), name).toMatchObject({
+        status: 'failed',
+        errorCode: 'source_gone',
+        error: `File not found: ${file}`,
+      });
+    }
+    await jobs.close();
+    // a job that failed that way before the codes were stored
+    run(db, "INSERT INTO import_jobs (id, athlete_id, kind, status, error) VALUES ('old', 1, 'import', 'failed', ?)", [
+      `File not found: ${path.join(dir, 'export.zip')}`,
+    ]);
+    expect(new JobManager(db, cfg, 'inline').get(1, 'old')!.errorCode).toBe('source_gone');
+  });
+
   it('gives jobs failed before the codes existed a code from their text', () => {
     const insert = (id: string, status: string, error: string | null) =>
       run(db, 'INSERT INTO import_jobs (id, athlete_id, kind, status, error) VALUES (?, 1, ?, ?, ?)', [id, 'import', status, error]);

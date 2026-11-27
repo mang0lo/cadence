@@ -49,6 +49,9 @@ function isExportXml(name: string): boolean {
 
 export class ImportInputError extends Error {}
 
+/** The file or folder to import is not there (any more): moved or deleted after the job was queued. */
+export class SourceGoneError extends ImportInputError {}
+
 /** Largest file read into memory from a zip (routes, ECGs, clinical files, FIT files): far above any real one. */
 export const READ_CAP = 256 * 1024 * 1024;
 
@@ -62,7 +65,7 @@ export async function openExportSource(input: string): Promise<ExportSource> {
   try {
     st = fs.statSync(input);
   } catch {
-    throw new ImportInputError(`File not found: ${input}`);
+    throw new SourceGoneError(`File not found: ${input}`);
   }
   if (st.isDirectory()) return openDir(input);
   if (isClinicalDocument(input))

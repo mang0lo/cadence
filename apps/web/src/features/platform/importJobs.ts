@@ -130,9 +130,10 @@ const ERROR_KEYS: Partial<Record<ImportErrorCode, string>> = {
 
 /** The code of the server's own wording, for callers that only have the text. */
 function codeOfText(error: string): ImportErrorCode | null {
-  // import/jobs.ts: a restart interrupted the job, an upload vanished, the worker thread died
+  // import/jobs.ts: a restart interrupted the job, an upload vanished, the worker thread died; import/source.ts: the
+  // file was moved or deleted while the job waited
   if (/^Interrupted\b/.test(error)) return 'interrupted';
-  if (error === 'Source file is gone') return 'source_gone';
+  if (error === 'Source file is gone' || error.startsWith('File not found: ')) return 'source_gone';
   if (/^(Import worker (crashed|exited)|Could not start the import worker)/.test(error)) return 'worker_crashed';
   return null;
 }

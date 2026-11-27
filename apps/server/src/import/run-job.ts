@@ -5,7 +5,7 @@ import type { DeriveStep } from '../features/types';
 import { openFitSource, runFitImport } from './fit/import';
 import { runImport, type RunImportOptions } from './importer';
 import { claimScope, releaseClaim, scopeFromOptions, type ChangeScope } from './scope';
-import { ImportInputError } from './source';
+import { ImportInputError, SourceGoneError } from './source';
 import { importSummary } from './summary';
 import { emptyStats } from './writer';
 
@@ -57,8 +57,9 @@ export interface JobProgress {
   stats: ImportStats;
 }
 
-/** Code of an error a job threw (ImportJob.errorCode): a file Cadence cannot read, or anything else. */
+/** Code of an error a job threw (ImportJob.errorCode): a source that is gone, an unreadable file, or 'failed'. */
 export function errorCodeOf(e: unknown): ImportErrorCode {
+  if (e instanceof SourceGoneError) return 'source_gone';
   return e instanceof ImportInputError ? 'invalid_input' : 'failed';
 }
 

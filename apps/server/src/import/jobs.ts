@@ -20,11 +20,14 @@ export function wasInterrupted(error: string | null | undefined): boolean {
   return !!error && /^(Interrupted|Import worker (crashed|exited unexpectedly)|Could not start the import worker)/.test(error);
 }
 
-/** The errors the job manager writes itself (start / close / worker handlers below) with their code. */
+/**
+ * The errors the job manager writes itself (start / close / worker handlers below) with their code, and the
+ * importer's "File not found" of a source that was moved or deleted while its job waited (source.ts).
+ */
 const MANAGER_ERRORS: [RegExp, ImportErrorCode][] = [
   [/^Interrupted\b/, 'interrupted'],
   [/^Not resumed\b/, 'not_resumed'],
-  [/^Source file is gone$/, 'source_gone'],
+  [/^(Source file is gone$|File not found: )/, 'source_gone'],
   [/^(Import worker (crashed|exited unexpectedly)|Could not start the import worker)/, 'worker_crashed'],
 ];
 
