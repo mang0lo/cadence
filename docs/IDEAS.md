@@ -174,8 +174,8 @@ feature module per product area ([ARCHITECTURE.md](ARCHITECTURE.md#adding-a-feat
   (existing race predictor) against the goal and the projected form on race day; the Fitness chart projects fitness
   and fatigue from the planned load; races keep a results list. Ship the log view first, then planning and races.
 - **Data and code**: a new feature module `calendar`: table `calendar_items` (day, kind, sport, targets, race fields,
-  matched workout by `ext_key`; in `keepOnReset`), derive step `calendar.match`, routes for the weeks, the items, copying
-  a week and the projection (future fitness from the planned load via `effortPerMinute` and
+  matched workout by `ext_key`; in `keepOnReset`), derive step `calendar.match`, routes for the weeks, the items,
+  copying a week and the projection (future fitness from the planned load via `effortPerMinute` and
   `features/progress/fitness.ts`). Web: a calendar page reusing `consistency/components/DayPanel.tsx`, the Today
   widget, race markers on the Fitness page.
 - **Why not niche**: the week-by-week log is how most athletes look back (Strava's training log, TrainingPeaks,
