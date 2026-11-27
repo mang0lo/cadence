@@ -188,8 +188,11 @@ async function pickImportFile(pick: ImportPick = 'file'): Promise<void> {
   const file = r.filePaths[0];
   if (r.canceled || !file || !win) return;
   pendingImport = file;
-  const handled = await win.webContents.executeJavaScript(importEventScript({ path: file })).catch(() => false);
-  if (handled === true) {
+  // only the app's own page may learn the path (policy.ts): another site in the window makes way for /import
+  const handled =
+    isAppUrl(win.webContents.getURL(), appOrigins) &&
+    (await win.webContents.executeJavaScript(importEventScript({ path: file })).catch(() => false)) === true;
+  if (handled) {
     if (pendingImport === file) pendingImport = null; // the open import page took it
   } else if (serverUrl) {
     await win.loadURL(`${serverUrl.replace(/\/$/, '')}/import`).catch(() => undefined);

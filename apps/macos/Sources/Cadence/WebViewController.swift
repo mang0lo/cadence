@@ -253,6 +253,11 @@ final class WebViewController: NSViewController, WKNavigationDelegate, WKUIDeleg
     }
 
     private func offerImport(_ path: String) {
+        // only the app's own page may learn the path (ShellPolicy): another site in the window makes way for /import
+        guard let shown = ShellPolicy.Origin(webView.url), appOrigins.contains(shown) else {
+            if let base = baseURL, let url = URL(string: "/import", relativeTo: base) { webView.load(URLRequest(url: url)) }
+            return
+        }
         webView.callAsyncJavaScript(ShellContract.offerImportScript, arguments: ["path": path, "event": ShellContract.importEvent],
                                     in: nil, in: .page) { [weak self] result in
             // the open import page took it: nothing waits any more
