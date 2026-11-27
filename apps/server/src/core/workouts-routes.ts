@@ -236,6 +236,7 @@ export default async function workoutRoutes(app: FastifyInstance) {
     const lang = req.query.lang === 'de' ? 'de' : 'en';
     const title = workoutTitle({ name: w.name, sport: w.sport, startTs: w.start_ts, tzMin: w.tz_min }, lang);
     const halfCadence = w.sport === 'run' || w.sport === 'walk' || w.sport === 'hike';
+    const gpxType = Object.hasOwn(GPX_TYPE, w.sport) ? GPX_TYPE[w.sport]! : xmlEscape(w.sport);
     const out: string[] = [
       '<?xml version="1.0" encoding="UTF-8"?>',
       '<gpx version="1.1" creator="Cadence" xmlns="http://www.topografix.com/GPX/1/1"',
@@ -243,7 +244,7 @@ export default async function workoutRoutes(app: FastifyInstance) {
       ' xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"',
       ' xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd http://www.garmin.com/xmlschemas/TrackPointExtension/v1 http://www.garmin.com/xmlschemas/TrackPointExtensionv1.xsd">',
       ` <metadata><name>${xmlEscape(title)}</name><time>${formatIsoUtc(w.start_ts)}</time></metadata>`,
-      ` <trk><name>${xmlEscape(title)}</name><type>${Object.hasOwn(GPX_TYPE, w.sport) ? GPX_TYPE[w.sport] : xmlEscape(w.sport)}</type><trkseg>`,
+      ` <trk><name>${xmlEscape(title)}</name><type>${gpxType}</type><trkseg>`,
     ];
     // every part of the track (see WorkoutStreams.breaks) is its own <trkseg>
     const breaks = new Set(s.breaks ?? []);

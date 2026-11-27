@@ -373,7 +373,7 @@ export const coreMigrations: Migration[] = [
     up: convertLateVolumeUnits,
   },
   {
-    // Why a job failed as a stable code (ImportErrorCode); jobs failed before keep NULL (import/jobs.ts reads their text)
+    // Why a job failed, as a stable code (ImportErrorCode); older failed jobs keep NULL (jobs.ts reads their text)
     id: 'core_008_import_job_error_code',
     up: 'ALTER TABLE import_jobs ADD COLUMN error_code TEXT;',
   },

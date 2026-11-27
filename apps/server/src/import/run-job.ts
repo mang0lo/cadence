@@ -176,7 +176,8 @@ export async function executeJob(
     enterPhase('derive');
     // "Rebuild analysis" (POST /rederive) is a request, no change of the data: not handed on when it does not finish
     const request = spec.options.origin === 'api';
-    const d = await deriveClaimed(db, spec.athleteId, scopeFromOptions(spec.options), hooks, deriveProgress(0, 1), request);
+    const scope = scopeFromOptions(spec.options);
+    const d = await deriveClaimed(db, spec.athleteId, scope, hooks, deriveProgress(0, 1), request);
     stats.workoutsDerived = derivedCount(db, spec.athleteId, d);
     stats.warnings.push(...d.warnings);
   }
