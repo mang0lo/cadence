@@ -93,8 +93,10 @@ export const messages: Dictionary = {
       status: { queued: 'Queued', running: 'Running', done: 'Done', failed: 'Failed', cancelled: 'Cancelled' },
       errors: {
         interrupted: 'Interrupted: Cadence was closed while this job was running.',
+        notResumed: 'Not resumed after the restart: this server no longer imports from that folder.',
         sourceGone: 'The file to import is no longer there.',
         crashed: 'The import stopped unexpectedly.',
+        invalidInput: 'This is not an Apple Health export or FIT file that Cadence can read.',
       },
       corosBatch: { one: 'COROS (1 activity)', other: 'COROS ({count} activities)' },
       stats: {
@@ -303,8 +305,10 @@ export const messages: Dictionary = {
       status: { queued: 'Wartend', running: 'Läuft', done: 'Fertig', failed: 'Fehlgeschlagen', cancelled: 'Abgebrochen' },
       errors: {
         interrupted: 'Unterbrochen: Cadence wurde beendet, während dieser Auftrag lief.',
+        notResumed: 'Nach dem Neustart nicht fortgesetzt: Dieser Server importiert nicht mehr aus diesem Ordner.',
         sourceGone: 'Die Datei zum Importieren ist nicht mehr da.',
         crashed: 'Der Import wurde unerwartet beendet.',
+        invalidInput: 'Das ist kein Apple-Health-Export und keine FIT-Datei, die Cadence lesen kann.',
       },
       corosBatch: { one: 'COROS (1 Aktivität)', other: 'COROS ({count} Aktivitäten)' },
       stats: {

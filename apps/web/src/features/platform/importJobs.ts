@@ -122,18 +122,26 @@ export function jobStepLabel(t: TFunction, lang: string, job: ImportJob): string
   return lang === 'en' ? (job.step ?? null) : null;
 }
 
-/** Error codes (job.errorCode) → key in platform.import.errors; the others show the server's English text. */
-const ERROR_KEYS: Partial<Record<ImportErrorCode, string>> = {
+/**
+ * Error codes (job.errorCode) → key in platform.import.errors. Every code of the contract needs one, except 'failed'
+ * (any other error): its text, the server's English one, is all there is. The server's text of the others stays the
+ * tooltip of the history cell.
+ */
+const ERROR_KEYS: Record<ImportErrorCode, string | null> = {
   interrupted: 'interrupted',
+  not_resumed: 'notResumed',
   source_gone: 'sourceGone',
   worker_crashed: 'crashed',
+  invalid_input: 'invalidInput',
+  failed: null,
 };
 
 /** The code of the server's own wording, for callers that only have the text. */
 function codeOfText(error: string): ImportErrorCode | null {
-  // import/jobs.ts: a restart interrupted the job, an upload vanished, the worker thread died; import/source.ts: the
-  // file was moved or deleted while the job waited
+  // import/jobs.ts: a restart interrupted the job or did not resume it, an upload vanished, the worker thread died;
+  // import/source.ts: the file was moved or deleted while the job waited
   if (/^Interrupted\b/.test(error)) return 'interrupted';
+  if (/^Not resumed\b/.test(error)) return 'not_resumed';
   if (error === 'Source file is gone' || error.startsWith('File not found: ')) return 'source_gone';
   if (/^(Import worker (crashed|exited)|Could not start the import worker)/.test(error)) return 'worker_crashed';
   return null;
@@ -142,7 +150,8 @@ function codeOfText(error: string): ImportErrorCode | null {
 /** A failed job's error in the language of the interface where its code (job.errorCode) is known, else as it is. */
 export function jobErrorText(t: TFunction, error: string, code?: ImportErrorCode | null): string {
   const c = code ?? codeOfText(error);
-  const key = c ? ERROR_KEYS[c] : undefined;
+  // a code this version does not know yet shows the server's text
+  const key = c && Object.hasOwn(ERROR_KEYS, c) ? ERROR_KEYS[c] : null;
   return key ? t(`platform.import.errors.${key}`) : error;
 }
 
