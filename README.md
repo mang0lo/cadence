@@ -20,7 +20,8 @@
   tiles, route best times and segment PRs.
 - **Other watches**: connect a **COROS** account (activities, resting heart rate, HRV, sleep with stages, VO2max,
   steps, daily goals) or import **FIT files** from any watch. *Settings → My watch* decides which source wins when
-  Apple Health and the watch recorded the same thing; duplicates of a workout are merged.
+  Apple Health and the watch recorded the same thing; of a workout recorded twice only the preferred copy counts (the
+  other is kept as a duplicate).
 - **Dashboard**: activity feed with route thumbnails, PR medals and sport-specific stats; athlete card with this
   week and all-time totals; widgets for this week, readiness, fitness & form, power, streaks, goals, the last 18
   weeks, a health snapshot and explorer tiles.
@@ -66,7 +67,7 @@ Download from the [latest release](https://github.com/mang0lo/cadence/releases/l
 | System | File | Notes |
 | --- | --- | --- |
 | **macOS** 14+, Apple silicon | `Cadence-<version>.dmg` | Drag Cadence into Applications. Not notarized yet: on the first launch open **System Settings → Privacy & Security** and click **Open Anyway**. |
-| **Linux** x86-64 | `Cadence-<version>-linux-x86_64.AppImage` or the `.deb` | `./install.sh path/to/Cadence.AppImage` adds the AppImage to your launcher (see below). |
+| **Linux** x86-64 | `Cadence-<version>-linux-x86_64.AppImage` or the `.deb` | `install.sh` from this repository (not part of the release) adds the AppImage to your launcher: `./install.sh path/to/Cadence.AppImage` (see below). |
 | **Windows** x64 | `Cadence-Setup-<version>-win-x64.exe` or the portable `.exe` | Not code-signed: SmartScreen may ask before the first start. |
 | **Server** | `ghcr.io/mang0lo/cadence` | See [Run it as a server](#run-it-as-a-server). |
 
@@ -108,36 +109,118 @@ path/to/Cadence.AppImage` installs a downloaded one, `./install.sh --uninstall` 
 1. iPhone → **Health** app → tap your profile picture → **Export All Health Data**.
 2. Send the `export.zip` to your computer (AirDrop, Files, iCloud Drive).
 3. In Cadence: **File → Import Apple Health Export…** (⌘I) on the Mac, **File → Import…** (Ctrl+O) on Linux and
-   Windows, or drag the zip into the Import page (on the Mac also onto the Dock icon).
+   Windows, or drag the zip into the Import page. The Mac app's import panel and Dock icon also take `export.xml` and
+   the unzipped export folder; on Linux and Windows use **File → Import folder…** (Ctrl+Shift+O) or *Choose folder…*
+   for an unzipped export.
 
-**Other watches**: drop `.fit` files (or a zip of them) into the Import page, or connect a COROS account on the
-**Watches** page — new activities and health values are then synced automatically. COROS has no public API for this:
-Cadence uses the same private interface as COROS' own web app, which can change at any time.
+**Other watches**: drop `.fit` files (several at once, or a zip of them) into the Import page — the apps also have
+*Choose FIT files…* — or connect a COROS account on the **Watches** page: new activities and daily values are then
+synced automatically. COROS has no public API for this: Cadence uses the same private interfaces as COROS' own Training
+Hub website (activities, resting heart rate, HRV, training load, VO2max) and phone app (sleep, steps, all-day heart
+rate, daily goals). The phone app's first login can sign the COROS app on your phone out once; *Sleep, steps & all-day
+heart rate* on the Watches page turns that part off. Both interfaces can change at any time.
 
-Re-import a newer export whenever you like — duplicates are detected, and a summary shows what is new.
-**Import → Rebuild analysis** recomputes all statistics (heart-rate setting changes are applied automatically).
+Re-import a newer export whenever you like — what is already there is skipped, workouts recorded twice are
+recognised, and a summary shows what is new. **Import → Rebuild analysis** recomputes all statistics (heart-rate
+setting changes are applied automatically).
 
 ## Run it as a server
 
-The desktop apps are just a window around a normal web server, so moving to a server needs no code changes:
+The desktop apps are just a window around a normal web server, so moving to a server needs no code changes. With
+Docker Compose:
 
 ```bash
 cd deploy
-CADENCE_PASSWORD=choose-something docker compose up -d     # → http://<server>:8787
+CADENCE_PASSWORD=choose-something TZ=Europe/Berlin docker compose up -d     # → http://<server>:8787
 ```
 
-- Data is stored in the `cadence-data` volume; new `export.zip` files dropped into `deploy/import/` are imported
-  automatically.
+(or put `CADENCE_PASSWORD=…` and `TZ=…` into `deploy/.env`, which git ignores). With plain Docker:
+
+```bash
+docker run -d --name cadence --restart unless-stopped -p 8787:8787 -v cadence-data:/data \
+  -e CADENCE_PASSWORD=choose-something -e TZ=Europe/Berlin ghcr.io/mang0lo/cadence
+```
+
+- Data is stored in the `cadence-data` volume. With the compose file, exports (`export.zip`, `export.xml`, `.fit`)
+  dropped into `deploy/import/` are imported automatically: the folder is checked every minute, a file is imported
+  once it stopped changing, and nothing in the folder is moved or deleted.
 - `CADENCE_PASSWORD` protects the server with one password (repeated wrong passwords are locked out for a few
-  minutes). Put it behind HTTPS (a reverse proxy) before you expose it to the internet.
-- While the repository is private, `docker login ghcr.io` with a token that may read packages before pulling the
-  image; `docker compose up -d --build` builds it from the source instead.
+  minutes); browsers log in, scripts send `Authorization: Bearer <password>`.
+- **Time zone**: set `TZ` to your IANA time zone (`Europe/Berlin`, `America/New_York` …). It decides "today" on the
+  server, sleep nights, the intraday heart rate and FIT workouts without a local time. Without it the container runs
+  on UTC: the compose file sets `TZ=UTC` without a warning, a container started without `TZ` warns at startup.
 - **Move your data**: Settings → *Backup & moving to a server* → download the backup in the app, restore it on the
   server (keeps renamed activities, goals and segments; watch-account logins are not part of a backup).
 - Point the desktop app at the server in **Settings → Server** (Mac also **Cadence → Connect to Server…**).
+- While the repository is private, `docker login ghcr.io` with a token that may read packages before pulling the
+  image; `docker compose up -d --build` builds it from the source instead.
 
-Configuration is done with environment variables (`PORT`, `HOST`, `CADENCE_DATA_DIR`, `CADENCE_PASSWORD`,
-`CADENCE_IMPORT_DIR`, …) — see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#runtime-modes--configuration).
+Every setting is an environment variable; all of them are listed in
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#configuration).
+
+**Without Docker** (Node.js 24+):
+
+```bash
+npm ci && npm run build
+CADENCE_PASSWORD=choose-something TZ=Europe/Berlin CADENCE_DATA_DIR=/var/lib/cadence npm start
+```
+
+`npm start` runs in server mode: with `CADENCE_PASSWORD` it listens on all network interfaces, without one only on
+`127.0.0.1` (set `HOST` to change that; a server reachable without a password warns at startup). Run it under a
+supervisor that restarts it, e.g. systemd with `Restart=always`: restoring a backup ends the process with exit code 75
+so that it starts again with the restored database.
+
+### Behind a reverse proxy (HTTPS)
+
+Put the server behind HTTPS (Caddy, nginx, Traefik …) before you expose it to the internet:
+
+- Set `CADENCE_TRUST_PROXY` to the proxy's address or network (`127.0.0.1` on the same host, e.g. `172.16.0.0/12` for a
+  proxy container on a Docker network). Only then does the login brake count each client on its own; otherwise every
+  client looks like the proxy, and a few wrong passwords lock everyone out for 5 minutes.
+- Pass the original `Host` header to Cadence (nginx: `proxy_set_header Host $host;`), or older browsers cannot save
+  changes.
+- Allow large uploads — exports are hundreds of MB to several GB (nginx: `client_max_body_size 0;`) — or use the
+  watch folder for big exports.
+
+The login cookie is marked `Secure` whenever the page is served over https.
+
+### Backups, restore and updates
+
+Both work in *Settings → Backup & moving to a server*, or from a script:
+
+```bash
+# backup: a consistent copy of the database, made while the server keeps running
+curl -fH "Authorization: Bearer $CADENCE_PASSWORD" http://<server>:8787/api/backup -o cadence-$(date +%F).db
+# restore: the server checks the file and restarts with it
+curl -fH "Authorization: Bearer $CADENCE_PASSWORD" -F "file=@cadence-2026-11-27.db" \
+  http://<server>:8787/api/backup/restore
+```
+
+- **Backup**: watch-account logins and login sessions are left out, but a backup holds all your health data — keep it
+  safe.
+- **Restore**: Docker needs the restart policy above, and everyone logs in again afterwards. The previous database
+  stays in the data folder as `cadence.db.before-restore-<time>`; delete it when you no longer need it.
+- **Update**: back up, then `docker compose pull && docker compose up -d` (plain Docker: `docker pull`, then create the
+  container again; without Docker: `git pull && npm ci && npm run build` and restart). Database changes are applied
+  at the start, and when a release changes the analysis the server rebuilds it once in the background (progress on the
+  Import page). What changed: [CHANGELOG.md](CHANGELOG.md).
+
+### Troubleshooting
+
+- **Logs**: Mac **File → Show Server Log** (`~/Library/Logs/Cadence/server.log`), Linux and Windows **Help → Server
+  log** (`logs/server.log` in the data folder), Docker `docker logs cadence`. The apps start a new log file at every
+  start. `LOG_LEVEL=info` adds request logs, `CADENCE_DEBUG=1` the import worker's messages.
+- An import that was running when the server or the app stopped is marked as interrupted: start it again (the watch
+  folder tries such files again by itself). Queued imports continue on their own, and what an interrupted job already
+  saved is analysed at the next start.
+- The watch folder remembers imported files by name, size and modification time, also after "Delete all data": rename
+  or touch a file to import it again.
+- `403 forbidden_host`: a server without a password on `127.0.0.1` (or `npm run dev`, or a desktop app) was reached
+  under another host name — add the name to `CADENCE_ALLOWED_HOSTS`. `403 cross_site_request` when saving behind a
+  proxy: pass the original `Host` header (see above).
+- `429` after wrong passwords: wait 5 minutes; behind a proxy set `CADENCE_TRUST_PROXY`.
+- On macOS, `npm run desktop` uses the Mac app's data folder (`~/Library/Application Support/Cadence`); start it with
+  `CADENCE_DATA_DIR=/tmp/cadence-desktop` to keep them apart.
 
 ## Development
 
@@ -149,17 +232,14 @@ npm run dev                                 # API on :8787 + web UI on http://lo
 npm run typecheck && npm test && npm run build
 ```
 
-| Path | |
-| --- | --- |
-| `packages/shared` | API contract (TypeScript types), sport catalogue, units |
-| `apps/server` | Fastify + `node:sqlite`, Apple Health importer (worker thread), analytics, feature modules |
-| `apps/web` | React 19, Vite, Tailwind 4, ECharts, MapLibre |
-| `apps/macos` | Native SwiftPM shell (WKWebView, native menus and import panel) |
-| `apps/desktop` | Electron shell for Linux and Windows |
-| `deploy` | Dockerfile and docker-compose |
+`npm test` runs Vitest in every workspace (`packages/shared`, `apps/server`, `apps/web`, `apps/desktop`); one file runs
+with e.g. `cd apps/server && npx vitest run test/api.test.ts`, the Mac shell's tests with
+`swift test --package-path apps/macos`. Match the surrounding code and format only the lines you change: most files
+are not Prettier-formatted, so never run `npm run format` over whole files.
 
-Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (conventions, feature modules, data model) and
-[docs/APPLE_HEALTH.md](docs/APPLE_HEALTH.md) (the export format and how it maps to the database).
+Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (repository layout, configuration, data model, feature modules,
+conventions, testing) and [docs/APPLE_HEALTH.md](docs/APPLE_HEALTH.md) (the export format and how it maps to the
+database).
 
 **Releases**: set the version (`npm version <x.y.z> --workspaces --include-workspace-root --no-git-tag-version`), add
 a `## [x.y.z]` section to [CHANGELOG.md](CHANGELOG.md) (it becomes the release notes), merge to `main`, then publish a
@@ -176,6 +256,9 @@ builds the DMG, the Linux and Windows apps and the `ghcr.io/mang0lo/cadence` ima
   pressure) and GPX / TCX files from any app
 - Regions (states, provinces) next to countries, and your own tags on activities
 - Apply privacy zones to GPX exports (share images already use them)
+
+Proposals for the next versions — a sleep score, readiness around every activity, hands-free imports, everyday health
+goals, gear and more — are ranked with their reasons in [docs/IDEAS.md](docs/IDEAS.md).
 
 ## License
 
