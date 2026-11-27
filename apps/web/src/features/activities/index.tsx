@@ -8,14 +8,8 @@ const feature: FeatureModule = {
   name: 'activities',
   messages,
   routes: [
-    {
-      index: true,
-      lazy: async () => {
-        const m = await import('./pages/HomePage');
-        await m.loadWidgets(); // the other features' widgets, so the dashboard shows up complete
-        return { Component: m.default };
-      },
-    },
+    // the dashboard: App.tsx loads the features' widgets in parallel with this page (withDashboardWidgets)
+    { index: true, lazy: () => import('./pages/HomePage').then((m) => ({ Component: m.default })) },
     { path: 'activities', lazy: () => import('./pages/ActivitiesPage').then((m) => ({ Component: m.default })) },
     { path: 'activities/:id', lazy: () => import('./pages/ActivityPage').then((m) => ({ Component: m.default })) },
     {
