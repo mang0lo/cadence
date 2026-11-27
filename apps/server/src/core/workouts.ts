@@ -170,7 +170,10 @@ function splitsOf(db: Db, id: number, unit: 'km' | 'mi'): Split[] {
   );
 }
 
-/** Best efforts of a workout with their all-time rank (1–3) among the athlete's visible workouts. */
+/**
+ * Best efforts of a workout with their all-time rank (1–3) among the athlete's visible workouts. Ties go to the earlier
+ * attempt, then the lower id: the rule of the medals and Progress → Records (features/activities/best-efforts.ts).
+ */
 export function bestEffortsOf(
   db: Db,
   w: { id: number; hidden: number; duplicate_of: number | null },
@@ -187,7 +190,8 @@ export function bestEffortsOf(
        1 + (SELECT COUNT(*) FROM best_efforts b2 JOIN workouts w2 ON w2.id = b2.workout_id
             WHERE b2.athlete_id = be.athlete_id AND b2.sport = be.sport AND b2.effort = be.effort
               AND w2.hidden = 0 AND w2.duplicate_of IS NULL
-              AND (b2.elapsed_s < be.elapsed_s OR (b2.elapsed_s = be.elapsed_s AND b2.workout_id < be.workout_id))) AS rank
+              AND (b2.elapsed_s < be.elapsed_s OR (b2.elapsed_s = be.elapsed_s AND (b2.start_ts < be.start_ts
+                OR (b2.start_ts = be.start_ts AND b2.workout_id < be.workout_id))))) AS rank
      FROM best_efforts be WHERE be.workout_id = ? ORDER BY be.distance_m`,
     [w.id],
   );
