@@ -259,9 +259,12 @@ in your own order, and charts, narrow windows and navigation behave as they shou
   Security → Open Anyway**).
 - **Linux**: `Cadence-1.0.0-linux-x86_64.AppImage` or the `.deb` below; `./install.sh path/to/Cadence.AppImage` adds it
   to your launcher.
-- **Windows**: the `Cadence-Setup-1.0.0.exe` installer or the portable `.exe` below.
+- **Windows**: the `Cadence-Setup-1.0.0-win-x64.exe` installer or the portable `Cadence-1.0.0-win-x64-portable.exe`
+  below.
 - **Server**: `ghcr.io/mang0lo/cadence:v1.0.0` (also `:latest`).
 - Updating from 0.3.0 needs nothing from you: your data, goals and settings stay, and nothing is analysed again.
+- The tag `v0.3.1` of the same day has no release of its own (its `package.json` still said 0.3.0, so the release
+  workflow refused it); its changes are part of 1.0.0.
 
 ### Added
 
@@ -308,7 +311,8 @@ show a Cadence server.
   Security → Open Anyway**).
 - **Linux**: `Cadence-0.3.0-linux-x86_64.AppImage` or the `.deb` below; `./install.sh path/to/Cadence.AppImage` adds it
   to your launcher.
-- **Windows**: the `Cadence-Setup-0.3.0.exe` installer or the portable `.exe` below.
+- **Windows**: the `Cadence-Setup-0.3.0-win-x64.exe` installer or the portable `Cadence-0.3.0-win-x64-portable.exe`
+  below.
 - **Server**: `ghcr.io/mang0lo/cadence:v0.3.0` (also `:latest`).
 - After the update Cadence rebuilds its analysis once in the background (places, countries and training kinds).
 
