@@ -18,10 +18,11 @@ const Scrubber = memo(function Scrubber({ P, playback }: { P: Prepared; playback
   const time = useThrottledStore(playback.time, 250);
 
   useEffect(() => {
+    // every frame of the replay: transforms only, so the track is not laid out again (width / left would)
     const paint = (time: number) => {
       const f = P.duration > 0 ? Math.max(0, Math.min(1, time / P.duration)) : 0;
-      if (fill.current) fill.current.style.width = `${f * 100}%`;
-      if (thumb.current) thumb.current.style.left = `${f * 100}%`;
+      if (fill.current) fill.current.style.transform = `scaleX(${f})`;
+      if (thumb.current) thumb.current.style.transform = `translateX(${f * 100}%)`;
     };
     paint(playback.time.get());
     return playback.time.subscribe(paint);
@@ -75,7 +76,8 @@ const Scrubber = memo(function Scrubber({ P, playback }: { P: Prepared; playback
           <path d={silhouette} fill="currentColor" opacity={0.16} />
         </svg>
       )}
-      <div ref={fill} className="absolute inset-y-0 left-0 bg-accent-soft" />
+      {/* scaled by the replay position (the same inline value on every render, so React never resets it) */}
+      <div ref={fill} className="absolute inset-0 origin-left bg-accent-soft" style={{ transform: 'scaleX(0)' }} />
       {P.pauses.map(([a, b]) => (
         <div
           key={a}
@@ -88,8 +90,12 @@ const Scrubber = memo(function Scrubber({ P, playback }: { P: Prepared; playback
           }}
         />
       ))}
-      <div ref={thumb} className="absolute inset-y-0 -ml-px w-0.5 bg-accent">
-        <div className="absolute -left-[5px] top-1/2 size-3 -translate-y-1/2 rounded-full border-2 border-surface bg-accent shadow-card" />
+      {/* a layer as wide as the track, moved by the replay position (translateX of its own width), with the thumb at
+          its left edge; it lets pointer events through to the pauses and the track */}
+      <div ref={thumb} className="pointer-events-none absolute inset-0">
+        <div className="absolute inset-y-0 left-0 -ml-px w-0.5 bg-accent">
+          <div className="absolute -left-[5px] top-1/2 size-3 -translate-y-1/2 rounded-full border-2 border-surface bg-accent shadow-card" />
+        </div>
       </div>
     </div>
   );
