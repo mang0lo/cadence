@@ -256,6 +256,11 @@ export function isTrackBreak(distanceM: number, dtS: number, spansPause: boolean
   return spansPause || distanceM >= BREAK_ALWAYS_M || (dtS > 0 && distanceM / dtS > maxSpeed);
 }
 
+/** A watch without a fix yet repeats its last (cached) position: at most this many fixes … */
+const STALE_FIXES = 8;
+/** … within this distance of the first one. */
+const STALE_RADIUS_M = 10;
+
 /** Indices of usable GPS fixes: inside the workout window, accurate enough, no impossible jumps. */
 export function cleanTrackIndices(
   tr: Track,
@@ -285,9 +290,13 @@ export function cleanTrackIndices(
           rejectedInRow++;
           continue;
         }
-        // The jump persisted. When the only fix before it is the first one, that one was a stale (cached) position:
+        // The jump persisted. When the fixes before it are one position repeated, that was a stale (cached) position:
         // drop it and start over from the first rejected fix.
-        if (keep.length === 1) {
+        const [k0] = keep;
+        if (
+          keep.length <= STALE_FIXES &&
+          keep.every((k) => haversine(tr.lat[k0!]!, tr.lon[k0!]!, tr.lat[k]!, tr.lon[k]!) <= STALE_RADIUS_M)
+        ) {
           keep = [];
           rejectedInRow = 0;
           i = firstRejected - 1;

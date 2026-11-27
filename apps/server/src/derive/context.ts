@@ -6,7 +6,7 @@ import type { DeriveChanges, DeriveContext } from '../features/types';
  * 2: track breaks (no distance, elevation or line across a jump while paused), multi-part polylines.
  * 3: places, countries and hard repetitions of the route (activity tags).
  * 4: duplicates decided per workout (both halves of a split session stay, a hidden workout is never the original),
- *    cadence from steps only with enough coverage, countries along the whole route, no stale first GPS fix as the
+ *    cadence from steps only with enough coverage, countries along the whole route, no stale (cached) GPS fixes as the
  *    start, hard repetitions with standing recoveries.
  */
 export const DERIVE_VERSION = 4;
