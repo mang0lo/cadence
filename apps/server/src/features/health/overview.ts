@@ -203,7 +203,7 @@ function snapshotValue(
   const byDay = new Map(rows.map((r) => [r.day, r.value]));
   const spark: (number | null)[] = [];
   for (let i = sparkDays - 1; i >= 0; i--) spark.push(byDay.get(addDays(asOf, -i)) ?? null);
-  return { day: latest.day, value: latest.value, spark };
+  return { metric, day: latest.day, value: latest.value, spark };
 }
 
 export function buildSnapshot(db: Db, athleteId: number): HealthSnapshot {

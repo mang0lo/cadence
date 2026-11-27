@@ -112,6 +112,11 @@ export interface HealthOverview {
 }
 
 export interface SnapshotValue {
+  /**
+   * daily_metrics key of the value: Apple's or the watch's own (Settings → My watch, like HealthMeta.metrics), e.g.
+   * 'COROSRestingHeartRate'; 'sleep' for the sleep nights.
+   */
+  metric: string;
   day: string;
   value: number;
   /** Last 14 days (index 0 = oldest), null = no data. */

@@ -2,6 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { all, get, run } from '../src/db/db';
 import type { DeriveChanges, DeriveContext } from '../src/features/types';
 import { classifyEcg, reclassifyEcgs } from '../src/features/health/ecg';
+import { buildSnapshot } from '../src/features/health/overview';
 import { rebuildSleepNights, sleepStep } from '../src/features/health/sleep';
 import { updateSettings } from '../src/core/settings';
 import { addDays } from '../src/lib/time';
@@ -136,5 +137,29 @@ describe('ECG classifications in other languages', () => {
       'sinus',
       'sinus',
     ]);
+  });
+});
+
+describe('dashboard snapshot', () => {
+  it('names the daily metric of every value, so the widget needs no meta request', () => {
+    for (let i = 0; i < 5; i++) {
+      const day = addDays(LAST, -i);
+      fx.daily('HKQuantityTypeIdentifierRestingHeartRate', day, 50 + i);
+      fx.daily('COROSRestingHeartRate', day, 45 + i);
+      fx.daily('HKQuantityTypeIdentifierStepCount', day, 8000);
+    }
+    const apple = buildSnapshot(fx.db, 1);
+    expect(apple.restingHr).toMatchObject({ metric: 'HKQuantityTypeIdentifierRestingHeartRate', value: 50 });
+    expect(apple.steps?.metric).toBe('HKQuantityTypeIdentifierStepCount');
+    expect(apple.sleep?.metric).toBe('sleep');
+    updateSettings(fx.db, 1, { watch: 'coros' });
+    try {
+      // the watch's own resting heart rate; steps only Apple has
+      const coros = buildSnapshot(fx.db, 1);
+      expect(coros.restingHr).toMatchObject({ metric: 'COROSRestingHeartRate', value: 45 });
+      expect(coros.steps?.metric).toBe('HKQuantityTypeIdentifierStepCount');
+    } finally {
+      updateSettings(fx.db, 1, { watch: 'apple' });
+    }
   });
 });
