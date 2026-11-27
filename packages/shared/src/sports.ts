@@ -202,11 +202,21 @@ const HK_TO_SPORT: Record<string, string> = {
 /** Map a raw `HKWorkoutActivityType…` value to a sport key (unknown types become `other`). */
 export function sportFromActivityType(activityType: string): string {
   const suffix = activityType.replace(/^HKWorkoutActivityType/, '');
-  return HK_TO_SPORT[suffix] ?? 'other';
+  // own keys only: a crafted export's 'HKWorkoutActivityTypeconstructor' must not map to Object's constructor
+  return Object.hasOwn(HK_TO_SPORT, suffix) ? HK_TO_SPORT[suffix]! : 'other';
 }
 
+/**
+ * Whether `key` is a sport of the catalogue. Use it (not `key in SPORTS` or `SPORTS[key]`) for keys from requests,
+ * URLs or files: 'toString', 'constructor' or '__proto__' are keys of every object, but no sports.
+ */
+export function isSport(key: string): boolean {
+  return Object.hasOwn(SPORTS, key);
+}
+
+/** The sport of a key; unknown keys (prototype keys included) are the 'other' sport. */
 export function sportInfo(key: string): SportInfo {
-  return SPORTS[key] ?? SPORTS.other!;
+  return isSport(key) ? SPORTS[key]! : SPORTS.other!;
 }
 
 /** Sports for which GPS best efforts (fastest 1k, 5k, …) are computed. */
@@ -273,6 +283,11 @@ export const BEST_EFFORTS: Record<string, EffortDefinition[]> = {
     { key: '10k', distanceM: 10000, label: { en: '10K', de: '10 km' } },
   ],
 };
+
+/** Best effort distances of a sport; [] for sports without them and for keys that are no sport (see isSport). */
+export function effortDefinitions(sport: string): EffortDefinition[] {
+  return Object.hasOwn(BEST_EFFORTS, sport) ? BEST_EFFORTS[sport]! : [];
+}
 
 // ---------------------------------------------------------------------------
 // Default workout names ("Morning Run" / "Lauf am Morgen"). Apple Health workouts have no titles, so

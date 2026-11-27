@@ -28,6 +28,12 @@ export interface ChangeScopeJson {
  * job loses nothing. A derive takes the pending scope over (claimScope), and drops it only after it succeeded
  * (releaseClaim); a derive that did not finish leaves its claim to the next one (any job, or the one
  * JobManager.start queues).
+ *
+ * That includes a full rebuild caused by a change (another workout source in the settings, an update, a reset): when
+ * it is cancelled or fails, the next job of the athlete (an import or a workout edit too) runs as a full rebuild, and
+ * every server start queues one until a derive finishes. "Rebuild analysis" is a request, not a change: it is not
+ * claimed (run-job.ts), so cancelling it really stops it. A core derive step that fails every time fails every later
+ * job of the athlete as well, as each of them claims the same scope; feature steps only warn.
  */
 export class ChangeScope {
   /** Everything (full rebuild of all derived data). */

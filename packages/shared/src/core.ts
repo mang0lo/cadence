@@ -387,6 +387,23 @@ export interface HealthSample {
 export type ImportStatus = 'queued' | 'running' | 'done' | 'failed' | 'cancelled';
 export type ImportPhase = 'upload' | 'scan' | 'parse' | 'routes' | 'ecg' | 'derive' | 'finalize';
 
+/**
+ * Why a job failed (ImportJob.errorCode; `error` keeps the server's English text with the details):
+ * - interrupted: the server stopped while the job ran
+ * - not_resumed: queued before a restart, but this server no longer imports from that path (local imports disabled)
+ * - source_gone: the file to import was no longer there
+ * - worker_crashed: the import thread died or could not start
+ * - invalid_input: the file is no Apple Health export or FIT file Cadence can read
+ * - failed: any other error
+ */
+export type ImportErrorCode =
+  | 'interrupted'
+  | 'not_resumed'
+  | 'source_gone'
+  | 'worker_crashed'
+  | 'invalid_input'
+  | 'failed';
+
 export interface ImportStats {
   bytesTotal: number;
   bytesProcessed: number;
@@ -470,8 +487,12 @@ export interface ImportJob {
   finishedAt: number | null;
   /** Estimated seconds until the job finishes (running jobs only, null while unknown). */
   etaS?: number | null;
-  /** Label of the current derive step while phase = 'derive'. */
+  /** Label of the current derive step while phase = 'derive' (English; stepId names the step). */
   step?: string | null;
+  /** Id of the current derive step while phase = 'derive', e.g. 'core.workouts' (stable, for translated labels). */
+  stepId?: string | null;
+  /** Failed jobs: why, as a stable code (null for every other status). */
+  errorCode?: ImportErrorCode | null;
 }
 
 /** POST /api/import/local */

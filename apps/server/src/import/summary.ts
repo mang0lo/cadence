@@ -77,7 +77,14 @@ export function importSummary(
     for (const f of features) {
       if (!f.whatsNew) continue;
       try {
-        const items = f.whatsNew({ db, athleteId, workoutIds: rows.map((r) => r.id), since, initial });
+        const items = f.whatsNew({
+          db,
+          athleteId,
+          workoutIds: rows.map((r) => r.id),
+          importedIds: newWorkoutIds,
+          since,
+          initial,
+        });
         highlights.push(...items.slice(0, MAX_HIGHLIGHTS_PER_FEATURE).map((h) => ({ ...h, feature: f.name })));
       } catch (e) {
         log(`What's new of ${f.name} failed: ${(e as Error).message}`);

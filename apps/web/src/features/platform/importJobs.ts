@@ -1,4 +1,4 @@
-import type { ImportJob } from '@cadence/shared';
+import type { ImportErrorCode, ImportJob } from '@cadence/shared';
 import type { TFunction } from '@/lib/i18n';
 
 /** Pure logic of the import job list: which job is current, what finished, how to poll, translated labels. */
@@ -80,50 +80,32 @@ export async function loadJobs(
 }
 
 // ---- labels ------------------------------------------------------------------------------------------------------
-// The server describes progress in English (job.message, and job.step = the label of the running derive step). The
-// interface shows translated labels derived from the structured fields instead: status, phase and the derive step.
+// The server describes progress in English (job.message, job.step = the label of the running derive step, job.error).
+// The interface shows translated labels derived from the structured fields instead: status, phase, the id of the
+// derive step (job.stepId) and the code of a failed job (job.errorCode).
 
-/** Derive steps by id and by the label the server reports in job.step → key in platform.import.steps. */
+/** Derive steps by id (job.stepId) → key in platform.import.steps. */
 const STEP_KEYS: Record<string, string> = {
   'core.workouts': 'workouts',
-  'Workout streams, splits & best efforts': 'workouts',
   'core.duplicates': 'duplicates',
-  'Duplicate detection': 'duplicates',
   'core.daily-metrics': 'dailyMetrics',
-  'Daily health metrics': 'dailyMetrics',
   'core.effort': 'effort',
-  'Heart rate zones & relative effort': 'effort',
   'core.daily-activity': 'dailyActivity',
-  'Daily activity totals': 'dailyActivity',
   'activities.analysis': 'activityAnalysis',
-  'Activity analysis (climbs, decoupling, efficiency)': 'activityAnalysis',
-  'progress.workout-metrics': 'paceAtHr',
-  'Progress: pace at heart rate & running dynamics': 'paceAtHr',
-  'progress.power-curve': 'powerCurve',
-  'Progress: power curve': 'powerCurve',
-  // both progress caches in one step
   'progress.workout-caches': 'paceAndPower',
-  'Progress: pace at heart rate, running dynamics & power curve': 'paceAndPower',
   'connect.coros': 'corosDaily',
-  'COROS daily data': 'corosDaily',
   'consistency.achievements': 'trophies',
-  'Trophies & challenges': 'trophies',
   'maps.geometry': 'mapGeometry',
-  'Map tiles and route shapes': 'mapGeometry',
   'maps.segments': 'segments',
-  'Segment efforts': 'segments',
   'maps.routes': 'routes',
-  'Repeated routes': 'routes',
   'health.sleep': 'sleep',
-  'Sleep nights': 'sleep',
   'health.ecg': 'ecg',
-  'ECG analysis': 'ecg',
   'health.record-sources': 'recordSources',
-  'Sources of health records': 'recordSources',
 };
 
-/** Key of a derive step (id or reported label) in platform.import.steps, null when unknown. */
-export const stepKey = (step: string | null | undefined): string | null => (step ? (STEP_KEYS[step] ?? null) : null);
+/** Key of a derive step id in platform.import.steps, null when unknown. */
+export const stepKey = (stepId: string | null | undefined): string | null =>
+  stepId && Object.hasOwn(STEP_KEYS, stepId) ? STEP_KEYS[stepId]! : null;
 
 /** What the job does right now, e.g. "Analysing workouts". */
 export function jobPhaseLabel(t: TFunction, job: ImportJob): string {
@@ -133,19 +115,34 @@ export function jobPhaseLabel(t: TFunction, job: ImportJob): string {
 
 /** The running derive step, translated; a step this version does not know is only shown in English. */
 export function jobStepLabel(t: TFunction, lang: string, job: ImportJob): string | null {
-  if (job.status !== 'running' || job.phase !== 'derive' || !job.step) return null;
-  const key = stepKey(job.step);
+  if (job.status !== 'running' || job.phase !== 'derive' || !(job.stepId || job.step)) return null;
+  const key = stepKey(job.stepId);
   if (key) return t(`platform.import.steps.${key}`);
-  return lang === 'en' ? job.step : null;
+  return lang === 'en' ? (job.step ?? null) : null;
 }
 
-/** A failed job's error in the language of the interface where the server's wording is known, else as it is. */
-export function jobErrorText(t: TFunction, error: string): string {
-  // import/jobs.ts: a restart interrupted the job, an upload vanished, the worker thread died
-  if (/^Interrupted\b/.test(error)) return t('platform.import.errors.interrupted');
-  if (error === 'Source file is gone') return t('platform.import.errors.sourceGone');
-  if (/^(Import worker (crashed|exited)|Could not start the import worker)/.test(error)) return t('platform.import.errors.crashed');
-  return error;
+/** Error codes (job.errorCode) → key in platform.import.errors; the others show the server's English text. */
+const ERROR_KEYS: Partial<Record<ImportErrorCode, string>> = {
+  interrupted: 'interrupted',
+  source_gone: 'sourceGone',
+  worker_crashed: 'crashed',
+};
+
+/** The code of the server's own wording, for callers that only have the text. */
+function codeOfText(error: string): ImportErrorCode | null {
+  // import/jobs.ts: a restart interrupted the job, an upload vanished, the worker thread died; import/source.ts: the
+  // file was moved or deleted while the job waited
+  if (/^Interrupted\b/.test(error)) return 'interrupted';
+  if (error === 'Source file is gone' || error.startsWith('File not found: ')) return 'source_gone';
+  if (/^(Import worker (crashed|exited)|Could not start the import worker)/.test(error)) return 'worker_crashed';
+  return null;
+}
+
+/** A failed job's error in the language of the interface where its code (job.errorCode) is known, else as it is. */
+export function jobErrorText(t: TFunction, error: string, code?: ImportErrorCode | null): string {
+  const c = code ?? codeOfText(error);
+  const key = c ? ERROR_KEYS[c] : undefined;
+  return key ? t(`platform.import.errors.${key}`) : error;
 }
 
 /** Source column of the history: the file name, or what a sync or rebuild brought. */

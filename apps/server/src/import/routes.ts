@@ -7,6 +7,7 @@ import { z } from 'zod';
 import type { ImportJob } from '@cadence/shared';
 import { invalidateStatusCounts } from '../core/routes';
 import { HttpError, badRequest, notFound } from '../lib/http';
+import { zDay } from '../lib/params';
 import { resetAthleteData } from './reset';
 import { isClinicalDocument } from './source';
 
@@ -14,11 +15,7 @@ const localBody = z.object({ path: z.string().min(1).max(4096) });
 const rederiveBody = z
   .object({
     workoutIds: z.array(z.number().int().positive()).max(100_000).optional(),
-    sinceDay: z
-      .string()
-      .regex(/^\d{4}-\d{2}-\d{2}$/)
-      .nullable()
-      .optional(),
+    sinceDay: zDay.nullable().optional(),
   })
   .optional();
 const resetBody = z.object({ confirm: z.literal('DELETE') });

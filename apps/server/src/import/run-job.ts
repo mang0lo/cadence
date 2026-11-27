@@ -1,9 +1,11 @@
-import type { ImportPhase, ImportStats } from '@cadence/shared';
+import type { ImportErrorCode, ImportPhase, ImportStats } from '@cadence/shared';
 import { get, run, type Db } from '../db/db';
 import { runDerive, type DeriveResult } from '../derive/run';
+import type { DeriveStep } from '../features/types';
 import { openFitSource, runFitImport } from './fit/import';
 import { runImport, type RunImportOptions } from './importer';
 import { claimScope, releaseClaim, scopeFromOptions, type ChangeScope } from './scope';
+import { ImportInputError, SourceGoneError } from './source';
 import { importSummary } from './summary';
 import { emptyStats } from './writer';
 
@@ -48,8 +50,17 @@ export interface JobProgress {
   /** 0..1 overall */
   progress: number;
   message: string | null;
+  /** English label of the running derive step. */
   step: string | null;
+  /** Id of the running derive step (ImportJob.stepId). */
+  stepId?: string | null;
   stats: ImportStats;
+}
+
+/** Code of an error a job threw (ImportJob.errorCode): a source that is gone, an unreadable file, or 'failed'. */
+export function errorCodeOf(e: unknown): ImportErrorCode {
+  if (e instanceof SourceGoneError) return 'source_gone';
+  return e instanceof ImportInputError ? 'invalid_input' : 'failed';
 }
 
 export interface JobHooks {
@@ -85,6 +96,8 @@ export function progressSaver(db: Db, jobId: string, everyMs = 5000): (p: JobPro
   };
 }
 
+type DeriveStepRef = Pick<DeriveStep, 'id' | 'label'>;
+
 /** Share of the overall progress bar taken by the import part of an import job (rest = derive). */
 const IMPORT_SHARE = 0.72;
 
@@ -112,15 +125,16 @@ export async function executeJob(
     if (p) phaseStart.set(p, now);
   };
   let lastDerive = 0;
-  const deriveProgress = (base: number, share: number) => (f: number, label: string, message?: string) => {
+  const deriveProgress = (base: number, share: number) => (f: number, step: DeriveStepRef, message?: string) => {
     const now = Date.now();
     if (now - lastDerive < 200 && f < 1) return;
     lastDerive = now;
     hooks.progress({
       phase: 'derive',
       progress: base + share * f,
-      message: message ? `${label} – ${message}` : label,
-      step: label,
+      message: message ? `${step.label} – ${message}` : step.label,
+      step: step.label,
+      stepId: step.id,
       stats,
     });
   };
@@ -161,7 +175,10 @@ export async function executeJob(
     stats.summary = importSummary(db, spec.athleteId, res.newWorkoutIds, deriveStart, hooks.log);
   } else {
     enterPhase('derive');
-    const d = await deriveClaimed(db, spec.athleteId, scopeFromOptions(spec.options), hooks, deriveProgress(0, 1));
+    // "Rebuild analysis" (POST /rederive) is a request, no change of the data: not handed on when it does not finish
+    const request = spec.options.origin === 'api';
+    const scope = scopeFromOptions(spec.options);
+    const d = await deriveClaimed(db, spec.athleteId, scope, hooks, deriveProgress(0, 1), request);
     stats.workoutsDerived = derivedCount(db, spec.athleteId, d);
     stats.warnings.push(...d.warnings);
   }
@@ -173,16 +190,19 @@ export async function executeJob(
 
 /**
  * Derive everything the athlete has pending (scope.ts) plus `extra`. The changes stay claimed until the derive
- * succeeded, so a cancelled, failed or interrupted derive hands them on to the next job.
+ * succeeded, so a cancelled, failed or interrupted derive hands them on to the next job. `extraIsRequest`: `extra`
+ * only asks for work (no data changed): it is derived now but not claimed, so it is not handed on.
  */
 async function deriveClaimed(
   db: Db,
   athleteId: number,
   extra: ChangeScope | null,
   hooks: JobHooks,
-  onProgress: (fraction: number, label: string, message?: string) => void,
+  onProgress: (fraction: number, step: DeriveStepRef, message?: string) => void,
+  extraIsRequest = false,
 ): Promise<DeriveResult> {
-  const scope = claimScope(db, athleteId, extra ?? undefined);
+  const scope = claimScope(db, athleteId, extraIsRequest ? undefined : (extra ?? undefined));
+  if (extraIsRequest && extra) scope.merge(extra);
   const d = await runDerive({
     db,
     athleteId,

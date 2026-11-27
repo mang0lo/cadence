@@ -716,7 +716,8 @@ export class ImportWriter implements HealthSink {
     const sexRaw = strip(a.HKCharacteristicTypeIdentifierBiologicalSex, 'HKBiologicalSex');
     const sex = sexRaw === 'Male' ? 'male' : sexRaw === 'Female' ? 'female' : sexRaw ? 'other' : null;
     const bloodRaw = strip(a.HKCharacteristicTypeIdentifierBloodType, 'HKBloodType');
-    const blood = bloodRaw ? (BLOOD_TYPES[bloodRaw] ?? bloodRaw) : null;
+    // own keys only: 'HKBloodTypeconstructor' must not reach Object's constructor
+    const blood = bloodRaw ? (Object.hasOwn(BLOOD_TYPES, bloodRaw) ? BLOOD_TYPES[bloodRaw]! : bloodRaw) : null;
     const skin = strip(a.HKCharacteristicTypeIdentifierFitzpatrickSkinType, 'HKFitzpatrickSkinType');
     run(
       this.db,

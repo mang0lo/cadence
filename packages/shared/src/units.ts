@@ -60,15 +60,19 @@ const CONVERSIONS: Record<string, Conversion> = {
   'pt_imp': { to: 'L', f: mul(0.56826125) },
 };
 
+/** Own keys only: a unit like 'toString' in a crafted export must not reach Object's methods. */
+const conversion = (unit: string): Conversion | undefined =>
+  Object.hasOwn(CONVERSIONS, unit) ? CONVERSIONS[unit] : undefined;
+
 /** Normalise a value exported by Apple Health into the canonical unit. */
 export function normalizeUnit(value: number, unit: string | null | undefined): { value: number; unit: string | null } {
   if (!unit) return { value, unit: null };
-  const c = CONVERSIONS[unit];
+  const c = conversion(unit);
   return c ? { value: c.f(value), unit: c.to } : { value, unit };
 }
 
 /** The canonical unit a raw Apple Health unit normalises to. */
 export function canonicalUnit(unit: string | null | undefined): string | null {
   if (!unit) return null;
-  return CONVERSIONS[unit]?.to ?? unit;
+  return conversion(unit)?.to ?? unit;
 }

@@ -3,13 +3,12 @@ import { z } from 'zod';
 import type { DailyMetric, HealthSample, RecordTypeInfo } from '@cadence/shared';
 import { all, get } from '../db/db';
 import { notFound } from '../lib/http';
-
-const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+import { zDay } from '../lib/params';
 
 const dailyQuery = z.object({
   metric: z.string().min(1).max(200),
-  fromDay: day.optional(),
-  toDay: day.optional(),
+  fromDay: zDay.optional(),
+  toDay: zDay.optional(),
 });
 
 const samplesQuery = z.object({

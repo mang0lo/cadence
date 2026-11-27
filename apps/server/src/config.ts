@@ -68,6 +68,20 @@ function allowedHostsFrom(value: string | undefined, mode: Mode, host: string, p
   return mode !== 'server' || (!password && isLoopbackHost(host)) ? [] : null;
 }
 
+/**
+ * Startup warning of a server without TZ: FIT workouts without a local time, sleep nights, the intraday heart rate and
+ * "today" follow the zone of the process (in a container usually UTC). Null with TZ set, and in the desktop app or a
+ * dev run, which run in the user's own zone.
+ */
+export function timeZoneWarning(config: Pick<Config, 'mode'>, env: NodeJS.ProcessEnv = process.env): string | null {
+  if (config.mode !== 'server' || env.TZ) return null;
+  const zone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  return (
+    `WARNING: TZ is not set, so local days follow this server's time zone (${zone}): FIT workouts without a local ` +
+    'time, sleep nights, the intraday heart rate and "today". Set TZ to your IANA time zone, e.g. TZ=Europe/Berlin.'
+  );
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const mode: Mode =
     env.CADENCE_MODE === 'desktop' || env.CADENCE_MODE === 'server' || env.CADENCE_MODE === 'dev'

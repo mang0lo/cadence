@@ -2,6 +2,8 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { AthleteSettings, DataSourcesInfo, ServerStatus } from '@cadence/shared';
 import { get, run, type Db } from '../db/db';
+import { zDay } from '../lib/params';
+import { localDay, nowSec } from '../lib/time';
 import { isAuthenticated } from './auth';
 import { getAthlete, getSettings, updateSettings } from './settings';
 import { dataSources, preferred } from './sources';
@@ -24,6 +26,9 @@ function statusCounts(db: Db, athleteId: number): ServerStatus['counts'] {
   return value;
 }
 
+/** The latest calendar day anywhere on earth (UTC+14): a birth date of the athlete's today is never refused. */
+const latestToday = () => localDay(nowSec(), 14 * 60);
+
 const settingsPatch = z
   .object({
     units: z.enum(['metric', 'imperial']),
@@ -35,12 +40,17 @@ const settingsPatch = z
     maxHr: z.number().int().min(100).max(240).nullable(),
     restingHr: z.number().int().min(25).max(120).nullable(),
     hrZoneMethod: z.enum(['maxhr', 'hrr', 'custom']),
-    hrZones: z.array(z.number().int().min(40).max(240)).length(4).nullable(),
+    // upper limits of Z1..Z4: each above the one before (the zones would otherwise be silently replaced)
+    hrZones: z
+      .array(z.number().int().min(40).max(240))
+      .length(4)
+      .refine((b) => b.every((v, i) => i === 0 || v > b[i - 1]!), 'zone limits must ascend')
+      .nullable(),
     ftp: z.number().int().min(50).max(600).nullable(),
     sex: z.enum(['male', 'female', 'other']).nullable(),
-    birthDate: z
-      .string()
-      .regex(/^\d{4}-\d{2}-\d{2}$/)
+    birthDate: zDay
+      .refine((d) => d >= '1900-01-01', 'birth date before 1900')
+      .refine((d) => d <= latestToday(), 'birth date in the future')
       .nullable(),
     watch: z.enum(['apple', 'coros', 'other']),
     sources: z.object({
@@ -113,7 +123,8 @@ export default async function coreRoutes(app: FastifyInstance) {
       const hrKeys = ['maxHr', 'restingHr', 'hrZoneMethod', 'hrZones', 'sex', 'birthDate'] as const;
       if (hrKeys.some(changed) || preferred(before, 'heart') !== preferred(next, 'heart')) {
         const today = new Date().toISOString().slice(0, 10);
-        app.jobs.enqueueDerive(req.athleteId, { origin: 'settings', workoutIds: [], sinceDay: today });
+        // no health record changed: the daily metrics stay as they are (core.effort sees the new basis itself)
+        app.jobs.enqueueDerive(req.athleteId, { origin: 'settings', workoutIds: [], sinceDay: today, records: false });
       }
     }
     return next;

@@ -2,12 +2,12 @@ import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { Worker } from 'node:worker_threads';
-import type { ImportJob, ImportPhase, ImportStats, ImportStatus } from '@cadence/shared';
+import type { ImportErrorCode, ImportJob, ImportPhase, ImportStats, ImportStatus } from '@cadence/shared';
 import type { Config } from '../config';
 import { invalidateStatusCounts } from '../core/routes';
 import { all, get, json, run, type Db } from '../db/db';
 import { CancelledError, DERIVE_VERSION } from '../derive/context';
-import { executeJob, progressSaver, type JobOptions, type JobSpec } from './run-job';
+import { errorCodeOf, executeJob, progressSaver, type JobOptions, type JobSpec } from './run-job';
 import { athletesWithPendingChanges, pendingScope } from './scope';
 import type { JobWorkerData, WorkerMessage } from './worker';
 import { emptyStats } from './writer';
@@ -20,8 +20,30 @@ export function wasInterrupted(error: string | null | undefined): boolean {
   return !!error && /^(Interrupted|Import worker (crashed|exited unexpectedly)|Could not start the import worker)/.test(error);
 }
 
+/**
+ * The errors the job manager writes itself (start / close / worker handlers below) with their code, and the
+ * importer's "File not found" of a source that was moved or deleted while its job waited (source.ts).
+ */
+const MANAGER_ERRORS: [RegExp, ImportErrorCode][] = [
+  [/^Interrupted\b/, 'interrupted'],
+  [/^Not resumed\b/, 'not_resumed'],
+  [/^(Source file is gone$|File not found: )/, 'source_gone'],
+  [/^(Import worker (crashed|exited unexpectedly)|Could not start the import worker)/, 'worker_crashed'],
+];
+
+/**
+ * Code of a failed job's error text: for the errors this file writes, and for jobs that failed before the code was
+ * stored (import_jobs.error_code NULL). Any other text is 'failed'.
+ */
+export function jobErrorCode(error: string | null | undefined): ImportErrorCode | null {
+  if (!error) return null;
+  return MANAGER_ERRORS.find(([re]) => re.test(error))?.[1] ?? 'failed';
+}
+
 /** Options of two derive requests run as one job: 'all' absorbs the other, otherwise their scopes are united. */
 export function mergeDeriveOptions(a: JobOptions, b: JobOptions): JobOptions {
+  // "Rebuild analysis" ('api') joined by a real change is no longer only a request (run-job.ts hands that one on)
+  if (a.origin === 'api' && b.origin !== 'api') return mergeDeriveOptions({ ...a, origin: b.origin }, b);
   const ids = (o: JobOptions) => o.workoutIds ?? 'all';
   const ia = ids(a);
   const ib = ids(b);
@@ -59,6 +81,7 @@ interface JobRow {
   stats: string | null;
   options: string | null;
   error: string | null;
+  error_code: ImportErrorCode | null;
   created_at: number;
   started_at: number | null;
   finished_at: number | null;
@@ -95,6 +118,8 @@ function toJob(r: JobRow): ImportJob {
     finishedAt: r.finished_at,
     etaS: null,
     step: null,
+    stepId: null,
+    errorCode: r.status === 'failed' ? (r.error_code ?? jobErrorCode(r.error) ?? 'failed') : null,
   };
 }
 
@@ -130,7 +155,7 @@ export class JobManager {
     run(
       this.db,
       `UPDATE import_jobs SET status = 'failed', error = 'Interrupted: the server stopped while this job was running',
-         finished_at = unixepoch() WHERE status = 'running'`,
+         error_code = 'interrupted', finished_at = unixepoch() WHERE status = 'running'`,
     );
     for (const r of all<JobRow>(
       this.db,
@@ -142,10 +167,11 @@ export class JobManager {
           ? 'Source file is gone'
           : null;
       if (error)
-        run(this.db, "UPDATE import_jobs SET status = 'failed', error = ?, finished_at = unixepoch() WHERE id = ?", [
-          error,
-          r.id,
-        ]);
+        run(
+          this.db,
+          "UPDATE import_jobs SET status = 'failed', error = ?, error_code = ?, finished_at = unixepoch() WHERE id = ?",
+          [error, jobErrorCode(error), r.id],
+        );
     }
     this.cleanupUploads();
     // a server runs for months: what a restart left behind is not kept until the next one
@@ -309,7 +335,7 @@ export class JobManager {
     if (r && !r.done) {
       Atomics.store(r.cancel, 0, 1);
       await r.worker?.terminate();
-      this.persist(r, 'failed', 'Interrupted: the server stopped');
+      this.persist(r, 'failed', 'Interrupted: the server stopped', 'interrupted');
     }
   }
 
@@ -381,12 +407,20 @@ export class JobManager {
   /** In memory only: the job's own connection saves the row (progressSaver). */
   private onProgress(
     r: Running,
-    m: { phase: string; progress: number; message: string | null; step: string | null; stats: unknown },
+    m: {
+      phase: string;
+      progress: number;
+      message: string | null;
+      step: string | null;
+      stepId?: string | null;
+      stats: unknown;
+    },
   ): void {
     r.job.phase = m.phase as ImportPhase;
     r.job.progress = Math.max(r.job.progress, Math.min(1, m.progress));
     if (!Atomics.load(r.cancel, 0)) r.job.message = m.message;
     r.job.step = m.step;
+    r.job.stepId = m.stepId ?? null;
     r.job.stats = m.stats as ImportStats;
     this.emit(this.live({ id: r.id } as JobRow));
   }
@@ -402,7 +436,7 @@ export class JobManager {
     try {
       worker = new Worker(workerEntry(), { workerData: data, execArgv: process.execArgv });
     } catch (e) {
-      this.finish(r, 'failed', `Could not start the import worker: ${(e as Error).message}`);
+      this.finish(r, 'failed', `Could not start the import worker: ${(e as Error).message}`, 'worker_crashed');
       return;
     }
     r.worker = worker;
@@ -415,12 +449,13 @@ export class JobManager {
         this.finish(r, 'done', null);
       } else if (m.type === 'failed') {
         r.job.stats = m.stats as ImportStats;
-        this.finish(r, m.cancelled ? 'cancelled' : 'failed', m.cancelled ? null : m.error);
+        if (m.cancelled) this.finish(r, 'cancelled', null);
+        else this.finish(r, 'failed', m.error, m.code);
       }
     });
-    worker.on('error', (e: Error) => this.finish(r, 'failed', `Import worker crashed: ${e.message}`));
+    worker.on('error', (e: Error) => this.finish(r, 'failed', `Import worker crashed: ${e.message}`, 'worker_crashed'));
     worker.on('exit', (code) => {
-      if (!r.done) this.finish(r, 'failed', `Import worker exited unexpectedly (code ${code})`);
+      if (!r.done) this.finish(r, 'failed', `Import worker exited unexpectedly (code ${code})`, 'worker_crashed');
     });
   }
 
@@ -448,19 +483,21 @@ export class JobManager {
     } catch (e) {
       if (this.db.isTransaction) this.db.exec('ROLLBACK');
       r.job.stats = stats;
-      const cancelled = e instanceof CancelledError;
-      this.finish(r, cancelled ? 'cancelled' : 'failed', cancelled ? null : (e as Error).message);
+      if (e instanceof CancelledError) this.finish(r, 'cancelled', null);
+      else this.finish(r, 'failed', (e as Error).message, errorCodeOf(e));
     }
   }
 
-  private persist(r: Running, status: ImportStatus, error: string | null): void {
+  private persist(r: Running, status: ImportStatus, error: string | null, code: ImportErrorCode | null = null): void {
     run(
       this.db,
-      `UPDATE import_jobs SET status = ?, error = ?, finished_at = unixepoch(), progress = ?, phase = ?, message = ?, stats = ?
+      `UPDATE import_jobs SET status = ?, error = ?, error_code = ?, finished_at = unixepoch(), progress = ?, phase = ?,
+         message = ?, stats = ?
        WHERE id = ?`,
       [
         status,
         error,
+        status === 'failed' ? (code ?? 'failed') : null,
         status === 'done' ? 1 : r.job.progress,
         r.job.phase,
         status === 'done' ? 'Done' : status === 'cancelled' ? 'Cancelled' : 'Failed',
@@ -470,11 +507,11 @@ export class JobManager {
     );
   }
 
-  private finish(r: Running, status: ImportStatus, error: string | null): void {
+  private finish(r: Running, status: ImportStatus, error: string | null, code: ImportErrorCode | null = null): void {
     if (r.done) return;
     r.done = true;
     try {
-      this.persist(r, status, error);
+      this.persist(r, status, error, code);
     } catch (e) {
       console.error('Could not persist job result', e);
     }

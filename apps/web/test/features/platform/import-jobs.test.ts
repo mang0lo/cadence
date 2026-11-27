@@ -6,6 +6,7 @@ import type { ImportJob, ImportStatus } from '@cadence/shared';
 import {
   currentJob,
   finishedSince,
+  jobErrorText,
   jobPhaseLabel,
   jobSourceLabel,
   jobStepLabel,
@@ -212,15 +213,34 @@ describe('job labels', () => {
     expect(jobPhaseLabel(t, job('running', { phase: null }))).toBe('platform.import.status.running');
   });
 
-  it('translates the derive step instead of showing the English label', () => {
-    const j = job('running', { phase: 'derive', step: 'Workout streams, splits & best efforts' });
+  it('translates the derive step by its id instead of showing the English label', () => {
+    const j = job('running', { phase: 'derive', stepId: 'core.workouts', step: 'Workout streams, splits & best efforts' });
     expect(jobStepLabel(t, 'de', j)).toBe('platform.import.steps.workouts');
     expect(stepKey('core.workouts')).toBe('workouts');
-    // unknown steps only in English
-    const unknown = job('running', { phase: 'derive', step: 'Something new' });
+    // the id is what counts: a label the server rewords keeps its translation
+    expect(jobStepLabel(t, 'de', { ...j, step: 'Streams, splits and best efforts' })).toBe('platform.import.steps.workouts');
+    // unknown steps only in English, with the server's label
+    const unknown = job('running', { phase: 'derive', stepId: 'core.something-new', step: 'Something new' });
     expect(jobStepLabel(t, 'de', unknown)).toBeNull();
     expect(jobStepLabel(t, 'en', unknown)).toBe('Something new');
-    expect(jobStepLabel(t, 'en', job('running', { phase: 'parse', step: null }))).toBeNull();
+    expect(jobStepLabel(t, 'en', job('running', { phase: 'parse', step: null, stepId: null }))).toBeNull();
+    expect(jobStepLabel(t, 'de', { ...j, status: 'done' })).toBeNull();
+  });
+
+  it("translates a failed job's error by its code, else shows the server's text", () => {
+    expect(jobErrorText(t, 'Interrupted: the server stopped', 'interrupted')).toBe('platform.import.errors.interrupted');
+    expect(jobErrorText(t, 'Source file is gone', 'source_gone')).toBe('platform.import.errors.sourceGone');
+    expect(jobErrorText(t, 'Import worker exited unexpectedly (code 1)', 'worker_crashed')).toBe('platform.import.errors.crashed');
+    // the code decides, not the wording
+    expect(jobErrorText(t, 'Der Import-Thread ist abgestürzt', 'worker_crashed')).toBe('platform.import.errors.crashed');
+    expect(jobErrorText(t, 'Interrupted by nothing we know', 'failed')).toBe('Interrupted by nothing we know');
+    // codes without a translation keep the English detail
+    const unreadable = 'Not a readable zip file: End of central directory record signature not found';
+    expect(jobErrorText(t, unreadable, 'invalid_input')).toBe(unreadable);
+    // without a code (a caller that passes only the text): the server's known wording
+    expect(jobErrorText(t, 'Interrupted: the server stopped')).toBe('platform.import.errors.interrupted');
+    expect(jobErrorText(t, 'File not found: /Users/me/Downloads/export.zip')).toBe('platform.import.errors.sourceGone');
+    expect(jobErrorText(t, 'Something else')).toBe('Something else');
   });
 
   it('names COROS batches and rebuilds in the language of the interface', () => {
@@ -234,8 +254,8 @@ describe('job labels', () => {
     expect(jobSourceLabel(t, job('done', { sourceName: 'export.zip' }))).toBe('export.zip');
   });
 
-  it('knows every derive step of the server (ids and labels)', () => {
-    // the server reports the English label of the running step: a step added or renamed there needs a translation
+  it('knows every derive step of the server', () => {
+    // the server reports the id of the running step (job.stepId): a step added there needs a translation
     const root = fileURLToPath(new URL('../../../../server/src', import.meta.url));
     const steps: { id: string; label: string }[] = [];
     const walk = (dir: string) => {
@@ -250,9 +270,8 @@ describe('job labels', () => {
     };
     walk(root);
     expect(steps.length).toBeGreaterThan(10);
-    for (const s of steps) {
-      expect(stepKey(s.id), s.id).not.toBeNull();
-      expect(stepKey(s.label), s.label).toBe(stepKey(s.id));
-    }
+    for (const s of steps) expect(stepKey(s.id), `${s.id} (${s.label})`).not.toBeNull();
+    // ids, not English labels, are what the translations hang on
+    for (const s of steps) expect(stepKey(s.label), s.label).toBeNull();
   });
 });
