@@ -2,10 +2,9 @@ import {
   SLEEP_GENERIC_VALUES,
   SLEEP_STAGE_VALUES,
   categoryValueRole,
-  dayFromNumber,
-  dayNumber,
   mean,
   median,
+  periodStart,
   type MetricAgg,
   type MetricPoint,
   type MetricStats,
@@ -20,16 +19,8 @@ export interface DailyRow {
   n: number;
 }
 
-/** Start of the period a day belongs to: the day itself, its week (weekStart 1 = Monday, 0 = Sunday) or 'YYYY-MM-01'. */
-export function periodStart(day: string, agg: MetricAgg, weekStart: 0 | 1): string {
-  if (agg === 'day') return day;
-  if (agg === 'month') return `${day.slice(0, 7)}-01`;
-  const dn = dayNumber(day);
-  // 1970-01-01 was a Thursday (4); weekday 0 = Sunday
-  const weekday = (((dn + 4) % 7) + 7) % 7;
-  const back = (weekday - weekStart + 7) % 7;
-  return dayFromNumber(dn - back);
-}
+/** Periods of the series: the shared helper the web charts use too (@cadence/shared health-analytics). */
+export { periodStart };
 
 /**
  * Daily rows → one point per day / week / month.

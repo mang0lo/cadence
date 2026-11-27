@@ -356,6 +356,55 @@ const BY_ID = new Map<string, MetricDef>(DEFS.map((d) => [d.identifier, d]));
 /** Every identifier the catalogue knows (for tests and the explorer's "known types"). */
 export const METRIC_DEFS: readonly MetricDef[] = DEFS;
 
+// ---- Identifiers read by name -------------------------------------------------------------------------------
+
+/**
+ * HealthKit identifiers the server and the web read by name, in one place. Metrics a watch can replace with its own
+ * (HeartMetric) are read through the server's choice instead (core/sources.ts heartMetric, HealthMeta.metrics).
+ */
+export const HK = {
+  heartRate: 'HKQuantityTypeIdentifierHeartRate',
+  restingHr: 'HKQuantityTypeIdentifierRestingHeartRate',
+  walkingHr: 'HKQuantityTypeIdentifierWalkingHeartRateAverage',
+  hrv: 'HKQuantityTypeIdentifierHeartRateVariabilitySDNN',
+  vo2max: 'HKQuantityTypeIdentifierVO2Max',
+  recovery: 'HKQuantityTypeIdentifierHeartRateRecoveryOneMinute',
+  respiratory: 'HKQuantityTypeIdentifierRespiratoryRate',
+  spo2: 'HKQuantityTypeIdentifierOxygenSaturation',
+  wristTemp: 'HKQuantityTypeIdentifierAppleSleepingWristTemperature',
+  steps: 'HKQuantityTypeIdentifierStepCount',
+  bodyMass: 'HKQuantityTypeIdentifierBodyMass',
+  bmi: 'HKQuantityTypeIdentifierBodyMassIndex',
+  bodyFat: 'HKQuantityTypeIdentifierBodyFatPercentage',
+  leanMass: 'HKQuantityTypeIdentifierLeanBodyMass',
+  height: 'HKQuantityTypeIdentifierHeight',
+  systolic: 'HKQuantityTypeIdentifierBloodPressureSystolic',
+} as const;
+
+/**
+ * Metrics a watch records itself (Settings → My watch): stored as metrics of their own because they are not the same
+ * measurement (COROS' HRV is an overnight RMSSD, Apple's an SDNN of spot readings), never mixed.
+ */
+export type HeartMetric = 'restingHr' | 'hrv' | 'vo2max' | 'steps' | 'heartRate';
+
+/** Apple Health's daily_metrics key of every heart metric. */
+export const APPLE_HEART_METRICS: Readonly<Record<HeartMetric, string>> = {
+  restingHr: HK.restingHr,
+  hrv: HK.hrv,
+  vo2max: HK.vo2max,
+  steps: HK.steps,
+  heartRate: HK.heartRate,
+};
+
+/** The watch's own daily_metrics keys (COROS cloud values). */
+export const DEVICE_HEART_METRICS: Readonly<Record<HeartMetric, string>> = {
+  restingHr: 'COROSRestingHeartRate',
+  hrv: 'COROSSleepHRV',
+  vo2max: 'COROSVO2Max',
+  steps: 'COROSSteps',
+  heartRate: 'COROSHeartRate',
+};
+
 /** Splits `<identifier>:<value>` (category metrics of daily_metrics) into its parts. */
 export function splitMetric(metric: string): { identifier: string; value: string | null } {
   const i = metric.indexOf(':');
