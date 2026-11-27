@@ -113,6 +113,7 @@ const SAVED_NAMES: [string, string | null][] = [
   ['metrics.json', 'metrics.json'],
   ['../../Library/LaunchAgents/evil.txt', 'evil.txt'],
   ['C:\\Users\\me\\route.gpx', 'route.gpx'],
+  ['exports/run.csv/', null],
   ['.png', 'cadence.png'],
   ['.hidden.csv', 'cadence.csv'],
   ['a<b>:c|d?e*f"g.csv', 'a_b__c_d_e_f_g.csv'],

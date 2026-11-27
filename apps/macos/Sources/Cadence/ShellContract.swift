@@ -50,7 +50,8 @@ enum ShellContract {
     /// Windows does not allow replaced (as the desktop app does), "cadence.<type>" for a name that would hide the
     /// file; nil when its type is none of savedFileTypes.
     static func savedFileName(_ name: String) -> String? {
-        let last = name.split(whereSeparator: { $0 == "/" || $0 == "\\" }).last.map(String.init) ?? ""
+        // what follows the last separator, "" after a trailing one (like the desktop app's split)
+        let last = name.split(omittingEmptySubsequences: false, whereSeparator: { $0 == "/" || $0 == "\\" }).last.map(String.init) ?? ""
         let unsafe = Set("<>:\"|?*".unicodeScalars)
         let scalars = last.unicodeScalars.map { $0.value < 0x20 || $0.value == 0x7F || unsafe.contains($0) ? "_" : $0 }
         let base = String(String.UnicodeScalarView(scalars)).trimmingCharacters(in: .whitespacesAndNewlines)
