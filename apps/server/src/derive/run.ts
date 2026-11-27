@@ -7,7 +7,10 @@ import { coreDeriveSteps } from './pipeline';
 export interface RunDeriveOptions {
   db: Db;
   athleteId: number;
-  /** Workouts inserted/changed, or 'all' for a full rebuild. Workouts derived by an older DERIVE_VERSION are added. */
+  /**
+   * Workouts inserted/changed, or 'all' for a full rebuild. Workouts derived by an older DERIVE_VERSION are added;
+   * ids that are no workout of the athlete are dropped.
+   */
   workoutIds: number[] | 'all';
   /** Earliest local day touched by new records, null = recompute every day. */
   sinceDay: string | null;
@@ -56,6 +59,13 @@ function recordTypesOf(db: Db, typeSince: Map<number, number> | null | undefined
 export async function runDerive(o: RunDeriveOptions): Promise<DeriveResult> {
   let workoutIds = o.workoutIds;
   if (workoutIds !== 'all') {
+    // the athlete's own workouts only: feature steps never get another athlete's ids or those of deleted workouts
+    if (workoutIds.length)
+      workoutIds = all<{ id: number }>(
+        o.db,
+        'SELECT id FROM workouts WHERE athlete_id = ? AND id IN (SELECT value FROM json_each(?))',
+        [o.athleteId, JSON.stringify(workoutIds)],
+      ).map((r) => r.id);
     const outdated = all<{ id: number }>(
       o.db,
       'SELECT id FROM workouts WHERE athlete_id = ? AND derived_version < ?',
