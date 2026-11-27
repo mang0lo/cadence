@@ -236,6 +236,7 @@ export function goalWithProgress(
       asOf: ref,
       single: daily || goal.metric === 'longest',
       checked: isChecked(o.checks, start, end),
+      metric: goal.metric,
     }),
     history,
     hitRate: judged.length ? judged.filter((h) => h.hit).length / judged.length : null,
