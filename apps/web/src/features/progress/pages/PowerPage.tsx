@@ -17,11 +17,12 @@ import {
 } from '@/components/ui';
 import { useT } from '@/lib/i18n';
 import { addDays, todayKey } from '@/lib/time';
+import { useUrlParams } from '@/lib/urlParams';
 import { useFtpEstimate, usePowerCurve } from '../api';
 import { CardSkeleton, SportSelect } from '../components/common';
 import { FtpCard, FtpHistoryCard, NoPowerCard, PowerBestsCard, PowerCurveCard } from '../components/power';
 import { isPowerCompare, isPowerPeriod, type PowerUnit } from '../power';
-import { urlSport, useUrlParams } from '../useFilters';
+import { urlSport } from '../useFilters';
 
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 

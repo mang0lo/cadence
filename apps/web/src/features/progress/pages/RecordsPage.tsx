@@ -1,10 +1,11 @@
 import { Medal } from 'lucide-react';
 import { ErrorState, FilterBar, Page, PageHeader, SegmentedControl } from '@/components/ui';
 import { useT } from '@/lib/i18n';
+import { useUrlParams } from '@/lib/urlParams';
 import { useEffortHistory, usePredictions, useRecords } from '../api';
 import { CardSkeleton, SportSelect } from '../components/common';
 import { EffortsCard, HighlightsCard, PredictorCard, ProgressionCard, TopTenCard, type RecordScope } from '../components/records';
-import { urlSport, useUrlParams } from '../useFilters';
+import { urlSport } from '../useFilters';
 import { NoDataCard } from './ProgressPage';
 
 const SCOPES: RecordScope[] = ['allTime', 'thisYear', 'last12m'];
