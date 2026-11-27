@@ -22,9 +22,10 @@ zip64 and data descriptors are fine, nothing is extracted), the unzipped folder 
 `export_cda.xml` is never mistaken for it. Choosing `export_cda.xml` itself (upload, local import) fails right away
 with a message that asks for `export.xml` or the zip, the watch folder skips it, and any other XML file whose root
 element is not `<HealthData>` fails the job as invalid input (`import/parser.ts`) instead of importing nothing. A
-file that is no readable zip fails with "Not a readable zip file". Route, ECG and clinical files inside a zip are
-read only up to the size the zip declares for them (at most 256 MB each, `READ_CAP`); a file beyond that is skipped
-with a warning. `export.xml` itself is streamed and has no size limit.
+file that is no readable zip fails with "Not a readable zip file". Route and ECG files inside a zip are read only up
+to the size the zip declares for them (at most 256 MB each, `READ_CAP`); a file beyond that is skipped with a warning.
+Clinical FHIR files larger than 5 MB are left out without a warning (`import/importer.ts`). `export.xml` itself is
+streamed and has no size limit.
 
 ## export.xml
 
