@@ -292,11 +292,21 @@ export function trophiesResponse(db: Db, athleteId: number, today?: string): Tro
 /**
  * True when this run's workouts are all the athlete has (the first import, also after a data reset): the same rule as
  * the import summary's `initial`. A trophies page opened while that import ran may have cached a partial history.
+ * The run also names older workouts whose routes the import linked: during an import job, a workout stored before the
+ * job started means it is no first import. (Recovery and command line runs know no such start: every named workout
+ * counts as new there.)
  */
 function firstImport(ctx: DeriveContext): boolean {
   if (ctx.workoutIds === 'all' || !ctx.workoutIds.length) return false;
   const total = get<{ n: number }>(ctx.db, 'SELECT COUNT(*) AS n FROM workouts WHERE athlete_id = ?', [ctx.athleteId])!.n;
-  return ctx.workoutIds.length >= total;
+  if (ctx.workoutIds.length < total) return false;
+  const job = get<{ t: number | null }>(
+    ctx.db,
+    "SELECT MAX(started_at) AS t FROM import_jobs WHERE athlete_id = ? AND kind = 'import' AND status = 'running'",
+    [ctx.athleteId],
+  );
+  if (job?.t == null) return true;
+  return !get(ctx.db, 'SELECT 1 FROM workouts WHERE athlete_id = ? AND created_at < ? LIMIT 1', [ctx.athleteId, job.t]);
 }
 
 export const achievementsStep: DeriveStep = {
