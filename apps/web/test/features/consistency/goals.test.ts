@@ -107,9 +107,9 @@ describe('formatGoalValue', () => {
   });
 
   it('rounds reached values to the nearest and open ones down', () => {
-    expect(reachedRounding(49.6, 50)).toBe('down');
-    expect(reachedRounding(50, 50)).toBe('nearest');
-    expect(reachedRounding(42_196, 42_195)).toBe('nearest');
+    expect(reachedRounding(49.6, 50, 'distance')).toBe('down');
+    expect(reachedRounding(50, 50, 'distance')).toBe('nearest');
+    expect(reachedRounding(42_196, 42_195, 'longest')).toBe('nearest');
   });
 
   it('takes a single distance within the GPS tolerance as reached, like the server', () => {

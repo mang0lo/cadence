@@ -80,10 +80,10 @@ export const DISTANCE_TOLERANCE = 0.995;
 
 /**
  * Rounding of a progress value: down while it is below the target, to the nearest once it is reached. A single
- * distance is reached within DISTANCE_TOLERANCE like on the server, so 42,150 m of a 42,195 m goal show as 42.2 km,
- * not as 42.1 km next to a reached goal; pass the goal's `metric` for that.
+ * distance ('longest', the goal's `metric`) is reached within DISTANCE_TOLERANCE like on the server, so 42,150 m of a
+ * 42,195 m goal show as 42.2 km, not as 42.1 km next to a reached goal.
  */
-export const reachedRounding = (value: number, target: number, metric?: GoalMetric): GoalRounding =>
+export const reachedRounding = (value: number, target: number, metric: GoalMetric): GoalRounding =>
   value < (metric === 'longest' ? target * DISTANCE_TOLERANCE : target) ? 'down' : 'nearest';
 
 /** A small remainder (< 1 km / mi) in m or yd, rounded up: "45 m more" instead of "0 km more". */
