@@ -1,17 +1,6 @@
-import { sportInfo } from '@cadence/shared';
-
-/**
- * Whether a sport's speed reads as a pace (min/km, min/100 m) — the rule fmt.pace formats by. Every other sport
- * (rides, and sports without a speed mode) shows km/h or mph.
- */
-export function showsPace(sport: string): boolean {
-  const mode = sportInfo(sport).speedMode;
-  return mode === 'pace' || mode === 'pace100';
-}
-
-/** i18n key of a pace-or-speed label for a sport ("Pace" over paces, "Speed" over km/h). */
-export const speedLabelKey = (sport: string): 'common.pace' | 'common.speed' =>
-  showsPace(sport) ? 'common.pace' : 'common.speed';
+// Which sports show a pace, and their "Pace" / "Speed" label, are the app-wide rule in lib/format.ts (showsPace,
+// speedLabelKey); the dashboard widget still imports the label key from here.
+export { speedLabelKey } from '@/lib/format';
 
 export type EffortSortCol = 'date' | 'time' | 'pace' | 'hr' | 'rank';
 export interface EffortSort {

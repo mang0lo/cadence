@@ -1,7 +1,6 @@
-/** Formatting helpers of the progress feature (apps/web/src/features/progress/format.ts). */
+/** Speed or pace on the progress charts (speedFormat, apps/web/src/lib/format.ts). */
 import { describe, expect, it } from 'vitest';
-import { showsPace, speedFormat, speedLabel } from '@/features/progress/format';
-import { createFormatter } from '@/lib/format';
+import { createFormatter, showsPace, speedFormat, speedLabel } from '@/lib/format';
 import { makeT } from './i18n';
 
 const en = createFormatter('metric', 'en-US', 'en');

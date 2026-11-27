@@ -2,11 +2,11 @@ import { useState, type ReactNode } from 'react';
 import { ArrowLeftRight, ChevronLeft, ChevronRight } from 'lucide-react';
 import { sportInfo, type ProgressCompareTotals } from '@cadence/shared';
 import { Card, CardHeader, ErrorState, IconButton, Input, SegmentedControl, Skeleton, Table, TD, TH } from '@/components/ui';
-import { useFormat, type Formatter } from '@/lib/format';
+import { showsPace, speedFormat, useFormat, type Formatter } from '@/lib/format';
 import { useT } from '@/lib/i18n';
 import { addDays, todayKey } from '@/lib/time';
 import { useCompare } from '../api';
-import { showsPace, signedRounded, speedFormat } from '../format';
+import { signedRounded } from '../format';
 import { ChangeBadge } from './common';
 
 type Mode = 'rolling' | 'week' | 'month' | 'year' | 'custom';

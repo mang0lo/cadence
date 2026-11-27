@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { M_PER_FT, M_PER_KM, M_PER_MI, KG_PER_LB, sportInfo, type Units } from '@cadence/shared';
-import { useI18n, type Lang } from './i18n';
+import { useI18n, type Lang, type TFunction } from './i18n';
 import { useSettings } from './settings';
 import { browserTzAt, dayToDate, localDate } from './time';
 
@@ -250,4 +250,91 @@ export function useFormat(): Formatter {
   const { locale, lang } = useI18n();
   const { settings } = useSettings();
   return useMemo(() => createFormatter(settings.units, locale, lang), [settings.units, locale, lang]);
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Speed and pace on charts and in comparisons (progress trends, route and segment efforts, the compare pages): one rule
+// for which sports show a pace, and one conversion into the numbers a chart axis shows.
+
+/**
+ * A sport's speed values read as a pace (min/km, min/100 m): the rule of fmt.pace and speedFormat. Every other sport
+ * (ride, nordic ski, golf …) shows km/h or mph.
+ */
+export function showsPace(sport: string): boolean {
+  const mode = sportInfo(sport).speedMode;
+  return mode === 'pace' || mode === 'pace100';
+}
+
+/** i18n key of a sport's speed label: "Pace" over paces, "Speed" over km/h or mph. */
+export const speedLabelKey = (sport: string): 'common.pace' | 'common.speed' =>
+  showsPace(sport) ? 'common.pace' : 'common.speed';
+
+/** Header or label of a sport's speed values: "Pace" or "Speed", as they are formatted. */
+export function speedLabel(t: TFunction, sport: string): string {
+  return t(speedLabelKey(sport));
+}
+
+/** Meters per pace unit: 100 m / 100 yd for swims (pace100), else 1 km / 1 mi. */
+export function paceUnitM(sport: string, units: Units): number {
+  const imperial = units === 'imperial';
+  if (sportInfo(sport).speedMode === 'pace100') return imperial ? 91.44 : 100;
+  return imperial ? M_PER_MI : M_PER_KM;
+}
+
+/**
+ * The number a chart shows for a speed (m/s), in the unit of fmt.paceParts(·, sport): seconds per km / mi (per
+ * 100 m / 100 yd for swims) for pace sports, km/h or mph otherwise. No guard: a pace of 0 m/s is Infinity.
+ */
+export function speedChartValue(mps: number, sport: string, units: Units): number {
+  if (showsPace(sport)) return paceUnitM(sport, units) / mps;
+  return units === 'imperial' ? mps / (M_PER_MI / 3600) : mps * 3.6;
+}
+
+/** How a chart shows a metric: axis value and tick, value with unit, signed difference. */
+export interface TrendFormat {
+  /** Canonical value → chart value. */
+  toChart: (v: number) => number;
+  /** Chart value → axis tick label. */
+  axisLabel: (n: number) => string;
+  /** Canonical value → text with unit. */
+  format: (v: number) => string;
+  /** Short unit for axis names. */
+  unit: string;
+  /** Pace axes run inverted so that faster is up. */
+  inverse: boolean;
+  /** Signed difference between two canonical values, e.g. '−0:12 /km', '+3 bpm'. */
+  delta: (from: number, to: number) => string;
+}
+
+/** A metric shown as a plain number: `scale` × the canonical value with `digits` decimals and `unit`. */
+export function numberFormat(fmt: Formatter, unit: string, digits: number, scale = 1): TrendFormat {
+  const withUnit = (s: string) => (unit ? `${s} ${unit}` : s);
+  return {
+    toChart: (v) => v * scale,
+    axisLabel: (n) => fmt.num(n, digits),
+    format: (v) => withUnit(fmt.num(v * scale, digits)),
+    unit,
+    inverse: false,
+    // fmt.signed decides the sign on the rounded value: no "+0.0" / "−0" for tiny differences
+    delta: (a, b) => withUnit(fmt.signed((b - a) * scale, digits)),
+  };
+}
+
+/** Speed metric of a sport: pace (min/km, min/100 m) or speed (km/h, mph). */
+export function speedFormat(fmt: Formatter, sport: string): TrendFormat {
+  const toChart = (v: number) => speedChartValue(v, sport, fmt.units);
+  // km/h and mph are proportional to the speed
+  if (!showsPace(sport)) return numberFormat(fmt, fmt.units === 'imperial' ? 'mph' : 'km/h', 1, toChart(1));
+  const unit = fmt.paceParts(1, sport).unit;
+  return {
+    toChart,
+    axisLabel: (n) => clock(n),
+    format: (v) => fmt.pace(v, sport),
+    unit,
+    inverse: true,
+    delta: (a, b) => {
+      const d = Math.round(toChart(b) - toChart(a));
+      return `${d > 0 ? '+' : d < 0 ? '−' : '±'}${clock(Math.abs(d))} ${unit}`;
+    },
+  };
 }

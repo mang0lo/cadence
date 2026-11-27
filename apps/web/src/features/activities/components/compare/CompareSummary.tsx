@@ -1,10 +1,10 @@
 import { Scale } from 'lucide-react';
 import type { WorkoutDetail } from '@cadence/shared';
 import { Card, CardHeader, Delta, Table, TD, TH } from '@/components/ui';
-import { clock, useFormat, type Formatter } from '@/lib/format';
+import { clock, showsPace, useFormat, type Formatter } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
 import { summaryRows, type SummaryRow } from '../../lib/compare';
-import { isPaceSport, speedDiff } from '../../lib/display';
+import { speedDiff } from '../../lib/display';
 import { SIDE_VAR } from './CompareMap';
 
 const sign = (v: number) => (v > 0 ? '+' : v < 0 ? '−' : '±');
@@ -70,7 +70,7 @@ export function CompareSummary({
   const { t } = useI18n();
   const fmt = useFormat();
   const rows = summaryRows(a, b, common);
-  const pace = isPaceSport(sport);
+  const pace = showsPace(sport);
   const label = (r: SummaryRow) =>
     r.key === 'commonTime'
       ? t('activities.compare.summary.commonTime', { distance: fmt.distance(common!.distM) })

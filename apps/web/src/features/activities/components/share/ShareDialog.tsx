@@ -3,7 +3,7 @@ import { Check, Copy, Download, LineChart, Plus, Share2 } from 'lucide-react';
 import { sportInfo, trackParts, workoutTitle, type WorkoutDetail, type WorkoutStreams } from '@cadence/shared';
 import { thumbnailBasemap } from '@/components/map/tiles';
 import { Button, Dialog, Field, SegmentedControl, Spinner, Switch } from '@/components/ui';
-import { useFormat, type Formatter } from '@/lib/format';
+import { showsPace, speedLabel, useFormat, type Formatter } from '@/lib/format';
 import { useI18n, type TFunction } from '@/lib/i18n';
 import { isNativeShell, postNative } from '@/lib/native';
 import { activityPlace } from '@/lib/places';
@@ -14,7 +14,7 @@ import { useStoredState } from '@/lib/storage';
 import { useResolvedTheme } from '@/lib/theme';
 import { dayKey } from '@/lib/time';
 import { useStreams } from '../../api';
-import { cadenceUnit, isPaceSport, shortDistanceParts, shownGain } from '../../lib/display';
+import { cadenceUnit, shortDistanceParts, shownGain } from '../../lib/display';
 import {
   MAX_SHARE_CHARTS,
   MAX_SHARE_STATS,
@@ -74,7 +74,7 @@ function statCatalog(w: WorkoutDetail, fmt: Formatter, t: TFunction): Partial<Re
 function defaultStats(w: WorkoutDetail): ShareStatKey[] {
   const info = sportInfo(w.sport);
   if (info.distance && (w.distanceM ?? 0) > 0)
-    return ['distance', 'movingTime', isPaceSport(w.sport) ? 'pace' : 'speed', 'elevation'];
+    return ['distance', 'movingTime', showsPace(w.sport) ? 'pace' : 'speed', 'elevation'];
   return ['movingTime', 'calories', 'avgHr', 'effort'];
 }
 
@@ -103,7 +103,7 @@ function chartCatalog(
     const sp = chartSeries(x, v, { ...opts, minRange: 0.5 });
     if (sp)
       out.pace = {
-        label: isPaceSport(w.sport) ? t('common.pace') : t('common.speed'),
+        label: speedLabel(t, w.sport),
         value: w.avgSpeed ? `Ø ${fmt.pace(w.avgSpeed, w.sport)}` : '',
         series: sp,
         color: 'sport',

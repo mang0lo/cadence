@@ -1,9 +1,9 @@
 import { memo, useEffect, useMemo, useRef, type PointerEvent as ReactPointerEvent } from 'react';
-import { clock, useFormat } from '@/lib/format';
+import { clock, speedLabel, useFormat } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
 import { useThrottledStore } from '@/lib/store';
 import type { Playback } from '../../lib/playback';
-import { cadenceUnit, isPaceSport } from '../../lib/display';
+import { cadenceUnit } from '../../lib/display';
 import { zoneOf } from '../../lib/route';
 import { buckets, bucketMean, indexAtTime, valueAt, type Prepared } from '../../lib/streams';
 import { ReplayTransport } from '../ReplayTransport';
@@ -135,7 +135,7 @@ const LiveReadout = memo(function LiveReadout({
     const sp = valueAt(P.speed, fi);
     const moving = P.moving[Math.min(P.n - 1, Math.ceil(fi))];
     const p = fmt.paceParts(moving ? sp : null, sport);
-    items.push({ key: 's', label: isPaceSport(sport) ? t('common.pace') : t('common.speed'), value: p.value, unit: p.unit });
+    items.push({ key: 's', label: speedLabel(t, sport), value: p.value, unit: p.unit });
   }
   if (P.hr) {
     const h = valueAt(P.hr, fi);

@@ -7,12 +7,11 @@ import { BaseMap } from '@/components/map/BaseMap';
 import { addRouteLayers, featureCollection, gradientExpression, isStyleReady, lineFeature, setGeoJSON } from '@/components/map/layers';
 import { overlayColors } from '@/components/map/styles';
 import { SegmentedControl, cn } from '@/components/ui';
-import { clock, useFormat } from '@/lib/format';
+import { clock, showsPace, useFormat } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
 import { useResolvedTheme, type ResolvedTheme } from '@/lib/theme';
 import { useStoredState } from '@/lib/storage';
 import type { Store } from '@/lib/store';
-import { isPaceSport } from '../../lib/display';
 import type { Playback } from '../../lib/playback';
 import {
   availableModes,
@@ -663,7 +662,7 @@ export function ActivityMap({ P, geo, sport, playback, hover, selection, zoneBou
             label={t('activities.map.colorBy')}
             value={mode}
             onChange={setMode}
-            items={modes.map((m) => ({ value: m, label: t(`activities.map.modes.${m === 'pace' && !isPaceSport(sport) ? 'speed' : m}`) }))}
+            items={modes.map((m) => ({ value: m, label: t(`activities.map.modes.${m === 'pace' && !showsPace(sport) ? 'speed' : m}`) }))}
           />
         </div>
         <div className="flex min-w-0 items-center gap-2">

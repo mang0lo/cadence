@@ -1,5 +1,4 @@
-import type { Formatter } from '@/lib/format';
-import { speedFormat } from '@/features/progress/format';
+import { speedFormat, type Formatter } from '@/lib/format';
 
 /** One effort on a route or segment, as the trend chart needs it. */
 export interface TrendEffort {

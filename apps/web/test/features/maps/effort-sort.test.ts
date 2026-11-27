@@ -1,13 +1,7 @@
 /** Sorting of the route and segment effort tables (apps/web/src/features/maps/lib/effortSort.ts). */
 import { describe, expect, it } from 'vitest';
-import {
-  defaultSortDir,
-  showsPace,
-  sortEfforts,
-  speedLabelKey,
-  type SortableEffort,
-} from '@/features/maps/lib/effortSort';
-import { createFormatter } from '@/lib/format';
+import { defaultSortDir, sortEfforts, type SortableEffort } from '@/features/maps/lib/effortSort';
+import { createFormatter, showsPace, speedLabelKey } from '@/lib/format';
 
 const fmt = createFormatter('metric', 'en-US', 'en');
 const effort = (day: number, avgSpeed: number | null, rank = 1): SortableEffort & { day: number } => ({

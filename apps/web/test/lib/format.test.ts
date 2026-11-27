@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { clock as clockOf, createFormatter } from '@/lib/format';
+import { clock as clockOf, createFormatter, paceUnitM, speedChartValue, speedFormat } from '@/lib/format';
 
 const de = createFormatter('metric', 'de-DE', 'de');
 const en = createFormatter('metric', 'en-US', 'en');
+const us = createFormatter('imperial', 'en-US', 'en');
 
 describe('fmt names and relative times', () => {
   afterEach(() => vi.restoreAllMocks());
@@ -66,5 +67,30 @@ describe('numbers that round to zero', () => {
     expect(de.pct(-0.006)).toBe('-1\u00a0%');
     expect(clockOf(-0.6)).toBe('−0:01');
     expect(de.signed(-0.04, 1)).toBe('±0,0');
+  });
+});
+
+describe('speed and pace on charts', () => {
+  it('converts a speed into the number fmt.pace shows: per km / mi, per 100 m / 100 yd for swims, km/h / mph', () => {
+    expect(speedChartValue(4, 'run', 'metric')).toBeCloseTo(250, 9);
+    expect(speedChartValue(1, 'swim', 'imperial')).toBeCloseTo(91.44, 9);
+    expect(speedChartValue(10, 'ride', 'metric')).toBeCloseTo(36, 9);
+    expect(speedChartValue(10, 'ride', 'imperial')).toBeCloseTo(36 / 1.609344, 9);
+    expect(paceUnitM('swim', 'metric')).toBe(100);
+    expect(paceUnitM('row', 'imperial')).toBe(1609.344);
+    for (const [sport, mps] of [['run', 3.3], ['swim', 1.2], ['hike', 1.1]] as const) {
+      expect(clockOf(speedFormat(en, sport).toChart(mps)), sport).toBe(en.paceParts(mps, sport).value);
+      expect(clockOf(speedFormat(us, sport).toChart(mps)), sport).toBe(us.paceParts(mps, sport).value);
+    }
+  });
+
+  it('gives signed differences in the unit of the sport', () => {
+    // 5:00 /km → 4:50 /km is 10 s per km faster; 35 → 36 km/h is 1 km/h faster
+    expect(speedFormat(en, 'run').delta(1000 / 300, 1000 / 290)).toBe('−0:10 /km');
+    expect(speedFormat(en, 'swim').delta(1, 1)).toBe('±0:00 /100m');
+    expect(speedFormat(en, 'ride').delta(35 / 3.6, 10)).toBe('+1.0 km/h');
+    expect(speedFormat(de, 'ride').delta(10, 10.001)).toBe('±0,0 km/h');
+    expect(speedFormat(us, 'ride').format(10)).toBe('22.4 mph');
+    expect(speedFormat(us, 'run').unit).toBe('/mi');
   });
 });

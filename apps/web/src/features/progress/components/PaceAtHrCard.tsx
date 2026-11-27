@@ -16,11 +16,10 @@ import {
 } from '@/components/charts/options';
 import { sportColor, useChartTheme, type ChartTheme } from '@/components/charts/theme';
 import { Delta, EmptyState, ErrorState, Input, SegmentedControl } from '@/components/ui';
-import { useFormat, type Formatter } from '@/lib/format';
+import { speedFormat, useFormat, type Formatter, type TrendFormat } from '@/lib/format';
 import { useT, type TFunction } from '@/lib/i18n';
 import { usePaceAtHr, useSaveHrBand, type RangeParams } from '../api';
 import { bucketLabel, chartLegend, clockAxis } from '../chart';
-import { speedFormat, type TrendFormat } from '../format';
 import { ChartSkeleton } from './common';
 
 const HEIGHT = 240;

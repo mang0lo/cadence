@@ -15,12 +15,12 @@ import { EChart } from '@/components/charts/EChart';
 import { grid, itemTooltip, lineSeries, scatterSeries, timeAxis, tooltipHtml, valueAxis } from '@/components/charts/options';
 import { sportColor, useChartTheme, type ChartTheme } from '@/components/charts/theme';
 import { Button, EmptyState, ErrorState, cn } from '@/components/ui';
-import { useFormat, type Formatter } from '@/lib/format';
+import { speedLabel, useFormat, type Formatter, type TrendFormat } from '@/lib/format';
 import { useI18n, useT, type Lang, type TFunction } from '@/lib/i18n';
 import { sportLabel } from '@/lib/sports';
 import { useTrends, type RangeParams } from '../api';
 import { chartLegend, clockAxis, fitEnds, hitLayer, localMs, monthYearLabel, msDay, timeAxisLabel } from '../chart';
-import { formatChange, speedLabel, trendFormat, type TrendFormat } from '../format';
+import { formatChange, trendFormat } from '../format';
 import { ActivityLink, ChangeBadge, ChartSkeleton } from './common';
 
 const HEIGHT = 300;

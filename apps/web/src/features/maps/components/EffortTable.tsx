@@ -3,17 +3,10 @@ import { Link } from 'react-router';
 import { Trophy } from 'lucide-react';
 import { workoutTitle } from '@cadence/shared';
 import { Badge, Button, Card, CardHeader, Table, TD, TH, cn } from '@/components/ui';
-import { useFormat } from '@/lib/format';
+import { showsPace, speedLabelKey, useFormat } from '@/lib/format';
 import { useI18n, useT } from '@/lib/i18n';
 import { SportIcon, sportColorVar, useSportLabel } from '@/lib/sports';
-import {
-  defaultSortDir,
-  showsPace,
-  sortEfforts,
-  speedLabelKey,
-  type EffortSort,
-  type EffortSortCol,
-} from '../lib/effortSort';
+import { defaultSortDir, sortEfforts, type EffortSort, type EffortSortCol } from '../lib/effortSort';
 
 /** One effort on a route or a segment. */
 export interface EffortRow {

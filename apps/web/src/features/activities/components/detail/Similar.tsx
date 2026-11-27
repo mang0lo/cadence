@@ -6,11 +6,11 @@ import { ChartCard, type TableView } from '@/components/charts/ChartCard';
 import { EChart, type EChartsOption } from '@/components/charts/EChart';
 import { useChartTheme } from '@/components/charts/theme';
 import { Badge, Delta, EmptyState, ErrorState, Skeleton } from '@/components/ui';
-import { clock, useFormat } from '@/lib/format';
+import { clock, showsPace, useFormat } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
 import { sportLabel } from '@/lib/sports';
 import { useRouteLinks } from '../../api';
-import { isPaceSport, paceValue } from '../../lib/display';
+import { paceValue } from '../../lib/display';
 import { linearTrend, trendChart, type Pt } from '../../lib/similar';
 import { ToggleChip } from '../ToggleChip';
 
@@ -37,7 +37,7 @@ export function Similar({
   const route = links.isPlaceholderData ? undefined : links.data?.route;
   const rankOnRouteCard =
     w.hasRoute && (links.isLoading || links.isPlaceholderData || (!!route && route.rank !== null && route.count > 1));
-  const pace = isPaceSport(w.sport);
+  const pace = showsPace(w.sport);
   const byDistance = similar?.basis === 'distance';
   const items = useMemo(
     () => (similar?.items ?? []).filter((x) => !routeOnly || x.sameRoute),
