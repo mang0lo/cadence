@@ -164,8 +164,12 @@ export default async function progressRoutes(app: FastifyInstance) {
   });
 
   app.get('/power/ftp', async (req) => {
-    const q = z.object({ sport: zSport, today: zDay.optional() }).parse(req.query);
-    return ftpEstimate(app.db, req.athleteId, { sport: q.sport, today: resolveToday(q.today) });
+    const q = z
+      .object({ sport: zSport, today: zDay.optional(), history: z.enum(['0', '1', 'true', 'false']).optional() })
+      .parse(req.query);
+    // history=0: the dashboard widget, which shows no monthly history (a window query per bucket and body mass)
+    const history = q.history !== '0' && q.history !== 'false';
+    return ftpEstimate(app.db, req.athleteId, { sport: q.sport, today: resolveToday(q.today), history });
   });
 
   app.get('/preferences', async (req): Promise<ProgressPreferences> => getPreferences(app.db, req.athleteId));

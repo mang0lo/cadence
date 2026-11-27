@@ -71,13 +71,14 @@ export function EffortsCard({
               <TH numeric>{t('progress.records.table.time')}</TH>
               <TH numeric>{speedLabel(t, sport)}</TH>
               <TH>{t('progress.records.table.date')}</TH>
-              {/* /records counts the attempts of all time only */}
-              <TH numeric>{t(scope === 'allTime' ? 'progress.records.table.attempts' : 'progress.records.table.attemptsAllTime')}</TH>
+              <TH numeric>{t('progress.records.table.attempts')}</TH>
             </tr>
           </thead>
           <tbody>
             {efforts.map((e) => {
               const r = e[scope];
+              // the attempts of the period; the progression (all attempts) can be opened whenever there are any
+              const attempts = e.scopeAttempts[scope];
               const isPr = scope !== 'allTime' && r && e.allTime && r.workoutId === e.allTime.workoutId;
               const active = selected === e.effort;
               return (
@@ -125,7 +126,7 @@ export function EffortsCard({
                       '–'
                     )}
                   </TD>
-                  <TD numeric>{e.attempts ? fmt.int(e.attempts) : '–'}</TD>
+                  <TD numeric>{attempts ? fmt.int(attempts) : '–'}</TD>
                 </tr>
               );
             })}
@@ -383,7 +384,16 @@ function highlightValue(h: ProgressHighlight, fmt: Formatter, t: TFunction): str
   }
 }
 
-export function HighlightsCard({ sport, highlights }: { sport: string; highlights: ProgressHighlight[] }) {
+export function HighlightsCard({
+  sport,
+  highlights,
+  scope,
+}: {
+  sport: string;
+  /** The highlights of `scope` (ProgressRecordsResponse.scopeHighlights). */
+  highlights: ProgressHighlight[];
+  scope: RecordScope;
+}) {
   const t = useT();
   const fmt = useFormat();
   const { lang } = useI18n();
@@ -392,8 +402,7 @@ export function HighlightsCard({ sport, highlights }: { sport: string; highlight
     <Card className="min-w-0">
       <CardHeader
         title={t('progress.records.highlights.title')}
-        // the highlights are all-time bests whatever period the page shows
-        subtitle={`${t('progress.records.highlights.subtitle', { sport: sportLabel(sport, lang) })} · ${t('progress.records.scope.allTime')}`}
+        subtitle={`${t('progress.records.highlights.subtitle', { sport: sportLabel(sport, lang) })} · ${t(`progress.records.scope.${scope}`)}`}
         icon={Medal}
       />
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
