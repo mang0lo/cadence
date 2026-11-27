@@ -4,12 +4,12 @@ import { Activity, BatteryCharging, HeartPulse } from 'lucide-react';
 import type { ReadinessBand, ReadinessModelInfo, ReadinessRange, ReadinessTrendDay } from '@cadence/shared';
 import { ChartCard } from '@/components/charts/ChartCard';
 import { EChart } from '@/components/charts/EChart';
+import { measureColor } from '@/components/charts/measures';
 import { axisTooltip, grid, legend, lineSeries, timeAxis, tooltipHtml, valueAxis } from '@/components/charts/options';
 import { useChartTheme, type ChartTheme } from '@/components/charts/theme';
 import { useFormat } from '@/lib/format';
 import { useT } from '@/lib/i18n';
 import { LEGEND_LINE_ICON, dayAxisLabel } from '../../lib/chart';
-import { measureColor } from '../../lib/colors';
 import { HK } from '../../lib/identifiers';
 import { useMetricFormat } from '../../lib/metrics';
 

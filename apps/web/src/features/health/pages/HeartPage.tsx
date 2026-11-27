@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { Link } from 'react-router';
 import { shiftDay, type HeartEvent, type HeartEventType } from '@cadence/shared';
+import { measureColor } from '@/components/charts/measures';
 import { useChartTheme } from '@/components/charts/theme';
 import {
   Badge,
@@ -35,7 +36,6 @@ import { DayNav } from '../components/DayNav';
 import { IntradayChart } from '../components/IntradayChart';
 import { RangeSelect } from '../components/RangeSelect';
 import { TrendChart } from '../components/TrendChart';
-import { measureColor } from '../lib/colors';
 import { useDaily, useDayParam, useHeartMetrics, useRange } from '../lib/hooks';
 import { HK } from '../lib/identifiers';
 import { useMetricFormat } from '../lib/metrics';

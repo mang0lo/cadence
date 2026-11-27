@@ -3,13 +3,13 @@ import { AlertTriangle, CheckCircle2, CircleAlert, HeartPulse, OctagonAlert, typ
 import { classifyBloodPressure, mean, type BloodPressureCategory, type BloodPressureReading } from '@cadence/shared';
 import { ChartCard } from '@/components/charts/ChartCard';
 import { EChart } from '@/components/charts/EChart';
+import { measureColor } from '@/components/charts/measures';
 import { axisTooltip, grid, legend, lineSeries, timeAxis, tooltipHtml, valueAxis } from '@/components/charts/options';
 import { useChartTheme } from '@/components/charts/theme';
 import { Badge } from '@/components/ui';
 import { useFormat } from '@/lib/format';
 import { useT } from '@/lib/i18n';
 import { LEGEND_LINE_ICON, dayAxisLabelUtc, numAxisLabel } from '../../lib/chart';
-import { measureColor } from '../../lib/colors';
 
 /** Status colors are only used together with an icon and a label (the badge text). */
 const CATEGORY: Record<BloodPressureCategory, { tone: 'good' | 'warning' | 'critical'; icon: LucideIcon }> = {

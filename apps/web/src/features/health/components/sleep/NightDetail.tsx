@@ -4,6 +4,7 @@ import { Activity, Droplets, HeartPulse, Moon, Wind, type LucideIcon } from 'luc
 import type { DailyMetric, SleepNight, SleepNightDetail, SleepStage, TimedValue } from '@cadence/shared';
 import { ChartCard } from '@/components/charts/ChartCard';
 import { EChart } from '@/components/charts/EChart';
+import { measureColor, type MeasureKey } from '@/components/charts/measures';
 import {
   categoryAxis,
   grid,
@@ -27,7 +28,6 @@ import { TrendDelta } from '../TrendDelta';
 import { numAxisLabel } from '../../lib/chart';
 import { useDaily } from '../../lib/hooks';
 import { HK } from '../../lib/identifiers';
-import { measureColor, type MeasureKey } from '../../lib/colors';
 import { useMetricFormat } from '../../lib/metrics';
 import { stageColor, stageSeconds, STAGE_STACK } from '../../lib/sleep';
 import { tzSpan } from '../../lib/tz';

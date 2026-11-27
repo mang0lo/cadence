@@ -23,6 +23,7 @@ import type {
 } from '@cadence/shared';
 import { ChartCard, type TableView } from '@/components/charts/ChartCard';
 import { EChart } from '@/components/charts/EChart';
+import { measureColor } from '@/components/charts/measures';
 import {
   areaSeries,
   axisTooltip,
@@ -40,7 +41,7 @@ import { useChartTheme, type ChartTheme } from '@/components/charts/theme';
 import { Badge, Card, EmptyState, ErrorState, Hint, Stat } from '@/components/ui';
 import { useFormat, type Formatter } from '@/lib/format';
 import { useT, type TFunction } from '@/lib/i18n';
-import { bucketLabel, chartLegend, dayMs, measureColor, timeAxisLabel } from '../chart';
+import { bucketLabel, chartLegend, dayMs, timeAxisLabel } from '../chart';
 import { signedRounded } from '../format';
 import { ChartSkeleton } from './common';
 import { FormZoneBadge, type BadgeTone } from './FormZoneBadge';
