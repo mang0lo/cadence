@@ -1,8 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import vm from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import {
+  importEventScript,
   LISTENING_PREFIX,
   NATIVE_IMPORT_EVENT,
   NATIVE_MESSAGES,
@@ -59,6 +61,7 @@ describe('parseBridgeMessage', () => {
       type: 'pickImportFile',
       folder: true,
     });
+    expect(parseBridgeMessage({ type: 'importReady' })).toEqual({ type: 'importReady' });
     expect(parseBridgeMessage({ type: 'openDataFolder' })).toEqual({ type: 'openDataFolder' });
     expect(parseBridgeMessage({ type: 'saveFile', filename: 'run.png', base64: 'iVBO' })).toEqual({
       type: 'saveFile',
@@ -94,6 +97,37 @@ describe('parseBridgeMessage', () => {
   it('knows every message of the contract', () => {
     for (const type of NATIVE_MESSAGES) {
       expect(parseBridgeMessage({ type, filename: 'a.png', base64: 'AA==', url: '' })?.type).toBe(type);
+    }
+  });
+});
+
+describe('importEventScript', () => {
+  /** Runs the script in a page whose import page listens (it takes the path) or not; what it received and returned. */
+  function run(script: string, listening: boolean) {
+    const window = new EventTarget();
+    const received: unknown[] = [];
+    window.addEventListener(NATIVE_IMPORT_EVENT, (e) => {
+      received.push((e as CustomEvent).detail);
+      if (listening) e.preventDefault();
+    });
+    return { handled: vm.runInNewContext(script, { window, CustomEvent }) as unknown, received };
+  }
+
+  it('tells whether the open import page took the path', () => {
+    expect(run(importEventScript({ path: '/Users/me/export.zip' }), true)).toEqual({
+      handled: true,
+      received: [{ path: '/Users/me/export.zip' }],
+    });
+    // no import page: the shell opens it, and the page asks for the path (importReady)
+    expect(run(importEventScript({ path: '/Users/me/export.zip' }), false).handled).toBe(false);
+    expect(run(importEventScript({ path: 'C:\\Users\\me\\export.zip', confirm: true }), true).received).toEqual([
+      { path: 'C:\\Users\\me\\export.zip', confirm: true },
+    ]);
+  });
+
+  it('hands over any path as it is, never as code', () => {
+    for (const path of [`/tmp/it's "quoted"`, '/tmp/a\u2028b\nc', '/tmp/</script><script>alert(1)</script>', '/tmp/${x}`']) {
+      expect(run(importEventScript({ path }), true).received).toEqual([{ path }]);
     }
   });
 });

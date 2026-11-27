@@ -216,10 +216,6 @@ final class WebViewController: NSViewController, WKNavigationDelegate, WKUIDeleg
         webView.load(URLRequest(url: url))
     }
 
-    func evaluate(_ js: String) {
-        webView.evaluateJavaScript(js, completionHandler: nil)
-    }
-
     // MARK: - Native import panel
 
     func pickImportFile() {
@@ -237,27 +233,40 @@ final class WebViewController: NSViewController, WKNavigationDelegate, WKUIDeleg
         }
     }
 
+    /// A path to import that waits for the import page, which asks for it once it listens (`importReady`).
     private var pendingImport: String?
+    /// The page finished loading since `load(_:)`; until then a path to import waits for it.
     private var pageLoaded = false
 
-    /// Hands a local path to the web UI (no upload copy needed for multi-GB exports).
+    /// Hands a local path to the import page (no upload copy needed for multi-GB exports). An open import page imports
+    /// it at once; otherwise the app opens the import page, which asks for the path (`importReady`) and shows it for
+    /// confirmation. No URL carries the path, so no link from elsewhere can start a local import.
     /// Called from the open panel and when an export is dropped on the Dock icon / opened with Cadence.
     func startLocalImport(path: String) {
-        guard pageLoaded else {
-            pendingImport = path
-            return
+        pendingImport = path
+        if pageLoaded { offerImport(path) } // else once the page has loaded (didFinish)
+    }
+
+    /// The app shows another server, which cannot read files on this Mac and should not learn their paths.
+    func cancelPendingImport() {
+        pendingImport = nil
+    }
+
+    private func offerImport(_ path: String) {
+        webView.callAsyncJavaScript(ShellContract.offerImportScript, arguments: ["path": path, "event": ShellContract.importEvent],
+                                    in: nil, in: .page) { [weak self] result in
+            // the open import page took it: nothing waits any more
+            guard case .success(let handled) = result, handled as? Bool == true, self?.pendingImport == path else { return }
+            self?.pendingImport = nil
         }
-        guard let data = try? JSONSerialization.data(withJSONObject: [path, ShellContract.importEvent]),
-              let args = String(data: data, encoding: .utf8) else { return }
-        evaluate("""
-        (function (p, event) {
-          if (location.pathname === '/import') {
-            window.dispatchEvent(new CustomEvent(event, { detail: { path: p } }));
-          } else {
-            location.assign('/import?nativePath=' + encodeURIComponent(p));
-          }
-        }).apply(null, \(args));
-        """)
+    }
+
+    /// `importReady`: the import page listens now and gets the path that waited for it.
+    private func handOverPendingImport() {
+        guard let path = pendingImport else { return }
+        pendingImport = nil
+        webView.callAsyncJavaScript(ShellContract.handOverImportScript, arguments: ["path": path, "event": ShellContract.importEvent],
+                                    in: nil, in: .page)
     }
 
     // MARK: - WKScriptMessageHandler
@@ -272,6 +281,7 @@ final class WebViewController: NSViewController, WKNavigationDelegate, WKUIDeleg
               let kind = ShellContract.Message(rawValue: type) else { return }
         switch kind {
         case .pickImportFile: pickImportFile() // the panel picks files and folders: `folder` needs no answer here
+        case .importReady: handOverPendingImport()
         case .openDataFolder: NSWorkspace.shared.open(ServerProcess.dataDirectory)
         case .saveFile: saveFile(body)
         case .connectServer: connectServer(body)
@@ -438,11 +448,10 @@ final class WebViewController: NSViewController, WKNavigationDelegate, WKUIDeleg
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        // a path picked before the app's page had loaded (an export dropped on the Dock icon launched the app)
+        let first = !pageLoaded
         pageLoaded = true
-        if let path = pendingImport {
-            pendingImport = nil
-            startLocalImport(path: path)
-        }
+        if first, let path = pendingImport { offerImport(path) }
     }
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {

@@ -8,7 +8,13 @@
  *
  * No Electron imports here. @cadence/shared is bundled into the app (build.mjs).
  */
-import { LISTENING_PREFIX, type NativeMessage, type ShellInfo } from '@cadence/shared';
+import {
+  LISTENING_PREFIX,
+  NATIVE_IMPORT_EVENT,
+  type NativeImportDetail,
+  type NativeMessage,
+  type ShellInfo,
+} from '@cadence/shared';
 
 export {
   LISTENING_PREFIX,
@@ -58,6 +64,8 @@ export function parseBridgeMessage(raw: unknown): NativeMessage | null {
   switch (m.type) {
     case 'pickImportFile':
       return { type: 'pickImportFile', folder: m.folder === true };
+    case 'importReady':
+      return { type: 'importReady' };
     case 'openDataFolder':
       return { type: 'openDataFolder' };
     case 'saveFile':
@@ -70,6 +78,15 @@ export function parseBridgeMessage(raw: unknown): NativeMessage | null {
     default:
       return null;
   }
+}
+
+/**
+ * Script for the page (executeJavaScript): hands it a path to import as NATIVE_IMPORT_EVENT. Its value is true when
+ * the import page took it (the page cancels the event), false when no import page listens.
+ */
+export function importEventScript(detail: NativeImportDetail): string {
+  const event = `new CustomEvent(${JSON.stringify(NATIVE_IMPORT_EVENT)}, { detail: ${JSON.stringify(detail)}, cancelable: true })`;
+  return `!window.dispatchEvent(${event})`;
 }
 
 /** What the web UI shows in Settings → Server (`window.cadenceNative.info` here). */

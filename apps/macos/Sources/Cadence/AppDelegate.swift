@@ -84,6 +84,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         web.shellInfo = ShellContract.shellInfo(version: version ?? "dev", remote: Preferences.remoteServerURL)
         if let remote = Preferences.remoteServerURL {
             window.subtitle = remote.host ?? ""
+            web.cancelPendingImport() // a path picked for the built-in server is not for this one
             web.load(remote)
             return
         }

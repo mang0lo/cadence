@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type DragEvent } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useSearchParams } from 'react-router';
 import { CheckCircle2, FileArchive, HardDrive, Lock, RefreshCw, Smartphone, Trash2, Upload, XCircle } from 'lucide-react';
 import type { ImportJob } from '@cadence/shared';
 import {
@@ -23,7 +22,7 @@ import {
 import { api, ApiError, UNAUTHORIZED_EVENT } from '@/lib/api';
 import { useFormat } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
-import { isNativeShell, NATIVE_IMPORT_EVENT, postNative } from '@/lib/native';
+import { isNativeShell, onNativeImport, postNative } from '@/lib/native';
 import { useSettings } from '@/lib/settings';
 import { isActive, jobErrorText, jobPhaseLabel, jobSourceLabel, jobStepLabel, uploadFailure, uploadQueue } from './importJobs';
 import { IMPORT_JOBS_KEY, useImportJobs } from './useImportJobs';
@@ -201,25 +200,14 @@ export default function ImportPage() {
     [started],
   );
 
-  // The Mac and desktop apps open this page with ?nativePath=… (File → Import while another page was open). A link
-  // from anywhere else can open it too, so the path is only offered for import: the user has to confirm it.
-  const [params, setParams] = useSearchParams();
-  const nativePath = params.get('nativePath');
-  useEffect(() => {
-    if (!nativePath) return;
-    setParams({}, { replace: true });
-    if (native) setConfirmPath(nativePath);
-  }, [nativePath, setParams, native]);
-
-  // The native shells answer their open panel with the picked path (no upload copy needed).
-  useEffect(() => {
-    const onNative = (e: Event) => {
-      const p = (e as CustomEvent<{ path?: string }>).detail?.path;
-      if (p) void startLocal(p);
-    };
-    window.addEventListener(NATIVE_IMPORT_EVENT, onNative);
-    return () => window.removeEventListener(NATIVE_IMPORT_EVENT, onNative);
-  }, [startLocal]);
+  // The Mac and desktop apps hand over a path on this computer (no upload copy needed). One picked from this page is
+  // imported at once; one picked while another page was open (File → Import, a file dropped on the app) waits in the
+  // app until this page asks for it, and the user confirms it first. No URL carries a path: a link from anywhere
+  // else cannot start a local import.
+  useEffect(
+    () => onNativeImport(({ path: p, confirm }) => (confirm ? setConfirmPath(p) : void startLocal(p))),
+    [startLocal],
+  );
 
   const onDrop = (e: DragEvent) => {
     e.preventDefault();

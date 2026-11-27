@@ -20,6 +20,8 @@ export const LISTENING_PREFIX = 'CADENCE_LISTENING ';
 export type NativeMessage =
   /** The shell's import dialog; `folder`: pick a folder instead of a file (Windows and Linux cannot do both). */
   | { type: 'pickImportFile'; folder?: boolean }
+  /** The import page listens for NATIVE_IMPORT_EVENT now: the shell hands it the path it kept for it, if any. */
+  | { type: 'importReady' }
   | { type: 'openDataFolder' }
   /** A file the page made (share image), as base64. */
   | { type: 'saveFile'; filename: string; base64: string }
@@ -28,6 +30,7 @@ export type NativeMessage =
 
 const messageTypes: { [T in NativeMessage['type']]: true } = {
   pickImportFile: true,
+  importReady: true,
   openDataFolder: true,
   saveFile: true,
   connectServer: true,
@@ -36,11 +39,20 @@ const messageTypes: { [T in NativeMessage['type']]: true } = {
 /** Every message type the shells know. */
 export const NATIVE_MESSAGES = Object.keys(messageTypes) as NativeMessage['type'][];
 
-/** The shell hands the import page a path on this computer to import: `detail` is a NativeImportDetail. */
+/**
+ * The shell hands the import page a path on this computer to import: `detail` is a NativeImportDetail. The page
+ * cancels the event (preventDefault) when it takes the path. When the import page is not open, the shell opens it
+ * and keeps the path until the page asks for it (importReady); there is no URL that starts a local import.
+ */
 export const NATIVE_IMPORT_EVENT = 'cadence:native-import';
 
 export interface NativeImportDetail {
   path: string;
+  /**
+   * Picked while another page was open (File → Import, a file dropped on the app): the import page shows the path
+   * and asks before it starts. Without it (picked from the import page itself) the import starts at once.
+   */
+  confirm?: boolean;
 }
 
 /** What the shell tells the web UI about itself, for Settings → Server. */

@@ -7,7 +7,7 @@
  *                window.cadenceNative.postMessage({ type: 'pickImportFile' })                     (Electron)
  *  native → JS:  window.dispatchEvent(new CustomEvent('cadence:native-import', { detail: { path } }))
  */
-import type { NativeMessage, ShellInfo } from '@cadence/shared';
+import { NATIVE_IMPORT_EVENT, type NativeImportDetail, type NativeMessage, type ShellInfo } from '@cadence/shared';
 
 interface NativeBridge {
   postMessage(msg: NativeMessage): void;
@@ -22,7 +22,7 @@ declare global {
 }
 
 export { normalizeServerUrl } from './serverUrl';
-export { NATIVE_IMPORT_EVENT, type NativeImportDetail, type ShellInfo } from '@cadence/shared';
+export type { NativeImportDetail, ShellInfo } from '@cadence/shared';
 
 const bridge = (): NativeBridge | undefined =>
   window.webkit?.messageHandlers?.cadence ?? window.cadenceNative;
@@ -47,4 +47,22 @@ export function postNative<T extends NativeMessage['type']>(
   if (!target) return false;
   target.postMessage({ type, ...fields[0] } as NativeMessage);
   return true;
+}
+
+/**
+ * The import page: takes the paths the shell hands over (NATIVE_IMPORT_EVENT) and asks the shell for the one it kept
+ * for this page (importReady). Taking a path cancels the event, which tells the shell the page has it. Returns the
+ * unsubscribe function. Outside the shells nothing hands over paths.
+ */
+export function onNativeImport(take: (detail: NativeImportDetail) => void): () => void {
+  if (!isNativeShell()) return () => undefined;
+  const listener = (e: Event) => {
+    const detail = (e as CustomEvent<Partial<NativeImportDetail> | null>).detail;
+    if (typeof detail?.path !== 'string' || !detail.path) return;
+    e.preventDefault();
+    take({ path: detail.path, confirm: detail.confirm === true });
+  };
+  window.addEventListener(NATIVE_IMPORT_EVENT, listener);
+  postNative('importReady');
+  return () => window.removeEventListener(NATIVE_IMPORT_EVENT, listener);
 }

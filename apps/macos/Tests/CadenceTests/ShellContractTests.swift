@@ -1,3 +1,4 @@
+import JavaScriptCore
 import XCTest
 @testable import Cadence
 
@@ -42,6 +43,50 @@ final class ShellContractTests: XCTestCase {
 
     func testMessagesTheBridgeKnows() {
         XCTAssertEqual(ShellContract.Message(rawValue: "pickImportFile"), .pickImportFile)
+        XCTAssertEqual(ShellContract.Message(rawValue: "importReady"), .importReady)
         XCTAssertNil(ShellContract.Message(rawValue: "openFile"))
+    }
+
+    /// Runs a script body for callAsyncJavaScript (arguments `path`, `event`) in a minimal page whose import page
+    /// listens (it takes the path) or not: what the script returned, what the import page received, where it went.
+    private func runImportScript(_ body: String, path: String, listening: Bool) -> (result: JSValue, received: JSValue, assigned: JSValue) {
+        let js = JSContext()!
+        js.exceptionHandler = { _, e in XCTFail("script failed: \(e?.toString() ?? "")") }
+        js.evaluateScript("""
+            var received = null, assigned = null, listening = \(listening);
+            var location = { assign: function (url) { assigned = url; } };
+            function CustomEvent(type, init) {
+              this.type = type; this.detail = init.detail; this.cancelable = !!init.cancelable; this.defaultPrevented = false;
+            }
+            CustomEvent.prototype.preventDefault = function () { if (this.cancelable) this.defaultPrevented = true; };
+            var window = {
+              dispatchEvent: function (e) {
+                if (e.type === '\(ShellContract.importEvent)' && listening) { received = e.detail; e.preventDefault(); }
+                return !e.defaultPrevented;
+              }
+            };
+            """)
+        let script = js.evaluateScript("(function (path, event) {\n\(body)\n})")!
+        let result = script.call(withArguments: [path, ShellContract.importEvent])!
+        return (result, js.objectForKeyedSubscript("received"), js.objectForKeyedSubscript("assigned"))
+    }
+
+    func testAPickedPathGoesToTheOpenImportPage() {
+        let path = "/Users/me/Downloads/it's \"my\" export.zip"
+        let run = runImportScript(ShellContract.offerImportScript, path: path, listening: true)
+        XCTAssertTrue(run.result.toBool())
+        XCTAssertEqual(run.received.forProperty("path").toString(), path)
+        XCTAssertTrue(run.received.forProperty("confirm").isUndefined) // picked on the import page: imported at once
+        XCTAssertTrue(run.assigned.isNull)
+    }
+
+    func testWithoutAnImportPageTheAppOpensOneThatAsksForThePath() {
+        let run = runImportScript(ShellContract.offerImportScript, path: "/Users/me/export.zip", listening: false)
+        XCTAssertFalse(run.result.toBool())
+        XCTAssertEqual(run.assigned.toString(), "/import") // the path is in no URL
+        let answer = runImportScript(ShellContract.handOverImportScript, path: "/Users/me/export.zip", listening: true)
+        XCTAssertEqual(answer.received.forProperty("path").toString(), "/Users/me/export.zip")
+        XCTAssertTrue(answer.received.forProperty("confirm").toBool()) // the page asks before it imports
+        XCTAssertTrue(answer.assigned.isNull)
     }
 }

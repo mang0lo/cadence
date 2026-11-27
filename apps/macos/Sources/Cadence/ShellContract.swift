@@ -39,11 +39,27 @@ enum ShellContract {
 
     /// The messages the web UI posts through the bridge as `{ type, … }` (postNative in apps/web/src/lib/native.ts).
     enum Message: String, CaseIterable {
-        case pickImportFile, openDataFolder, saveFile, connectServer
+        case pickImportFile, importReady, openDataFolder, saveFile, connectServer
     }
 
-    /// The window event that hands the import page a path to import (`detail: { path }`).
+    /// The window event that hands the import page a path to import (`detail: { path, confirm? }`). The import page
+    /// cancels it when it takes the path.
     static let importEvent = "cadence:native-import"
+
+    /// Body for `callAsyncJavaScript` with the arguments `path` and `event` (importEvent): hands the open import page
+    /// a path picked in the app, which it imports at once, and returns true. When no import page listens, it opens
+    /// the import page, which asks for the path once it listens (`importReady`), and returns false.
+    static let offerImportScript = """
+        if (!window.dispatchEvent(new CustomEvent(event, { detail: { path }, cancelable: true }))) return true;
+        location.assign('/import');
+        return false;
+        """
+
+    /// Body for `callAsyncJavaScript` with `path` and `event`: the answer to `importReady`. The import page shows the
+    /// path and asks before it imports it (picked while another page was open, or dropped on the Dock icon).
+    static let handOverImportScript = """
+        window.dispatchEvent(new CustomEvent(event, { detail: { path, confirm: true }, cancelable: true }));
+        """
 
     /// What the app tells the web UI about itself (`window.cadenceShell`, for Settings → Server).
     static func shellInfo(version: String, remote: URL?) -> [String: Any] {
