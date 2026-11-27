@@ -1,28 +1,8 @@
-import type { MetricAgg, MetricPoint, MetricSeries } from '@cadence/shared';
-import { addDays, diffDays, startOfMonth, startOfWeek, weekday } from '@/lib/time';
+import { periodKeys, periodStart, type MetricAgg, type MetricPoint, type MetricSeries } from '@cadence/shared';
+import { diffDays, weekday } from '@/lib/time';
 
-/** Start of the period a day belongs to: the day itself, its week (weekStart 1 = Monday, 0 = Sunday) or 'YYYY-MM-01'. */
-export function periodStart(day: string, agg: MetricAgg, weekStart: 0 | 1): string {
-  if (agg === 'day') return day;
-  if (agg === 'month') return startOfMonth(day);
-  return startOfWeek(day, weekStart);
-}
-
-function nextPeriod(key: string, agg: MetricAgg): string {
-  if (agg === 'day') return addDays(key, 1);
-  if (agg === 'week') return addDays(key, 7);
-  const y = Number(key.slice(0, 4));
-  const m = Number(key.slice(5, 7));
-  return m === 12 ? `${y + 1}-01-01` : `${key.slice(0, 4)}-${m < 9 ? '0' : ''}${m + 1}-01`;
-}
-
-/** Every period start from the period of `fromDay` to the period of `toDay`, both included. */
-export function periodKeys(fromDay: string, toDay: string, agg: MetricAgg, weekStart: 0 | 1): string[] {
-  const out: string[] = [];
-  const last = periodStart(toDay, agg, weekStart);
-  for (let k = periodStart(fromDay, agg, weekStart); k <= last; k = nextPeriod(k, agg)) out.push(k);
-  return out;
-}
+/** The periods of the server's series (start of a day / week / month, every period of a range): one shared helper. */
+export { periodKeys, periodStart };
 
 /**
  * Period keys a bar chart of a metric series shows: every period of the requested range, also those without data (the

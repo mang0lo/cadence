@@ -286,11 +286,21 @@ export interface ProgressEffortRef {
   elapsedS: number;
 }
 
+/**
+ * Periods of the records page, by the local day of each activity up to `today`: all time, the calendar year of
+ * `today`, and the 12 months up to `today` (from the day after the same day a year earlier).
+ */
+export type ProgressRecordScope = 'allTime' | 'thisYear' | 'last12m';
+export const PROGRESS_RECORD_SCOPES: ProgressRecordScope[] = ['allTime', 'thisYear', 'last12m'];
+
 export interface ProgressEffortRow {
   /** Key from BEST_EFFORTS. */
   effort: string;
   distanceM: number;
+  /** Attempts of all time (= scopeAttempts.allTime). */
   attempts: number;
+  /** Attempts per period of the records page. */
+  scopeAttempts: Record<ProgressRecordScope, number>;
   allTime: ProgressEffortRef | null;
   thisYear: ProgressEffortRef | null;
   last12m: ProgressEffortRef | null;
@@ -312,7 +322,10 @@ export interface ProgressRecordsResponse {
   sports: { sport: string; workouts: number }[];
   /** One row per BEST_EFFORTS distance of the sport (also without attempts). */
   efforts: ProgressEffortRow[];
+  /** Highlights of all time (= scopeHighlights.allTime). */
   highlights: ProgressHighlight[];
+  /** Highlights per period of the records page (the activities of the period only). */
+  scopeHighlights: Record<ProgressRecordScope, ProgressHighlight[]>;
 }
 
 /** GET /api/progress/records/history?sport=&effort= */
@@ -528,9 +541,11 @@ export interface ProgressFtpHistoryPoint extends ProgressDayRange {
   source: ProgressPowerEffort | null;
 }
 
-/** GET /api/progress/power/ftp?sport=&today= */
+/** GET /api/progress/power/ftp?sport=&today=&history= (history=0: without the monthly history, for the dashboard) */
 export interface ProgressFtpResponse {
   sport: string;
+  /** Sports with power data (visible workouts with a power stream), most workouts first, as in the power curve. */
+  sports: { sport: string; workouts: number }[];
   today: string;
   /** FTP = factor × best 20-minute power (0.95). */
   factor: number;
@@ -546,6 +561,14 @@ export interface ProgressFtpResponse {
   criticalPowerIssue: 'tooFew' | 'poorFit' | null;
   /** Latest body mass on or before today. */
   bodyMass: ProgressBodyMass | null;
-  /** The estimate per month (per quarter for more than three years), from the first power data up to today. */
+  /**
+   * Best effort per duration within the window of the estimate (`windowDays`; the last 42 days without an estimate),
+   * shortest first: the power curve of that window (5- and 20-minute peaks of the dashboard).
+   */
+  windowBests: ProgressPowerEffort[];
+  /**
+   * The estimate per month (per quarter for more than three years), from the first power data up to today. Empty
+   * points with ?history=0.
+   */
   history: { bucket: 'month' | 'quarter'; points: ProgressFtpHistoryPoint[] };
 }

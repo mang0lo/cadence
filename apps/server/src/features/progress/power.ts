@@ -194,26 +194,32 @@ export function powerCurve(
 
 /**
  * FTP estimate (95 % of the best 20 minutes of the last 6 weeks, else of the last 90 days), the critical power
- * model from the bests of the same window, and the estimate per month (quarter) since the first power data.
+ * model and the bests of the same window, and (unless `history` is false: the dashboard) the estimate per month
+ * (quarter) since the first power data.
  */
 export function ftpEstimate(
   db: Db,
   athleteId: number,
-  q: { sport: string | null; today: string },
+  q: { sport: string | null; today: string; history?: boolean },
 ): ProgressFtpResponse {
   ensurePowerBests(db, athleteId);
-  const sport = q.sport ?? defaultPowerSport(powerSports(db, athleteId));
+  const sports = powerSports(db, athleteId);
+  const sport = q.sport ?? defaultPowerSport(sports);
   const bodyMass = bodyMassAt(db, athleteId, q.today);
   const kg = bodyMass?.kg ?? null;
   let windowDays: number | null = null;
+  let windowRows: BestRow[] = [];
   let source: ProgressPowerEffort | null = null;
   let criticalPower: ProgressCriticalPower | null = null;
   let criticalPowerIssue: ProgressFtpResponse['criticalPowerIssue'] = 'tooFew';
   for (const days of FTP_WINDOWS) {
     const rows = bestRows(db, athleteId, sport, { fromDay: addDays(q.today, -(days - 1)), toDay: q.today });
+    // without an estimate the bests are those of the first (shortest) window
+    if (days === FTP_WINDOWS[0]) windowRows = rows;
     const best = rows.find((r) => r.duration_s === FTP_DURATION_S);
     if (!best) continue;
     windowDays = days;
+    windowRows = rows;
     source = toEffort(best, kg);
     const cp = criticalPowerFit(rows.map((r) => ({ durationS: r.duration_s, watts: r.watts })));
     criticalPowerIssue = cp.issue;
@@ -232,6 +238,7 @@ export function ftpEstimate(
   const ftp = source ? r1(FTP_FACTOR * source.watts) : null;
   return {
     sport,
+    sports,
     today: q.today,
     factor: FTP_FACTOR,
     windowDays,
@@ -241,7 +248,8 @@ export function ftpEstimate(
     criticalPower,
     criticalPowerIssue: criticalPower ? null : criticalPowerIssue,
     bodyMass,
-    history: ftpHistory(db, athleteId, sport, q.today),
+    windowBests: windowRows.map((r) => toEffort(r, kg)),
+    history: q.history === false ? { bucket: 'month', points: [] } : ftpHistory(db, athleteId, sport, q.today),
   };
 }
 

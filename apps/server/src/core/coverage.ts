@@ -72,11 +72,29 @@ export function firstRecord(db: Db, athleteId: number, family?: RecordFamily): D
   return r ? moment(r.first_ts, tzOf(db, athleteId, r.type_id, r.first_ts)) : null;
 }
 
+/** Per connection and athlete: the newest export and the fingerprint of the finished import jobs it was read from. */
+const exportMemo = new WeakMap<Db, Map<number, { stamp: string; value: DataMoment | null }>>();
+
 /**
  * Time of the newest Apple Health export the athlete imported (export.xml's ExportDate, kept in the stats of the
  * import job). Jobs of FIT files and COROS syncs have no export date and are skipped.
+ *
+ * Runs on every consistency and health request: reading the stats JSON of every finished job (thousands of COROS
+ * syncs) costs milliseconds, so it is only read again when the set of finished import jobs changed. A finished job
+ * never changes; the fingerprint (count, rowids, newest finish) reads no stats.
  */
 export function lastAppleExport(db: Db, athleteId: number): DataMoment | null {
+  const f = get<{ n: number; last: number | null; ids: number; fin: number | null }>(
+    db,
+    `SELECT COUNT(*) AS n, MAX(rowid) AS last, TOTAL(rowid) AS ids, MAX(finished_at) AS fin FROM import_jobs
+     WHERE athlete_id = ? AND kind = 'import' AND status = 'done'`,
+    [athleteId],
+  );
+  const stamp = `${f?.n}|${f?.last}|${f?.ids}|${f?.fin}`;
+  let memo = exportMemo.get(db);
+  if (!memo) exportMemo.set(db, (memo = new Map()));
+  const known = memo.get(athleteId);
+  if (known?.stamp === stamp) return known.value;
   let best: DataMoment | null = null;
   for (const r of all<{ d: unknown }>(
     db,
@@ -87,6 +105,7 @@ export function lastAppleExport(db: Db, athleteId: number): DataMoment | null {
     const p = typeof r.d === 'string' ? parseAppleDate(r.d) : null;
     if (p && (!best || p.ts > best.ts)) best = moment(p.ts, p.tzMin);
   }
+  memo.set(athleteId, { stamp, value: best });
   return best;
 }
 

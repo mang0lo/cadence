@@ -34,12 +34,18 @@ export interface ListFilter {
   sport?: string;
   from?: number;
   to?: number;
+  /** Local days (inclusive), each activity in its own time zone. */
+  fromDay?: string;
+  toDay?: string;
   q?: string;
   hasRoute?: boolean;
   includeHidden?: boolean;
 }
 
 const escapeLike = (s: string) => s.replace(/[\\%_]/g, (c) => `\\${c}`);
+
+/** Largest UTC offset (s) of a local time: a local day lies within its UTC day ± this margin. */
+const TZ_MARGIN_S = 14 * 3600;
 
 /** Local hour ranges [from, to) of the default-name time of day (see timeOfDay in @cadence/shared). */
 const TOD_HOURS: Record<TimeOfDay, [number, number][]> = {
@@ -97,6 +103,17 @@ export function listWhere(athleteId: number, f: ListFilter): { sql: string; para
   if (f.to !== undefined) {
     where.push('start_ts < ?');
     params.push(f.to);
+  }
+  // local days in each activity's own time zone; the UTC bounds widened by the largest offset keep the start index
+  const fromDay = f.fromDay ? parseDay(f.fromDay) : null;
+  if (fromDay !== null) {
+    where.push('start_ts >= ?', 'start_ts + tz_min * 60 >= ?');
+    params.push(fromDay * 86400 - TZ_MARGIN_S, fromDay * 86400);
+  }
+  const toDay = f.toDay ? parseDay(f.toDay) : null;
+  if (toDay !== null) {
+    where.push('start_ts < ?', 'start_ts + tz_min * 60 < ?');
+    params.push((toDay + 1) * 86400 + TZ_MARGIN_S, (toDay + 1) * 86400);
   }
   if (f.hasRoute !== undefined) {
     where.push('has_route = ?');
@@ -350,9 +367,10 @@ export function activitySummary(db: Db, athleteId: number, today: string, weekSt
   }
 
   const athlete = get<{ name: string }>(db, 'SELECT name FROM athletes WHERE id = ?', [athleteId]);
-  const range = get<{ first: number | null; last: number | null }>(
+  const range = get<{ first: number | null; last: number | null; firstDay: string | null }>(
     db,
-    'SELECT MIN(start_ts) AS first, MAX(start_ts) AS last FROM workouts WHERE athlete_id = ? AND hidden = 0 AND duplicate_of IS NULL',
+    `SELECT MIN(start_ts) AS first, MAX(start_ts) AS last, MIN(date(start_ts + tz_min * 60, 'unixepoch')) AS firstDay
+     FROM workouts WHERE athlete_id = ? AND hidden = 0 AND duplicate_of IS NULL`,
     [athleteId],
   );
   // PRs (still the best) set during the last 30 local days: the record of every (sport, effort) attempted since
@@ -362,7 +380,7 @@ export function activitySummary(db: Db, athleteId: number, today: string, weekSt
     db,
     `SELECT DISTINCT be.sport, be.effort FROM workouts w JOIN best_efforts be ON be.workout_id = w.id
      WHERE w.athlete_id = ? AND w.start_ts >= ? AND w.hidden = 0 AND w.duplicate_of IS NULL`,
-    [athleteId, since - 14 * 3600],
+    [athleteId, since - TZ_MARGIN_S],
   );
   let recentPrs = 0;
   for (const g of groups) {
@@ -382,6 +400,7 @@ export function activitySummary(db: Db, athleteId: number, today: string, weekSt
     sports,
     week: days,
     firstActivityTs: range?.first ?? null,
+    firstActivityDay: range?.firstDay ?? null,
     lastActivityTs: range?.last ?? null,
     recentPrs,
   };

@@ -670,12 +670,33 @@ export interface RangeStats {
   elevGainM: number | null;
 }
 
+/**
+ * Elevation gain of a lap: the definition of the activity's gain (derive/workouts.ts: elevationGainLoss(ele, 2, 5,
+ * breaks)) – elevation smoothed within each part of the track, hysteresis of 2 m – so the laps of an activity add up to
+ * its gain and barometer noise is no climbing.
+ */
+const LAP_GAIN_THRESHOLD_M = 2;
+const LAP_GAIN_HALF_WINDOW = 5;
+
+/** Elevation smoothed within each track part (one series, many laps: computed once). */
+const partSmoothed = new WeakMap<Series, Float64Array>();
+
+function smoothedElevation(s: Series): Float64Array | null {
+  if (!s.ele) return null;
+  let out = partSmoothed.get(s);
+  if (!out) {
+    out = new Float64Array(s.n);
+    for (const [a, b] of trackParts(s.n, s.breaks)) out.set(smooth(s.ele.subarray(a, b), LAP_GAIN_HALF_WINDOW), a);
+    partSmoothed.set(s, out);
+  }
+  return out;
+}
+
 /** Stats of the time range [t0, t1] (seconds since start). */
 export function statsBetween(s: Series, t0: number, t1: number): RangeStats {
   let movingS = 0;
   let maxHr: number | null = null;
   let gain: number | null = null;
-  let ref = NaN;
   for (let i = 1; i < s.n; i++) {
     const ta = Math.max(s.t[i - 1]!, t0);
     const tb = Math.min(s.t[i]!, t1);
@@ -690,20 +711,23 @@ export function statsBetween(s: Series, t0: number, t1: number): RangeStats {
       if (isNum(h) && (maxHr === null || h > maxHr)) maxHr = h;
     }
   }
-  if (s.ele) {
+  const ele = smoothedElevation(s);
+  if (ele) {
     gain = 0;
-    for (let i = 0; i < s.n; i++) {
-      const ti = s.t[i]!;
-      if (ti < t0 || ti > t1) continue;
-      // a new track part: the height difference to the previous one was travelled while paused, no climbing
-      if (s.breaks.length && s.breaks.includes(i)) ref = NaN;
-      const e = s.ele[i]!;
-      if (!isNum(e)) continue;
-      if (!isNum(ref)) ref = e;
-      else if (e - ref >= 1) {
-        gain += e - ref;
-        ref = e;
-      } else if (ref - e >= 1) ref = e;
+    // each track part on its own: the height difference between two parts was travelled while paused
+    for (const [a, b] of trackParts(s.n, s.breaks)) {
+      let ref = NaN;
+      for (let i = a; i < b; i++) {
+        const ti = s.t[i]!;
+        if (ti < t0 || ti > t1) continue;
+        const e = ele[i]!;
+        if (!isNum(e)) continue;
+        if (!isNum(ref)) ref = e;
+        else if (e - ref >= LAP_GAIN_THRESHOLD_M) {
+          gain += e - ref;
+          ref = e;
+        } else if (ref - e >= LAP_GAIN_THRESHOLD_M) ref = e;
+      }
     }
   }
   return {

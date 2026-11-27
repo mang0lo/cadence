@@ -9,6 +9,7 @@ import { Badge, Delta, EmptyState, ErrorState, Skeleton } from '@/components/ui'
 import { clock, useFormat } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
 import { sportLabel } from '@/lib/sports';
+import { useRouteLinks } from '../../api';
 import { isPaceSport, paceValue } from '../../lib/display';
 import { linearTrend, trendChart, type Pt } from '../../lib/similar';
 import { ToggleChip } from '../ToggleChip';
@@ -30,6 +31,12 @@ export function Similar({
   const theme = useChartTheme();
   const navigate = useNavigate();
   const [routeOnly, setRouteOnly] = useState(false);
+  // the maps card of the page shows the rank on a Maps → Routes route (the same numbers, the same cached request):
+  // the badge here only names the rank among the same-route activities found for an activity without such a route
+  const links = useRouteLinks(w.id, w.hasRoute);
+  const route = links.isPlaceholderData ? undefined : links.data?.route;
+  const rankOnRouteCard =
+    w.hasRoute && (links.isLoading || links.isPlaceholderData || (!!route && route.rank !== null && route.count > 1));
   const pace = isPaceSport(w.sport);
   const byDistance = similar?.basis === 'distance';
   const items = useMemo(
@@ -171,7 +178,7 @@ export function Similar({
                 {t(rankKey, { rank: similar.rank, count: similar.count })}
               </Badge>
             )}
-            {similar.routeRank !== null && similar.routeCount >= 2 && (
+            {similar.routeRank !== null && similar.routeCount >= 2 && !rankOnRouteCard && (
               <Badge icon={Route}>{t('activities.similar.routeRank', { rank: similar.routeRank, count: similar.routeCount })}</Badge>
             )}
             {trendText && <Delta value={trendText.perYear} upIsGood={!pace} text={trendText.text} />}

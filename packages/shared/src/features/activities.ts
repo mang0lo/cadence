@@ -61,6 +61,8 @@ export interface ActivitiesSummary {
   /** The 7 days of the current week. */
   week: ActivityWeekDay[];
   firstActivityTs: number | null;
+  /** Local day 'YYYY-MM-DD' of the first activity, in its own time zone ("training since"). */
+  firstActivityDay: string | null;
   lastActivityTs: number | null;
   /** Best efforts set in the last 30 days that are still the all-time best (rank 1). */
   recentPrs: number;
@@ -94,6 +96,12 @@ export interface ActivityListQuery {
   /** Start time range, unix seconds (from inclusive, to exclusive). */
   from?: number;
   to?: number;
+  /**
+   * Local days 'YYYY-MM-DD' (both inclusive): every activity on the day of its own time zone, like the calendar and
+   * the heatmap (a run at 23:30 in New York stays on its day for a viewer in Berlin).
+   */
+  fromDay?: string;
+  toDay?: string;
   /**
    * Search: name, notes and source; the places the activity starts, ends at or passes (also by their German names,
    * e.g. "Wien" → Vienna); the countries it passes (English or German name); and the localized default names of

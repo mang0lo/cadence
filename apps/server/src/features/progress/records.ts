@@ -12,7 +12,7 @@ import {
 import { all, get, type Db } from '../../db/db';
 import { heartMetric } from '../../core/sources';
 import { SUMMARY_COLS, toSummary, type WorkoutRow } from '../../core/workouts';
-import { addDays, localDay } from '../../lib/time';
+import { addDays, localDay, parseDay } from '../../lib/time';
 import { compareEfforts } from '../activities/best-efforts';
 import { median, RIEGEL_EXPONENT, riegel, shiftYears, timeFromVdot } from './math';
 
@@ -69,6 +69,42 @@ const HIGHLIGHTS: { key: ProgressHighlightKey; col: string; where?: (sport: stri
   { key: 'hardest', col: 'effort' },
 ];
 
+/** Largest UTC offset (s): a local day lies within its UTC day ± this margin. */
+const TZ_MARGIN_S = 14 * 3600;
+
+/**
+ * The biggest activities of a sport, optionally only those with a local start day in [fromDay, toDay] (each in its own
+ * time zone; the widened UTC bounds keep the sport index).
+ */
+function highlightsOf(
+  db: Db,
+  athleteId: number,
+  sport: string,
+  days?: { fromDay: string; toDay: string },
+): ProgressHighlight[] {
+  let range = '';
+  const rangeParams: number[] = [];
+  if (days) {
+    const from = parseDay(days.fromDay)! * 86400;
+    const to = (parseDay(days.toDay)! + 1) * 86400;
+    range = 'AND start_ts >= ? AND start_ts < ? AND start_ts + tz_min * 60 >= ? AND start_ts + tz_min * 60 < ?';
+    rangeParams.push(from - TZ_MARGIN_S, to + TZ_MARGIN_S, from, to);
+  }
+  const out: ProgressHighlight[] = [];
+  for (const h of HIGHLIGHTS) {
+    const row = get<WorkoutRow & { v: number | null }>(
+      db,
+      `SELECT ${SUMMARY_COLS}, ${h.col} AS v FROM workouts
+       WHERE athlete_id = ? AND sport = ? AND hidden = 0 AND duplicate_of IS NULL AND ${h.col} > 0 ${h.where?.(sport) ?? ''}
+         ${range}
+       ORDER BY ${h.col} DESC, start_ts LIMIT 1`,
+      [athleteId, sport, ...(h.params?.(sport) ?? []), ...rangeParams],
+    );
+    if (row && row.v !== null) out.push({ key: h.key, value: row.v, workout: toSummary(row) });
+  }
+  return out;
+}
+
 export function records(db: Db, athleteId: number, q: { sport: string | null; today: string }): ProgressRecordsResponse {
   const sports = all<{ sport: string; workouts: number; efforts: number }>(
     db,
@@ -79,7 +115,10 @@ export function records(db: Db, athleteId: number, q: { sport: string | null; to
     [athleteId],
   );
   const sport = q.sport ?? sports.find((s) => s.efforts > 0)?.sport ?? sports[0]?.sport ?? null;
-  if (!sport) return { sport: null, sports: [], efforts: [], highlights: [] };
+  if (!sport) {
+    const scopeHighlights = { allTime: [], thisYear: [], last12m: [] };
+    return { sport: null, sports: [], efforts: [], highlights: [], scopeHighlights };
+  }
 
   const yearStart = `${q.today.slice(0, 4)}-01-01`;
   const last12From = addDays(shiftYears(q.today, -1), 1);
@@ -93,31 +132,34 @@ export function records(db: Db, athleteId: number, q: { sport: string | null; to
   const efforts: ProgressEffortRow[] = effortDefs(sport).map((def) => {
     const list = (byEffort.get(def.key) ?? []).filter((r) => localDay(r.start_ts, r.tz_min) <= q.today);
     const inRange = (from: string) => list.filter((r) => localDay(r.start_ts, r.tz_min) >= from);
+    const year = inRange(yearStart);
+    const last12 = inRange(last12From);
     const best = fastest(list);
-    const year = fastest(inRange(yearStart));
-    const last12 = fastest(inRange(last12From));
+    const yearBest = fastest(year);
+    const last12Best = fastest(last12);
     return {
       effort: def.key,
       distanceM: def.distanceM,
       attempts: list.length,
+      scopeAttempts: { allTime: list.length, thisYear: year.length, last12m: last12.length },
       allTime: best && toRef(best),
-      thisYear: year && toRef(year),
-      last12m: last12 && toRef(last12),
+      thisYear: yearBest && toRef(yearBest),
+      last12m: last12Best && toRef(last12Best),
     };
   });
 
-  const highlights: ProgressHighlight[] = [];
-  for (const h of HIGHLIGHTS) {
-    const row = get<WorkoutRow & { v: number | null }>(
-      db,
-      `SELECT ${SUMMARY_COLS}, ${h.col} AS v FROM workouts
-       WHERE athlete_id = ? AND sport = ? AND hidden = 0 AND duplicate_of IS NULL AND ${h.col} > 0 ${h.where?.(sport) ?? ''}
-       ORDER BY ${h.col} DESC, start_ts LIMIT 1`,
-      [athleteId, sport, ...(h.params?.(sport) ?? [])],
-    );
-    if (row && row.v !== null) highlights.push({ key: h.key, value: row.v, workout: toSummary(row) });
-  }
-  return { sport, sports: sports.map((s) => ({ sport: s.sport, workouts: s.workouts })), efforts, highlights };
+  const highlights = highlightsOf(db, athleteId, sport);
+  return {
+    sport,
+    sports: sports.map((s) => ({ sport: s.sport, workouts: s.workouts })),
+    efforts,
+    highlights,
+    scopeHighlights: {
+      allTime: highlights,
+      thisYear: highlightsOf(db, athleteId, sport, { fromDay: yearStart, toDay: q.today }),
+      last12m: highlightsOf(db, athleteId, sport, { fromDay: last12From, toDay: q.today }),
+    },
+  };
 }
 
 export function effortHistory(db: Db, athleteId: number, q: { sport: string; effort: string }): ProgressEffortHistory | null {

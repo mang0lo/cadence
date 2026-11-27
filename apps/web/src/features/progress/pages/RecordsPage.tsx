@@ -58,7 +58,7 @@ export default function RecordsPage() {
         <NoDataCard />
       ) : (
         <div className="grid gap-4">
-          <HighlightsCard sport={data.sport} highlights={data.highlights} />
+          <HighlightsCard sport={data.sport} highlights={data.scopeHighlights[scope]} scope={scope} />
           {data.efforts.length > 0 && (
             <>
               <div className={isRun ? 'grid gap-4 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]' : 'grid gap-4'}>

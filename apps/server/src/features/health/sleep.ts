@@ -2,9 +2,9 @@ import { all, run, tx, type Db } from '../../db/db';
 import { SLEEP_TYPE } from '../../import/hk';
 import { getSetting, getSettings, setSetting } from '../../core/settings';
 import { preferred } from '../../core/sources';
-import { addDays, parseDay } from '../../lib/time';
+import { addDays, dayString, parseDay } from '../../lib/time';
 import { tzOffsetMinutes } from '../../lib/tz';
-import type { DeriveStep } from '../types';
+import type { DeriveChanges, DeriveStep } from '../types';
 import { buildSleepNights, type BuiltSleep, type RawSleepRecord } from './sleep-builder';
 import { localDayRange, typeIdByIdentifier } from './util';
 
@@ -185,13 +185,41 @@ export function mergeExternalNights(db: Db, athleteId: number, fromDay: string |
   return n;
 }
 
+/**
+ * The day from which the nights must be rebuilt after a derive run, or undefined when they are up to date. The nights
+ * depend on the sleep records (and on the heart source preference they were built with, see rebuildSleepNights; COROS
+ * nights are merged by the connector itself): a run that names the changed record types without sleep analysis (a
+ * workout edit, new heart rate samples) changes no night, and new sleep records only change the nights around them.
+ */
+export function sleepRebuildFrom(
+  db: Db,
+  athleteId: number,
+  sinceDay: string | null,
+  recordTypes: DeriveChanges['recordTypes'] | undefined,
+): string | null | undefined {
+  if (!recordTypes || recordTypes === 'all') return sinceDay;
+  if (getSetting<string | null>(db, athleteId, NIGHTS_SOURCE_KEY, null) !== preferred(getSettings(db, athleteId), 'heart'))
+    return null;
+  const ts = recordTypes.get(SLEEP_TYPE);
+  if (ts === undefined) return undefined;
+  // one day of margin before the UTC day: local days start up to 14 h earlier (rebuildSleepNights adds two more)
+  const day = dayString(Math.floor(ts / 86400) - 1);
+  return sinceDay !== null && sinceDay > day ? sinceDay : day;
+}
+
 export const sleepStep: DeriveStep = {
   id: 'health.sleep',
   label: 'Sleep nights',
   weight: 1,
   run(ctx) {
+    const from = sleepRebuildFrom(ctx.db, ctx.athleteId, ctx.sinceDay, ctx.changes?.recordTypes);
+    if (from === undefined) {
+      ctx.log('health.sleep: no new sleep records');
+      ctx.report(1);
+      return;
+    }
     ctx.report(0.1);
-    const n = rebuildSleepNights(ctx.db, ctx.athleteId, ctx.sinceDay, ctx.checkCancelled);
+    const n = rebuildSleepNights(ctx.db, ctx.athleteId, from, ctx.checkCancelled);
     ctx.log(`health.sleep: ${n} sleep sessions`);
     ctx.report(1);
   },

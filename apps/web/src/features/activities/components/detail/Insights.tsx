@@ -62,7 +62,12 @@ function Decoupling({ a, sport }: { a: NonNullable<ActivityAnalysis['decoupling'
 function Efficiency({ a, similar }: { a: NonNullable<ActivityAnalysis['efficiency']>; similar: ActivitySimilar | undefined }) {
   const { t } = useI18n();
   const fmt = useFormat();
-  const others = (similar?.items ?? []).filter((x) => !x.current && x.efficiency !== null).map((x) => x.efficiency!);
+  // the similar activities' values are on similar.efficiencyBasis (the most common one while this activity's analysis
+  // is outdated): compare only like with like, never W per bpm with m/min per bpm
+  const sameBasis = similar?.efficiencyBasis === undefined || similar.efficiencyBasis === a.basis;
+  const others = sameBasis
+    ? (similar?.items ?? []).filter((x) => !x.current && x.efficiency !== null).map((x) => x.efficiency!)
+    : [];
   const mean = others.length >= 3 ? others.reduce((s, v) => s + v, 0) / others.length : null;
   const unit =
     a.basis === 'power'

@@ -88,20 +88,42 @@ export function averageHeartRate(peaks: number[], rateHz: number): number | null
 }
 
 /**
- * Apple writes the classification in the language of the phone ("Sinus Rhythm", "Sinusrhythmus", "Atrial Fibrillation",
- * "Vorhofflimmern", "Inconclusive", "Hohe Herzfrequenz" …). Everything is mapped onto a few keys the UI localises.
+ * Apple writes the classification in the language of the phone ("Sinus Rhythm", "Sinusrhythmus", "Rythme sinusal",
+ * "洞調律", "Atrial Fibrillation", "Vorhofflimmern", "Fibrilación auricular", "Inconclusive", "Hohe Herzfrequenz" …).
+ * Everything is mapped onto a few keys the UI localises. Stored keys follow new wording through a migration that calls
+ * reclassifyEcgs (see migrations.ts).
  */
 export function classifyEcg(raw: string | null | undefined): EcgClass {
   const s = (raw ?? '').toLowerCase();
   if (!s.trim()) return 'unrecognized';
-  if (/sinus/.test(s)) return 'sinus';
-  if (/atrial|fibrill|vorhofflimmern/.test(s)) return 'afib';
-  if (/(high|over|hohe|über|ueber)/.test(s) && /(heart|herz|bpm|150|120)/.test(s)) return 'highHr';
-  if (/(low|under|niedrige|unter)/.test(s) && /(heart|herz|bpm|50|40)/.test(s)) return 'lowHr';
-  if (/(poor|schlecht|unzureichend|quality|qualität)/.test(s)) return 'poor';
-  if (/(inconclusive|nicht eindeutig|unklar)/.test(s)) return 'inconclusive';
-  if (/(unrecogni|not classified|nicht klassifiziert|nicht erkannt|notset)/.test(s)) return 'unrecognized';
+  if (/sinus|洞調律/.test(s)) return 'sinus';
+  if (/atrial|fibril|vorhofflimmern|auricul|心房細動/.test(s)) return 'afib';
+  const heart = /(heart|herz|cardiaque|cardiac|cardíac|bpm|心拍)/.test(s);
+  const high = /(high|over|hohe|über|ueber|élevée|elevee|supérieure|superieure|alta|elevada|superior|高心拍|心拍数が高)/;
+  if (high.test(s) && (heart || /(150|120)/.test(s))) return 'highHr';
+  const low = /(low|under|niedrige|unter|faible|basse|inférieure|inferieure|baja|inferior|低心拍|心拍数が低)/;
+  if (low.test(s) && (heart || /(50|40)/.test(s))) return 'lowHr';
+  if (/(poor|schlecht|unzureichend|quality|qualität|mauvais|qualité|deficiente|calidad|不良)/.test(s)) return 'poor';
+  if (/(inconclusive|nicht eindeutig|unklar|concluant|concluyente|判定不能)/.test(s)) return 'inconclusive';
+  const unrecognized =
+    /(unrecogni|not classified|nicht klassifiziert|nicht erkannt|notset|non reconnu|non classé|no reconocido|no clasificado|未分類|分類不能)/;
+  if (unrecognized.test(s)) return 'unrecognized';
   return 'other';
+}
+
+/** Re-classify the stored recordings with the current rules; returns the number of changed rows. */
+export function reclassifyEcgs(db: Db): number {
+  let n = 0;
+  for (const r of all<{ ecg_id: number; classification: string | null; class_key: string }>(
+    db,
+    'SELECT s.ecg_id, e.classification, s.class_key FROM health_ecg_stats s JOIN ecg_readings e ON e.id = s.ecg_id',
+  )) {
+    const key = classifyEcg(r.classification);
+    if (key === r.class_key) continue;
+    run(db, 'UPDATE health_ecg_stats SET class_key = ? WHERE ecg_id = ?', [key, r.ecg_id]);
+    n++;
+  }
+  return n;
 }
 
 interface EcgRow {

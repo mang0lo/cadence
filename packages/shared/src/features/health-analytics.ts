@@ -1,7 +1,9 @@
 /**
  * Small pure helpers for health analytics (moving averages, monthly changes, spread, blood pressure
- * categories). Shared so they can be unit-tested on the server side and used by the web UI.
+ * categories, chart periods). Shared so they can be unit-tested on the server side and used by the web UI.
  */
+
+import type { MetricAgg } from './health';
 
 const pad2 = (n: number) => (n < 10 ? `0${n}` : String(n));
 
@@ -18,6 +20,36 @@ export function dayFromNumber(n: number): string {
 
 export function shiftDay(day: string, n: number): string {
   return dayFromNumber(dayNumber(day) + n);
+}
+
+/** Start of the period a day belongs to: the day itself, its week (weekStart 1 = Monday, 0 = Sunday) or 'YYYY-MM-01'. */
+export function periodStart(day: string, agg: MetricAgg, weekStart: 0 | 1): string {
+  if (agg === 'day') return day;
+  if (agg === 'month') return `${day.slice(0, 7)}-01`;
+  const dn = dayNumber(day);
+  // 1970-01-01 was a Thursday (4); weekday 0 = Sunday
+  const weekday = (((dn + 4) % 7) + 7) % 7;
+  return dayFromNumber(dn - ((weekday - weekStart + 7) % 7));
+}
+
+/** Start of the period after the one that starts on `key`. */
+function nextPeriodStart(key: string, agg: MetricAgg): string {
+  if (agg === 'day') return shiftDay(key, 1);
+  if (agg === 'week') return shiftDay(key, 7);
+  const y = Number(key.slice(0, 4));
+  const m = Number(key.slice(5, 7));
+  return m === 12 ? `${y + 1}-01-01` : `${key.slice(0, 4)}-${pad2(m + 1)}-01`;
+}
+
+/**
+ * Every period start from the period of `fromDay` to the period of `toDay`, both included (none when fromDay is after
+ * toDay): the gap-free axis of a series, whose points exist only for periods with data.
+ */
+export function periodKeys(fromDay: string, toDay: string, agg: MetricAgg, weekStart: 0 | 1): string[] {
+  const out: string[] = [];
+  const last = periodStart(toDay, agg, weekStart);
+  for (let k = periodStart(fromDay, agg, weekStart); k <= last; k = nextPeriodStart(k, agg)) out.push(k);
+  return out;
 }
 
 export function mean(values: readonly number[]): number | null {

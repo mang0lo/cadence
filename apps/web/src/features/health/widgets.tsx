@@ -10,7 +10,6 @@ import { todayKey } from '@/lib/time';
 import { Spark } from './components/Spark';
 import { useDayLabel } from './components/MetricCard';
 import { ReadinessBandBadge, ReadinessRing, ReasonList } from './components/readiness/ReadinessRing';
-import { useHeartMetrics } from './lib/hooks';
 import { durationParts, useMetricFormat, type ValueParts } from './lib/metrics';
 import { useReadiness } from './lib/readiness';
 
@@ -172,11 +171,10 @@ export function HealthSnapshotCard() {
   const fmt = useFormat();
   const m = useMetricFormat();
   const dayLabel = useDayLabel();
+  // values of the watch's own metrics (COROS) carry their key: name, format and link them as such
   const q = useApi<HealthSnapshot>(['health', 'snapshot'], '/health/snapshot', undefined, { staleTime: 30_000 });
-  // the snapshot holds COROS' values when the watch is a COROS: name, format and link them as such
-  const ids = useHeartMetrics();
 
-  if (q.isLoading || !ids.ready) {
+  if (q.isLoading) {
     return (
       <Card className="@container">
         <Skeleton className="h-4 w-40" />
@@ -195,10 +193,10 @@ export function HealthSnapshotCard() {
   const d = q.data;
   if (!d || (!d.restingHr && !d.hrv && !d.sleep && !d.steps)) return null;
 
-  const simple = (v: SnapshotValue | null, metric: string, to: string, icon: LucideIcon, label: string) => {
+  const simple = (v: SnapshotValue | null, to: string, icon: LucideIcon, label: string) => {
     if (!v) return null;
-    const p = m.parts(metric, v.value);
-    return <Tile key={metric} to={to} icon={icon} label={label} value={p.value} unit={p.unit} hint={dayLabel(v.day)} spark={v.spark} />;
+    const p = m.parts(v.metric, v.value);
+    return <Tile key={v.metric} to={to} icon={icon} label={label} value={p.value} unit={p.unit} hint={dayLabel(v.day)} spark={v.spark} />;
   };
 
   const sleep = d.sleep;
@@ -220,8 +218,8 @@ export function HealthSnapshotCard() {
         }
       />
       <div className="grid grid-cols-2 gap-x-6 gap-y-6 @lg:grid-cols-4">
-        {simple(d.restingHr, ids.restingHr, '/health/heart', HeartPulse, t('health.widget.restingHr'))}
-        {simple(d.hrv, ids.hrv, '/health/heart', Activity, t('health.widget.hrv'))}
+        {simple(d.restingHr, '/health/heart', HeartPulse, t('health.widget.restingHr'))}
+        {simple(d.hrv, '/health/heart', Activity, t('health.widget.hrv'))}
         {sleep && (
           <Tile
             to="/health/sleep"
@@ -247,7 +245,7 @@ export function HealthSnapshotCard() {
             spark={sleep.spark}
           />
         )}
-        {simple(d.steps, ids.steps, `/health/explorer/${encodeURIComponent(ids.steps)}`, Footprints, m.name(ids.steps))}
+        {d.steps && simple(d.steps, `/health/explorer/${encodeURIComponent(d.steps.metric)}`, Footprints, m.name(d.steps.metric))}
       </div>
     </Card>
   );

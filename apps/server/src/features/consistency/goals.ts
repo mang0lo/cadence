@@ -16,6 +16,7 @@ import {
   type GoalSuggestion,
   type Units,
 } from '@cadence/shared';
+import { DISTANCE_TOLERANCE } from './challenges';
 import { daysBetween, periodRange, plusDays, previousPeriodStart } from './days';
 
 /** One row of daily_activity (workout totals of one sport on one local day). */
@@ -75,6 +76,15 @@ export function goalValue(rows: Iterable<DailyRow>, metric: GoalMetric, sport: s
   return metric === 'active_days' ? days.size : v;
 }
 
+/**
+ * True when a period's value reaches the target. A single-activity distance ('longest') is judged with the GPS
+ * tolerance of the distance trophies (a 42,150 m run is a marathon there, so it also reaches a marathon goal); totals
+ * need their exact target.
+ */
+export function goalReached(metric: GoalMetric, value: number, target: number): boolean {
+  return value >= (metric === 'longest' ? target * DISTANCE_TOLERANCE : target);
+}
+
 /** Rows whose day lies inside [start, end] (rows sorted by day → binary search would do; n is small). */
 export function rowsIn(rows: DailyRow[], start: string, end: string): DailyRow[] {
   return rows.filter((r) => r.day >= start && r.day <= end);
@@ -94,6 +104,8 @@ export function goalProjection(o: {
   single?: boolean;
   /** Checked off by hand: done whatever the value. */
   checked?: boolean;
+  /** The goal's measure (see goalReached); without it the value must reach the target exactly. */
+  metric?: GoalMetric;
 }): GoalPeriodProgress {
   const totalDays = daysBetween(o.start, o.end) + 1;
   const elapsedDays = Math.max(0, Math.min(totalDays, daysBetween(o.start, o.asOf)));
@@ -101,16 +113,18 @@ export function goalProjection(o: {
   const target = Math.max(0, o.target);
   const expected = totalDays ? (target * elapsedDays) / totalDays : target;
   const projected = (o.value * totalDays) / Math.max(1, Math.min(totalDays, elapsedDays + 1));
-  const remaining = Math.max(0, target - o.value);
+  const reached = o.metric ? goalReached(o.metric, o.value, target) : o.value >= target;
+  // reached within the tolerance of a single-activity distance: nothing left, the bar full
+  const remaining = reached ? 0 : Math.max(0, target - o.value);
   const checked = !!o.checked;
   const status =
-    checked || o.value >= target ? 'done' : o.single ? 'open' : o.value + 1e-9 >= expected ? 'on_track' : 'behind';
+    checked || reached ? 'done' : o.single ? 'open' : o.value + 1e-9 >= expected ? 'on_track' : 'behind';
   return {
     start: o.start,
     end: o.end,
     value: o.value,
     target,
-    fraction: target > 0 ? o.value / target : 1,
+    fraction: target > 0 ? (reached ? Math.max(1, o.value / target) : o.value / target) : 1,
     elapsedDays,
     totalDays,
     expected: o.single ? 0 : expected,
@@ -171,7 +185,7 @@ export function goalHistory(
     const range = periodRange(start, goal.period, weekStart);
     if (range.end < firstDay) break;
     const value = goalValue(buckets.get(range.start) ?? [], goal.metric, goal.sport);
-    const reached = value >= goal.target;
+    const reached = goalReached(goal.metric, value, goal.target);
     const manual = !reached && isChecked(opts.checks, range.start, range.end);
     const pending = !reached && !manual && opts.horizon !== undefined && range.end > opts.horizon;
     out.push({

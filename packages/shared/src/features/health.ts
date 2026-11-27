@@ -22,6 +22,7 @@
  *   GET  /readiness?day=&days=      ReadinessResponse
  */
 import type { RecordTypeInfo } from '../core';
+import type { HeartMetric } from './health-catalogue';
 
 export * from './health-catalogue';
 export * from './health-analytics';
@@ -42,7 +43,7 @@ export interface HealthMeta {
    * daily_metrics keys of the heart metrics to show: Apple's or COROS' (Settings → My watch), e.g.
    * 'COROSSleepHRV' instead of 'HKQuantityTypeIdentifierHeartRateVariabilitySDNN'.
    */
-  metrics: { restingHr: string; hrv: string; vo2max: string; steps: string; heartRate: string };
+  metrics: Record<HeartMetric, string>;
 }
 
 export interface HealthSettings {
@@ -112,6 +113,11 @@ export interface HealthOverview {
 }
 
 export interface SnapshotValue {
+  /**
+   * daily_metrics key of the value: Apple's or the watch's own (Settings → My watch, like HealthMeta.metrics), e.g.
+   * 'COROSRestingHeartRate'; 'sleep' for the sleep nights.
+   */
+  metric: string;
   day: string;
   value: number;
   /** Last 14 days (index 0 = oldest), null = no data. */

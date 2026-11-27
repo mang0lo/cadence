@@ -15,10 +15,26 @@ import type {
 } from '@cadence/shared';
 import { api, useApi, type QueryParams } from '@/lib/api';
 import { useSettings } from '@/lib/settings';
-import { todayKey } from '@/lib/time';
+import { addDays, todayKey } from '@/lib/time';
 import { patchOutdates, rederives } from './lib/invalidation';
+import { rangeDays, toListQuery, type ListState } from './lib/listParams';
 
 /** Data hooks of the activities feature. Query keys start with 'activities'. */
+
+/** A real calendar day, else undefined ('2026-02-30' from a hand-edited URL). */
+const calendarDay = (day: string | undefined): string | undefined =>
+  day !== undefined && addDays(day, 0) === day ? day : undefined;
+
+/**
+ * The request of the activities list page (and its CSV export) for a list state: the period as local
+ * days, so the server puts every activity on the day of its own time zone, not the browser's. A day that
+ * does not exist is left out (that end stays open, like its empty date field): the API refuses it.
+ */
+export function listPageQuery(s: ListState, weekStart: 0 | 1, today: string): ActivityListQuery {
+  const { from: _from, to: _to, ...rest } = toListQuery(s, weekStart, today);
+  const days = rangeDays(s.range, s.fromDay, s.toDay, weekStart, today);
+  return { ...rest, fromDay: calendarDay(days.fromDay), toDay: calendarDay(days.toDay) };
+}
 
 export function useActivitiesSummary() {
   const { settings } = useSettings();
