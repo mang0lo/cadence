@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import {
   SPORTS,
+  isSport,
   sportFromActivityType,
   workoutTitle,
   type Page,
@@ -40,7 +41,8 @@ const patchBody = z
   .object({
     name: z.string().max(200),
     notes: z.string().max(20_000).nullable(),
-    sport: z.string().refine((s) => s in SPORTS, { message: 'Unknown sport' }),
+    // own keys only: 'toString' or '__proto__' are in every object, but no sport
+    sport: z.string().max(40).refine(isSport, { message: 'Unknown sport' }),
     hidden: z.boolean(),
   })
   .partial();
@@ -241,7 +243,7 @@ export default async function workoutRoutes(app: FastifyInstance) {
       ' xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"',
       ' xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd http://www.garmin.com/xmlschemas/TrackPointExtension/v1 http://www.garmin.com/xmlschemas/TrackPointExtensionv1.xsd">',
       ` <metadata><name>${xmlEscape(title)}</name><time>${formatIsoUtc(w.start_ts)}</time></metadata>`,
-      ` <trk><name>${xmlEscape(title)}</name><type>${GPX_TYPE[w.sport] ?? w.sport}</type><trkseg>`,
+      ` <trk><name>${xmlEscape(title)}</name><type>${Object.hasOwn(GPX_TYPE, w.sport) ? GPX_TYPE[w.sport] : xmlEscape(w.sport)}</type><trkseg>`,
     ];
     // every part of the track (see WorkoutStreams.breaks) is its own <trkseg>
     const breaks = new Set(s.breaks ?? []);
