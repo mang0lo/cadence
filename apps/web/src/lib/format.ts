@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { M_PER_FT, M_PER_KM, M_PER_MI, KG_PER_LB, sportInfo, type Units } from '@cadence/shared';
 import { useI18n, type Lang, type TFunction } from './i18n';
 import { useSettings } from './settings';
-import { browserTzAt, dayToDate, localDate } from './time';
+import { browserTzAt, dayKey, dayToDate, localDate, todayKey } from './time';
 
 /** Splits a formatted quantity into value + unit for stat tiles (value large, unit small). */
 export interface Parts {
@@ -17,8 +17,10 @@ export type DateStyle =
   | 'weekdayShort' // Mo., 2. Nov.
   | 'dateTime' // Mo., 2. Nov. 2026, 07:30
   | 'time' // 07:30
+  | 'timeSeconds' // 07:30:05
   | 'month' // November 2026
   | 'monthShort' // Nov.
+  | 'monthYear' // Nov. 2026 / Nov 2026
   | 'monthYearShort' // Nov. 26
   | 'year'; // 2026
 
@@ -29,8 +31,10 @@ const DATE_STYLES: Record<DateStyle, Intl.DateTimeFormatOptions> = {
   weekdayShort: { weekday: 'short', day: 'numeric', month: 'short' },
   dateTime: { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' },
   time: { hour: '2-digit', minute: '2-digit' },
+  timeSeconds: { hour: '2-digit', minute: '2-digit', second: '2-digit' },
   month: { month: 'long', year: 'numeric' },
   monthShort: { month: 'short' },
+  monthYear: { month: 'short', year: 'numeric' },
   monthYearShort: { month: 'short', year: '2-digit' },
   year: { year: 'numeric' },
 };
@@ -217,6 +221,19 @@ export function createFormatter(units: Units, locale: string, lang: Lang) {
     time: (ts: number, tzMin: number) => dtf(locale, 'time').format(localDate(ts, tzMin)),
     /** Format a 'YYYY-MM-DD' day key. */
     day: (day: string, style: DateStyle = 'day') => dtf(locale, style).format(dayToDate(day)),
+    /** A day without its year when it is in the current year ("4 Feb"), with it otherwise ("4 Feb 2025"). */
+    dayHint: (day: string, today = todayKey()) =>
+      dtf(locale, day.slice(0, 4) === today.slice(0, 4) ? 'dayShort' : 'day').format(dayToDate(day)),
+    /** dayHint of the local day of a timestamp (`tzMin` of the activity or record). */
+    dateHint: (ts: number, tzMin: number, today = todayKey()) => f.dayHint(dayKey(ts, tzMin), today),
+    /** "4 Feb – 27 Oct 2026", "4 Feb 2025 – 27 Oct 2026" (a range across years names both years), or one day. */
+    dayRange(from: string, to: string): string {
+      if (from === to) return f.day(to, 'day');
+      return `${f.day(from, from.slice(0, 4) === to.slice(0, 4) ? 'dayShort' : 'day')} – ${f.day(to, 'day')}`;
+    },
+    /** dayRange of the local days of two timestamps. */
+    dateRange: (fromTs: number, fromTz: number, toTs: number, toTz: number) =>
+      f.dayRange(dayKey(fromTs, fromTz), dayKey(toTs, toTz)),
     /** "vor 3 Tagen" / "3 days ago" */
     relative(ts: number): string {
       const f = rtf(locale);

@@ -75,12 +75,6 @@ function rowsFor(cur: ProgressCompareTotals, prev: ProgressCompareTotals, sport:
   return rows;
 }
 
-function rangeLabel(fmt: Formatter, fromDay: string, toDay: string): string {
-  if (fromDay === toDay) return fmt.day(fromDay, 'day');
-  const sameYear = fromDay.slice(0, 4) === toDay.slice(0, 4);
-  return `${fmt.day(fromDay, sameYear ? 'dayShort' : 'day')} – ${fmt.day(toDay, 'day')}`;
-}
-
 function ChangeCell({ row, t, fmt }: { row: Row; t: (k: string) => string; fmt: Formatter }): ReactNode {
   const { current: c, previous: p } = row;
   if (c === null || p === null) return <span className="text-fg-3">–</span>;
@@ -117,7 +111,7 @@ export function CompareCard({ sport }: { sport: string }) {
         title={t('progress.compare.title')}
         icon={ArrowLeftRight}
         subtitle={
-          data ? `${rangeLabel(fmt, data.current.fromDay, data.current.toDay)} ${t('progress.compare.vs')} ${rangeLabel(fmt, data.previous.fromDay, data.previous.toDay)}` : undefined
+          data ? `${fmt.dayRange(data.current.fromDay, data.current.toDay)} ${t('progress.compare.vs')} ${fmt.dayRange(data.previous.fromDay, data.previous.toDay)}` : undefined
         }
         actions={
           stepper ? (
@@ -183,8 +177,8 @@ export function CompareCard({ sport }: { sport: string }) {
             <thead>
               <tr>
                 <TH>{t('progress.compare.metric')}</TH>
-                <TH numeric>{rangeLabel(fmt, data.current.fromDay, data.current.toDay)}</TH>
-                <TH numeric>{rangeLabel(fmt, data.previous.fromDay, data.previous.toDay)}</TH>
+                <TH numeric>{fmt.dayRange(data.current.fromDay, data.current.toDay)}</TH>
+                <TH numeric>{fmt.dayRange(data.previous.fromDay, data.previous.toDay)}</TH>
                 <TH numeric>{t('progress.compare.change')}</TH>
               </tr>
             </thead>

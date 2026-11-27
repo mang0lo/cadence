@@ -1,30 +1,21 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { ChevronLeft, ChevronRight, ListOrdered } from 'lucide-react';
 import type { MetricSample, Page, RecordTypeInfo } from '@cadence/shared';
 import { Card, CardHeader, ErrorState, IconButton, SegmentedControl, Skeleton, Table, TD, TH } from '@/components/ui';
 import { useApi } from '@/lib/api';
 import { useFormat } from '@/lib/format';
-import { useI18n, useT } from '@/lib/i18n';
-import { localDate } from '@/lib/time';
+import { useT } from '@/lib/i18n';
 import { useMetricFormat } from '../../lib/metrics';
 
 const PAGE_SIZE = 50;
-
-/** Wall-clock time with seconds ("14:03:27") in the locale of the user, for the local time of the sample. */
-function useSecondsTime() {
-  const { locale } = useI18n();
-  return useMemo(() => {
-    const f = new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'UTC' });
-    return (ts: number, tzMin: number) => f.format(localDate(ts, tzMin));
-  }, [locale]);
-}
 
 /** Every record of a type in the selected range, newest first, 50 per page. */
 export function SamplesCard({ type, fromDay, toDay }: { type: RecordTypeInfo; fromDay?: string; toDay?: string }) {
   const t = useT();
   const fmt = useFormat();
   const m = useMetricFormat();
-  const time = useSecondsTime();
+  /** Wall-clock time with seconds ("14:03:27") in the local time of the sample. */
+  const time = (ts: number, tzMin: number) => fmt.date(ts, tzMin, 'timeSeconds');
   const [order, setOrder] = useState<'desc' | 'asc'>('desc');
   // a new range or order starts on the first page — already in the render that requests it (an effect would first
   // request the old page of the new range, a second COUNT over the range on the server)

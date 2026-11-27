@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ChartTheme } from '@/components/charts/theme';
 import { measureColor as healthMeasureColor } from '@/features/health/lib/colors';
-import { fitEnds, measureColor, monthYearLabel, msDay } from '@/features/progress/chart';
+import { fitEnds, measureColor, msDay } from '@/features/progress/chart';
 import { createFormatter } from '@/lib/format';
 
 const en = createFormatter('metric', 'en-US', 'en');
@@ -21,7 +21,7 @@ describe('fitEnds', () => {
     const [x0, x1] = fitEnds(workouts, points, { startTs: first, endTs: last });
     expect(msDay(x0)).toBe('2026-01-31');
     expect(msDay(x1)).toBe('2026-06-30');
-    expect(monthYearLabel(en, msDay(x0))).toBe('Jan 2026');
+    expect(en.day(msDay(x0), 'monthYear')).toBe('Jan 2026');
     expect(new Date(x1).toISOString()).toBe('2026-06-30T21:00:00.000Z');
   });
 });

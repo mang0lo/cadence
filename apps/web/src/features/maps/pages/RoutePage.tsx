@@ -28,7 +28,6 @@ import { EffortTable, type EffortRow } from '../components/EffortTable';
 import { EffortTrend } from '../components/EffortTrend';
 import { LineMap, useShownOverlayColors, type MapLine } from '../components/LineMap';
 import { countVars } from '../lib/counts';
-import { dateRange } from '../lib/dates';
 import { unionBox, type BBox } from '../lib/home';
 import { kindLabel, routeTitle } from '../lib/routeName';
 
@@ -193,7 +192,7 @@ function RouteBody({ detail }: { detail: MapsRouteDetail }) {
           <Stat
             label={t('maps.routes.timesDone')}
             value={`${fmt.int(route.count)}×`}
-            hint={dateRange(fmt, route.firstTs, efforts[efforts.length - 1]?.tzMin ?? 0, route.lastTs, route.lastTzMin)}
+            hint={fmt.dateRange(route.firstTs, efforts[efforts.length - 1]?.tzMin ?? 0, route.lastTs, route.lastTzMin)}
           />
           <Stat
             label={t('maps.routes.best')}

@@ -19,7 +19,7 @@ import { speedLabel, useFormat, type Formatter, type TrendFormat } from '@/lib/f
 import { useI18n, useT, type Lang, type TFunction } from '@/lib/i18n';
 import { sportLabel } from '@/lib/sports';
 import { useTrends, type RangeParams } from '../api';
-import { chartLegend, clockAxis, fitEnds, hitLayer, localMs, monthYearLabel, msDay, timeAxisLabel } from '../chart';
+import { chartLegend, clockAxis, fitEnds, hitLayer, localMs, msDay, timeAxisLabel } from '../chart';
 import { formatChange, trendFormat } from '../format';
 import { ActivityLink, ChangeBadge, ChartSkeleton } from './common';
 
@@ -265,8 +265,8 @@ export function TrendsCard({
                   {t('progress.trends.summary', {
                     from: tf.format(selected.fit.startValue),
                     to: tf.format(selected.fit.endValue),
-                    start: monthYearLabel(fmt, fitSpan![0]!),
-                    end: monthYearLabel(fmt, fitSpan![1]!),
+                    start: fmt.day(fitSpan![0]!, 'monthYear'),
+                    end: fmt.day(fitSpan![1]!, 'monthYear'),
                   })}
                 </span>
               )}

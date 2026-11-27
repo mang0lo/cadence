@@ -390,14 +390,6 @@ export function periodLabel(fmt: Formatter, period: GoalPeriod, start: string, e
   return `${fmt.day(start, 'dayShort')} – ${fmt.day(end, 'dayShort')}`;
 }
 
-/** Inclusive range label of two days ("3 Mar – 23 Mar 2025"). */
-export function rangeLabel(fmt: Formatter, from: string, to: string): string {
-  if (from === to) return fmt.day(from, 'day');
-  return from.slice(0, 4) === to.slice(0, 4)
-    ? `${fmt.day(from, 'dayShort')} – ${fmt.day(to, 'day')}`
-    : `${fmt.day(from, 'day')} – ${fmt.day(to, 'day')}`;
-}
-
 /** Days of a month 'YYYY-MM'. */
 export function monthDays(month: string): string[] {
   const out: string[] = [];

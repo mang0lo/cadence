@@ -272,7 +272,7 @@ export function WeeklyLoadCard({ data, loading }: { data: ProgressFitnessRespons
         tooltip: itemTooltip(theme, (p: unknown) => {
           const w = data.weeks[(p as { dataIndex: number }).dataIndex]!;
           return tooltipHtml(
-            `${fmt.day(w.fromDay, 'dayShort')} – ${fmt.day(w.toDay, 'day')}`,
+            fmt.dayRange(w.fromDay, w.toDay),
             [
               { color: theme.series[0]!, label: t('progress.fitness.legend.load'), value: fmt.int(w.load) },
               { color: 'transparent', label: t('progress.common.activities'), value: fmt.int(w.count) },
@@ -292,7 +292,7 @@ export function WeeklyLoadCard({ data, loading }: { data: ProgressFitnessRespons
         { key: 'count', label: t('progress.common.activities'), numeric: true },
       ],
       rows: [...data.weeks].reverse().map((w) => ({
-        week: `${fmt.day(w.fromDay, 'dayShort')} – ${fmt.day(w.toDay, 'day')}`,
+        week: fmt.dayRange(w.fromDay, w.toDay),
         load: fmt.int(w.load),
         count: fmt.int(w.count),
       })),

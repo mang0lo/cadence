@@ -42,18 +42,6 @@ export function fitEnds(
   return [localMs(fit.startTs, workouts[points[0]![0]]!.tzMin), localMs(fit.endTs, workouts[points[points.length - 1]![0]]!.tzMin)];
 }
 
-const monthYearCache = new Map<string, Intl.DateTimeFormat>();
-
-/** "Jan 2026" / "Jan. 2026" ('monthYearShort' would print "Jan 26", which reads like a date). */
-export function monthYearLabel(fmt: Formatter, day: string): string {
-  let f = monthYearCache.get(fmt.locale);
-  if (!f) {
-    f = new Intl.DateTimeFormat(fmt.locale, { month: 'short', year: 'numeric', timeZone: 'UTC' });
-    monthYearCache.set(fmt.locale, f);
-  }
-  return f.format(new Date(`${day.slice(0, 10)}T00:00:00Z`));
-}
-
 /**
  * Time-axis label formatter (UTC based, localized): days for short spans; for long spans month ticks show the
  * month, January shows the year.
@@ -69,7 +57,8 @@ export function timeAxisLabel(fmt: Formatter, spanDays: number): (v: number) => 
 /** Label of a bucket key ('YYYY-MM-DD' week start, 'YYYY-MM', 'YYYY'). */
 export function bucketLabel(fmt: Formatter, key: string, style: 'short' | 'long' = 'short'): string {
   if (key.length === 4) return key;
-  if (key.length === 7) return style === 'short' ? monthYearLabel(fmt, `${key}-01`) : fmt.day(`${key}-01`, 'month');
+  // 'monthYear' ("Jan 2026"): 'monthYearShort' would print "Jan 26", which reads like a date
+  if (key.length === 7) return fmt.day(`${key}-01`, style === 'short' ? 'monthYear' : 'month');
   return fmt.day(key, style === 'short' ? 'dayShort' : 'day');
 }
 

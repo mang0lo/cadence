@@ -5,7 +5,7 @@ import type { ConsistencyOverview, StreakInfo } from '@cadence/shared';
 import { Card, Delta, Skeleton } from '@/components/ui';
 import { useFormat } from '@/lib/format';
 import { useT } from '@/lib/i18n';
-import { previousYearCovered, rangeLabel } from '../lib';
+import { previousYearCovered } from '../lib';
 
 function StreakCard({
   icon: Icon,
@@ -98,7 +98,7 @@ export function StreakCards({ data }: { data: ConsistencyOverview }) {
         label={t('consistency.streaks.longest')}
         value={fmt.int(daily.longest)}
         unit={dayUnit(daily.longest)}
-        hint={daily.longestStart && daily.longestEnd ? rangeLabel(fmt, daily.longestStart, daily.longestEnd) : null}
+        hint={daily.longestStart && daily.longestEnd ? fmt.dayRange(daily.longestStart, daily.longestEnd) : null}
       />
       <StreakCard
         icon={CalendarCheck}

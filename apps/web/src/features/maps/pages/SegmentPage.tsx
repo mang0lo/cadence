@@ -29,7 +29,6 @@ import { decodePolyline, toLngLat } from '@/lib/polyline';
 import { EffortTable, type EffortRow } from '../components/EffortTable';
 import { EffortTrend } from '../components/EffortTrend';
 import { LineMap, useShownOverlayColors, type MapLine, type MapMarker } from '../components/LineMap';
-import { dateHint } from '../lib/dates';
 import { unionBox, type BBox } from '../lib/home';
 import { distanceAxisLabel, gradeAt } from '../lib/segments';
 
@@ -216,7 +215,7 @@ function Body({ detail }: { detail: MapsSegmentDetail }) {
             value={fmt.int(s.efforts)}
             hint={
               latest
-                ? `${t('maps.routes.latest')}: ${dateHint(fmt, latest.startTs, latest.tzMin)}`
+                ? `${t('maps.routes.latest')}: ${fmt.dateHint(latest.startTs, latest.tzMin)}`
                 : undefined
             }
           />
