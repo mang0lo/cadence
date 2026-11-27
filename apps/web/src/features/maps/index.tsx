@@ -3,7 +3,7 @@ import { Flame, Grid3x3, Route, Waypoints } from 'lucide-react';
 import type { FeatureModule } from '../types';
 import { messages } from './messages';
 
-/** "maps" feature (web). Routes are children of the app shell; pages are lazy-loaded. */
+/** "maps" feature (web). Routes are children of the app shell; pages and dashboard widgets are lazy-loaded. */
 const feature: FeatureModule = {
   name: 'maps',
   messages,
@@ -40,6 +40,7 @@ const feature: FeatureModule = {
     { path: '/maps/routes', labelKey: 'maps.nav.routes', icon: Route, group: 'explore', order: 20 },
     { path: '/maps/segments', labelKey: 'maps.nav.segments', icon: Waypoints, group: 'explore', order: 30 },
   ],
+  widgets: [{ id: 'explorer', order: 90, component: () => import('./widgets').then((m) => m.ExplorerWidget) }],
   whatsNew: lazy(() => import('./components/WhatsNewMaps')),
 };
 

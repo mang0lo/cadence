@@ -3,7 +3,9 @@ import type { FeatureModule } from '../types';
 import { hasBodyData } from '@/lib/sources';
 import { messages } from './messages';
 
-/** "health" feature (web). Routes are children of the app shell; pages are lazy-loaded. */
+const widgets = () => import('./widgets');
+
+/** "health" feature (web). Routes are children of the app shell; pages and dashboard widgets are lazy-loaded. */
 const feature: FeatureModule = {
   name: 'health',
   messages,
@@ -32,6 +34,10 @@ const feature: FeatureModule = {
       order: 50,
       available: (s) => s.ecgCount > 0,
     },
+  ],
+  widgets: [
+    { id: 'readiness', order: 20, component: () => widgets().then((m) => m.ReadinessWidget) },
+    { id: 'health', order: 80, component: () => widgets().then((m) => m.HealthSnapshotCard) },
   ],
 };
 

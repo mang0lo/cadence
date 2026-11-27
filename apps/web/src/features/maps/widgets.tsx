@@ -1,6 +1,6 @@
 /**
- * Widgets of the "maps" feature that other features place: `ExplorerWidget` on the dashboard and
- * `WorkoutMapsCard` on the activity page (both placed by the activities feature).
+ * Widgets of the "maps" feature: `ExplorerWidget` on the dashboard (registered in ./index.tsx) and
+ * `WorkoutMapsCard` on the activity page (placed by the activities feature).
  * Each widget renders its own <Card> and fetches its own data; return null when there is nothing to show.
  */
 import { Link } from 'react-router';

@@ -1,40 +1,51 @@
-import type { ReactNode } from 'react';
+import { use, type ComponentType } from 'react';
 import { Link } from 'react-router';
 import { Activity, Upload } from 'lucide-react';
 import { Button, Card, EmptyState, ErrorState, Page } from '@/components/ui';
+import { dashboardWidgets, dashboardWidgetsFor } from '@/features/registry';
 import { useT } from '@/lib/i18n';
-import { CalendarWidget, GoalsWidget, StreakWidget } from '../../consistency/widgets';
-import { HealthSnapshotCard, ReadinessWidget } from '../../health/widgets';
-import { ExplorerWidget } from '../../maps/widgets';
-import { FitnessWidget, PowerWidget, WeeklySnapshotWidget } from '../../progress/widgets';
+import { useDataSources } from '@/lib/sources';
 import { useActivitiesSummary, useFeed } from '../api';
 import { AthleteCard, AthleteCardSkeleton } from '../components/AthleteCard';
 import { FeedCard, FeedCardSkeleton } from '../components/FeedCard';
 import { WidgetBoundary } from '../components/WidgetBoundary';
 
-/** Other features' dashboard widgets, in the agreed order. Each renders its own Card (or null). */
-const WIDGETS: [string, () => ReactNode][] = [
-  ['weekly-snapshot', WeeklySnapshotWidget],
-  ['readiness', ReadinessWidget],
-  ['fitness', FitnessWidget],
-  ['power', PowerWidget],
-  ['streak', StreakWidget],
-  ['goals', GoalsWidget],
-  ['calendar', CalendarWidget],
-  ['health', HealthSnapshotCard],
-  ['explorer', ExplorerWidget],
-];
+type WidgetComponents = Map<string, ComponentType>;
 
+let loaded: WidgetComponents | undefined;
+let loading: Promise<WidgetComponents> | undefined;
+
+/**
+ * Loads the code of every feature's dashboard widgets (FeatureModule.widgets). The route waits for it, so the dashboard
+ * shows up with all its widgets at once. A failed load fails the route (it offers a reload) and is tried again later.
+ */
+export function loadWidgets(): Promise<WidgetComponents> {
+  loading ??= Promise.all(dashboardWidgets.map(async (w) => [w.id, await w.component()] as const)).then(
+    (entries) => (loaded = new Map(entries)),
+    (e: unknown) => {
+      loading = undefined;
+      throw e;
+    },
+  );
+  return loading;
+}
+
+/** The features' dashboard widgets in their order. Each renders its own Card (or null). */
 function Widgets() {
   const t = useT();
+  const sources = useDataSources().data;
+  const components = loaded ?? use(loadWidgets());
   return (
     // minmax(0,1fr): an `auto` track would grow with the widest widget and overflow the side column
     <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-4">
-      {WIDGETS.map(([key, W]) => (
-        <WidgetBoundary key={key} fallback={<ErrorState error={t('activities.widgets.error')} />}>
-          <W />
-        </WidgetBoundary>
-      ))}
+      {dashboardWidgetsFor(sources).map((w) => {
+        const W = components.get(w.id)!;
+        return (
+          <WidgetBoundary key={w.id} fallback={<ErrorState error={t('activities.widgets.error')} />}>
+            <W />
+          </WidgetBoundary>
+        );
+      })}
     </div>
   );
 }

@@ -36,6 +36,27 @@ export interface FeatureModule {
    * ImportHighlights whose `feature` is this module's name. Use React.lazy: it is only needed on the import screen.
    */
   whatsNew?: ComponentType<WhatsNewProps>;
+  /** This feature's dashboard widgets; the dashboard shows the widgets of all features sorted by `order`. */
+  widgets?: DashboardWidget[];
+}
+
+/**
+ * A widget in the dashboard's side column. It renders its own <Card> (or null when there is nothing to show) and
+ * fetches its own data; the dashboard wraps it in an error boundary.
+ */
+export interface DashboardWidget {
+  /** Unique across features, e.g. 'streak'. */
+  id: string;
+  /** Position in the column, across all features (lower first). */
+  order: number;
+  /**
+   * Loads the component by a dynamic import of the feature's widgets.tsx, e.g.
+   * `() => import('./widgets').then((m) => m.StreakWidget)`, so its code stays out of the entry chunk. The dashboard
+   * page loads all widgets before it shows up.
+   */
+  component: () => Promise<ComponentType>;
+  /** Shown only when this returns true for the athlete's data (like NavItem.available). */
+  available?: (sources: DataSourcesInfo) => boolean;
 }
 
 export interface WhatsNewProps {
