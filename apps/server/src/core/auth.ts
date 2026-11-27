@@ -21,7 +21,7 @@ declare module 'fastify' {
  * Desktop/dev mode has no password and binds to 127.0.0.1 only.
  *
  * Clients authenticate either with the `cadence_auth` cookie (set by POST /api/auth/login)
- * or with `Authorization: Bearer <password>` (scripts, the macOS shell pointing at a remote server).
+ * or with `Authorization: Bearer <password>` (scripts and other API clients; the apps use the cookie).
  */
 const COOKIE = 'cadence_auth';
 

@@ -30,7 +30,7 @@ function safeName(name: string): string {
 
 /**
  * /api/import — upload or local-path import, job list/progress, cancel, full rebuild of derived data, reset.
- * Progress of the running job: GET /api/import/jobs/:id (poll ~1/s).
+ * Progress of the running job: GET /api/import/jobs/:id (the web app polls it every 1.5 s while a job runs).
  */
 export default async function importRoutes(app: FastifyInstance) {
   const jobs = app.jobs;

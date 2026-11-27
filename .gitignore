@@ -16,6 +16,8 @@ data/
 export.xml
 export_cda.xml
 apple_health_export/
+*.fit
+deploy/import/
 
 # macOS shell
 apps/macos/.build/
