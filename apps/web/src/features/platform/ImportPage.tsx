@@ -22,7 +22,7 @@ import {
 import { api, ApiError, UNAUTHORIZED_EVENT } from '@/lib/api';
 import { useFormat } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
-import { isNativeShell, onNativeImport, postNative } from '@/lib/native';
+import { isNativeShell, onNativeImport, postNative, shellInfo } from '@/lib/native';
 import { useSettings } from '@/lib/settings';
 import { isActive, jobErrorText, jobPhaseLabel, jobSourceLabel, jobStepLabel, uploadFailure, uploadQueue } from './importJobs';
 import { IMPORT_JOBS_KEY, useImportJobs } from './useImportJobs';
@@ -155,6 +155,8 @@ export default function ImportPage() {
   const fileInput = useRef<HTMLInputElement>(null);
   const native = isNativeShell();
   const nativePicker = native && !!status?.localImport;
+  // the Linux and Windows app's dialog picks files or folders, never both: folders have a button of their own
+  const folderPicker = nativePicker && shellInfo()?.app === 'desktop';
 
   // the whole list, so the new job shows at once
   const started = useCallback(() => qc.invalidateQueries({ queryKey: IMPORT_JOBS_KEY }), [qc]);
@@ -278,6 +280,12 @@ export default function ImportPage() {
                       <Button variant="primary" icon={Upload} onClick={choose} disabled={busy}>
                         {t('platform.import.choose')}
                       </Button>
+                      {/* an unzipped export or a folder of FIT files */}
+                      {folderPicker && (
+                        <Button variant="ghost" onClick={() => postNative('pickImportFile', { folder: true })} disabled={busy}>
+                          {t('platform.import.chooseFolder')}
+                        </Button>
+                      )}
                       {/* the native picker takes exports only; FIT files (several at once) go through the upload */}
                       {nativePicker && (
                         <Button variant="ghost" onClick={() => fileInput.current?.click()} disabled={busy}>
