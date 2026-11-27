@@ -62,7 +62,7 @@ feature module per product area ([ARCHITECTURE.md](ARCHITECTURE.md#adding-a-feat
 - **Data and code**: no new table; the folder is a new settings key next to `core.importWatch` (which remembers the
   imported files). Server: `app.ts` starts and restarts `startImportWatcher` (`import/watch.ts`) from that setting —
   today the watcher only runs when `CADENCE_IMPORT_DIR` is set, which keeps precedence for Docker; the watcher looks
-  into each zip's directory and queues only zips with `apple_health_export/export.xml` or `.fit` files. Shells: a
+  into each zip's directory and queues only zips that contain an `export.xml` or `.fit` files. Shells: a
   folder-picker message in both apps (`packages/shared/src/shell.ts`, `apps/web/src/lib/native.ts`). Web: an
   *Automatic import* card in `platform/SettingsPage.tsx`, the stale-data hint in `components/layout/AppShell.tsx`. The
   Mac app is not sandboxed; macOS asks once for access to Downloads. Nothing leaves the machine.
