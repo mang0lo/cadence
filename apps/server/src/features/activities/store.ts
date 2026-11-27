@@ -11,8 +11,9 @@ import { analyzeActivity, withFtp, type AnalysisEvent } from './analysis';
  * 2: climbs and lap climbing never across a track break, power peaks from the power curve (glitches ignored),
  *    decoupling without the warm-up (one definition with Progress → Trends), efficiency basis and pace efficiency
  *    stored.
+ * 3: lap and segment climbing like the activity's elevation gain (smoothed per track part, 2 m hysteresis).
  */
-export const ANALYSIS_VERSION = 2;
+export const ANALYSIS_VERSION = 3;
 
 /**
  * SQL condition for other features reading the stored columns (decoupling_pct, pace_efficiency …): the row `alias`
