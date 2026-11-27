@@ -1,5 +1,8 @@
 # Feature-agent briefs
 
+> Historical: these are the build prompts of v0.1 (November 2026). They are kept as they were and no longer match the
+> code; the current conventions are in `CLAUDE.md` and `docs/ARCHITECTURE.md`.
+
 Cadence's product areas are built as vertical slices by parallel subagents, each in its own git worktree.
 To (re)start one: give the agent `common.md` (with `<F>`, `<API_PORT>`, `<WEB_PORT>` filled in) followed by the
 feature file. Then review, run `npm run typecheck && npm test && npm run build`, and merge its branch into `main`.
