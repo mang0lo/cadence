@@ -16,8 +16,8 @@ export interface RunDeriveOptions {
   sinceDay: string | null;
   /** Per record type: earliest start_ts of new records (more precise than sinceDay for daily metrics). */
   typeSince?: Map<number, number> | null;
-  /** Progress 0..1 with the current step label. */
-  onProgress?: (fraction: number, label: string, message?: string) => void;
+  /** Progress 0..1 with the current step (its id and English label). */
+  onProgress?: (fraction: number, step: Pick<DeriveStep, 'id' | 'label'>, message?: string) => void;
   checkCancelled?: () => void;
   log?: (message: string) => void;
   /** Run feature derive steps after the core steps (default true). */
@@ -105,7 +105,7 @@ export async function runDerive(o: RunDeriveOptions): Promise<DeriveResult> {
     ctx.report = (fraction: number, message?: string) =>
       o.onProgress?.(
         Math.min(1, (base + Math.max(0, Math.min(1, fraction)) * w) / total),
-        step.label,
+        step,
         message,
       );
     ctx.report(0);
@@ -123,7 +123,7 @@ export async function runDerive(o: RunDeriveOptions): Promise<DeriveResult> {
       if (o.db.isTransaction) o.db.exec('ROLLBACK');
     }
     done += w;
-    o.onProgress?.(done / total, step.label);
+    o.onProgress?.(done / total, step);
   }
   return { workoutIds: ctx.workoutIds, changes: ctx.changes, warnings, steps: timings };
 }

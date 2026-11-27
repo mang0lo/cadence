@@ -80,13 +80,18 @@ export async function openExportSource(input: string): Promise<ExportSource> {
 // ---------------------------------------------------------------------------
 
 async function openZip(file: string): Promise<ExportSource> {
-  const zip = await yauzl.openPromise(file, {
-    lazyEntries: true,
-    autoClose: false,
-    decodeStrings: true,
-    validateEntrySizes: true,
-    strictFileNames: false,
-  });
+  let zip: yauzl.ZipFile;
+  try {
+    zip = await yauzl.openPromise(file, {
+      lazyEntries: true,
+      autoClose: false,
+      decodeStrings: true,
+      validateEntrySizes: true,
+      strictFileNames: false,
+    });
+  } catch (err) {
+    throw new ImportInputError(`Not a readable zip file: ${(err as Error).message}`);
+  }
   const entries: yauzl.Entry[] = [];
   try {
     for await (const e of zip.eachEntry()) if (!e.fileName.endsWith('/')) entries.push(e);
