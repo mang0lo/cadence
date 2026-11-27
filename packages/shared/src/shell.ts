@@ -23,7 +23,7 @@ export type NativeMessage =
   /** The import page listens for NATIVE_IMPORT_EVENT now: the shell hands it the path it kept for it, if any. */
   | { type: 'importReady' }
   | { type: 'openDataFolder' }
-  /** A file the page made (share image), as base64. */
+  /** A file the page made (share image, CSV export), as base64; the shells save only SAVE_FILE_TYPES. */
   | { type: 'saveFile'; filename: string; base64: string }
   /** Settings → Server: show this server from now on ('' = the one built into the app). */
   | { type: 'connectServer'; url: string };
@@ -38,6 +38,12 @@ const messageTypes: { [T in NativeMessage['type']]: true } = {
 
 /** Every message type the shells know. */
 export const NATIVE_MESSAGES = Object.keys(messageTypes) as NativeMessage['type'][];
+
+/**
+ * The file types (extensions) the shells save for the page (saveFile): images it drew and data exports. They keep
+ * the name the page gave; anything else (programs, scripts, web pages …) is refused.
+ */
+export const SAVE_FILE_TYPES: readonly string[] = ['png', 'jpg', 'jpeg', 'csv', 'gpx', 'tcx', 'json', 'txt'];
 
 /**
  * The shell hands the import page a path on this computer to import: `detail` is a NativeImportDetail. The page

@@ -16,7 +16,14 @@ import { app, BrowserWindow, dialog, ipcMain, Menu, session, shell, type MenuIte
 import { importDialogOptions, type ImportPick } from './import-picker';
 import { allowsPermission, isAppFrame, isAppUrl, isExternalUrl, navigationTarget, originOf } from './policy';
 import { DEFAULT_PORT, LocalServer, ServerStopped } from './server-process';
-import { cancelledEventScript, importEventScript, parseBridgeMessage, shellInfo, type NativeMessage } from './shell-contract';
+import {
+  cancelledEventScript,
+  importEventScript,
+  parseBridgeMessage,
+  savedFileName,
+  shellInfo,
+  type NativeMessage,
+} from './shell-contract';
 
 const APP_NAME = 'Cadence';
 app.setName(APP_NAME);
@@ -401,11 +408,18 @@ function tellCancelled(type: NativeMessage['type']): void {
   void win?.webContents.executeJavaScript(cancelledEventScript(type)).catch(() => undefined);
 }
 
-/** Save a file the web UI made (share image): blob downloads are unreliable in embedded views, like on macOS. */
+/**
+ * Save a file the web UI made (share image, CSV export): blob downloads are unreliable in embedded views, like on
+ * macOS. The dialog suggests the name the page gave; only images and data exports are accepted (savedFileName).
+ */
 async function saveFile(filename: string, base64: string): Promise<void> {
+  const name = savedFileName(filename);
+  if (!name) return shell.beep();
   if (!win) return;
+  const type = path.extname(name).slice(1).toLowerCase();
   const r = await dialog.showSaveDialog(win, {
-    defaultPath: path.join(app.getPath('downloads'), path.basename(filename)),
+    defaultPath: path.join(app.getPath('downloads'), name),
+    filters: [{ name: type.toUpperCase(), extensions: [type] }],
   });
   if (r.canceled || !r.filePath) return;
   await fs.promises.writeFile(r.filePath, Buffer.from(base64, 'base64'));

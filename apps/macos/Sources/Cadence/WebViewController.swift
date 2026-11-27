@@ -323,15 +323,16 @@ final class WebViewController: NSViewController, WKNavigationDelegate, WKUIDeleg
         alert.beginSheetModal(for: window) { done($0 == .alertFirstButtonReturn) }
     }
 
-    /// A file the web UI created itself (share images): blob downloads are unreliable in WKWebView, so the page
-    /// posts `{ filename, base64 }` and the image is written to ~/Downloads. Only PNG images are accepted.
+    /// A file the web UI created itself (share images, CSV exports): blob downloads are unreliable in WKWebView, so
+    /// the page posts `{ filename, base64 }` and the file is written to ~/Downloads under the name the page gave.
+    /// Only images and data exports are accepted (ShellContract.savedFileTypes).
     private func saveFile(_ body: [String: Any]) {
         guard let name = body["filename"] as? String,
               let base64 = body["base64"] as? String,
               let data = Data(base64Encoded: base64) else { return }
-        var filename = (name as NSString).lastPathComponent
-        if filename.hasPrefix(".") || (filename as NSString).pathExtension.lowercased() != "png" {
-            filename = "cadence.png"
+        guard let filename = ShellContract.savedFileName(name) else {
+            NSSound.beep()
+            return
         }
         let target = uniqueDownloadURL(for: filename)
         do {

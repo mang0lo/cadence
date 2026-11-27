@@ -42,6 +42,25 @@ enum ShellContract {
         case pickImportFile, importReady, openDataFolder, saveFile, connectServer
     }
 
+    /// The file types (extensions) the app saves for the page (`saveFile`): images it drew and data exports. They keep
+    /// the name the page gave; anything else (apps, scripts, web pages …) is refused.
+    static let savedFileTypes: Set<String> = ["png", "jpg", "jpeg", "csv", "gpx", "tcx", "json", "txt"]
+
+    /// The name a file the page made (`saveFile`) is saved under: the name it gave without folders, characters
+    /// Windows does not allow replaced (as the desktop app does), "cadence.<type>" for a name that would hide the
+    /// file; nil when its type is none of savedFileTypes.
+    static func savedFileName(_ name: String) -> String? {
+        let last = name.split(whereSeparator: { $0 == "/" || $0 == "\\" }).last.map(String.init) ?? ""
+        let unsafe = Set("<>:\"|?*".unicodeScalars)
+        let scalars = last.unicodeScalars.map { $0.value < 0x20 || $0.value == 0x7F || unsafe.contains($0) ? "_" : $0 }
+        let base = String(String.UnicodeScalarView(scalars)).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let dot = base.lastIndex(of: ".") else { return nil }
+        let type = base[base.index(after: dot)...].lowercased()
+        guard savedFileTypes.contains(type) else { return nil }
+        let stem = base[..<dot]
+        return stem.isEmpty || stem.hasPrefix(".") ? "cadence.\(type)" : base
+    }
+
     /// The window event that hands the import page a path to import (`detail: { path, confirm? }`). The import page
     /// cancels it when it takes the path.
     static let importEvent = "cadence:native-import"

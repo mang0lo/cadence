@@ -47,6 +47,38 @@ final class ShellContractTests: XCTestCase {
         XCTAssertNil(ShellContract.Message(rawValue: "openFile"))
     }
 
+    /// Names a page may give a file it saves → the name the app saves it under (nil: refused). The desktop app's
+    /// test runs the same table (apps/desktop/test/shell-contract.test.ts checks that both have every case).
+    private let savedNames: [(String, String?)] = [
+        ("cadence-2026-06-20-morning-ride.png", "cadence-2026-06-20-morning-ride.png"),
+        ("ecg-202606200815.csv", "ecg-202606200815.csv"),
+        ("Morning Run.GPX", "Morning Run.GPX"),
+        ("metrics.json", "metrics.json"),
+        ("../../Library/LaunchAgents/evil.txt", "evil.txt"),
+        ("C:\\Users\\me\\route.gpx", "route.gpx"),
+        (".png", "cadence.png"),
+        (".hidden.csv", "cadence.csv"),
+        ("a<b>:c|d?e*f\"g.csv", "a_b__c_d_e_f_g.csv"),
+        ("tab\there.txt", "tab_here.txt"),
+        ("run.exe", nil),
+        ("install.command", nil),
+        ("page.html", nil),
+        ("image.svg", nil),
+        ("run.png.app", nil),
+        ("run.png.", nil),
+        ("noext", nil),
+        ("", nil),
+    ]
+
+    func testSavedFilesKeepTheirNameAndTypeWithoutFolders() {
+        for (name, saved) in savedNames {
+            XCTAssertEqual(ShellContract.savedFileName(name), saved, name)
+        }
+        for type in ShellContract.savedFileTypes {
+            XCTAssertEqual(ShellContract.savedFileName("export.\(type)"), "export.\(type)")
+        }
+    }
+
     /// A minimal page for the scripts the app runs with callAsyncJavaScript: a page that listens for `event` takes
     /// it (`received`); `location.assign` and `location.reload` are recorded.
     private func page(listeningFor event: String?) -> JSContext {

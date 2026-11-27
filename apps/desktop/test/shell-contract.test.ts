@@ -13,6 +13,8 @@ import {
   parseBridgeMessage,
   parseListening,
   RESTART_EXIT_CODE,
+  SAVE_FILE_TYPES,
+  savedFileName,
   shellInfo,
   shellServerEnv,
 } from '../src/shell-contract';
@@ -103,6 +105,38 @@ describe('parseBridgeMessage', () => {
   });
 });
 
+/** Names a page may give a file it saves → the name the shells save it under (null: refused). Same table in Swift. */
+const SAVED_NAMES: [string, string | null][] = [
+  ['cadence-2026-06-20-morning-ride.png', 'cadence-2026-06-20-morning-ride.png'],
+  ['ecg-202606200815.csv', 'ecg-202606200815.csv'],
+  ['Morning Run.GPX', 'Morning Run.GPX'],
+  ['metrics.json', 'metrics.json'],
+  ['../../Library/LaunchAgents/evil.txt', 'evil.txt'],
+  ['C:\\Users\\me\\route.gpx', 'route.gpx'],
+  ['.png', 'cadence.png'],
+  ['.hidden.csv', 'cadence.csv'],
+  ['a<b>:c|d?e*f"g.csv', 'a_b__c_d_e_f_g.csv'],
+  ['tab\there.txt', 'tab_here.txt'],
+  ['run.exe', null],
+  ['install.command', null],
+  ['page.html', null],
+  ['image.svg', null],
+  ['run.png.app', null],
+  ['run.png.', null],
+  ['noext', null],
+  ['', null],
+];
+
+describe('savedFileName', () => {
+  it('keeps the name and type of images and data exports, without folders', () => {
+    for (const [name, saved] of SAVED_NAMES) expect(savedFileName(name), name).toBe(saved);
+  });
+
+  it('accepts every type the contract allows', () => {
+    for (const type of SAVE_FILE_TYPES) expect(savedFileName(`export.${type}`)).toBe(`export.${type}`);
+  });
+});
+
 describe('importEventScript', () => {
   /** Runs the script in a page whose import page listens (it takes the path) or not; what it received and returned. */
   function run(script: string, listening: boolean) {
@@ -182,6 +216,14 @@ describe('the shell contract', () => {
     expect(cases?.split(',').map((c) => c.trim()).sort()).toEqual([...NATIVE_MESSAGES].sort());
     expect(/importEvent = "([^"]*)"/.exec(swift)?.[1]).toBe(NATIVE_IMPORT_EVENT);
     expect(/cancelledEvent = "([^"]*)"/.exec(swift)?.[1]).toBe(NATIVE_CANCELLED_EVENT);
+    const types = /savedFileTypes: Set<String> = \[([^\]]*)\]/.exec(swift)?.[1];
+    expect([...(types ?? '').matchAll(/"(\w+)"/g)].map((m) => m[1]).sort()).toEqual([...SAVE_FILE_TYPES].sort());
+    // the same names as savedFileName here (ShellContractTests.swift runs this table)
+    const tests = read('apps/macos/Tests/CadenceTests/ShellContractTests.swift');
+    for (const [name, saved] of SAVED_NAMES) {
+      const swiftName = JSON.stringify(name).replace(/\\u([0-9a-f]{4})/g, '\\u{$1}');
+      expect(tests, `ShellContractTests.swift: ${name}`).toContain(`(${swiftName}, ${saved === null ? 'nil' : JSON.stringify(saved)})`);
+    }
 
     const infoBody = swiftBody('shellInfo');
     expect([...infoBody.matchAll(/"(\w+)":/g)].map((m) => m[1]).sort()).toEqual(

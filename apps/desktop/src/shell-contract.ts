@@ -12,6 +12,7 @@ import {
   LISTENING_PREFIX,
   NATIVE_CANCELLED_EVENT,
   NATIVE_IMPORT_EVENT,
+  SAVE_FILE_TYPES,
   type NativeCancelledDetail,
   type NativeImportDetail,
   type NativeMessage,
@@ -24,6 +25,7 @@ export {
   NATIVE_IMPORT_EVENT,
   NATIVE_MESSAGES,
   RESTART_EXIT_CODE,
+  SAVE_FILE_TYPES,
   type NativeMessage,
   type ShellInfo,
 } from '@cadence/shared';
@@ -81,6 +83,20 @@ export function parseBridgeMessage(raw: unknown): NativeMessage | null {
     default:
       return null;
   }
+}
+
+/**
+ * The name a file the page made (saveFile) is saved under: the name it gave without folders, characters Windows does
+ * not allow replaced, "cadence.<type>" for a name that would hide the file; null when its type is none of
+ * SAVE_FILE_TYPES. The Mac app does the same (ShellContract.savedFileName).
+ */
+export function savedFileName(name: string): string | null {
+  const base = (name.split(/[\\/]/).pop() ?? '').replace(/[\u0000-\u001f\u007f<>:"|?*]/g, '_').trim();
+  const dot = base.lastIndexOf('.');
+  const type = dot < 0 ? '' : base.slice(dot + 1).toLowerCase();
+  if (!SAVE_FILE_TYPES.includes(type)) return null;
+  const stem = base.slice(0, dot);
+  return !stem || stem.startsWith('.') ? `cadence.${type}` : base;
 }
 
 /**
