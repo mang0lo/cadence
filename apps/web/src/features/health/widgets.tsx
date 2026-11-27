@@ -14,7 +14,7 @@ import { durationParts, useMetricFormat, type ValueParts } from './lib/metrics';
 import { useReadiness } from './lib/readiness';
 
 /**
- * Dashboard widgets of the "health" feature, placed on the home page by the activities feature.
+ * Dashboard widgets of the "health" feature, registered in ./index.tsx (FeatureModule.widgets).
  * Each widget renders its own <Card> and fetches its own data; return null when there is nothing to show.
  */
 
@@ -153,8 +153,8 @@ function Tile({
 }
 
 /**
- * The health slot of the dashboard: the readiness card (when there is a score) above the snapshot card. Both are
- * separate cards; the dashboard can also list `ReadinessWidget` and `HealthSnapshotCard` as two widgets of their own.
+ * The readiness card (when there is a score) above the snapshot card. The dashboard lists `ReadinessWidget` and
+ * `HealthSnapshotCard` as two widgets of their own (./index.tsx).
  */
 export function HealthSnapshotWidget() {
   return (

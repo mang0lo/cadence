@@ -1,5 +1,5 @@
 /**
- * Dashboard widgets of the "consistency" feature, placed on the home page by the activities feature.
+ * Dashboard widgets of the "consistency" feature, registered in ./index.tsx (FeatureModule.widgets).
  * Each widget renders its own <Card> and fetches its own data; it returns null when there is nothing to show.
  *
  *   <StreakWidget />    current daily streak, longest + weekly streak, the last 14 days

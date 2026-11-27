@@ -4,10 +4,11 @@ import type { FeatureModule } from '../types';
 import { messages } from './messages';
 
 const yearPage = () => import('./pages/YearInReviewPage').then((m) => ({ Component: m.default }));
+const widgets = () => import('./widgets');
 
 /**
  * "consistency" feature (web): consistency calendar & streaks, goals, trophies, year in review.
- * Dashboard widgets (StreakWidget, GoalsWidget, CalendarWidget) live in ./widgets.tsx.
+ * Dashboard widgets (StreakWidget, GoalsWidget, CalendarWidget) live in ./widgets.tsx and are lazy-loaded.
  */
 const feature: FeatureModule = {
   name: 'consistency',
@@ -24,6 +25,11 @@ const feature: FeatureModule = {
     { path: '/goals', labelKey: 'consistency.nav.goals', icon: Target, group: 'habits', order: 10 },
     { path: '/trophies', labelKey: 'consistency.nav.trophies', icon: Trophy, group: 'habits', order: 20 },
     { path: '/year', labelKey: 'consistency.nav.year', icon: Sparkles, group: 'habits', order: 30 },
+  ],
+  widgets: [
+    { id: 'streak', order: 50, component: () => widgets().then((m) => m.StreakWidget) },
+    { id: 'goals', order: 60, component: () => widgets().then((m) => m.GoalsWidget) },
+    { id: 'calendar', order: 70, component: () => widgets().then((m) => m.CalendarWidget) },
   ],
   whatsNew: lazy(() => import('./components/WhatsNewTrophies')),
 };
