@@ -7,6 +7,7 @@ import { buildApp, migrateAll } from '../src/app';
 import { loadConfig } from '../src/config';
 import { get, openDb, run, type Db } from '../src/db/db';
 import { gzipJson } from '../src/lib/gzip';
+import { zDay } from '../src/lib/params';
 
 let dir: string;
 let db: Db;
@@ -69,5 +70,37 @@ describe('sports from requests', () => {
     expect(res.body).not.toContain('native code');
     // the default title falls back to the 'other' sport, not to Object's constructor
     expect(res.body).toContain('Workout');
+  });
+});
+
+describe('days in requests', () => {
+  const IMPOSSIBLE = ['2026-02-30', '2026-13-01', '2026-00-10', '2026-04-31', '2023-02-29', '2026-1-01', ' 2026-01-01', '0000-00-00'];
+
+  it('zDay takes calendar days only', () => {
+    for (const d of ['2024-02-29', '2026-01-01', '2026-12-31', '1970-01-01']) expect(zDay.safeParse(d).success, d).toBe(true);
+    for (const d of IMPOSSIBLE) expect(zDay.safeParse(d).success, d).toBe(false);
+  });
+
+  it('refuses impossible days in the daily metrics range with 400', async () => {
+    for (const d of IMPOSSIBLE) {
+      for (const key of ['fromDay', 'toDay']) {
+        const res = await app.inject({ url: `/api/metrics/daily?metric=HKQuantityTypeIdentifierStepCount&${key}=${encodeURIComponent(d)}` });
+        expect(res.statusCode, `${key}=${d}`).toBe(400);
+        expect(res.json().error.code).toBe('invalid_request');
+      }
+    }
+    const ok = await app.inject({ url: '/api/metrics/daily?metric=HKQuantityTypeIdentifierStepCount&fromDay=2024-02-29&toDay=2026-02-28' });
+    expect(ok.statusCode).toBe(200);
+    expect(ok.json()).toEqual([]);
+  });
+
+  it('refuses an impossible sinceDay of a partial rebuild with 400 and queues nothing', async () => {
+    const jobs = () => get<{ n: number }>(db, 'SELECT COUNT(*) AS n FROM import_jobs')!.n;
+    const before = jobs();
+    for (const d of IMPOSSIBLE) {
+      const res = await app.inject({ method: 'POST', url: '/api/import/rederive', payload: { workoutIds: [workoutId], sinceDay: d } });
+      expect(res.statusCode, d).toBe(400);
+    }
+    expect(jobs()).toBe(before);
   });
 });
