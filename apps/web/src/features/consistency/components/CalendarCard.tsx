@@ -54,7 +54,8 @@ export function CalendarCard({
   const active = days.filter((d) => d.count > 0);
   const totalS = active.reduce((s, d) => s + d.durationS, 0);
 
-  const table: TableView = {
+  // rows only while the table view is open: up to a year of days, each with a button
+  const table = (): TableView => ({
     columns: [
       { key: 'day', label: t('consistency.calendar.table.day') },
       { key: 'activities', label: t('consistency.calendar.metrics.activities'), numeric: true },
@@ -78,7 +79,7 @@ export function CalendarCard({
         effort: d.count ? fmt.int(d.effort) : '–',
         move: d.move !== null ? fmt.pct(d.move) : '–',
       })),
-  };
+  });
 
   const items = CALENDAR_METRICS.filter((x) => x !== 'move' || hasRings).map((x) => ({
     value: x,
@@ -124,6 +125,7 @@ export function CalendarCard({
             gap={3}
             selectedDay={selectedDay}
             onSelectDay={onSelectDay}
+            formatValue={(v) => formatCalendarValue(fmt, t, m, v)}
             tooltip={(day) => {
               const d = byDay.get(day);
               const v = d ? calendarValue(d, m) : 0;

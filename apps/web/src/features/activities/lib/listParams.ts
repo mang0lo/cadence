@@ -4,6 +4,7 @@
  */
 import type { ActivityListQuery, ActivitySort } from '@cadence/shared';
 import { addDays, dayStartTs, startOfMonth, startOfWeek, startOfYear } from '@/lib/time';
+import { patchParams, type ParamsPatch } from '@/lib/urlParams';
 
 export const RANGES = ['all', 'week', 'month', 'year', 'd30', 'd90', 'm12', 'custom'] as const;
 export type Range = (typeof RANGES)[number];
@@ -50,12 +51,8 @@ export function parseListParams(params: URLSearchParams): ListState {
 }
 
 /** A copy of `params` with `patch` applied (null / '' removes a key); every change except paging goes back to page 1. */
-export function patchListParams(params: URLSearchParams, patch: Record<string, string | null>): URLSearchParams {
-  const next = new URLSearchParams(params);
-  for (const [k, v] of Object.entries(patch)) {
-    if (v === null || v === '') next.delete(k);
-    else next.set(k, v);
-  }
+export function patchListParams(params: URLSearchParams, patch: ParamsPatch): URLSearchParams {
+  const next = patchParams(params, patch);
   if (!('page' in patch)) next.delete('page');
   return next;
 }

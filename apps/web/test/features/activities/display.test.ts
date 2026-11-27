@@ -2,14 +2,13 @@
  * Sport-dependent display values of the activities feature (apps/web/src/features/activities/lib/display.ts).
  */
 import { describe, expect, it } from 'vitest';
-import { createFormatter } from '@/lib/format';
+import { createFormatter, paceUnitM } from '@/lib/format';
 import {
   cadenceUnit,
   isCycling,
   keyStats,
   minutesAxis,
   minutesTick,
-  paceUnitM,
   paceValue,
   relativeTime,
   shownGain,

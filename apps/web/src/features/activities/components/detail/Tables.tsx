@@ -2,10 +2,10 @@ import { useMemo, useState } from 'react';
 import { Flag, ListOrdered, MapPin, Timer, Zap } from 'lucide-react';
 import { M_PER_KM, M_PER_MI, type ActivityAnalysis, type ActivityLap, type WorkoutDetail } from '@cadence/shared';
 import { Card, CardHeader, IconButton, SegmentedControl, Table, TD, TH, cn } from '@/components/ui';
-import { useFormat } from '@/lib/format';
+import { showsPace, speedLabel, useFormat } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
 import { sportColorVar } from '@/lib/sports';
-import { effortLabel, isPaceSport, shortDistanceParts } from '../../lib/display';
+import { effortLabel, shortDistanceParts } from '../../lib/display';
 import { indexAtDist, indexAtTime, type Prepared } from '../../lib/streams';
 import { MedalBadge } from '../MedalBadge';
 
@@ -43,7 +43,7 @@ export function Splits({ w, P, onSelect }: { w: WorkoutDetail; P: Prepared | nul
   const [active, setActive] = useState<number | null>(null);
   if (!splits.length) return null;
   const unit = imperial ? M_PER_MI : M_PER_KM;
-  const pace = isPaceSport(w.sport);
+  const pace = showsPace(w.sport);
   const full = splits.filter((s) => s.distanceM >= unit * 0.95);
   const maxSpeed = Math.max(...splits.map((s) => s.avgSpeed));
   const fastest = full.length > 1 ? full.reduce((a, b) => (b.avgSpeed > a.avgSpeed ? b : a)).idx : null;
@@ -129,7 +129,7 @@ function LapTable({ laps, w, P, onSelect, kind }: { laps: ActivityLap[]; w: Work
           <TH numeric>{t('activities.laps.time')}</TH>
           <TH numeric>{t('activities.laps.distance')}</TH>
           <TH className="w-1/3">
-            {isPaceSport(w.sport) ? t('common.pace') : t('common.speed')} ({fmt.paceParts(1, w.sport).unit})
+            {speedLabel(t, w.sport)} ({fmt.paceParts(1, w.sport).unit})
           </TH>
           {hasStroke && <TH>{t('activities.laps.stroke')}</TH>}
           {hasHr && <TH numeric>{t('activities.splits.hr')}</TH>}
@@ -229,7 +229,7 @@ export function BestEfforts({ w, P, onSelect }: { w: WorkoutDetail; P: Prepared 
           <tr>
             <TH>{t('activities.efforts.effort')}</TH>
             <TH numeric>{t('activities.efforts.time')}</TH>
-            <TH numeric>{isPaceSport(w.sport) ? t('activities.efforts.pace') : t('common.speed')}</TH>
+            <TH numeric>{showsPace(w.sport) ? t('activities.efforts.pace') : t('common.speed')}</TH>
             <TH>{t('activities.efforts.rank')}</TH>
             {/* relative: the visually hidden label is absolutely positioned and must stay inside the cell */}
             <TH numeric className="relative">

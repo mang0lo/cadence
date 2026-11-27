@@ -7,13 +7,13 @@ import { EChart, pointerInElement } from '@/components/charts/EChart';
 import { valueAxis } from '@/components/charts/options';
 import { useChartTheme, type ChartTheme } from '@/components/charts/theme';
 import { SegmentedControl } from '@/components/ui';
-import { clock, useFormat, type Formatter } from '@/lib/format';
+import { clock, showsPace, useFormat, type Formatter } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
 import type { TFunction } from '@/lib/i18n';
 import { useStoredState } from '@/lib/storage';
-import { isPaceSport, paceValue } from '../../lib/display';
+import type { Store } from '@/lib/store';
+import { paceValue } from '../../lib/display';
 import type { Playback } from '../../lib/playback';
-import type { Store } from '../../lib/store';
 import {
   bucketMean,
   bucketMoving,
@@ -87,7 +87,7 @@ function buildMetrics(
     });
   }
   if (P.speed && P.dist) {
-    const pace = isPaceSport(sport);
+    const pace = showsPace(sport);
     const s = bucketMean(P.speed, B);
     const vals = Array.from(s, (v, b) => (v > 0.3 && moving[b]! >= 0.5 ? paceValue(v, sport, fmt.units) : NaN));
     const lo = quantile(vals, pace ? 0.02 : 0);
@@ -374,8 +374,8 @@ export function StreamCharts({ P, sport, zoneBounds, playback, hover, selection,
     return fracIndex(xFull, x0 + f * (x1 - x0));
   };
 
-  // ---- table view: one row per km/mi (distance) or 5 minutes (time) ----
-  const table = useMemo<TableView>(() => {
+  // ---- table view (built only while it is open, not on every zoom): one row per km/mi or 5 minutes ----
+  const table = useMemo(() => (): TableView => {
     const step = xMode === 'dist' ? 1 : 300;
     const rows: Record<string, ReactNode>[] = [];
     for (let x = x0; x < x1; x += step) {

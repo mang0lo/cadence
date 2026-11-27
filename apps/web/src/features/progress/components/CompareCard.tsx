@@ -2,11 +2,11 @@ import { useState, type ReactNode } from 'react';
 import { ArrowLeftRight, ChevronLeft, ChevronRight } from 'lucide-react';
 import { sportInfo, type ProgressCompareTotals } from '@cadence/shared';
 import { Card, CardHeader, ErrorState, IconButton, Input, SegmentedControl, Skeleton, Table, TD, TH } from '@/components/ui';
-import { useFormat, type Formatter } from '@/lib/format';
+import { showsPace, speedFormat, useFormat, type Formatter } from '@/lib/format';
 import { useT } from '@/lib/i18n';
 import { addDays, todayKey } from '@/lib/time';
 import { useCompare } from '../api';
-import { showsPace, signedRounded, speedFormat } from '../format';
+import { signedRounded } from '../format';
 import { ChangeBadge } from './common';
 
 type Mode = 'rolling' | 'week' | 'month' | 'year' | 'custom';
@@ -75,12 +75,6 @@ function rowsFor(cur: ProgressCompareTotals, prev: ProgressCompareTotals, sport:
   return rows;
 }
 
-function rangeLabel(fmt: Formatter, fromDay: string, toDay: string): string {
-  if (fromDay === toDay) return fmt.day(fromDay, 'day');
-  const sameYear = fromDay.slice(0, 4) === toDay.slice(0, 4);
-  return `${fmt.day(fromDay, sameYear ? 'dayShort' : 'day')} – ${fmt.day(toDay, 'day')}`;
-}
-
 function ChangeCell({ row, t, fmt }: { row: Row; t: (k: string) => string; fmt: Formatter }): ReactNode {
   const { current: c, previous: p } = row;
   if (c === null || p === null) return <span className="text-fg-3">–</span>;
@@ -117,7 +111,7 @@ export function CompareCard({ sport }: { sport: string }) {
         title={t('progress.compare.title')}
         icon={ArrowLeftRight}
         subtitle={
-          data ? `${rangeLabel(fmt, data.current.fromDay, data.current.toDay)} ${t('progress.compare.vs')} ${rangeLabel(fmt, data.previous.fromDay, data.previous.toDay)}` : undefined
+          data ? `${fmt.dayRange(data.current.fromDay, data.current.toDay)} ${t('progress.compare.vs')} ${fmt.dayRange(data.previous.fromDay, data.previous.toDay)}` : undefined
         }
         actions={
           stepper ? (
@@ -147,14 +141,14 @@ export function CompareCard({ sport }: { sport: string }) {
         />
         {mode === 'custom' && (
           <div className="flex flex-wrap items-center gap-2">
-            {/* h-8! — Input sets h-9 itself and cn does not merge conflicting utilities (h-9 comes later in the CSS) */}
             <Input
               type="date"
               aria-label={t('progress.compare.from')}
               value={custom.fromDay}
               max={custom.toDay || today}
               onChange={(e) => setCustom({ ...custom, fromDay: e.target.value })}
-              className="h-8! w-auto text-xs"
+              size="sm"
+              className="w-auto"
             />
             <span className="text-xs text-fg-3">–</span>
             <Input
@@ -164,7 +158,8 @@ export function CompareCard({ sport }: { sport: string }) {
               min={custom.fromDay}
               max={today}
               onChange={(e) => setCustom({ ...custom, toDay: e.target.value })}
-              className="h-8! w-auto text-xs"
+              size="sm"
+              className="w-auto"
             />
           </div>
         )}
@@ -183,8 +178,8 @@ export function CompareCard({ sport }: { sport: string }) {
             <thead>
               <tr>
                 <TH>{t('progress.compare.metric')}</TH>
-                <TH numeric>{rangeLabel(fmt, data.current.fromDay, data.current.toDay)}</TH>
-                <TH numeric>{rangeLabel(fmt, data.previous.fromDay, data.previous.toDay)}</TH>
+                <TH numeric>{fmt.dayRange(data.current.fromDay, data.current.toDay)}</TH>
+                <TH numeric>{fmt.dayRange(data.previous.fromDay, data.previous.toDay)}</TH>
                 <TH numeric>{t('progress.compare.change')}</TH>
               </tr>
             </thead>

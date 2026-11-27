@@ -21,7 +21,6 @@ import { api, useApi } from '@/lib/api';
 import { useFormat } from '@/lib/format';
 import { useT } from '@/lib/i18n';
 import { SportIcon, sportColorVar, useSportLabel } from '@/lib/sports';
-import { dateHint } from '../lib/dates';
 
 export default function SegmentsPage() {
   const t = useT();
@@ -158,7 +157,7 @@ export default function SegmentsPage() {
                         <span className="font-semibold text-fg">{fmt.duration(s.prTimeS)}</span>
                         {s.prTs !== null && s.prTzMin !== null && (
                           <span className="block text-xs text-fg-3">
-                            {dateHint(fmt, s.prTs, s.prTzMin)}
+                            {fmt.dateHint(s.prTs, s.prTzMin)}
                           </span>
                         )}
                       </>

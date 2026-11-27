@@ -3,8 +3,8 @@ import { Pause, Play, RotateCcw } from 'lucide-react';
 import { Button, IconButton, Select } from '@/components/ui';
 import { clock } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
+import { useStore, useThrottledStore } from '@/lib/store';
 import { SPEEDS, type Playback, type Speed } from '../lib/playback';
-import { useStore, useThrottledStore } from '../lib/store';
 
 /** "12:05 / 1:02:05" — the only part of the transport that re-renders while the replay runs. */
 function ReplayClock({ playback }: { playback: Playback }) {
@@ -41,7 +41,7 @@ export const ReplayTransport = memo(function ReplayTransport({ playback }: { pla
           onChange={(v) => playback.setSpeed((v === 'fit' ? 'fit' : Number(v)) as Speed)}
           options={SPEEDS.map((s) => ({ value: String(s), label: speedLabel(s) }))}
           aria-label={t('activities.playback.speed')}
-          className="h-8"
+          size="sm"
         />
       </div>
     </div>

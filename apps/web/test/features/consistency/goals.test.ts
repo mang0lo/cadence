@@ -13,7 +13,6 @@ import {
   goalInputText,
   goalOutlook,
   hourLabel,
-  parseGoalNumber,
   previousYearCovered,
   reachedRounding,
   reviewWeeks,
@@ -49,44 +48,8 @@ const de = createFormatter('metric', 'de-DE', 'de');
 const tEn = makeT('en', 'en-US');
 const tDe = makeT('de', 'de-DE');
 
-describe('parseGoalNumber', () => {
-  it('reads thousands separators of the locale instead of taking them for a decimal point', () => {
-    expect(parseGoalNumber('1,000', 'en-US')).toBe(1000);
-    expect(parseGoalNumber('2,500', 'en-US')).toBe(2500);
-    expect(parseGoalNumber('1,000,000', 'en-US')).toBe(1_000_000);
-    expect(parseGoalNumber('10.000', 'de-DE')).toBe(10_000);
-    expect(parseGoalNumber('1.000', 'de-DE')).toBe(1000);
-    expect(parseGoalNumber('10 000', 'de-AT')).toBe(10_000);
-    expect(parseGoalNumber("10'000", 'de-CH')).toBe(10_000);
-    expect(parseGoalNumber('10’000', 'de-CH')).toBe(10_000);
-  });
 
-  it('reads the decimal separator of the locale, and the other one where it cannot group thousands', () => {
-    expect(parseGoalNumber('42.195', 'en-US')).toBe(42.195);
-    expect(parseGoalNumber('42,195', 'de-DE')).toBe(42.195);
-    expect(parseGoalNumber('0,5', 'de-DE')).toBe(0.5);
-    expect(parseGoalNumber('1.5', 'de-DE')).toBe(1.5);
-    expect(parseGoalNumber('1,5', 'en-US')).toBe(1.5);
-    expect(parseGoalNumber('.5', 'en-US')).toBe(0.5);
-    expect(parseGoalNumber('1.234,5', 'de-DE')).toBe(1234.5);
-    expect(parseGoalNumber('1,234.5', 'de-DE')).toBe(1234.5);
-    expect(parseGoalNumber('42.195', 'de-CH')).toBe(42.195);
-    expect(parseGoalNumber(' 30 ', 'en-US')).toBe(30);
-  });
-
-  it('takes a lone separator before three digits as a decimal point where a decimal is expected', () => {
-    // single-activity distances are entered with up to three decimals (the marathon is 42.195 km)
-    expect(parseGoalNumber('42.195', 'de-DE', true)).toBe(42.195);
-    expect(parseGoalNumber('42,195', 'en-US', true)).toBe(42.195);
-    expect(parseGoalNumber('42,195', 'de-DE', true)).toBe(42.195);
-  });
-
-  it('rejects malformed numbers', () => {
-    for (const s of ['', ' ', 'abc', '-5', '1e3', ',', '1..5', '1,2,3', '1.234.5,6,7', '12,34.5', '5 km'])
-      expect(parseGoalNumber(s, 'en-US'), s).toBeNaN();
-    expect(parseGoalNumber('1,0,0', 'de-DE')).toBeNaN();
-  });
-
+describe('goal input text', () => {
   it('round-trips the text the form writes into the input', () => {
     for (const [fmt, v] of [
       [de, 42.195],
@@ -96,7 +59,7 @@ describe('parseGoalNumber', () => {
       [de, 0.5],
     ] as const) {
       const text = goalInputText(fmt, 'longest', v * 1000, 'year');
-      expect(parseGoalNumber(text, fmt.locale, true)).toBe(v);
+      expect(fmt.parseNumber(text, true)).toBe(v);
     }
     expect(goalInputText(de, 'longest', 42_195, 'year')).toBe('42,195');
     expect(goalInputText(de, 'distance', 1_000_000, 'year')).toBe('1000');
@@ -147,6 +110,18 @@ describe('formatGoalValue', () => {
     expect(reachedRounding(49.6, 50)).toBe('down');
     expect(reachedRounding(50, 50)).toBe('nearest');
     expect(reachedRounding(42_196, 42_195)).toBe('nearest');
+  });
+
+  it('takes a single distance within the GPS tolerance as reached, like the server', () => {
+    // 42,150 m reach a 42,195 m 'longest' goal (and earn the marathon trophy): shown as reached, not rounded below it
+    expect(reachedRounding(42_150, 42_195, 'longest')).toBe('nearest');
+    expect(formatGoalValue(en, tEn, 'longest', 42_150, reachedRounding(42_150, 42_195, 'longest'))).toBe('42.2 km');
+    expect(formatGoalValue(de, tDe, 'longest', 42_150, reachedRounding(42_150, 42_195, 'longest'))).toBe('42,2 km');
+    // below the tolerance it is still open
+    expect(reachedRounding(41_900, 42_195, 'longest')).toBe('down');
+    expect(formatGoalValue(en, tEn, 'longest', 41_960, reachedRounding(41_960, 42_195, 'longest'))).toBe('41.9 km');
+    // totals need their exact target
+    expect(reachedRounding(42_150, 42_195, 'distance')).toBe('down');
   });
 });
 
@@ -256,11 +231,12 @@ describe('goalOutlook', () => {
   });
 
   it('prints a remainder below the target precision instead of "0 km more"', () => {
+    // (42,150 m would already reach it within the GPS tolerance: the server sends 'done' then)
     const longest = goal(
-      { value: 42_150, target: 42_195, remaining: 45, remainingDays: 38, status: 'open', projected: 42_150 },
+      { value: 41_950, target: 42_195, remaining: 245, remainingDays: 38, status: 'open', projected: 41_950 },
       { period: 'year', metric: 'longest', target: 42_195 },
     );
-    expect(goalOutlook(longest, tEn, en)).toBe('Longest so far 42.1 km — 45 m more in one go, 38 days left');
+    expect(goalOutlook(longest, tEn, en)).toBe('Longest so far 41.9 km — 245 m more in one go, 38 days left');
   });
 });
 

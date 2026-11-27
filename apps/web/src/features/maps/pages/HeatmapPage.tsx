@@ -22,12 +22,13 @@ import { useFormat } from '@/lib/format';
 import { useT } from '@/lib/i18n';
 import { SportIcon, sortSports, sportColorVar, useSportLabel } from '@/lib/sports';
 import { useStoredState } from '@/lib/storage';
+import { Store, useThrottledStore } from '@/lib/store';
 import { addDays, todayKey } from '@/lib/time';
 import { HeatmapMap } from '../components/HeatmapMap';
 import { countVars } from '../lib/counts';
 import { lapseAt, mainBounds, toHeatLines, type HeatBase, type HeatTheme } from '../lib/heatmapLayers';
 import { sameBounds } from '../lib/home';
-import { Store, speedLabel, useThrottledStore } from '../lib/timelapse';
+import { speedLabel } from '../lib/timelapse';
 
 const THEMES: HeatTheme[] = ['hot', 'blue', 'purple'];
 const THEME_DOT: Record<HeatTheme, string> = { hot: '#ff8a1f', blue: '#2aa3ff', purple: '#b04dff' };

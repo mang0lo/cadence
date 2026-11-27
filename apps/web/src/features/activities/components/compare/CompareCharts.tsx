@@ -6,11 +6,11 @@ import { ChartCard, type TableView } from '@/components/charts/ChartCard';
 import { EChart } from '@/components/charts/EChart';
 import { axisTooltip, legend, lineSeries, tooltipHtml, valueAxis, type TooltipRow } from '@/components/charts/options';
 import { useChartTheme, type ChartTheme } from '@/components/charts/theme';
-import { clock, useFormat, type Formatter } from '@/lib/format';
+import { clock, showsPace, useFormat, type Formatter } from '@/lib/format';
 import { useI18n, type TFunction } from '@/lib/i18n';
+import type { Store } from '@/lib/store';
 import { gridValue, sideSeries, smoothGrid, type Alignment, type SideSeries } from '../../lib/compare';
-import { isPaceSport, paceValue, speedDiff } from '../../lib/display';
-import type { Store } from '../../lib/store';
+import { paceValue, speedDiff } from '../../lib/display';
 import { quantile, type Prepared } from '../../lib/streams';
 import { SIDE_VAR } from './CompareMap';
 
@@ -277,7 +277,7 @@ export function CompareCharts({ A, B, al, sport, hover, names }: CompareChartsPr
   const metrics = useMemo<Metric[]>(() => {
     const out: Metric[] = [];
     if (sa.speed || sb.speed) {
-      const pace = isPaceSport(sport);
+      const pace = showsPace(sport);
       // standing still is left out of the chart (not of the differences)
       const conv = (mps: number) => (mps > 0.3 ? paceValue(mps, sport, fmt.units) : null);
       out.push({

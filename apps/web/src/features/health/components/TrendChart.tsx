@@ -216,24 +216,24 @@ export function TrendChart({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [points, metric, unit, m.units]);
 
+  // rows only while the table view is open: a range of years has thousands of days
   const table = useMemo(
-    () => ({
+    () => () => ({
       columns: [
         { key: 'day', label: t('health.common.date') },
         { key: 'value', label: names.daily + (unitLabel ? ` (${unitLabel})` : ''), numeric: true },
         ...(band ? [{ key: 'min', label: t('health.common.min'), numeric: true }, { key: 'max', label: t('health.common.max'), numeric: true }] : []),
         ...(rolling > 0 ? [{ key: 'roll', label: names.avg, numeric: true }] : []),
       ],
-      rows: [...points].reverse().map((p) => {
-        const i = points.indexOf(p);
-        return {
+      rows: points
+        .map((p, i) => ({
           day: keyLabel(p.day, false),
           value: m.plain(metric, p.value, unit),
           min: p.min == null ? '–' : m.plain(metric, p.min, unit),
           max: p.max == null ? '–' : m.plain(metric, p.max, unit),
           roll: model.rollShown?.[i] == null ? '–' : fmt.num(model.rollShown[i]!, model.axisDigits === 0 ? 1 : model.axisDigits),
-        };
-      }),
+        }))
+        .reverse(),
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [points, band, rolling, model, fmt, unitLabel],

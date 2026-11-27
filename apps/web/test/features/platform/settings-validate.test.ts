@@ -47,8 +47,9 @@ describe('birth date', () => {
 
 describe('custom heart rate zones', () => {
   it('reads the four fields', () => {
-    expect(parseBounds(['114', ' 133 ', '152.4', ''])).toEqual([114, 133, 152, null]);
-    expect(parseBounds(['abc', '1e2', '-', '170'])).toEqual([null, 100, null, 170]);
+    expect(parseBounds(['114', ' 133 ', '152.4', ''], 'en-US')).toEqual([114, 133, 152, null]);
+    // read like every typed number (fmt.parseNumber): '1e2' is no heart rate
+    expect(parseBounds(['abc', '1e2', '-', '170'], 'en-US')).toEqual([null, null, null, 170]);
   });
 
   it('needs four ascending limits between 40 and 240', () => {

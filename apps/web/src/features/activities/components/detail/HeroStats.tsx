@@ -2,10 +2,10 @@ import type { ReactNode } from 'react';
 import { Info } from 'lucide-react';
 import { sportInfo, type ActivityAnalysis, type WorkoutDetail } from '@cadence/shared';
 import { Card, Hint, KeyValues } from '@/components/ui';
-import { useFormat, type Formatter } from '@/lib/format';
+import { showsPace, useFormat, type Formatter } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
 import type { TFunction } from '@/lib/i18n';
-import { isPaceSport, shortDistanceParts } from '../../lib/display';
+import { shortDistanceParts } from '../../lib/display';
 
 interface HeroStat {
   key: string;
@@ -36,7 +36,7 @@ function primaryStats(w: WorkoutDetail, a: ActivityAnalysis | undefined, fmt: Fo
     const p = fmt.paceParts(w.avgSpeed, w.sport);
     return {
       key: 'pace',
-      label: info.speedMode === 'pace100' ? t('activities.stats.pace100') : isPaceSport(w.sport) ? t('activities.stats.avgPace') : t('activities.stats.avgSpeed'),
+      label: info.speedMode === 'pace100' ? t('activities.stats.pace100') : showsPace(w.sport) ? t('activities.stats.avgPace') : t('activities.stats.avgSpeed'),
       ...p,
     };
   };
@@ -93,8 +93,8 @@ function secondaryStats(w: WorkoutDetail, a: ActivityAnalysis | undefined, fmt: 
   add('maxHr', t('common.maxHr'), w.maxHr ? fmt.hr(w.maxHr) : null);
   add('minHr', t('activities.stats.minHr'), w.minHr ? fmt.hr(w.minHr) : null);
   if (info.speedMode !== 'none' && w.maxSpeed)
-    add('maxSpeed', t('activities.stats.maxSpeed'), isPaceSport(w.sport) ? fmt.pace(w.maxSpeed, w.sport) : fmt.speed(w.maxSpeed));
-  if (a?.gapSpeed && isPaceSport(w.sport)) add('gap', t('activities.stats.gap'), fmt.pace(a.gapSpeed, w.sport));
+    add('maxSpeed', t('activities.stats.maxSpeed'), showsPace(w.sport) ? fmt.pace(w.maxSpeed, w.sport) : fmt.speed(w.maxSpeed));
+  if (a?.gapSpeed && showsPace(w.sport)) add('gap', t('activities.stats.gap'), fmt.pace(a.gapSpeed, w.sport));
   add('elevationLoss', t('activities.stats.elevationLoss'), w.elevationLossM ? fmt.elevation(w.elevationLossM) : null);
   add('cadence', t('activities.stats.avgCadence'), w.avgCadence ? fmt.cadence(w.avgCadence, w.sport) : null);
   add('power', t('activities.stats.avgPower'), w.avgPower ? fmt.power(w.avgPower) : null);

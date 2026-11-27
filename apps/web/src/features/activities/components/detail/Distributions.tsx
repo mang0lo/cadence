@@ -6,10 +6,10 @@ import { ChartCard, type TableView } from '@/components/charts/ChartCard';
 import { EChart } from '@/components/charts/EChart';
 import { barSeries, categoryAxis, itemTooltip, legend, tooltipHtml, valueAxis } from '@/components/charts/options';
 import { useChartTheme } from '@/components/charts/theme';
-import { clock, useFormat } from '@/lib/format';
+import { clock, showsPace, useFormat } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
 import { useSettings } from '@/lib/settings';
-import { isPaceSport, minutesTick, paceValue } from '../../lib/display';
+import { minutesTick, paceValue } from '../../lib/display';
 import { zoneOf } from '../../lib/route';
 import { quantile, timeHistogram, type Prepared } from '../../lib/streams';
 
@@ -104,7 +104,7 @@ export function PaceHistogram({ P, sport }: { P: Prepared; sport: string }) {
   const { t } = useI18n();
   const fmt = useFormat();
   const theme = useChartTheme();
-  const pace = isPaceSport(sport);
+  const pace = showsPace(sport);
   const data = useMemo(() => {
     if (!P.speed || !P.dist) return null;
     const values = new Float64Array(P.n);

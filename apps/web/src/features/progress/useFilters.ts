@@ -1,31 +1,8 @@
-import { useCallback, useMemo } from 'react';
-import { useSearchParams } from 'react-router';
+import { useMemo } from 'react';
 import { PROGRESS_VOLUME_METRICS, SPORTS, sportInfo, type ProgressOverview, type ProgressVolumeMetric } from '@cadence/shared';
 import { todayKey } from '@/lib/time';
+import { useUrlParams } from '@/lib/urlParams';
 import { isPeriodPreset, presetRange, type PeriodPreset } from './periods';
-
-/** `prev` with `patch` applied: a string sets its key, null deletes it (a new object; `prev` stays as it is). */
-export function patchParams(prev: URLSearchParams, patch: Record<string, string | null>): URLSearchParams {
-  const next = new URLSearchParams(prev);
-  for (const [k, v] of Object.entries(patch)) {
-    if (v === null) next.delete(k);
-    else next.set(k, v);
-  }
-  return next;
-}
-
-/**
- * The search params of a progress page and a patcher for them (see patchParams). Changes replace the history entry,
- * so filter clicks do not pile up behind the back button.
- */
-export function useUrlParams() {
-  const [params, setParams] = useSearchParams();
-  const patch = useCallback(
-    (p: Record<string, string | null>) => setParams((prev) => patchParams(prev, p), { replace: true }),
-    [setParams],
-  );
-  return [params, patch] as const;
-}
 
 /**
  * A sport key from the URL, or null for anything the app does not know (an old or hand-edited link such as

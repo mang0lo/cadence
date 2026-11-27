@@ -1,9 +1,9 @@
 import { memo, useEffect, useMemo, useRef, type PointerEvent as ReactPointerEvent } from 'react';
-import { clock, useFormat } from '@/lib/format';
+import { clock, speedLabel, useFormat } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
+import { useThrottledStore } from '@/lib/store';
 import type { Playback } from '../../lib/playback';
-import { useThrottledStore } from '../../lib/store';
-import { cadenceUnit, isPaceSport } from '../../lib/display';
+import { cadenceUnit } from '../../lib/display';
 import { zoneOf } from '../../lib/route';
 import { buckets, bucketMean, indexAtTime, valueAt, type Prepared } from '../../lib/streams';
 import { ReplayTransport } from '../ReplayTransport';
@@ -18,10 +18,11 @@ const Scrubber = memo(function Scrubber({ P, playback }: { P: Prepared; playback
   const time = useThrottledStore(playback.time, 250);
 
   useEffect(() => {
+    // every frame of the replay: transforms only, so the track is not laid out again (width / left would)
     const paint = (time: number) => {
       const f = P.duration > 0 ? Math.max(0, Math.min(1, time / P.duration)) : 0;
-      if (fill.current) fill.current.style.width = `${f * 100}%`;
-      if (thumb.current) thumb.current.style.left = `${f * 100}%`;
+      if (fill.current) fill.current.style.transform = `scaleX(${f})`;
+      if (thumb.current) thumb.current.style.transform = `translateX(${f * 100}%)`;
     };
     paint(playback.time.get());
     return playback.time.subscribe(paint);
@@ -75,7 +76,8 @@ const Scrubber = memo(function Scrubber({ P, playback }: { P: Prepared; playback
           <path d={silhouette} fill="currentColor" opacity={0.16} />
         </svg>
       )}
-      <div ref={fill} className="absolute inset-y-0 left-0 bg-accent-soft" />
+      {/* scaled by the replay position (the same inline value on every render, so React never resets it) */}
+      <div ref={fill} className="absolute inset-0 origin-left bg-accent-soft" style={{ transform: 'scaleX(0)' }} />
       {P.pauses.map(([a, b]) => (
         <div
           key={a}
@@ -88,8 +90,12 @@ const Scrubber = memo(function Scrubber({ P, playback }: { P: Prepared; playback
           }}
         />
       ))}
-      <div ref={thumb} className="absolute inset-y-0 -ml-px w-0.5 bg-accent">
-        <div className="absolute -left-[5px] top-1/2 size-3 -translate-y-1/2 rounded-full border-2 border-surface bg-accent shadow-card" />
+      {/* a layer as wide as the track, moved by the replay position (translateX of its own width), with the thumb at
+          its left edge; it lets pointer events through to the pauses and the track */}
+      <div ref={thumb} className="pointer-events-none absolute inset-0">
+        <div className="absolute inset-y-0 left-0 -ml-px w-0.5 bg-accent">
+          <div className="absolute -left-[5px] top-1/2 size-3 -translate-y-1/2 rounded-full border-2 border-surface bg-accent shadow-card" />
+        </div>
       </div>
     </div>
   );
@@ -135,7 +141,7 @@ const LiveReadout = memo(function LiveReadout({
     const sp = valueAt(P.speed, fi);
     const moving = P.moving[Math.min(P.n - 1, Math.ceil(fi))];
     const p = fmt.paceParts(moving ? sp : null, sport);
-    items.push({ key: 's', label: isPaceSport(sport) ? t('common.pace') : t('common.speed'), value: p.value, unit: p.unit });
+    items.push({ key: 's', label: speedLabel(t, sport), value: p.value, unit: p.unit });
   }
   if (P.hr) {
     const h = valueAt(P.hr, fi);

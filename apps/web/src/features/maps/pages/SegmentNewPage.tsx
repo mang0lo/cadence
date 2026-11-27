@@ -28,13 +28,12 @@ import {
   Skeleton,
 } from '@/components/ui';
 import { api, useApi } from '@/lib/api';
-import { useFormat } from '@/lib/format';
+import { speedLabelKey, useFormat } from '@/lib/format';
 import { useI18n, useT } from '@/lib/i18n';
 import { SportBadge, sportColorVar, useSportLabel } from '@/lib/sports';
 import { LineMap, useShownOverlayColors, type MapLine, type MapMarker } from '../components/LineMap';
 import { RangeProfile } from '../components/RangeProfile';
 import { unionBox, type BBox } from '../lib/home';
-import { speedLabelKey } from '../lib/effortSort';
 import { elapsedBetween, pointAt, slicePoints } from '../lib/segments';
 
 /** /maps/segments/new?workout=:id – pick a part of an activity's route and save it as a segment. */

@@ -17,6 +17,18 @@ export function markStyleReady(map: Map, ready: boolean): void {
 }
 
 /**
+ * Keeps the ready state of a new map (BaseMap calls it right after creating one, before any other 'style.load'
+ * listener): not ready until 'style.load', and not ready again whenever a new style starts loading. That covers
+ * BaseMap's own setStyle and the style MapLibre rebuilds by itself after a lost WebGL context, which bypasses BaseMap.
+ * 'styledataloading' fires synchronously inside setStyle, before any effect can run.
+ */
+export function trackStyleReady(map: Map): void {
+  markStyleReady(map, false);
+  map.on('styledataloading', () => markStyleReady(map, false));
+  map.on('style.load', () => markStyleReady(map, true));
+}
+
+/**
  * True when the current style is loaded, so sources and layers can be added or changed (tiles may still be loading).
  * Gate overlay effects with it and re-apply them from BaseMap's `onStyleLoad`, which runs after every style load.
  */

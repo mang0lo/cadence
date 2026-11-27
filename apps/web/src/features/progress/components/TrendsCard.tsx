@@ -15,12 +15,12 @@ import { EChart } from '@/components/charts/EChart';
 import { grid, itemTooltip, lineSeries, scatterSeries, timeAxis, tooltipHtml, valueAxis } from '@/components/charts/options';
 import { sportColor, useChartTheme, type ChartTheme } from '@/components/charts/theme';
 import { Button, EmptyState, ErrorState, cn } from '@/components/ui';
-import { useFormat, type Formatter } from '@/lib/format';
+import { speedLabel, useFormat, type Formatter, type TrendFormat } from '@/lib/format';
 import { useI18n, useT, type Lang, type TFunction } from '@/lib/i18n';
 import { sportLabel } from '@/lib/sports';
 import { useTrends, type RangeParams } from '../api';
-import { chartLegend, clockAxis, fitEnds, hitLayer, localMs, monthYearLabel, msDay, timeAxisLabel } from '../chart';
-import { formatChange, speedLabel, trendFormat, type TrendFormat } from '../format';
+import { chartLegend, clockAxis, fitEnds, hitLayer, localMs, msDay, timeAxisLabel } from '../chart';
+import { formatChange, trendFormat } from '../format';
 import { ActivityLink, ChangeBadge, ChartSkeleton } from './common';
 
 const HEIGHT = 300;
@@ -163,9 +163,10 @@ export function TrendsCard({
     [data, navigate],
   );
 
+  // rows only while the table view is open: one per workout of the sport, each with a link
   const table = useMemo(() => {
     if (!data || !selected || !tf) return undefined;
-    return {
+    return () => ({
       columns: [
         { key: 'date', label: t('progress.common.date') },
         { key: 'activity', label: t('progress.common.activity') },
@@ -183,7 +184,7 @@ export function TrendsCard({
           };
         })
         .reverse(),
-    };
+    });
   }, [data, selected, tf, fmt, t, dataSport]);
 
   if (sport === 'all') {
@@ -265,8 +266,8 @@ export function TrendsCard({
                   {t('progress.trends.summary', {
                     from: tf.format(selected.fit.startValue),
                     to: tf.format(selected.fit.endValue),
-                    start: monthYearLabel(fmt, fitSpan![0]!),
-                    end: monthYearLabel(fmt, fitSpan![1]!),
+                    start: fmt.day(fitSpan![0]!, 'monthYear'),
+                    end: fmt.day(fitSpan![1]!, 'monthYear'),
                   })}
                 </span>
               )}

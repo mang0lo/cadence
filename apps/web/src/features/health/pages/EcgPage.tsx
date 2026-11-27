@@ -4,10 +4,11 @@ import { Link } from 'react-router';
 import type { EcgClass, EcgDetail, EcgSummary } from '@cadence/shared';
 import { Badge, Button, Card, CardHeader, EmptyState, ErrorState, Page, PageHeader, SegmentedControl, Skeleton, Stat, StatRow, Switch, cn } from '@/components/ui';
 import { useApi } from '@/lib/api';
+import { saveFile } from '@/lib/download';
 import { useFormat } from '@/lib/format';
 import { useT } from '@/lib/i18n';
 import { EcgPaper } from '../components/ecg/EcgPaper';
-import { ecgCsv, saveTextFile } from '../lib/download';
+import { ecgCsv } from '../lib/download';
 
 /** Status colors only together with icon and label (the class name inside the badge). */
 const CLASS_BADGE: Record<EcgClass, { tone: 'good' | 'warning' | 'critical' | 'neutral'; icon: LucideIcon }> = {
@@ -135,7 +136,7 @@ function Recording({ id, summary }: { id: number; summary: EcgSummary }) {
                 size="sm"
                 icon={Download}
                 disabled={!d}
-                onClick={() => d && saveTextFile(`ecg-${new Date((summary.recordedTs + summary.tzMin * 60) * 1000).toISOString().slice(0, 16).replace(/[-:T]/g, '')}.csv`, ecgCsv(d))}
+                onClick={() => d && void saveFile(`ecg-${new Date((summary.recordedTs + summary.tzMin * 60) * 1000).toISOString().slice(0, 16).replace(/[-:T]/g, '')}.csv`, ecgCsv(d), 'text/csv')}
               >
                 {t('health.ecg.paper.download')}
               </Button>

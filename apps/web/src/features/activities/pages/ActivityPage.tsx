@@ -6,6 +6,7 @@ import { Button, Card, EmptyState, ErrorState, Page, Skeleton } from '@/componen
 import { ApiError } from '@/lib/api';
 import { useI18n } from '@/lib/i18n';
 import { useSettings } from '@/lib/settings';
+import { Store } from '@/lib/store';
 import { useAnalysis, useNav, useStreams, useWorkout } from '../api';
 import { ActivityHeader } from '../components/detail/ActivityHeader';
 import { ActivityMap, type CameraMode } from '../components/detail/ActivityMap';
@@ -16,7 +17,6 @@ import { SelectionPanel } from '../components/detail/SelectionPanel';
 import { StreamCharts } from '../components/detail/StreamCharts';
 import { Playback } from '../lib/playback';
 import { routeGeometry } from '../lib/route';
-import { Store } from '../lib/store';
 import { prepareStreams } from '../lib/streams';
 import { usePlaybackKeys } from '../lib/usePlaybackKeys';
 

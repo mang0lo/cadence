@@ -43,9 +43,8 @@ export function GoalCheckButton({
   const c = goal.current;
   if (c.status === 'done' && !c.checked) return null;
   const label = t(c.checked ? 'consistency.goals.uncheck' : `consistency.goals.checkHint.${goal.period}`);
-  // size-7! — IconButton sets size-8 itself, and cn does not merge conflicting utilities
   if (compact)
-    return <IconButton icon={c.checked ? Undo2 : Check} label={label} className="size-7!" onClick={() => onCheck(!c.checked, c.start)} />;
+    return <IconButton icon={c.checked ? Undo2 : Check} label={label} size="sm" onClick={() => onCheck(!c.checked, c.start)} />;
   return (
     <Button size="sm" variant={c.checked ? 'ghost' : 'secondary'} icon={c.checked ? Undo2 : Check} title={label} onClick={() => onCheck(!c.checked, c.start)}>
       {t(c.checked ? 'consistency.goals.uncheck' : 'consistency.goals.check')}
@@ -103,7 +102,7 @@ export function GoalHistoryStrip({
     >
       {history.map((h) => {
         const state = h.manual ? 'manual' : h.hit ? 'hit' : h.pending ? 'pending' : 'miss';
-        const value = formatGoalValue(fmt, t, goal.metric, h.value, reachedRounding(h.value, goal.target));
+        const value = formatGoalValue(fmt, t, goal.metric, h.value, reachedRounding(h.value, goal.target, goal.metric));
         const result = `${periodLabel(fmt, goal.period, h.start, h.end)}: ${value} — ${t(`consistency.goals.result.${state}`)}`;
         const canToggle = !!onToggle && state !== 'hit';
         const text = canToggle ? `${result} · ${t(h.manual ? 'consistency.goals.clickUncheck' : 'consistency.goals.clickCheck')}` : result;
@@ -194,7 +193,7 @@ export function GoalCard({
           </div>
           <div className="mt-0.5 flex flex-wrap items-baseline gap-x-1.5">
             <span className="text-3xl font-semibold tracking-tight text-fg">
-              {formatGoalValue(fmt, t, goal.metric, c.value, reachedRounding(c.value, c.target))}
+              {formatGoalValue(fmt, t, goal.metric, c.value, reachedRounding(c.value, c.target, goal.metric))}
             </span>
             <span className="text-sm text-fg-3">{t('consistency.goals.of', { target: formatGoalValue(fmt, t, goal.metric, c.target) })}</span>
           </div>

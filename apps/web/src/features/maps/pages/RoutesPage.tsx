@@ -23,7 +23,6 @@ import { useI18n, useT } from '@/lib/i18n';
 import { SportIcon, sortSports, sportColorVar, useSportLabel } from '@/lib/sports';
 import { useStoredState } from '@/lib/storage';
 import { TrendSparkline } from '../components/TrendSparkline';
-import { dateHint } from '../lib/dates';
 import { activeRouteSport, kindLabel, routeTitle, trendChange } from '../lib/routeName';
 
 type SortKey = 'count' | 'recent' | 'distance' | 'improved';
@@ -260,7 +259,7 @@ function RouteCard({ route: r }: { route: MapsRouteSummary }) {
           <Stat3
             label={t('maps.routes.latest')}
             value={fmt.duration(r.latestTimeS)}
-            hint={dateHint(fmt, r.lastTs, r.lastTzMin)}
+            hint={fmt.dateHint(r.lastTs, r.lastTzMin)}
           />
         </dl>
       </div>

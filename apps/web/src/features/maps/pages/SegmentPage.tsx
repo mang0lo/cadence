@@ -29,7 +29,6 @@ import { decodePolyline, toLngLat } from '@/lib/polyline';
 import { EffortTable, type EffortRow } from '../components/EffortTable';
 import { EffortTrend } from '../components/EffortTrend';
 import { LineMap, useShownOverlayColors, type MapLine, type MapMarker } from '../components/LineMap';
-import { dateHint } from '../lib/dates';
 import { unionBox, type BBox } from '../lib/home';
 import { distanceAxisLabel, gradeAt } from '../lib/segments';
 
@@ -216,7 +215,7 @@ function Body({ detail }: { detail: MapsSegmentDetail }) {
             value={fmt.int(s.efforts)}
             hint={
               latest
-                ? `${t('maps.routes.latest')}: ${dateHint(fmt, latest.startTs, latest.tzMin)}`
+                ? `${t('maps.routes.latest')}: ${fmt.dateHint(latest.startTs, latest.tzMin)}`
                 : undefined
             }
           />
@@ -388,7 +387,8 @@ function ProfileChart({ detail }: { detail: MapsSegmentDetail }) {
     <ChartCard
       title={name}
       subtitle={hasEle ? undefined : t('maps.segments.noElevation')}
-      table={{
+      // rows only while the table view is open (a long segment's profile has thousands of points)
+      table={() => ({
         columns: [
           { key: 'd', label: t('common.distance'), numeric: true },
           { key: 'e', label: t('common.elevation'), numeric: true },
@@ -405,7 +405,7 @@ function ProfileChart({ detail }: { detail: MapsSegmentDetail }) {
               g: g === null ? '–' : `${fmt.signed(g, 1)} %`,
             };
           }),
-      }}
+      })}
     >
       {hasEle ? (
         <EChart option={option as never} height={280} ariaLabel={name} />

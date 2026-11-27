@@ -62,12 +62,6 @@ export function formatPower(fmt: Formatter, v: number, unit: PowerUnit, wkgDigit
   return unit === 'wkg' ? `${fmt.num(v, wkgDigits)} W/kg` : `${fmt.int(v)} W`;
 }
 
-export function rangeLabel(fmt: Formatter, r: ProgressDayRange): string {
-  if (r.fromDay === r.toDay) return fmt.day(r.fromDay, 'day');
-  const sameYear = r.fromDay.slice(0, 4) === r.toDay.slice(0, 4);
-  return `${fmt.day(r.fromDay, sameYear ? 'dayShort' : 'day')} – ${fmt.day(r.toDay, 'day')}`;
-}
-
 const PERIOD_DAYS: Partial<Record<ProgressPowerPeriod, number>> = { '42d': 42, '90d': 90 };
 
 /** Legend name of a curve: "Last 90 days", "The 90 days before", "2025", "All-time best", a date range. */
@@ -86,7 +80,7 @@ export function curveName(
     return t(kind === 'current' ? 'progress.power.series.last12m' : 'progress.power.series.before12m');
   if (period === 'year') return r.fromDay.slice(0, 4);
   if (period === 'all') return t('progress.power.periods.all');
-  return rangeLabel(fmt, r);
+  return fmt.dayRange(r.fromDay, r.toDay);
 }
 
 /** Label of an FTP history bucket: 'YYYY-MM' → "Jan 2026", 'YYYY-Qn' → "Q1 2026". */

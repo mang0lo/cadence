@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { Card, CardHeader, Input } from '@/components/ui';
+import { useFormat } from '@/lib/format';
 import { useT } from '@/lib/i18n';
 import { todayKey } from '@/lib/time';
 import { useDraft } from './useDraft';
@@ -29,9 +30,10 @@ export function NumberSetting({
   min: number;
   max: number;
 }) {
+  const fmt = useFormat();
   const { draft, edit, reset, done } = useDraft(value?.toString() ?? '');
   const commit = () => {
-    const n = draft.trim() === '' ? null : Math.round(Number(draft));
+    const n = draft.trim() === '' ? null : Math.round(fmt.parseNumber(draft));
     if ((n === null || (Number.isFinite(n) && n >= min && n <= max)) && n !== value) {
       done();
       onSave(n);
@@ -107,10 +109,11 @@ export function BirthDateSetting({
  */
 export function ZoneBoundsSetting({ value, onSave }: { value: number[]; onSave: (v: number[]) => void }) {
   const t = useT();
+  const fmt = useFormat();
   const { draft, edit, reset, done } = useDraft(value.map(String));
   // the problem shows once the user leaves a field with it (not while typing), then until it is fixed
   const [checked, setChecked] = useState(false);
-  const bounds = parseBounds(draft);
+  const bounds = parseBounds(draft, fmt.locale);
   const problem = zoneBoundsProblem(bounds);
   const commit = () => {
     if (problem) {

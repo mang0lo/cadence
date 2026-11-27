@@ -1,9 +1,9 @@
 import { useCallback, useMemo } from 'react';
-import { useSearchParams } from 'react-router';
 import type { DailyMetric, HealthMeta, RecordTypeInfo } from '@cadence/shared';
 import { useApi } from '@/lib/api';
 import { useStoredState } from '@/lib/storage';
 import { addDays, diffDays, todayKey } from '@/lib/time';
+import { useUrlParams } from '@/lib/urlParams';
 import { APPLE_METRICS } from './identifiers';
 
 /** Latest data day, first data day, sleep goal … — anchors all "last N days" ranges to the data, not to today. */
@@ -46,21 +46,9 @@ export const validDay = (raw: string | null): string | null =>
  * day from the URL only.
  */
 export function useDayParam(defaultDay: string | null) {
-  const [params, setParams] = useSearchParams();
+  const [params, patch] = useUrlParams();
   const picked = validDay(params.get('day'));
-  const setDay = useCallback(
-    (day: string) =>
-      setParams(
-        (prev) => {
-          const next = new URLSearchParams(prev);
-          if (day === defaultDay) next.delete('day');
-          else next.set('day', day);
-          return next;
-        },
-        { replace: true },
-      ),
-    [setParams, defaultDay],
-  );
+  const setDay = useCallback((day: string) => patch({ day: day === defaultDay ? null : day }), [patch, defaultDay]);
   return { day: picked ?? defaultDay, picked, setDay };
 }
 

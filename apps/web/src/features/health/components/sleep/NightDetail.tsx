@@ -4,6 +4,7 @@ import { Activity, Droplets, HeartPulse, Moon, Wind, type LucideIcon } from 'luc
 import type { DailyMetric, SleepNight, SleepNightDetail, SleepStage, TimedValue } from '@cadence/shared';
 import { ChartCard } from '@/components/charts/ChartCard';
 import { EChart } from '@/components/charts/EChart';
+import { measureColor, type MeasureKey } from '@/components/charts/measures';
 import {
   categoryAxis,
   grid,
@@ -27,7 +28,6 @@ import { TrendDelta } from '../TrendDelta';
 import { numAxisLabel } from '../../lib/chart';
 import { useDaily } from '../../lib/hooks';
 import { HK } from '../../lib/identifiers';
-import { measureColor, type MeasureKey } from '../../lib/colors';
 import { useMetricFormat } from '../../lib/metrics';
 import { stageColor, stageSeconds, STAGE_STACK } from '../../lib/sleep';
 import { tzSpan } from '../../lib/tz';
@@ -235,13 +235,14 @@ function NightSeriesChart({
     <ChartCard
       title={`${title}${unit ? ` (${unit})` : ''}`}
       icon={icon}
-      table={{
+      // rows only while the table view is open (a night of heart rate samples is hundreds)
+      table={() => ({
         columns: [
           { key: 'time', label: t('health.common.time') },
           { key: 'value', label: unit || t('health.common.value'), numeric: true },
         ],
         rows: points.map((p) => ({ time: time(p.ts), value: m.plain(metric, p.value) })),
-      }}
+      })}
     >
       {points.length === 0 ? (
         <p className="py-8 text-center text-sm text-fg-3">{t('health.sleep.physiology.noSamples')}</p>

@@ -1,17 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Marker, type GeoJSONSource, type LngLatBoundsLike, type Map, type MapMouseEvent } from 'maplibre-gl';
 import { Camera, Palette, Split } from 'lucide-react';
-import { M_PER_KM, M_PER_MI, type MapStylePref } from '@cadence/shared';
+import { M_PER_KM, M_PER_MI } from '@cadence/shared';
 import { useChartTheme } from '@/components/charts/theme';
 import { BaseMap } from '@/components/map/BaseMap';
 import { addRouteLayers, featureCollection, gradientExpression, isStyleReady, lineFeature, setGeoJSON } from '@/components/map/layers';
 import { overlayColors } from '@/components/map/styles';
+import { shownStylePref, useMapOverlay, useOverlayEffect } from '@/components/map/useMapOverlay';
 import { SegmentedControl, cn } from '@/components/ui';
-import { clock, useFormat } from '@/lib/format';
+import { clock, showsPace, useFormat } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
 import { useResolvedTheme, type ResolvedTheme } from '@/lib/theme';
 import { useStoredState } from '@/lib/storage';
-import { isPaceSport } from '../../lib/display';
+import type { Store } from '@/lib/store';
 import type { Playback } from '../../lib/playback';
 import {
   availableModes,
@@ -25,7 +26,6 @@ import {
   type Legend,
   type RouteGeometry,
 } from '../../lib/route';
-import type { Store } from '../../lib/store';
 import { headingAt, indexAtDist, indexAtTime, lerpAngle, positionAt, valueAt, type Prepared } from '../../lib/streams';
 
 export type CameraMode = 'overview' | 'follow' | 'flyover';
@@ -35,16 +35,6 @@ const SRC = { route: 'act-route', done: 'act-done', head: 'act-head', sel: 'act-
 const routeId = (part: number) => (part ? `${SRC.route}-p${part}` : SRC.route);
 /** Room for the legend (top) and the map controls (bottom). */
 const FIT_PADDING = { top: 64, bottom: 40, left: 40, right: 48 };
-
-/** Style preference of the basemap currently shown (the BaseMap switcher may differ from the setting). */
-export function currentPref(map: Map): MapStylePref {
-  const style = map.getStyle();
-  if (style?.sources && 'imagery' in style.sources) return 'satellite';
-  const name = (style?.name ?? '').toLowerCase();
-  if (name.includes('dark')) return 'dark';
-  if (name.includes('liberty')) return 'outdoor';
-  return 'streets';
-}
 
 export function markerEl(style: Partial<CSSStyleDeclaration>, html = '', title?: string): HTMLDivElement {
   const el = document.createElement('div');
@@ -228,7 +218,9 @@ export function ActivityMap({ P, geo, sport, playback, hover, selection, zoneBou
   };
   const hoverTextRef = useRef(hoverText);
   hoverTextRef.current = hoverText;
-  const mapRef = useRef<Map | null>(null);
+  // the map and BaseMap's handlers (defined below; they run on map events, after this render)
+  const overlay = useMapOverlay({ onReady: (map) => onReady(map), onStyleLoad: (map) => addOverlayLayers(map) });
+  const { mapRef } = overlay;
   const markers = useRef<{ athlete: Marker; hover: Marker; start: Marker; finish: Marker } | null>(null);
   const frame = useRef<number | null>(null);
   /** Index of the chunk being travelled (−1 = nothing drawn); −2 forces a redraw. */
@@ -244,15 +236,8 @@ export function ActivityMap({ P, geo, sport, playback, hover, selection, zoneBou
   const camSeq = useRef(0);
   const camBearing = useRef(0);
   const lastFrameAt = useRef(0);
-  /**
-   * Camera mode whose transition has started: one commit after `camera`. BaseMap applies its `terrain` prop (flyover)
-   * in the commit after the prop changes and eases the pitch for it; a transition started before that would be
-   * stopped by its ease (MapLibre stops the running animation when a new one starts).
-   */
-  const [camTarget, setCamTarget] = useState(camera);
-  useEffect(() => setCamTarget(camera), [camera]);
-  const cameraRef = useRef(camTarget);
-  cameraRef.current = camTarget;
+  const cameraRef = useRef(camera);
+  cameraRef.current = camera;
   const coloringRef = useRef(coloring);
   coloringRef.current = coloring;
   /** Track part shown by the overview camera (several parts: workout continued elsewhere). */
@@ -405,7 +390,7 @@ export function ActivityMap({ P, geo, sport, playback, hover, selection, zoneBou
   /** Route line (re)created with the current coloring, below the overlay layers. */
   const applyRoute = useCallback(
     (map: Map) => {
-      const colors = overlayColors(currentPref(map), themeRef.current.resolved);
+      const colors = overlayColors(shownStylePref(map), themeRef.current.resolved);
       const c = coloringRef.current;
       geo.parts.forEach((_, p) => {
         const id = routeId(p);
@@ -458,9 +443,10 @@ export function ActivityMap({ P, geo, sport, playback, hover, selection, zoneBou
     [P],
   );
 
-  const onStyleLoad = useCallback(
+  /** Sources and the replay / selection layers of a new style; the overlay effects below draw route and selection. */
+  const addOverlayLayers = useCallback(
     (map: Map) => {
-      const colors = overlayColors(currentPref(map), themeRef.current.resolved);
+      const colors = overlayColors(shownStylePref(map), themeRef.current.resolved);
       geo.parts.forEach((p, i) => setGeoJSON(map, routeId(i), lineFeature(geo.coords.slice(p.v0, p.v1 + 1)), true));
       setGeoJSON(map, SRC.done, featureCollection([]));
       setGeoJSON(map, SRC.head, featureCollection([]));
@@ -496,16 +482,12 @@ export function ActivityMap({ P, geo, sport, playback, hover, selection, zoneBou
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: { 'line-color': themeRef.current.sel, 'line-width': 5.5 },
       });
-      applyRoute(map);
-      applySelection(map);
-      request();
     },
-    [geo, applyRoute, applySelection, request],
+    [geo],
   );
 
   const onReady = useCallback(
     (map: Map) => {
-      mapRef.current = map;
       map.resize();
       map.fitBounds(homeBoundsRef.current as LngLatBoundsLike, { padding: FIT_PADDING, maxZoom: 16, animate: false });
       const start = new Marker({
@@ -578,21 +560,22 @@ export function ActivityMap({ P, geo, sport, playback, hover, selection, zoneBou
     return () => ms.forEach((m) => m.remove());
   }, [kmPoints]);
 
-  // coloring changed (mode, theme). Not isStyleLoaded(): that is false while tiles load or a source gets new data
-  // (every frame of the replay) and would drop the change; while a new basemap loads, onStyleLoad applies it.
-  useEffect(() => {
-    const map = mapRef.current;
-    if (map && isStyleReady(map)) {
+  // route in the current coloring (mode, theme) and the selection: after every style load and on every change while
+  // the style is loaded (also while tiles load or the replay updates a source, when map.isStyleLoaded() is false)
+  useOverlayEffect(
+    overlay,
+    (map) => {
       applyRoute(map);
       request();
-    }
-  }, [coloring, applyRoute, request]);
+    },
+    [coloring, applyRoute, request],
+  );
+  useOverlayEffect(overlay, applySelection, [selection, applySelection]);
 
-  // selection changed: highlight + zoom to it in the overview
+  // selection changed: zoom to it in the overview
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !isStyleReady(map)) return;
-    applySelection(map);
+    if (!map) return;
     if (selection && cameraRef.current === 'overview' && P.lat && P.lon) {
       const [a, b] = [Math.floor(Math.min(...selection)), Math.ceil(Math.max(...selection))];
       let minLon = Infinity;
@@ -607,9 +590,10 @@ export function ActivityMap({ P, geo, sport, playback, hover, selection, zoneBou
       }
       map.fitBounds([minLon, minLat, maxLon, maxLat] as LngLatBoundsLike, { padding: FIT_PADDING, maxZoom: 16, duration: 700 });
     }
-  }, [selection, applySelection, P]);
+  }, [selection, P]);
 
-  // camera transitions (one commit after the mode changed, see camTarget)
+  // camera transitions. BaseMap applies the flyover terrain (`terrain` prop) in its own effect of the same commit,
+  // which runs first, and leaves the camera to this one.
   const firstCamera = useRef(true);
   useEffect(() => {
     if (firstCamera.current) {
@@ -621,7 +605,7 @@ export function ActivityMap({ P, geo, sport, playback, hover, selection, zoneBou
     const fi = indexAtTime(P, playback.time.get());
     const pos = positionAt(P, fi);
     const id = ++camSeq.current;
-    if (camTarget === 'overview') {
+    if (camera === 'overview') {
       const p = partOfVertex(geo, Math.max(0, vertexAfter(geo, fi) - 1));
       const big = bigPartsRef.current.find((x) => x.i === p);
       shownPart.current = big ? p : shownPart.current;
@@ -632,9 +616,9 @@ export function ActivityMap({ P, geo, sport, playback, hover, selection, zoneBou
         maxZoom: 16,
         duration: 900,
       });
-    } else if (camTarget === 'follow' && pos) {
+    } else if (camera === 'follow' && pos) {
       map.easeTo({ center: pos, zoom: Math.max(map.getZoom(), 15), pitch: 0, bearing: 0, duration: 900 });
-    } else if (camTarget === 'flyover' && pos) {
+    } else if (camera === 'flyover' && pos) {
       camBearing.current = headingAt(P, fi, true);
       map.easeTo({ center: pos, zoom: 15.6, pitch: 62, bearing: camBearing.current, duration: 1600 });
     }
@@ -651,7 +635,7 @@ export function ActivityMap({ P, geo, sport, playback, hover, selection, zoneBou
       easing.current = false;
       request();
     }
-  }, [camTarget, P, geo, playback, request]);
+  }, [camera, P, geo, playback, request]);
 
   return (
     <div className={cn('flex min-w-0 flex-col gap-2', className)}>
@@ -663,7 +647,7 @@ export function ActivityMap({ P, geo, sport, playback, hover, selection, zoneBou
             label={t('activities.map.colorBy')}
             value={mode}
             onChange={setMode}
-            items={modes.map((m) => ({ value: m, label: t(`activities.map.modes.${m === 'pace' && !isPaceSport(sport) ? 'speed' : m}`) }))}
+            items={modes.map((m) => ({ value: m, label: t(`activities.map.modes.${m === 'pace' && !showsPace(sport) ? 'speed' : m}`) }))}
           />
         </div>
         <div className="flex min-w-0 items-center gap-2">
@@ -711,13 +695,7 @@ export function ActivityMap({ P, geo, sport, playback, hover, selection, zoneBou
           <span className="text-fg-3">{t('activities.map.parts.hint')}</span>
         </div>
       )}
-      <BaseMap
-        className="h-[min(62vh,520px)] min-h-72"
-        bounds={homeBounds}
-        terrain={camera === 'flyover'}
-        onReady={onReady}
-        onStyleLoad={onStyleLoad}
-      >
+      <BaseMap className="h-[min(62vh,520px)] min-h-72" bounds={homeBounds} terrain={camera === 'flyover'} {...overlay.bind}>
         {coloring && <LegendBox legend={coloring.legend} />}
         <div
           ref={tipRef}

@@ -72,8 +72,19 @@ function roundTo(v: number, digits: number, rounding: GoalRounding): number {
   return r / f;
 }
 
-/** Rounding of a progress value: down while it is below the target, to the nearest once it is reached. */
-export const reachedRounding = (value: number, target: number): GoalRounding => (value < target ? 'down' : 'nearest');
+/**
+ * Share of its target from which a single distance ('longest' goal) counts as reached: the GPS tolerance of the
+ * distance trophies, the same as the server's DISTANCE_TOLERANCE (apps/server/src/features/consistency/challenges.ts).
+ */
+export const DISTANCE_TOLERANCE = 0.995;
+
+/**
+ * Rounding of a progress value: down while it is below the target, to the nearest once it is reached. A single
+ * distance is reached within DISTANCE_TOLERANCE like on the server, so 42,150 m of a 42,195 m goal show as 42.2 km,
+ * not as 42.1 km next to a reached goal; pass the goal's `metric` for that.
+ */
+export const reachedRounding = (value: number, target: number, metric?: GoalMetric): GoalRounding =>
+  value < (metric === 'longest' ? target * DISTANCE_TOLERANCE : target) ? 'down' : 'nearest';
 
 /** A small remainder (< 1 km / mi) in m or yd, rounded up: "45 m more" instead of "0 km more". */
 function smallDistanceUp(fmt: Formatter, m: number): string {
@@ -189,59 +200,6 @@ export function fromInputValue(fmt: Formatter, metric: GoalMetric, v: number, pe
   }
 }
 
-const decimalCache = new Map<string, string>();
-
-/** Decimal separator of a locale ("," in German, "." in English and Swiss German). */
-function decimalSeparator(locale: string): string {
-  let d = decimalCache.get(locale);
-  if (d === undefined) {
-    d = new Intl.NumberFormat(locale).formatToParts(1.5).find((p) => p.type === 'decimal')?.value ?? '.';
-    decimalCache.set(locale, d);
-  }
-  return d;
-}
-
-/** Integer digits with group separators: 1–3 digits, then groups of 2 (Indian lakh style) or 3, the last one 3. */
-function ungroup(int: string, group: string): string | null {
-  if (!int.includes(group)) return int;
-  const parts = int.split(group);
-  const ok =
-    /^\d{1,3}$/.test(parts[0]!) &&
-    parts.slice(1, -1).every((p) => /^\d{2,3}$/.test(p)) &&
-    /^\d{3}$/.test(parts[parts.length - 1]!);
-  return ok ? parts.join('') : null;
-}
-
-/**
- * A number typed into a goal form, read with the locale's separators: "1,000" is a thousand in English and "10.000"
- * ten thousand in German (not 1 and 10). The locale's decimal separator is always a decimal point; the other one is
- * a decimal point too where it cannot group thousands ("1.5" in German). A lone separator before exactly three digits
- * ("42.195" in German) groups thousands, unless `preferDecimal` (single distances are entered with up to three
- * decimals). Spaces and apostrophes are group separators. Anything else (signs, letters, broken groups) is NaN.
- */
-export function parseGoalNumber(text: string, locale: string, preferDecimal = false): number {
-  const s = text.replace(/[\s  '’]/g, '');
-  if (!/^[\d.,]+$/.test(s) || !/\d/.test(s)) return NaN;
-  const dots = s.split('.').length - 1;
-  const commas = s.split(',').length - 1;
-  let decimal: '.' | ',' | null = null;
-  if (dots && commas) decimal = s.lastIndexOf('.') > s.lastIndexOf(',') ? '.' : ',';
-  else if (dots + commas === 1) {
-    const sep = dots ? '.' : ',';
-    const [int, frac] = s.split(sep) as [string, string];
-    const groupsThousands = frac.length === 3 && int.length >= 1 && int.length <= 3;
-    decimal = sep === decimalSeparator(locale) || !groupsThousands || preferDecimal ? sep : null;
-  }
-  const group = decimal === '.' ? ',' : decimal === ',' ? '.' : dots ? '.' : ',';
-  const parts = decimal ? s.split(decimal) : [s];
-  if (parts.length > 2) return NaN;
-  const int = parts[0] ?? '';
-  const frac = parts[1] ?? '';
-  const digits = ungroup(int, group);
-  if (digits === null || frac.includes(group)) return NaN;
-  return Number(`${digits || '0'}.${frac || '0'}`);
-}
-
 const inputFormatCache = new Map<string, Intl.NumberFormat>();
 
 /** Canonical target → text of the form's input: the locale's decimal separator, no grouping ("42,195", "1000"). */
@@ -267,7 +225,8 @@ const unitKey = (f: Pick<GoalForm, 'metric' | 'period'>) => (f.metric === 'time'
 
 /** Canonical target typed into the form (NaN when it is not a number). */
 function parseTarget(fmt: Formatter, f: GoalForm): number {
-  const v = parseGoalNumber(f.target, fmt.locale, f.metric === 'longest');
+  // single distances are entered with up to three decimals (42.195 km): a lone separator there is a decimal point
+  const v = fmt.parseNumber(f.target, f.metric === 'longest');
   return Number.isFinite(v) ? fromInputValue(fmt, f.metric, v, f.period) : NaN;
 }
 
@@ -337,7 +296,7 @@ export function goalTargetText(fmt: Formatter, t: TFunction, g: Pick<GoalInput, 
 export function goalOutlook(g: GoalWithProgress, t: TFunction, fmt: Formatter, asOfActive = false): string {
   const c = g.current;
   const v = (x: number, rounding: GoalRounding = 'nearest') => formatGoalValue(fmt, t, g.metric, x, rounding);
-  const reached = (x: number) => v(x, reachedRounding(x, c.target));
+  const reached = (x: number) => v(x, reachedRounding(x, c.target, g.metric));
   if (c.checked) return t('consistency.goals.checkedText', { value: reached(c.value) });
   if (c.status === 'done') return t('consistency.goals.doneText', { pct: fmt.pct(c.fraction) });
   // a day has no pace: what is left, or that nothing was tracked yet
@@ -388,14 +347,6 @@ export function periodLabel(fmt: Formatter, period: GoalPeriod, start: string, e
   if (period === 'year') return start.slice(0, 4);
   if (period === 'month') return fmt.day(start, 'month');
   return `${fmt.day(start, 'dayShort')} – ${fmt.day(end, 'dayShort')}`;
-}
-
-/** Inclusive range label of two days ("3 Mar – 23 Mar 2025"). */
-export function rangeLabel(fmt: Formatter, from: string, to: string): string {
-  if (from === to) return fmt.day(from, 'day');
-  return from.slice(0, 4) === to.slice(0, 4)
-    ? `${fmt.day(from, 'dayShort')} – ${fmt.day(to, 'day')}`
-    : `${fmt.day(from, 'day')} – ${fmt.day(to, 'day')}`;
 }
 
 /** Days of a month 'YYYY-MM'. */

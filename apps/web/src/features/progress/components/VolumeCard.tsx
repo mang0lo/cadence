@@ -28,7 +28,7 @@ import { ChartSkeleton } from './common';
 const HEIGHT = 300;
 
 function bucketTitle(fmt: Formatter, b: ProgressVolumeBucket, bucket: ProgressBucket): string {
-  if (bucket === 'week') return `${fmt.day(b.fromDay, 'dayShort')} – ${fmt.day(b.toDay, 'day')}`;
+  if (bucket === 'week') return fmt.dayRange(b.fromDay, b.toDay);
   return bucketLabel(fmt, b.key, 'long');
 }
 

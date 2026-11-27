@@ -7,8 +7,9 @@ import { cn } from '@/components/ui';
 import { useT } from '@/lib/i18n';
 import { useSettings } from '@/lib/settings';
 import { useResolvedTheme } from '@/lib/theme';
-import { isStyleReady, markStyleReady } from './layers';
-import { FALLBACK_STYLE, MAP_STYLE_KEYS, mapStyleFor, TERRAIN_SOURCE, TERRAIN_SOURCE_ID } from './styles';
+import { isStyleReady, markStyleReady, trackStyleReady } from './layers';
+import { FALLBACK_STYLE, MAP_STYLE_KEYS, mapStyleFor } from './styles';
+import { applyTerrain, useTerrain } from './terrain';
 import './map.css';
 
 // MapLibre 6 resolves its worker relative to its own module, which bundlers relocate — point it at
@@ -28,7 +29,7 @@ export interface BaseMapProps {
   zoom?: number;
   padding?: number;
   interactive?: boolean;
-  /** 3D terrain (raster DEM) + sky. */
+  /** 3D terrain (raster DEM) + sky. Applied without moving the camera; the built-in 3D button also tilts it. */
   terrain?: boolean;
   terrainExaggeration?: number;
   /** Built-in style switcher + 3D toggle in the top-right corner. */
@@ -70,7 +71,7 @@ export function BaseMap({
   const theme = useResolvedTheme();
   const t = useT();
   const [pref, setPref] = useState<MapStylePref>(styleKey ?? settings.mapStyle);
-  const [terrain, setTerrain] = useState(terrainProp);
+  const { on: terrain, toggle: toggleTerrain } = useTerrain(mapRef, terrainProp, terrainExaggeration);
   const [menu, setMenu] = useState(false);
   const styleLoadRef = useRef(onStyleLoad);
   styleLoadRef.current = onStyleLoad;
@@ -79,21 +80,6 @@ export function BaseMap({
   const scaleRef = useRef<ScaleControl | null>(null);
 
   useEffect(() => setPref(styleKey ?? settings.mapStyle), [styleKey, settings.mapStyle]);
-  useEffect(() => setTerrain(terrainProp), [terrainProp]);
-
-  const applyTerrain = (map: Map, on: boolean) => {
-    if (on) {
-      if (!map.getSource(TERRAIN_SOURCE_ID)) map.addSource(TERRAIN_SOURCE_ID, TERRAIN_SOURCE);
-      map.setTerrain({ source: TERRAIN_SOURCE_ID, exaggeration: terrainExaggeration });
-      try {
-        map.setSky({ 'sky-color': '#9cc3ef', 'horizon-color': '#e8eef5', 'sky-horizon-blend': 0.6 });
-      } catch {
-        /* sky unsupported */
-      }
-    } else if (map.getTerrain()) {
-      map.setTerrain(null);
-    }
-  };
 
   // create once
   useEffect(() => {
@@ -110,16 +96,15 @@ export function BaseMap({
       fadeDuration: 150,
     });
     mapRef.current = map;
-    markStyleReady(map, false);
+    // registered first, so the style is ready before every other 'style.load' listener runs (e.g. whenStyleReady)
+    trackStyleReady(map);
     if (controls && interactive) {
       map.addControl(new NavigationControl({ visualizePitch: true }), 'bottom-right');
       scaleRef.current = new ScaleControl({ unit: settings.units === 'imperial' ? 'imperial' : 'metric' });
       map.addControl(scaleRef.current, 'bottom-left');
     }
-    // registered first, so it runs before every other 'style.load' listener (e.g. whenStyleReady)
     map.on('style.load', () => {
-      markStyleReady(map, true);
-      applyTerrain(map, terrainRef.current);
+      applyTerrain(map, terrainRef.current, terrainExaggeration);
       styleLoadRef.current?.(map);
     });
     map.on('error', (e) => {
@@ -160,16 +145,6 @@ export function BaseMap({
     scaleRef.current?.setUnit(settings.units === 'imperial' ? 'imperial' : 'metric');
   }, [settings.units]);
 
-  useEffect(() => {
-    const map = mapRef.current;
-    // not isStyleLoaded(): that is false while tiles load and would drop the toggle; while a new style loads,
-    // the 'style.load' handler applies terrainRef.current
-    if (map && isStyleReady(map)) applyTerrain(map, terrain);
-    if (map && terrain && map.getPitch() < 30) map.easeTo({ pitch: 55, duration: 800 });
-    if (map && !terrain && map.getPitch() > 0) map.easeTo({ pitch: 0, duration: 600 });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [terrain]);
-
   return (
     <div className={cn('relative overflow-hidden rounded-card bg-surface-2', className)}>
       {/* inline style: maplibre-gl.css (unlayered) sets .maplibregl-map{position:relative}, which beats Tailwind's
@@ -179,7 +154,7 @@ export function BaseMap({
         <div className="absolute right-2 top-2 z-10 flex flex-col items-end gap-1.5">
           <div className="flex gap-1.5">
             <button
-              onClick={() => setTerrain((v) => !v)}
+              onClick={toggleTerrain}
               className={cn(
                 'grid size-8 place-items-center rounded-[10px] border border-border bg-surface text-fg-2 shadow-card hover:text-fg',
                 terrain && 'text-accent-fg',

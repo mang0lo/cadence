@@ -18,6 +18,8 @@ import {
   wantsFullList,
   type JobsIo,
 } from '@/features/platform/importJobs';
+import { ApiError } from '@/lib/api';
+import { describeError } from '@/lib/errors';
 import type { TFunction } from '@/lib/i18n';
 
 let seq = 0;
@@ -186,6 +188,15 @@ describe('failed uploads', () => {
       { name: 'b.fit', error: new Error('network') },
     ];
     expect((uploadFailure(t, 5, two) as Error).message).toBe('platform.import.uploadsFailed({"count":2,"names":"a.fit, b.fit"})');
+  });
+
+  it('gives the reason in the user language (by its code), with what the server said as the detail', () => {
+    const refused = new ApiError(413, 'too_large', 'Upload exceeds the size limit');
+    const error = uploadFailure(t, 3, [{ name: 'big.zip', error: refused }]);
+    expect(describeError(error, t)).toEqual({
+      message: 'platform.import.uploadsFailed({"count":1,"names":"big.zip"}) common.errors.too_large',
+      detail: 'Upload exceeds the size limit',
+    });
   });
 
   it('takes files dropped during an upload into the running series instead of ignoring them', () => {

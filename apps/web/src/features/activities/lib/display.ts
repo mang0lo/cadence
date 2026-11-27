@@ -1,5 +1,5 @@
-import { BEST_EFFORTS, M_PER_KM, M_PER_MI, sportInfo, type WorkoutSummary } from '@cadence/shared';
-import { clock, type Formatter } from '@/lib/format';
+import { BEST_EFFORTS, sportInfo, type WorkoutSummary } from '@cadence/shared';
+import { speedChartValue, speedFormat, speedLabel, type Formatter } from '@/lib/format';
 import type { Lang, TFunction } from '@/lib/i18n';
 import { dayKey, diffDays, startOfWeek, todayKey, weekday } from '@/lib/time';
 
@@ -36,54 +36,32 @@ export function shortDistanceParts(m: number, fmt: Formatter): { value: string; 
   return fmt.units === 'imperial' ? { value: fmt.int(m / 0.9144), unit: 'yd' } : { value: fmt.int(m), unit: 'm' };
 }
 
-/** Whether a sport shows pace (min/km) rather than speed. */
-export const isPaceSport = (sport: string) => {
-  const m = sportInfo(sport).speedMode;
-  return m === 'pace' || m === 'pace100';
-};
-
-/** Label for the speed metric of a sport: "Pace" or "Speed". */
-export function speedLabel(sport: string, t: TFunction): string {
-  return isPaceSport(sport) ? t('common.pace') : t('common.speed');
-}
-
 /** Cycling sports (ride, handcycle): cadence in rpm, power with an FTP. */
 export const isCycling = (sport: string) => sportInfo(sport).group === 'cycle';
 
 /** Cadence unit of a sport (the same rule as fmt.cadence). */
 export const cadenceUnit = (sport: string) => (isCycling(sport) ? 'rpm' : 'spm');
 
-/** Meters per pace unit: 100 m / 100 yd for swims (pace100), else 1 km / 1 mi. */
-export function paceUnitM(sport: string, units: Formatter['units']): number {
-  const imperial = units === 'imperial';
-  if (sportInfo(sport).speedMode === 'pace100') return imperial ? 91.44 : 100;
-  return imperial ? M_PER_MI : M_PER_KM;
-}
-
 /**
- * The number charts, axes and legends show for a speed (m/s), in the unit of fmt.paceParts(·, sport): seconds per
- * km / mi (per 100 m / 100 yd for swims) for pace sports, km/h or mph otherwise. NaN without a speed.
+ * The number charts, axes and legends show for a speed (m/s): speedChartValue (seconds per km / mi, per 100 m / 100 yd
+ * for swims, or km/h / mph), NaN without a speed.
  */
 export function paceValue(mps: number, sport: string, units: Formatter['units']): number {
-  if (!(mps > 0)) return NaN;
-  if (isPaceSport(sport)) return paceUnitM(sport, units) / mps;
-  return units === 'imperial' ? mps / (M_PER_MI / 3600) : mps * 3.6;
+  return mps > 0 ? speedChartValue(mps, sport, units) : NaN;
 }
 
 /**
- * A − B of two speeds (m/s) as the compare pages show it: the pace difference for pace sports ("+0:12 /km", positive
- * = A slower), else the speed difference ("−1.2 km/h"). From the speeds themselves (also below the walking speed the
- * charts hide); null unless both are known. `value` is the shown difference (rounded), for its direction.
+ * A − B of two speeds (m/s) as the compare pages show it, with speedFormat's difference: the pace difference for pace
+ * sports ("+0:12 /km", positive = A slower), else the speed difference ("−1.2 km/h"). From the speeds themselves (also
+ * below the walking speed the charts hide); null unless both are known. `value` is the shown difference (rounded),
+ * for its direction.
  */
 export function speedDiff(a: number, b: number, sport: string, fmt: Formatter): { value: number; text: string } | null {
   const d = paceValue(a, sport, fmt.units) - paceValue(b, sport, fmt.units);
   if (!Number.isFinite(d)) return null;
-  const unit = fmt.paceParts(1, sport).unit;
-  if (isPaceSport(sport)) {
-    const s = Math.round(d);
-    return { value: s, text: `${s > 0 ? '+' : s < 0 ? '−' : '±'}${clock(Math.abs(s))} ${unit}` };
-  }
-  return { value: Math.round(d * 10) / 10, text: `${fmt.signed(d, 1)} ${unit}` };
+  const sf = speedFormat(fmt, sport);
+  // paces in whole seconds, speeds with one decimal, as the text shows them
+  return { value: sf.inverse ? Math.round(d) : Math.round(d * 10) / 10, text: sf.delta(b, a) };
 }
 
 /** Axis tick of a duration in minutes: "0", "30m", "2h" (en) / "30 Min.", "2 Std." (de). */
@@ -159,7 +137,7 @@ export function keyStats(w: WorkoutSummary, fmt: Formatter, t: TFunction, max = 
     out.push({ key: 'distance', label: t('common.distance'), value: d.value, unit: d.unit });
     if (info.speedMode !== 'none' && w.avgSpeed) {
       const p = fmt.paceParts(w.avgSpeed, w.sport);
-      out.push({ key: 'pace', label: speedLabel(w.sport, t), value: p.value, unit: p.unit });
+      out.push({ key: 'pace', label: speedLabel(t, w.sport), value: p.value, unit: p.unit });
     }
     out.push({ key: 'time', label: t('common.movingTime'), value: fmt.duration(time) });
     if ((shownGain(w) ?? 0) >= 1) {

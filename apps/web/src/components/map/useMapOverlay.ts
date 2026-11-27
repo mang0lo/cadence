@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type DependencyList, type RefObject } from 'react';
 import { Popup, type LngLatLike, type Map, type PopupOptions } from 'maplibre-gl';
 import type { MapStylePref } from '@cadence/shared';
-import { fitTo, isStyleReady, markStyleReady } from './layers';
+import { fitTo, isStyleReady } from './layers';
 import { DARK, LIBERTY } from './styles';
 
 // ---- overlay lifecycle ----------------------------------------------------------------------------------------
@@ -29,7 +29,8 @@ export interface MapOverlay {
 
 /**
  * True when overlays can be changed on `map` right now: the style JSON is loaded (tiles may still be loading).
- * False between setStyle() and 'style.load' — the overlay is applied again after the load anyway.
+ * False between setStyle() and 'style.load' (BaseMap's switch, or a style MapLibre rebuilds by itself after a lost
+ * WebGL context, see trackStyleReady) — the overlay is applied again after the load anyway.
  */
 export function canDraw(map: Map | null | undefined): map is Map {
   return !!map && isStyleReady(map);
@@ -40,15 +41,6 @@ export function drawIfReady(map: Map | null | undefined, draw: (map: Map) => voi
   if (!canDraw(map)) return false;
   draw(map);
   return true;
-}
-
-/**
- * MapLibre also replaces the style on its own (it rebuilds it after a lost WebGL context), without BaseMap's
- * setStyle path: mark the style as not ready whenever a new one starts loading. BaseMap's 'style.load' handler marks
- * it ready again. 'styledataloading' fires synchronously inside setStyle, before any effect can run.
- */
-function trackStyleLoading(map: Map): void {
-  map.on('styledataloading', () => markStyleReady(map, false));
 }
 
 /**
@@ -64,7 +56,6 @@ export function useMapOverlay(handlers: OverlayHandlers = {}): MapOverlay {
     () => ({
       onReady: (map) => {
         mapRef.current = map;
-        trackStyleLoading(map);
         handlersRef.current.onReady?.(map);
       },
       onStyleLoad: (map) => {

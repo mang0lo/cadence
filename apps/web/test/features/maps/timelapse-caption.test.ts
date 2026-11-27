@@ -1,9 +1,9 @@
 /**
- * Heatmap time-lapse position outside React state (apps/web/src/features/maps/lib/timelapse.ts): the page re-rendered
+ * Heatmap time-lapse position outside React state (a Store, apps/web/src/lib/store.ts): the page re-rendered
  * on every animation frame; the caption and scrubber now follow the position throttled.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { Store, useThrottledStore } from '@/features/maps/lib/timelapse';
+import { Store, useThrottledStore } from '@/lib/store';
 import { renderHook } from './fake-react';
 
 vi.mock('react', async () => (await import('./fake-react')).fakeReact);

@@ -49,6 +49,15 @@ describe('error states in the user language', () => {
     expect(describeError(undefined, de)).toEqual({ message: 'Etwas ist schiefgegangen.', detail: null });
   });
 
+  it('shows the technical text of the error a translated one wraps (cause) as its detail', () => {
+    const cause = new ApiError(409, 'busy', 'A COROS sync is running');
+    expect(describeError(new Error('2 Dateien fehlgeschlagen', { cause }), de)).toEqual({
+      message: '2 Dateien fehlgeschlagen',
+      detail: 'A COROS sync is running',
+    });
+    expect(describeError(new Error('Nicht gespeichert', { cause: new Error('Speichern fehlgeschlagen') }), de).detail).toBeNull();
+  });
+
   it('has an English and a German message for every code', () => {
     for (const lang of ['en', 'de'] as const) {
       const t = tFor(lang);

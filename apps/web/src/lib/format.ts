@@ -1,8 +1,8 @@
 import { useMemo } from 'react';
 import { M_PER_FT, M_PER_KM, M_PER_MI, KG_PER_LB, sportInfo, type Units } from '@cadence/shared';
-import { useI18n, type Lang } from './i18n';
+import { useI18n, type Lang, type TFunction } from './i18n';
 import { useSettings } from './settings';
-import { browserTzAt, dayToDate, localDate } from './time';
+import { browserTzAt, dayKey, dayToDate, localDate, todayKey } from './time';
 
 /** Splits a formatted quantity into value + unit for stat tiles (value large, unit small). */
 export interface Parts {
@@ -17,8 +17,10 @@ export type DateStyle =
   | 'weekdayShort' // Mo., 2. Nov.
   | 'dateTime' // Mo., 2. Nov. 2026, 07:30
   | 'time' // 07:30
+  | 'timeSeconds' // 07:30:05
   | 'month' // November 2026
   | 'monthShort' // Nov.
+  | 'monthYear' // Nov. 2026 / Nov 2026
   | 'monthYearShort' // Nov. 26
   | 'year'; // 2026
 
@@ -29,8 +31,10 @@ const DATE_STYLES: Record<DateStyle, Intl.DateTimeFormatOptions> = {
   weekdayShort: { weekday: 'short', day: 'numeric', month: 'short' },
   dateTime: { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' },
   time: { hour: '2-digit', minute: '2-digit' },
+  timeSeconds: { hour: '2-digit', minute: '2-digit', second: '2-digit' },
   month: { month: 'long', year: 'numeric' },
   monthShort: { month: 'short' },
+  monthYear: { month: 'short', year: 'numeric' },
   monthYearShort: { month: 'short', year: '2-digit' },
   year: { year: 'numeric' },
 };
@@ -95,6 +99,62 @@ export function clock(seconds: number): string {
   return h > 0 ? `${sign}${h}:${two(m)}:${two(sec)}` : `${sign}${m}:${two(sec)}`;
 }
 
+// ---- numbers typed by the user ----------------------------------------------------------------------------------
+
+const decimalCache = new Map<string, string>();
+
+/** Decimal separator of a locale ("," in German, "." in English and Swiss German). */
+function decimalSeparator(locale: string): string {
+  let d = decimalCache.get(locale);
+  if (d === undefined) {
+    d = new Intl.NumberFormat(locale).formatToParts(1.5).find((p) => p.type === 'decimal')?.value ?? '.';
+    decimalCache.set(locale, d);
+  }
+  return d;
+}
+
+/** Integer digits with group separators: 1–3 digits, then groups of 2 (Indian lakh style) or 3, the last one 3. */
+function ungroup(int: string, group: string): string | null {
+  if (!int.includes(group)) return int;
+  const parts = int.split(group);
+  const ok =
+    /^\d{1,3}$/.test(parts[0]!) &&
+    parts.slice(1, -1).every((p) => /^\d{2,3}$/.test(p)) &&
+    /^\d{3}$/.test(parts[parts.length - 1]!);
+  return ok ? parts.join('') : null;
+}
+
+/**
+ * A number the user typed, read with the locale's separators: "1,000" is a thousand in English and "10.000" ten
+ * thousand in German (not 1 and 10). The locale's decimal separator is always a decimal point; the other one is a
+ * decimal point too where it cannot group thousands ("1.5" in German). A lone separator before exactly three digits
+ * ("42.195" in German) groups thousands, unless `preferDecimal` (e.g. single distances, entered with up to three
+ * decimals). Spaces and apostrophes are group separators. Anything else (signs, letters, exponents, broken groups) is
+ * NaN. Use `fmt.parseNumber(text)` in components.
+ */
+export function parseNumber(text: string, locale: string, preferDecimal = false): number {
+  const s = text.replace(/[\s  '’]/g, '');
+  if (!/^[\d.,]+$/.test(s) || !/\d/.test(s)) return NaN;
+  const dots = s.split('.').length - 1;
+  const commas = s.split(',').length - 1;
+  let decimal: '.' | ',' | null = null;
+  if (dots && commas) decimal = s.lastIndexOf('.') > s.lastIndexOf(',') ? '.' : ',';
+  else if (dots + commas === 1) {
+    const sep = dots ? '.' : ',';
+    const [int, frac] = s.split(sep) as [string, string];
+    const groupsThousands = frac.length === 3 && int.length >= 1 && int.length <= 3;
+    decimal = sep === decimalSeparator(locale) || !groupsThousands || preferDecimal ? sep : null;
+  }
+  const group = decimal === '.' ? ',' : decimal === ',' ? '.' : dots ? '.' : ',';
+  const parts = decimal ? s.split(decimal) : [s];
+  if (parts.length > 2) return NaN;
+  const int = parts[0] ?? '';
+  const frac = parts[1] ?? '';
+  const digits = ungroup(int, group);
+  if (digits === null || frac.includes(group)) return NaN;
+  return Number(`${digits || '0'}.${frac || '0'}`);
+}
+
 export function createFormatter(units: Units, locale: string, lang: Lang) {
   const imperial = units === 'imperial';
   const num = (v: number, digits = 0) =>
@@ -110,6 +170,8 @@ export function createFormatter(units: Units, locale: string, lang: Lang) {
     lang,
     num,
     int: (v: number) => num(Math.round(v)),
+    /** A number the user typed, read with this locale's separators (parseNumber); NaN when it is none. */
+    parseNumber: (text: string, preferDecimal = false) => parseNumber(text, locale, preferDecimal),
     compact: (v: number) => nf(locale, { notation: 'compact', maximumFractionDigits: 1 }).format(unsignedZero(v, 1)),
     pct: (fraction: number, digits = 0) =>
       nf(locale, { style: 'percent', maximumFractionDigits: digits, minimumFractionDigits: digits }).format(
@@ -217,6 +279,19 @@ export function createFormatter(units: Units, locale: string, lang: Lang) {
     time: (ts: number, tzMin: number) => dtf(locale, 'time').format(localDate(ts, tzMin)),
     /** Format a 'YYYY-MM-DD' day key. */
     day: (day: string, style: DateStyle = 'day') => dtf(locale, style).format(dayToDate(day)),
+    /** A day without its year when it is in the current year ("4 Feb"), with it otherwise ("4 Feb 2025"). */
+    dayHint: (day: string, today = todayKey()) =>
+      dtf(locale, day.slice(0, 4) === today.slice(0, 4) ? 'dayShort' : 'day').format(dayToDate(day)),
+    /** dayHint of the local day of a timestamp (`tzMin` of the activity or record). */
+    dateHint: (ts: number, tzMin: number, today = todayKey()) => f.dayHint(dayKey(ts, tzMin), today),
+    /** "4 Feb – 27 Oct 2026", "4 Feb 2025 – 27 Oct 2026" (a range across years names both years), or one day. */
+    dayRange(from: string, to: string): string {
+      if (from === to) return f.day(to, 'day');
+      return `${f.day(from, from.slice(0, 4) === to.slice(0, 4) ? 'dayShort' : 'day')} – ${f.day(to, 'day')}`;
+    },
+    /** dayRange of the local days of two timestamps. */
+    dateRange: (fromTs: number, fromTz: number, toTs: number, toTz: number) =>
+      f.dayRange(dayKey(fromTs, fromTz), dayKey(toTs, toTz)),
     /** "vor 3 Tagen" / "3 days ago" */
     relative(ts: number): string {
       const f = rtf(locale);
@@ -250,4 +325,91 @@ export function useFormat(): Formatter {
   const { locale, lang } = useI18n();
   const { settings } = useSettings();
   return useMemo(() => createFormatter(settings.units, locale, lang), [settings.units, locale, lang]);
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Speed and pace on charts and in comparisons (progress trends, route and segment efforts, the compare pages): one rule
+// for which sports show a pace, and one conversion into the numbers a chart axis shows.
+
+/**
+ * A sport's speed values read as a pace (min/km, min/100 m): the rule of fmt.pace and speedFormat. Every other sport
+ * (ride, nordic ski, golf …) shows km/h or mph.
+ */
+export function showsPace(sport: string): boolean {
+  const mode = sportInfo(sport).speedMode;
+  return mode === 'pace' || mode === 'pace100';
+}
+
+/** i18n key of a sport's speed label: "Pace" over paces, "Speed" over km/h or mph. */
+export const speedLabelKey = (sport: string): 'common.pace' | 'common.speed' =>
+  showsPace(sport) ? 'common.pace' : 'common.speed';
+
+/** Header or label of a sport's speed values: "Pace" or "Speed", as they are formatted. */
+export function speedLabel(t: TFunction, sport: string): string {
+  return t(speedLabelKey(sport));
+}
+
+/** Meters per pace unit: 100 m / 100 yd for swims (pace100), else 1 km / 1 mi. */
+export function paceUnitM(sport: string, units: Units): number {
+  const imperial = units === 'imperial';
+  if (sportInfo(sport).speedMode === 'pace100') return imperial ? 91.44 : 100;
+  return imperial ? M_PER_MI : M_PER_KM;
+}
+
+/**
+ * The number a chart shows for a speed (m/s), in the unit of fmt.paceParts(·, sport): seconds per km / mi (per
+ * 100 m / 100 yd for swims) for pace sports, km/h or mph otherwise. No guard: a pace of 0 m/s is Infinity.
+ */
+export function speedChartValue(mps: number, sport: string, units: Units): number {
+  if (showsPace(sport)) return paceUnitM(sport, units) / mps;
+  return units === 'imperial' ? mps / (M_PER_MI / 3600) : mps * 3.6;
+}
+
+/** How a chart shows a metric: axis value and tick, value with unit, signed difference. */
+export interface TrendFormat {
+  /** Canonical value → chart value. */
+  toChart: (v: number) => number;
+  /** Chart value → axis tick label. */
+  axisLabel: (n: number) => string;
+  /** Canonical value → text with unit. */
+  format: (v: number) => string;
+  /** Short unit for axis names. */
+  unit: string;
+  /** Pace axes run inverted so that faster is up. */
+  inverse: boolean;
+  /** Signed difference between two canonical values, e.g. '−0:12 /km', '+3 bpm'. */
+  delta: (from: number, to: number) => string;
+}
+
+/** A metric shown as a plain number: `scale` × the canonical value with `digits` decimals and `unit`. */
+export function numberFormat(fmt: Formatter, unit: string, digits: number, scale = 1): TrendFormat {
+  const withUnit = (s: string) => (unit ? `${s} ${unit}` : s);
+  return {
+    toChart: (v) => v * scale,
+    axisLabel: (n) => fmt.num(n, digits),
+    format: (v) => withUnit(fmt.num(v * scale, digits)),
+    unit,
+    inverse: false,
+    // fmt.signed decides the sign on the rounded value: no "+0.0" / "−0" for tiny differences
+    delta: (a, b) => withUnit(fmt.signed((b - a) * scale, digits)),
+  };
+}
+
+/** Speed metric of a sport: pace (min/km, min/100 m) or speed (km/h, mph). */
+export function speedFormat(fmt: Formatter, sport: string): TrendFormat {
+  const toChart = (v: number) => speedChartValue(v, sport, fmt.units);
+  // km/h and mph are proportional to the speed
+  if (!showsPace(sport)) return numberFormat(fmt, fmt.units === 'imperial' ? 'mph' : 'km/h', 1, toChart(1));
+  const unit = fmt.paceParts(1, sport).unit;
+  return {
+    toChart,
+    axisLabel: (n) => clock(n),
+    format: (v) => fmt.pace(v, sport),
+    unit,
+    inverse: true,
+    delta: (a, b) => {
+      const d = Math.round(toChart(b) - toChart(a));
+      return `${d > 0 ? '+' : d < 0 ? '−' : '±'}${clock(Math.abs(d))} ${unit}`;
+    },
+  };
 }

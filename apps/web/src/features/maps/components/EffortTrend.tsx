@@ -1,5 +1,4 @@
 import { useMemo, useState } from 'react';
-import { sportInfo } from '@cadence/shared';
 import { ChartCard } from '@/components/charts/ChartCard';
 import { EChart } from '@/components/charts/EChart';
 import {
@@ -13,7 +12,7 @@ import {
 } from '@/components/charts/options';
 import { sportColor, useChartTheme } from '@/components/charts/theme';
 import { SegmentedControl } from '@/components/ui';
-import { useFormat } from '@/lib/format';
+import { speedLabelKey, useFormat } from '@/lib/format';
 import { useT } from '@/lib/i18n';
 import { effortScale, effortSeries, type EffortMetric, type TrendEffort } from '../lib/effortTrend';
 
@@ -40,16 +39,13 @@ export function EffortTrend({
   // the efforts carry the sport's fixed color, the running best is a neutral step line
   const effortColor = sportColor(theme, sport);
   const bestColor = theme.fg2;
-  const mode = sportInfo(sport).speedMode;
-  const paceLike = mode === 'pace' || mode === 'pace100';
   const [metric, setMetric] = useState<EffortMetric>('time');
   const asc = useMemo(() => [...efforts].sort((a, b) => a.startTs - b.startTs), [efforts]);
 
   // swims per 100 m / 100 yd, runs per km / mi, rides in km/h / mph (tooltip and table with the unit)
   const scale = useMemo(() => effortScale(fmt, sport, metric), [fmt, sport, metric]);
   const { lowerIsBetter, label } = scale;
-  const metricName =
-    metric === 'time' ? t('maps.routes.time') : paceLike ? t('common.pace') : t('common.speed');
+  const metricName = metric === 'time' ? t('maps.routes.time') : t(speedLabelKey(sport));
 
   const { points, bestSoFar } = useMemo(() => effortSeries(asc, scale), [asc, scale]);
 
@@ -109,11 +105,12 @@ export function EffortTrend({
           label={t('maps.routes.metric')}
           items={[
             { value: 'time', label: t('maps.routes.time') },
-            { value: 'pace', label: paceLike ? t('common.pace') : t('common.speed') },
+            { value: 'pace', label: t(speedLabelKey(sport)) },
           ]}
         />
       }
-      table={{
+      // rows only while the table view is open: one per attempt, each looking up the best before it
+      table={() => ({
         columns: [
           { key: 'date', label: t('common.day') },
           { key: 'v', label: metricName, numeric: true },
@@ -129,7 +126,7 @@ export function EffortTrend({
           })(),
           rank: String(e.rank),
         })),
-      }}
+      })}
     >
       <EChart option={option as never} height={300} ariaLabel={title} />
     </ChartCard>

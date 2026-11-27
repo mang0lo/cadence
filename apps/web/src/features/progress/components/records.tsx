@@ -18,12 +18,11 @@ import { grid, itemTooltip, lineSeries, scatterSeries, timeAxis, tooltipHtml, va
 import { sportColor, useChartTheme, type ChartTheme } from '@/components/charts/theme';
 import { RouteThumbnail } from '@/components/map/RouteThumbnail';
 import { Badge, Card, CardHeader, EmptyState, ErrorState, Skeleton, Table, TD, TH, cn } from '@/components/ui';
-import { clock, useFormat, type Formatter } from '@/lib/format';
+import { clock, speedLabel, useFormat, type Formatter } from '@/lib/format';
 import { useI18n, useT, type Lang, type TFunction } from '@/lib/i18n';
 import { sportColorVar, sportLabel } from '@/lib/sports';
 import { todayKey } from '@/lib/time';
 import { chartLegend, clockAxis, dayMs, hitLayer, localMs, timeAxisLabel } from '../chart';
-import { speedLabel } from '../format';
 import { scopedTop, type RecordScope } from '../periods';
 import { ActivityLink, ChartSkeleton } from './common';
 
@@ -232,10 +231,11 @@ export function ProgressionCard({
     }),
     [h, navigate],
   );
+  // rows only while the table view is open: an effort can have hundreds of attempts, each with a link
   const table = useMemo(
     () =>
       h
-        ? {
+        ? () => ({
             columns: [
               { key: 'date', label: t('progress.records.table.date') },
               { key: 'activity', label: t('progress.common.activity') },
@@ -250,7 +250,7 @@ export function ProgressionCard({
               pace: fmt.pace(h.distanceM / a.elapsedS, h.sport),
               pr: a.pr ? <Medal size={14} className="text-accent-fg" aria-label={t('progress.records.progression.newPr')} /> : '',
             })),
-          }
+          })
         : undefined,
     [h, fmt, t],
   );

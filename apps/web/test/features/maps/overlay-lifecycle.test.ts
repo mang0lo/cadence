@@ -6,7 +6,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Map } from 'maplibre-gl';
-import { markStyleReady } from '@/components/map/layers';
+import { markStyleReady, trackStyleReady } from '@/components/map/layers';
 import type { MapStylePref } from '@cadence/shared';
 import { DARK, LIBERTY, POSITRON, overlayColors } from '@/components/map/styles';
 import {
@@ -17,7 +17,7 @@ import {
   useOverlayStore,
   type MapOverlay,
 } from '@/components/map/useMapOverlay';
-import { Store } from '@/features/maps/lib/timelapse';
+import { Store } from '@/lib/store';
 import { renderHook } from './fake-react';
 
 vi.mock('react', async () => (await import('./fake-react')).fakeReact);
@@ -59,13 +59,10 @@ class FakeMap {
 
 const asMap = (m: FakeMap) => m as unknown as Map;
 
-/** What BaseMap does: not ready at creation, ready on 'style.load' (then onStyleLoad), onReady once. */
+/** What BaseMap does: tracks the style state (ready on 'style.load', then onStyleLoad), onReady once. */
 function mountBaseMap(map: FakeMap, overlay: MapOverlay): void {
-  markStyleReady(asMap(map), false);
-  map.on('style.load', () => {
-    markStyleReady(asMap(map), true);
-    overlay.bind.onStyleLoad(asMap(map));
-  });
+  trackStyleReady(asMap(map));
+  map.on('style.load', () => overlay.bind.onStyleLoad(asMap(map)));
   overlay.bind.onReady(asMap(map));
 }
 

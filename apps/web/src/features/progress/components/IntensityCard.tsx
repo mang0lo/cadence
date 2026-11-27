@@ -32,7 +32,7 @@ export function zoneLabels(t: TFunction, bounds: number[]): string[] {
 }
 
 function bucketTitle(fmt: Formatter, b: { key: string; fromDay: string; toDay: string }, bucket: 'week' | 'month'): string {
-  return bucket === 'week' ? `${fmt.day(b.fromDay, 'dayShort')} – ${fmt.day(b.toDay, 'day')}` : bucketLabel(fmt, b.key, 'long');
+  return bucket === 'week' ? fmt.dayRange(b.fromDay, b.toDay) : bucketLabel(fmt, b.key, 'long');
 }
 
 function buildOption(data: ProgressIntensityResponse, o: { theme: ChartTheme; fmt: Formatter; t: TFunction; labels: string[] }): EChartsOption {

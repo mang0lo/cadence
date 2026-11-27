@@ -16,11 +16,10 @@ import {
 } from '@/components/charts/options';
 import { sportColor, useChartTheme, type ChartTheme } from '@/components/charts/theme';
 import { Delta, EmptyState, ErrorState, Input, SegmentedControl } from '@/components/ui';
-import { useFormat, type Formatter } from '@/lib/format';
+import { speedFormat, useFormat, type Formatter, type TrendFormat } from '@/lib/format';
 import { useT, type TFunction } from '@/lib/i18n';
 import { usePaceAtHr, useSaveHrBand, type RangeParams } from '../api';
 import { bucketLabel, chartLegend, clockAxis } from '../chart';
-import { speedFormat, type TrendFormat } from '../format';
 import { ChartSkeleton } from './common';
 
 const HEIGHT = 240;
@@ -92,7 +91,7 @@ function distributionOption(
     yAxis: { type: 'value', show: false },
     tooltip: itemTooltip(theme, (p: unknown) => {
       const { dataIndex } = p as { dataIndex: number };
-      return tooltipHtml(`${bpms[dataIndex]} bpm`, [{ color, label: '', value: fmt.durationShort(dist.seconds[dataIndex]!) }], theme);
+      return tooltipHtml(fmt.hr(bpms[dataIndex]), [{ color, label: '', value: fmt.durationShort(dist.seconds[dataIndex]!) }], theme);
     }),
     series: [
       barSeries(
@@ -164,8 +163,8 @@ export function PaceAtHrCard({ sport, range }: { sport: string; range: RangePara
     });
   };
   const applyCustom = () => {
-    const a = Math.round(Number(lo));
-    const b = Math.round(Number(hi)) + 1;
+    const a = Math.round(fmt.parseNumber(lo));
+    const b = Math.round(fmt.parseNumber(hi)) + 1;
     if (!Number.isFinite(a) || !Number.isFinite(b) || a < 30 || b > 240 || b <= a) return;
     if (data && data.band.lo === a && data.band.hi === b) return;
     pick({ lo: a, hi: b });
@@ -255,7 +254,6 @@ export function PaceAtHrCard({ sport, range }: { sport: string; range: RangePara
             />
             {activeKey === 'custom' && (
               <div className="flex items-center gap-1.5">
-                {/* h-8! — Input sets h-9 itself and cn does not merge conflicting utilities (h-9 comes later in the CSS) */}
                 <Input
                   inputMode="numeric"
                   aria-label={t('progress.paceAtHr.from')}
@@ -263,7 +261,8 @@ export function PaceAtHrCard({ sport, range }: { sport: string; range: RangePara
                   onChange={(e) => setLo(e.target.value)}
                   onBlur={onBlurGroup}
                   onKeyDown={(e) => e.key === 'Enter' && applyCustom()}
-                  className="h-8! w-16 text-xs"
+                  size="sm"
+                  className="w-16"
                 />
                 <span className="text-xs text-fg-3">–</span>
                 <Input
@@ -273,7 +272,8 @@ export function PaceAtHrCard({ sport, range }: { sport: string; range: RangePara
                   onChange={(e) => setHi(e.target.value)}
                   onBlur={onBlurGroup}
                   onKeyDown={(e) => e.key === 'Enter' && applyCustom()}
-                  className="h-8! w-16 text-xs"
+                  size="sm"
+                  className="w-16"
                 />
                 <span className="text-xs text-fg-3">bpm</span>
               </div>

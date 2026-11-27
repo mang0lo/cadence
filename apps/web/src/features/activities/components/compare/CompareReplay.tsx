@@ -1,9 +1,9 @@
 import { Slider, cn } from '@/components/ui';
 import { clock, useFormat, type Formatter } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
+import { useThrottledStore } from '@/lib/store';
 import { replayAt, type Alignment } from '../../lib/compare';
 import type { Playback } from '../../lib/playback';
-import { useThrottledStore } from '../../lib/store';
 import type { Prepared } from '../../lib/streams';
 import { ReplayTransport } from '../ReplayTransport';
 import { SIDE_VAR } from './CompareMap';

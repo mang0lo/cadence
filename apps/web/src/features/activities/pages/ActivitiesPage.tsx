@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useSearchParams } from 'react-router';
+import { Link } from 'react-router';
 import { Download, EyeOff, ListChecks, MapPin, RotateCcw, Upload } from 'lucide-react';
 import { workoutTitle, type ActivityListQuery, type ActivitySort } from '@cadence/shared';
 import { Button, Card, EmptyState, ErrorState, FilterBar, Input, Page, PageHeader, Select, Skeleton, cn } from '@/components/ui';
@@ -8,6 +8,7 @@ import { useI18n } from '@/lib/i18n';
 import { useSettings } from '@/lib/settings';
 import { SportIcon, sportColorVar, sportLabel } from '@/lib/sports';
 import { todayKey } from '@/lib/time';
+import { useUrlParams } from '@/lib/urlParams';
 import { listPageQuery, useActivityList, usePatchWorkout, useSportCounts } from '../api';
 import { DebouncedSearch } from '../components/DebouncedSearch';
 import { ListCards } from '../components/list/ListCards';
@@ -29,12 +30,10 @@ import { useMediaQuery } from '../lib/useMediaQuery';
 
 /** Filters, sorting and paging live in the URL (shareable, back button friendly); see lib/listParams.ts. */
 function useListParams() {
-  const [params, setParams] = useSearchParams();
+  /** `update` changes some params; every change except paging goes back to page 1. */
+  const [params, update, reset] = useUrlParams(patchListParams);
   const state = useMemo(() => parseListParams(params), [params]);
-  /** Update some params; every change except paging goes back to page 1. */
-  const update = (patch: Record<string, string | null>) =>
-    setParams((prev) => patchListParams(prev, patch), { replace: true });
-  return { state, update, reset: () => setParams(new URLSearchParams(), { replace: true }), active: params.toString() !== '' };
+  return { state, update, reset, active: params.toString() !== '' };
 }
 
 function SportChips({ selected, onChange }: { selected: string[]; onChange: (s: string[]) => void }) {
