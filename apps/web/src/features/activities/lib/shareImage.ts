@@ -536,13 +536,3 @@ export function canvasBlob(canvas: HTMLCanvasElement): Promise<Blob> {
     canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('toBlob failed'))), 'image/png'),
   );
 }
-
-/** Base64 (without the data: prefix) of a blob. */
-export function blobBase64(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const r = new FileReader();
-    r.onload = () => resolve(String(r.result).replace(/^data:[^,]*,/, ''));
-    r.onerror = () => reject(r.error ?? new Error('read failed'));
-    r.readAsDataURL(blob);
-  });
-}

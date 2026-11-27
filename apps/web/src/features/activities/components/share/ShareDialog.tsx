@@ -3,9 +3,9 @@ import { Check, Copy, Download, LineChart, Plus, Share2 } from 'lucide-react';
 import { sportInfo, trackParts, workoutTitle, type WorkoutDetail, type WorkoutStreams } from '@cadence/shared';
 import { thumbnailBasemap } from '@/components/map/tiles';
 import { Button, Dialog, Field, SegmentedControl, Spinner, Switch } from '@/components/ui';
+import { saveFile } from '@/lib/download';
 import { showsPace, speedLabel, useFormat, type Formatter } from '@/lib/format';
 import { useI18n, type TFunction } from '@/lib/i18n';
-import { isNativeShell, postNative } from '@/lib/native';
 import { activityPlace } from '@/lib/places';
 import { decodePolylineParts } from '@/lib/polyline';
 import { useSettings } from '@/lib/settings';
@@ -33,7 +33,6 @@ import {
   type ShareTheme,
 } from '../../lib/share';
 import {
-  blobBase64,
   canvasBlob,
   renderShareImage,
   type ShareChart,
@@ -262,21 +261,8 @@ export default function ShareDialog({ w, onClose }: { w: WorkoutDetail; onClose:
     if (!result) return;
     setError(false);
     try {
-      const blob = await canvasBlob(result.canvas);
-      // WKWebView does not download blob: links reliably — the Mac app writes the file itself
-      if (isNativeShell()) {
-        postNative('saveFile', { filename, base64: await blobBase64(blob) });
-        setDone('saved');
-        return;
-      }
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
+      // the apps save the file themselves (and show nothing a browser download would)
+      if (await saveFile(filename, await canvasBlob(result.canvas))) setDone('saved');
     } catch {
       setError(true);
     }
