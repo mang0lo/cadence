@@ -22,6 +22,7 @@
  *   GET  /readiness?day=&days=      ReadinessResponse
  */
 import type { RecordTypeInfo } from '../core';
+import type { HeartMetric } from './health-catalogue';
 
 export * from './health-catalogue';
 export * from './health-analytics';
@@ -42,7 +43,7 @@ export interface HealthMeta {
    * daily_metrics keys of the heart metrics to show: Apple's or COROS' (Settings → My watch), e.g.
    * 'COROSSleepHRV' instead of 'HKQuantityTypeIdentifierHeartRateVariabilitySDNN'.
    */
-  metrics: { restingHr: string; hrv: string; vo2max: string; steps: string; heartRate: string };
+  metrics: Record<HeartMetric, string>;
 }
 
 export interface HealthSettings {
@@ -92,13 +93,16 @@ export interface HealthMetricCard {
   /** Latest day with a value and that value (canonical unit; sleep: minutes). */
   latestDay: string | null;
   latest: number | null;
-  /** Mean over the last 30 days up to `asOf` (cumulative metrics count days without data as 0). */
+  /**
+   * Mean over the last 30 days up to `asOf`. Cumulative metrics count days without data as 0 and end at the last
+   * complete day of their source instead (the day an export was taken on, and days after its data, are left out).
+   */
   avg30: number | null;
   n30: number;
   /** Mean over the 30 days before that. */
   avgPrev30: number | null;
   nPrev30: number;
-  /** Daily values of the last OVERVIEW_SPARK_DAYS days ending at `asOf` (null = no data). */
+  /** Daily values of the last OVERVIEW_SPARK_DAYS days ending where the 30-day window ends (null = no data). */
   spark: (number | null)[];
   firstDay: string | null;
 }
@@ -109,6 +113,11 @@ export interface HealthOverview {
 }
 
 export interface SnapshotValue {
+  /**
+   * daily_metrics key of the value: Apple's or the watch's own (Settings → My watch, like HealthMeta.metrics), e.g.
+   * 'COROSRestingHeartRate'; 'sleep' for the sleep nights.
+   */
+  metric: string;
   day: string;
   value: number;
   /** Last 14 days (index 0 = oldest), null = no data. */
@@ -224,6 +233,8 @@ export interface IntradayBucket {
   min: number;
   max: number;
   n: number;
+  /** UTC offset of this bucket when it differs from the day's `tzMin` (after a DST change, while travelling). */
+  tzMin?: number;
 }
 
 export interface IntradayResponse {
@@ -231,7 +242,10 @@ export interface IntradayResponse {
   day: string;
   unit: string | null;
   aggregation: RecordTypeInfo['aggregation'];
-  /** Local UTC offset in minutes of the day (offset of the first sample). */
+  /**
+   * Local UTC offset in minutes of the day: the offset of its first sample (later buckets with another offset carry
+   * their own); without samples the offset of the type's nearest sample.
+   */
   tzMin: number;
   dayStartTs: number;
   dayEndTs: number;

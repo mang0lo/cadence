@@ -9,6 +9,7 @@ import { useFormat } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
 import { useStoredState } from '@/lib/storage';
 import { SportIcon, sportLabel } from '@/lib/sports';
+import { Store } from '@/lib/store';
 import { useStreams, useWorkout } from '../api';
 import { CompareCharts } from '../components/compare/CompareCharts';
 import { CompareDialog } from '../components/compare/CompareDialog';
@@ -18,7 +19,6 @@ import { CompareSummary } from '../components/compare/CompareSummary';
 import { align, replayClock, routeSeparation, type Alignment, type TimeBase } from '../lib/compare';
 import { Playback } from '../lib/playback';
 import { routeGeometry } from '../lib/route';
-import { Store } from '../lib/store';
 import { prepareStreams, type Prepared } from '../lib/streams';
 import { usePlaybackKeys } from '../lib/usePlaybackKeys';
 

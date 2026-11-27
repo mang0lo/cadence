@@ -1,10 +1,10 @@
 import { Check, CircleCheck, Flag, Pencil, SquareCheckBig, Target, Trash2, TrendingDown, TrendingUp, Undo2 } from 'lucide-react';
 import type { GoalPeriodProgress, GoalPeriodResult, GoalStatus, GoalWithProgress } from '@cadence/shared';
 import { Badge, Button, Card, Hint, IconButton, ProgressBar, cn } from '@/components/ui';
-import { useFormat, type Formatter } from '@/lib/format';
-import { useI18n, type TFunction } from '@/lib/i18n';
+import { useFormat } from '@/lib/format';
+import { useI18n } from '@/lib/i18n';
 import { SportIcon, sportColorVar } from '@/lib/sports';
-import { formatGoalValue, goalTargetText, goalTitle, periodLabel } from '../lib';
+import { formatGoalValue, goalOutlook, goalTargetText, goalTitle, periodLabel, reachedRounding } from '../lib';
 
 /** Status with icon + label (status colors are never used alone). `checked`: reached by a check mark set by hand. */
 export function GoalStatusBadge({ status, checked }: { status: GoalStatus; checked?: boolean }) {
@@ -26,7 +26,8 @@ export function GoalStatusBadge({ status, checked }: { status: GoalStatus; check
 
 /**
  * Check a goal off by hand for its current period (something was done but not tracked), or take the check mark
- * back. Nothing is shown for a goal the tracked activities already reached.
+ * back. Nothing is shown for a goal the tracked activities already reached. `onCheck` gets a day of the period the
+ * card shows, so a click after midnight still checks off the period on screen and not the new one.
  */
 export function GoalCheckButton({
   goal,
@@ -34,7 +35,7 @@ export function GoalCheckButton({
   compact,
 }: {
   goal: GoalWithProgress;
-  onCheck: (done: boolean) => void;
+  onCheck: (done: boolean, day: string) => void;
   /** Icon only (dashboard). */
   compact?: boolean;
 }) {
@@ -43,9 +44,9 @@ export function GoalCheckButton({
   if (c.status === 'done' && !c.checked) return null;
   const label = t(c.checked ? 'consistency.goals.uncheck' : `consistency.goals.checkHint.${goal.period}`);
   if (compact)
-    return <IconButton icon={c.checked ? Undo2 : Check} label={label} className="size-7" onClick={() => onCheck(!c.checked)} />;
+    return <IconButton icon={c.checked ? Undo2 : Check} label={label} size="sm" onClick={() => onCheck(!c.checked, c.start)} />;
   return (
-    <Button size="sm" variant={c.checked ? 'ghost' : 'secondary'} icon={c.checked ? Undo2 : Check} title={label} onClick={() => onCheck(!c.checked)}>
+    <Button size="sm" variant={c.checked ? 'ghost' : 'secondary'} icon={c.checked ? Undo2 : Check} title={label} onClick={() => onCheck(!c.checked, c.start)}>
       {t(c.checked ? 'consistency.goals.uncheck' : 'consistency.goals.check')}
     </Button>
   );
@@ -101,9 +102,8 @@ export function GoalHistoryStrip({
     >
       {history.map((h) => {
         const state = h.manual ? 'manual' : h.hit ? 'hit' : h.pending ? 'pending' : 'miss';
-        const result = `${periodLabel(fmt, goal.period, h.start, h.end)}: ${formatGoalValue(fmt, t, goal.metric, h.value)} — ${t(
-          `consistency.goals.result.${state}`,
-        )}`;
+        const value = formatGoalValue(fmt, t, goal.metric, h.value, reachedRounding(h.value, goal.target, goal.metric));
+        const result = `${periodLabel(fmt, goal.period, h.start, h.end)}: ${value} — ${t(`consistency.goals.result.${state}`)}`;
         const canToggle = !!onToggle && state !== 'hit';
         const text = canToggle ? `${result} · ${t(h.manual ? 'consistency.goals.clickUncheck' : 'consistency.goals.clickCheck')}` : result;
         const look = cn(
@@ -135,40 +135,6 @@ export function GoalHistoryStrip({
   );
 }
 
-/** One line telling where the goal stands: projection, what is left per day, or that it was reached. */
-export function goalOutlook(
-  g: GoalWithProgress,
-  t: TFunction,
-  fmt: Formatter,
-): string {
-  const c = g.current;
-  const v = (x: number) => formatGoalValue(fmt, t, g.metric, x);
-  if (c.checked) return t('consistency.goals.checkedText', { value: v(c.value) });
-  if (c.status === 'done') return t('consistency.goals.doneText', { pct: fmt.pct(c.fraction) });
-  // a day has no pace: what is left, or that nothing was tracked yet
-  if (g.period === 'day' && g.metric !== 'longest')
-    return c.value > 0 ? t('consistency.goals.remainingToday', { value: v(c.remaining) }) : t('consistency.goals.nothingToday');
-  // a single effort: the longest so far and what is still missing to the target
-  if (g.metric === 'longest')
-    return c.value > 0
-      ? t('consistency.goals.longestSoFar', { value: v(c.value), remaining: v(c.remaining), days: t('common.days', { count: c.remainingDays }) })
-      : t('consistency.goals.longestNone', { days: t('common.days', { count: c.remainingDays }) });
-  if (g.metric === 'active_days' && c.remaining > c.remainingDays) return t(`consistency.goals.outOfReach.${g.period}`);
-  // a projection needs a pace: nothing done on the first day(s) would project 0
-  const parts = c.value > 0 && c.elapsedDays > 0 ? [t(`consistency.goals.projected.${g.period}`, { value: v(c.projected) })] : [];
-  if (c.perDayNeeded !== null)
-    parts.push(
-      g.metric === 'active_days'
-        ? t('consistency.goals.remainingDays', { count: Math.ceil(c.remaining), days: t('common.days', { count: c.remainingDays }) })
-        : t('consistency.goals.remaining', {
-            value: v(c.remaining),
-            perDay: v(c.perDayNeeded),
-            days: t('common.days', { count: c.remainingDays }),
-          }),
-    );
-  return parts.join(' · ');
-}
-
 export function GoalIcon({ sport, size = 32 }: { sport: string | null; size?: number }) {
   return sport ? (
     <span className="grid shrink-0 place-items-center rounded-full text-white" style={{ background: sportColorVar(sport), width: size, height: size }}>
@@ -184,6 +150,7 @@ export function GoalIcon({ sport, size = 32 }: { sport: string | null; size?: nu
 /**
  * Full goal card: value vs target, status, progress with expectation tick, outlook and history. `onCheck` adds the
  * button that checks the current period off by hand, `onToggleHistory` makes missed periods of the history checkable.
+ * `asOfActive`: the day the numbers refer to already counts as an active day for this goal.
  */
 export function GoalCard({
   goal,
@@ -191,12 +158,14 @@ export function GoalCard({
   onDelete,
   onCheck,
   onToggleHistory,
+  asOfActive,
 }: {
   goal: GoalWithProgress;
   onEdit?: () => void;
   onDelete?: () => void;
-  onCheck?: (done: boolean) => void;
+  onCheck?: (done: boolean, day: string) => void;
   onToggleHistory?: (h: GoalPeriodResult) => void;
+  asOfActive?: boolean;
 }) {
   const { t, lang } = useI18n();
   const fmt = useFormat();
@@ -223,7 +192,9 @@ export function GoalCard({
             {t(`consistency.goals.current.${goal.period}`)} · {periodLabel(fmt, goal.period, c.start, c.end)}
           </div>
           <div className="mt-0.5 flex flex-wrap items-baseline gap-x-1.5">
-            <span className="text-3xl font-semibold tracking-tight text-fg">{formatGoalValue(fmt, t, goal.metric, c.value)}</span>
+            <span className="text-3xl font-semibold tracking-tight text-fg">
+              {formatGoalValue(fmt, t, goal.metric, c.value, reachedRounding(c.value, c.target, goal.metric))}
+            </span>
             <span className="text-sm text-fg-3">{t('consistency.goals.of', { target: formatGoalValue(fmt, t, goal.metric, c.target) })}</span>
           </div>
         </div>
@@ -236,7 +207,7 @@ export function GoalCard({
         <GoalProgressBar current={c} label={title} />
       </div>
       <div className="mt-2 flex flex-wrap justify-between gap-x-3 gap-y-1 text-xs text-fg-3">
-        <span>{goalOutlook(goal, t, fmt)}</span>
+        <span>{goalOutlook(goal, t, fmt, asOfActive)}</span>
         {c.status !== 'done' && c.expected > 0 && (
           <span className="inline-flex items-center gap-1">
             <span aria-hidden className="inline-block h-3 w-0.5 rounded-full bg-fg" />

@@ -1,6 +1,6 @@
 /**
- * Widgets of the "maps" feature that other features place: `ExplorerWidget` on the dashboard and
- * `WorkoutMapsCard` on the activity page (both placed by the activities feature).
+ * Widgets of the "maps" feature: `ExplorerWidget` on the dashboard (registered in ./index.tsx) and
+ * `WorkoutMapsCard` on the activity page (placed by the activities feature).
  * Each widget renders its own <Card> and fetches its own data; return null when there is nothing to show.
  */
 import { Link } from 'react-router';
@@ -8,7 +8,7 @@ import { ArrowRight, Grid3x3, Route as RouteIcon, Star, Trophy } from 'lucide-re
 import type { MapsExplorerSummary, MapsWorkoutLinks } from '@cadence/shared';
 import { Badge, Card, CardHeader, Delta, ErrorState, Skeleton, Stat, Table, TD, TH } from '@/components/ui';
 import { useApi } from '@/lib/api';
-import { useFormat } from '@/lib/format';
+import { speedLabelKey, useFormat } from '@/lib/format';
 import { useI18n, useT } from '@/lib/i18n';
 import { routeTitle } from './lib/routeName';
 
@@ -57,7 +57,7 @@ export function ExplorerWidget() {
         <Stat label={t('maps.explorer.stats.tiles')} value={fmt.int(d.tiles)} size="md" />
         <Stat
           label={t('maps.explorer.stats.maxSquare')}
-          value={d.maxSquare ? `${d.maxSquare} × ${d.maxSquare}` : '–'}
+          value={d.maxSquare ? `${fmt.int(d.maxSquare)} × ${fmt.int(d.maxSquare)}` : '–'}
           hint={d.maxSquare ? t('maps.explorer.stats.maxSquareHint', { count: d.maxSquare ** 2 }) : undefined}
           size="md"
         />
@@ -129,7 +129,7 @@ export function WorkoutMapsCard({ workoutId, sport }: { workoutId: number; sport
             <tr>
               <TH>{t('maps.workoutCard.segment')}</TH>
               <TH numeric>{t('maps.workoutCard.time')}</TH>
-              <TH numeric>{t('maps.workoutCard.pace')}</TH>
+              <TH numeric>{t(speedLabelKey(sport))}</TH>
               <TH numeric>{t('maps.workoutCard.hr')}</TH>
               <TH numeric>{t('maps.workoutCard.rankCol')}</TH>
             </tr>

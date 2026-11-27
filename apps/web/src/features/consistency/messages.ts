@@ -27,6 +27,8 @@ export const messages: Dictionary = {
       noDataHint: 'Import your Apple Health export to see your streaks, goals and trophies.',
       dayUnit: { one: 'day', other: 'days' },
       weekUnit: { one: 'week', other: 'weeks' },
+      activities: { one: '{count} activity', other: '{count} activities' },
+      days: { one: '{count} day', other: '{count} days' },
     },
     page: {
       title: 'Consistency',
@@ -138,6 +140,7 @@ export const messages: Dictionary = {
     },
     goals: {
       unit: { activities: 'activities', days: 'days', minutes: 'min' },
+      zeroTime: '0m',
       metrics: {
         distance: 'Distance',
         longest: 'Longest activity',
@@ -321,8 +324,8 @@ export const messages: Dictionary = {
       },
       kinds: {
         activities: {
-          title: { one: 'First activity', other: '{n} activities' },
-          desc: { one: 'Record your first activity', other: 'Record {n} activities' },
+          title: { one: 'First activity', other: '{count} activities' },
+          desc: { one: 'Record your first activity', other: 'Record {count} activities' },
         },
         sport_distance: { title: '{sport}: {distance}', desc: 'Cover {distance} in total ({sport})' },
         longest: { title: '{sport}: {distance} in one go', desc: 'A single activity ({sport}) of at least {distance}' },
@@ -417,7 +420,7 @@ export const messages: Dictionary = {
       perWeek: 'Per week',
       everest: '≈ {x} × Mount Everest',
       eiffel: 'Eiffel Towers climbed',
-      eiffelHint: '330 m each',
+      eiffelHint: '{height} each',
       fastest: 'Fastest of the year',
       pr: 'PR',
       prs: 'New personal records',
@@ -480,6 +483,8 @@ export const messages: Dictionary = {
       noDataHint: 'Importiere deinen Apple-Health-Export, um deine Serien, Ziele und Trophäen zu sehen.',
       dayUnit: { one: 'Tag', other: 'Tage' },
       weekUnit: { one: 'Woche', other: 'Wochen' },
+      activities: { one: '{count} Aktivität', other: '{count} Aktivitäten' },
+      days: { one: '{count} Tag', other: '{count} Tage' },
     },
     page: {
       title: 'Konstanz',
@@ -592,6 +597,7 @@ export const messages: Dictionary = {
     },
     goals: {
       unit: { activities: 'Aktivitäten', days: 'Tage', minutes: 'Min.' },
+      zeroTime: '0 Min.',
       metrics: {
         distance: 'Distanz',
         longest: 'Längste Einheit',
@@ -775,8 +781,8 @@ export const messages: Dictionary = {
       },
       kinds: {
         activities: {
-          title: { one: 'Erste Aktivität', other: '{n} Aktivitäten' },
-          desc: { one: 'Zeichne deine erste Aktivität auf', other: 'Zeichne {n} Aktivitäten auf' },
+          title: { one: 'Erste Aktivität', other: '{count} Aktivitäten' },
+          desc: { one: 'Zeichne deine erste Aktivität auf', other: 'Zeichne {count} Aktivitäten auf' },
         },
         sport_distance: { title: '{sport}: {distance}', desc: 'Insgesamt {distance} ({sport})' },
         longest: { title: '{sport}: {distance} am Stück', desc: 'Eine einzelne Aktivität ({sport}) über mindestens {distance}' },
@@ -871,7 +877,7 @@ export const messages: Dictionary = {
       perWeek: 'Pro Woche',
       everest: '≈ {x} × Mount Everest',
       eiffel: 'Eiffeltürme erklommen',
-      eiffelHint: 'je 330 m',
+      eiffelHint: 'je {height}',
       fastest: 'Schnellste Zeiten des Jahres',
       pr: 'Bestzeit',
       prs: 'Neue Bestleistungen',

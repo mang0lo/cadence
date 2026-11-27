@@ -3,9 +3,11 @@
  * headings, pauses, decimation for charts, statistics of a selected range and histograms.
  *
  * Convention (same as the server): t = seconds since start; sample i closes the segment (i−1 → i) and
- * moving[i] says whether that segment is moving time. NaN = missing value.
+ * moving[i] says whether that segment is moving time. NaN = missing value. Track breaks (Prepared.breaks: a jump
+ * travelled while paused) are never interpolated across and are no climb: use positionAt / valueAtNoBreak for
+ * positions and values on the track.
  */
-import { GAP_SPORTS, gradeCostFactor, stitchElevation, type WorkoutStreams } from '@cadence/shared';
+import { GAP_SPORTS, gradeCostFactor, stitchElevation, trackParts, type WorkoutStreams } from '@cadence/shared';
 
 const RAD = Math.PI / 180;
 const EARTH_R = 6371008.8;
@@ -152,9 +154,24 @@ export function valueAt(arr: Float64Array | null, fi: number): number {
 export const indexAtTime = (P: Prepared, t: number) => fracIndex(P.t, t);
 export const indexAtDist = (P: Prepared, d: number) => (P.dist ? fracIndex(P.dist, d) : 0);
 
-/** [lon, lat] at a fractional index. */
-export function lngLatAt(P: Prepared, fi: number): [number, number] | null {
+/** Whether a fractional index lies on the segment that jumps to a new track part (i → i+1 with i+1 a break). */
+function onBreak(breaks: number[], fi: number): number | null {
+  const i = Math.floor(fi);
+  return fi > i && breaks.includes(i + 1) ? i : null;
+}
+
+/** Value at a fractional index, never interpolated across a track break (the last value before the jump). */
+export function valueAtNoBreak(arr: Float64Array | null, fi: number, breaks: number[]): number {
+  if (!arr) return NaN;
+  const i = onBreak(breaks, fi);
+  return i === null ? valueAt(arr, fi) : arr[i]!;
+}
+
+/** [lon, lat] at a fractional index; on the jump between two track parts it stays at the last fix before the jump. */
+export function positionAt(P: Pick<Prepared, 'lat' | 'lon' | 'breaks'>, fi: number): [number, number] | null {
   if (!P.lat || !P.lon) return null;
+  const i = onBreak(P.breaks, fi);
+  if (i !== null) return [P.lon[i]!, P.lat[i]!];
   return [valueAt(P.lon, fi), valueAt(P.lat, fi)];
 }
 
@@ -413,24 +430,36 @@ export function rangeStats(P: Prepared, i0: number, i1: number, sport: string): 
     if (P.power && isNum(P.power[i]!)) maxPw = Math.max(maxPw, P.power[i]!);
     if (P.speed && P.moving[i] && isNum(P.speed[i]!)) maxSp = Math.max(maxSp, P.speed[i]!);
   }
+  // elevation per track part (like the server's elevationGainLoss): the jump between two parts is no climb
   let gain: number | null = null;
   let loss: number | null = null;
+  let rise = 0;
   if (P.ele) {
     gain = 0;
     loss = 0;
-    let ref = NaN;
     const e = P.ele;
-    for (let i = a; i <= b; i++) {
-      const v = e[i]!;
-      if (!isNum(v)) continue;
-      if (!isNum(ref)) ref = v;
-      else if (v - ref >= 2) {
-        gain += v - ref;
-        ref = v;
-      } else if (ref - v >= 2) {
-        loss += ref - v;
-        ref = v;
+    for (const [s, end] of trackParts(P.n, P.breaks)) {
+      const lo = Math.max(a, s);
+      const hi = Math.min(b, end - 1);
+      if (hi <= lo) continue;
+      let ref = NaN;
+      let first = NaN;
+      let last = NaN;
+      for (let i = lo; i <= hi; i++) {
+        const v = e[i]!;
+        if (!isNum(v)) continue;
+        if (!isNum(first)) first = v;
+        last = v;
+        if (!isNum(ref)) ref = v;
+        else if (v - ref >= 2) {
+          gain += v - ref;
+          ref = v;
+        } else if (ref - v >= 2) {
+          loss += ref - v;
+          ref = v;
+        }
       }
+      if (isNum(first)) rise += last - first;
     }
   }
   const distanceM = P.dist ? P.dist[b]! - P.dist[a]! : null;
@@ -448,7 +477,7 @@ export function rangeStats(P: Prepared, i0: number, i1: number, sport: string): 
     maxHr: maxHr > -Infinity ? maxHr : null,
     gainM: gain,
     lossM: loss,
-    avgGrade: P.ele && distanceM && distanceM > 0 ? (P.ele[b]! - P.ele[a]!) / distanceM : null,
+    avgGrade: P.ele && distanceM && distanceM > 0 ? rise / distanceM : null,
     avgCadence: mean(acc.cad),
     avgPower: mean(acc.pw),
     maxPower: maxPw > -Infinity ? maxPw : null,

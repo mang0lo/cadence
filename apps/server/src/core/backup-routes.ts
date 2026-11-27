@@ -2,7 +2,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { pipeline } from 'node:stream/promises';
+import { Worker } from 'node:worker_threads';
 import type { FastifyInstance } from 'fastify';
+import { get, type Db } from '../db/db';
 import { features } from '../features';
 import { HttpError, badRequest } from '../lib/http';
 
@@ -11,22 +13,53 @@ import { HttpError, badRequest } from '../lib/http';
  * without losing anything that is not in the Apple Health export (renamed activities, goals, segments …).
  */
 
-/** Exit code that asks the macOS shell (and Docker's restart policy) to start the server again. */
-export const RESTART_EXIT_CODE = 75;
-
 const restorePath = (dbPath: string) => `${dbPath}.restore`;
+
+const stamp = () => new Date().toISOString().replace(/[:.]/g, '-');
+
+/** Renames a database file together with its -wal / -shm files. */
+function moveDb(from: string, to: string): void {
+  fs.renameSync(from, to);
+  for (const ext of ['-wal', '-shm']) if (fs.existsSync(from + ext)) fs.renameSync(from + ext, to + ext);
+}
+
+/**
+ * Swaps in a pending restore, keeping the old file: returns where the previous database went ('' when there was
+ * none), null when no restore is pending.
+ */
+function swapInRestore(dbPath: string): string | null {
+  const pending = restorePath(dbPath);
+  if (!fs.existsSync(pending)) return null;
+  let previous = '';
+  if (fs.existsSync(dbPath)) moveDb(dbPath, (previous = `${dbPath}.before-restore-${stamp()}`));
+  fs.renameSync(pending, dbPath);
+  return previous;
+}
 
 /** Called on startup before the database is opened: swaps in a pending restore, keeping the old file. */
 export function applyPendingRestore(dbPath: string): boolean {
-  const pending = restorePath(dbPath);
-  if (!fs.existsSync(pending)) return false;
-  if (fs.existsSync(dbPath)) {
-    const old = `${dbPath}.before-restore-${new Date().toISOString().replace(/[:.]/g, '-')}`;
-    fs.renameSync(dbPath, old);
-    for (const ext of ['-wal', '-shm']) if (fs.existsSync(dbPath + ext)) fs.renameSync(dbPath + ext, old + ext);
+  return swapInRestore(dbPath) !== null;
+}
+
+/**
+ * Opens the database on startup (`open` opens and migrates it), applying a pending restore first. A restored file
+ * that cannot be opened or migrated is kept aside as <db>.failed-restore-<time> and the database from before the
+ * restore comes back (exactly that one, not an older before-restore file): a bad backup must never keep the app from
+ * starting.
+ */
+export function openWithPendingRestore<T>(dbPath: string, open: (file: string) => T, log: (msg: string) => void = console.log): T {
+  const previous = swapInRestore(dbPath);
+  if (previous === null) return open(dbPath);
+  try {
+    const db = open(dbPath);
+    log('Restored the database from an uploaded backup');
+    return db;
+  } catch (e) {
+    log(`The uploaded backup could not be opened (${(e as Error).message}); the previous database is used again`);
+    moveDb(dbPath, `${dbPath}.failed-restore-${stamp()}`);
+    if (previous) moveDb(previous, dbPath);
+    return open(dbPath);
   }
-  fs.renameSync(pending, dbPath);
-  return true;
 }
 
 function validateBackup(file: string): void {
@@ -40,6 +73,9 @@ function validateBackup(file: string): void {
       )
       .get() as { n: number };
     if (n !== 4) throw badRequest('This file is not a Cadence backup');
+    // written by Cadence's own migrations, not just four tables with the right names
+    if (!db.prepare("SELECT 1 FROM _migrations WHERE id = 'core_001_init'").get())
+      throw badRequest('This file is not a Cadence backup');
     const check = Object.values(db.prepare('PRAGMA quick_check').get() as Record<string, unknown>)[0];
     if (check !== 'ok') throw badRequest('The backup file is damaged');
   } catch (e) {
@@ -51,12 +87,11 @@ function validateBackup(file: string): void {
 }
 
 /**
- * Remove the logins of other services (Feature.secretSettings) from a backup copy. secure_delete overwrites the
- * freed pages, so the values are not left behind in the file.
+ * Remove the logins of other services (Feature.secretSettings) and the server's own login sessions from a backup
+ * copy (a restore logs everyone out). secure_delete overwrites the freed pages, so the values are not left behind.
  */
 export function stripSecrets(file: string): void {
-  const keys = features.flatMap((f) => f.secretSettings ?? []);
-  if (!keys.length) return;
+  const keys = ['core.sessions', ...features.flatMap((f) => f.secretSettings ?? [])];
   const db = new DatabaseSync(file);
   try {
     db.exec('PRAGMA secure_delete = ON');
@@ -66,21 +101,89 @@ export function stripSecrets(file: string): void {
   }
 }
 
+/** VACUUM INTO on a read-only connection of its own, in a worker thread (plain JS: the same in tsx and the bundle). */
+const SNAPSHOT_WORKER = `
+const { parentPort, workerData } = require('node:worker_threads');
+const { DatabaseSync } = require('node:sqlite');
+let db;
+try {
+  db = new DatabaseSync(workerData.source, { readOnly: true });
+  db.exec('PRAGMA busy_timeout = 15000');
+  db.exec("VACUUM INTO '" + workerData.target.replace(/'/g, "''") + "'");
+  parentPort.postMessage({ ok: true });
+} catch (e) {
+  parentPort.postMessage({ ok: false, message: e instanceof Error ? e.message : String(e) });
+} finally {
+  if (db) db.close();
+}`;
+
+/**
+ * Consistent snapshot of the database into `target`: VACUUM INTO works while imports and readers are running, and
+ * in a worker it does not stop the server for the seconds a large database takes.
+ */
+function snapshot(db: Db, target: string): Promise<void> {
+  const source = get<{ file: string }>(db, "SELECT file FROM pragma_database_list WHERE name = 'main'")?.file;
+  if (!source) {
+    // in-memory database (tests): no other connection can see it
+    db.exec(`VACUUM INTO '${target.replace(/'/g, "''")}'`);
+    return Promise.resolve();
+  }
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(SNAPSHOT_WORKER, { eval: true, workerData: { source, target } });
+    worker.once('message', (m: { ok: boolean; message?: string }) => (m.ok ? resolve() : reject(new Error(m.message))));
+    worker.once('error', reject);
+    worker.once('exit', (code) => reject(new Error(`The backup stopped unexpectedly (code ${code})`)));
+  });
+}
+
+/**
+ * The snapshot being made or downloaded. One at a time: a backup is a copy of the whole database, so parallel
+ * requests (a double click) get the same file while it is fresh; later ones are told to wait (409) until the
+ * download that still holds it has finished.
+ */
+interface Snapshot {
+  file: string;
+  /** Size in bytes once the file is complete. */
+  ready: Promise<number>;
+  readers: number;
+  madeAt: number | null;
+}
+const SHARE_MS = 30_000;
+
 /** GET /api/backup, POST /api/backup/restore */
 export default async function backupRoutes(app: FastifyInstance) {
-  // Consistent snapshot: VACUUM INTO works while imports and readers are running.
+  let current: Snapshot | null = null;
   app.get('/backup', async (_req, reply) => {
-    const tmp = path.join(app.config.dataDir, `backup-${process.pid}-${Date.now()}.db`);
-    app.db.exec(`VACUUM INTO '${tmp.replace(/'/g, "''")}'`);
+    let snap = current;
+    if (snap && snap.madeAt !== null && Date.now() - snap.madeAt > SHARE_MS) {
+      throw new HttpError(409, 'busy', 'Another backup download is still running. Try again when it has finished.');
+    }
+    if (!snap) {
+      const file = path.join(app.config.dataDir, `backup-${process.pid}-${Date.now()}.db`);
+      const made: Snapshot = { file, readers: 0, madeAt: null, ready: Promise.resolve(0) };
+      made.ready = snapshot(app.db, file).then(() => {
+        stripSecrets(file);
+        made.madeAt = Date.now();
+        return fs.statSync(file).size;
+      });
+      current = snap = made;
+    }
+    const s = snap;
+    s.readers++;
+    const release = () => {
+      if (--s.readers > 0) return;
+      if (current === s) current = null;
+      fs.rm(s.file, { force: true }, () => undefined);
+    };
+    let size: number;
     try {
-      stripSecrets(tmp);
+      size = await s.ready;
     } catch (e) {
-      fs.rmSync(tmp, { force: true });
+      release();
       throw e;
     }
-    const size = fs.statSync(tmp).size;
-    const stream = fs.createReadStream(tmp);
-    stream.on('close', () => fs.rm(tmp, { force: true }, () => undefined));
+    const stream = fs.createReadStream(s.file);
+    stream.on('close', release);
     reply.header('content-type', 'application/vnd.sqlite3');
     reply.header('content-length', size);
     reply.header('content-disposition', `attachment; filename="cadence-backup-${new Date().toISOString().slice(0, 10)}.db"`);

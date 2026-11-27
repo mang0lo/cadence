@@ -78,8 +78,24 @@ export function eachDay(from: string, to: string): string[] {
   return out;
 }
 
-/** Unix seconds of local midnight for a day key at offset `tzMin` (default: browser's current offset). */
-export function dayStartTs(day: string, tzMin = -new Date().getTimezoneOffset()): number {
+/**
+ * The browser's UTC offset in minutes at the instant `ts` (DST-aware). Use it for timestamps that have no `tzMin` of
+ * their own (import jobs, sync times, first/last record) — never `-new Date().getTimezoneOffset()`, which is today's
+ * offset and wrong by an hour for instants in the other half of the year.
+ */
+export function browserTzAt(ts: number): number {
+  return -new Date(ts * 1000).getTimezoneOffset();
+}
+
+/**
+ * Unix seconds of local midnight for a day key at offset `tzMin`. Without `tzMin`: midnight in the browser's time
+ * zone on that day, with that day's offset (a summer day keeps summer time while today is in winter time).
+ */
+export function dayStartTs(day: string, tzMin?: number): number {
+  if (tzMin === undefined) {
+    const [y, m, d] = day.split('-').map(Number) as [number, number, number];
+    return Math.floor(new Date(y, m - 1, d).getTime() / 1000);
+  }
   return Math.floor(dayToDate(day).getTime() / 1000) - tzMin * 60;
 }
 

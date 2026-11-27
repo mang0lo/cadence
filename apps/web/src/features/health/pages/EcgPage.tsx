@@ -4,9 +4,11 @@ import { Link } from 'react-router';
 import type { EcgClass, EcgDetail, EcgSummary } from '@cadence/shared';
 import { Badge, Button, Card, CardHeader, EmptyState, ErrorState, Page, PageHeader, SegmentedControl, Skeleton, Stat, StatRow, Switch, cn } from '@/components/ui';
 import { useApi } from '@/lib/api';
+import { saveFile } from '@/lib/download';
 import { useFormat } from '@/lib/format';
 import { useT } from '@/lib/i18n';
 import { EcgPaper } from '../components/ecg/EcgPaper';
+import { ecgCsv } from '../lib/download';
 
 /** Status colors only together with icon and label (the class name inside the badge). */
 const CLASS_BADGE: Record<EcgClass, { tone: 'good' | 'warning' | 'critical' | 'neutral'; icon: LucideIcon }> = {
@@ -35,17 +37,6 @@ const ZOOMS = [
   { value: '4', px: 4, key: 'medium' },
   { value: '6', px: 6, key: 'large' },
 ] as const;
-
-function downloadCsv(d: EcgDetail, name: string) {
-  const rate = d.sampleRateHz ?? 512;
-  const lines = ['time_s,voltage_uV', ...d.samples.map((v, i) => `${(i / rate).toFixed(4)},${v}`)];
-  const url = URL.createObjectURL(new Blob([lines.join('\n')], { type: 'text/csv' }));
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = name;
-  a.click();
-  URL.revokeObjectURL(url);
-}
 
 function RecordingList({ items, selected, onSelect }: { items: EcgSummary[]; selected: number; onSelect: (id: number) => void }) {
   const t = useT();
@@ -145,7 +136,7 @@ function Recording({ id, summary }: { id: number; summary: EcgSummary }) {
                 size="sm"
                 icon={Download}
                 disabled={!d}
-                onClick={() => d && downloadCsv(d, `ecg-${new Date((summary.recordedTs + summary.tzMin * 60) * 1000).toISOString().slice(0, 16).replace(/[-:T]/g, '')}.csv`)}
+                onClick={() => d && void saveFile(`ecg-${new Date((summary.recordedTs + summary.tzMin * 60) * 1000).toISOString().slice(0, 16).replace(/[-:T]/g, '')}.csv`, ecgCsv(d), 'text/csv')}
               >
                 {t('health.ecg.paper.download')}
               </Button>

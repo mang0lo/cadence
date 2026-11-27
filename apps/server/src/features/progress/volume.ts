@@ -18,6 +18,7 @@ import { all, get, type Db } from '../../db/db';
 import { addDays, dayString, parseDay } from '../../lib/time';
 import {
   addRow,
+  clipRange,
   dailyActivity,
   emptyTotals,
   firstActivityDay,
@@ -120,6 +121,9 @@ export function volume(
     for (const r of dailyActivity(db, athleteId, q.sport, out[0]!.fromDay, out.at(-1)!.toDay)) {
       const i = index.get(bucketKey(r.day, q.bucket, weekStart));
       if (i === undefined) continue;
+      // the shown buckets hold the requested days only (totals must not depend on the bucket size); the lead
+      // buckets keep whole periods for the trailing average
+      if (i >= lead.length && (r.day < q.fromDay || r.day > q.toDay)) continue;
       const b = out[i]!;
       addRow(b.total, r);
       addRow((b.bySport[r.sport] ??= emptyTotals()), r);
@@ -134,6 +138,7 @@ export function volume(
   }
   const shown = out.slice(lead.length).map((b) => ({
     ...b,
+    ...clipRange(b, q),
     total: roundTotals(b.total),
     bySport: Object.fromEntries(Object.entries(b.bySport).map(([s, t]) => [s, roundTotals(t)])),
   }));

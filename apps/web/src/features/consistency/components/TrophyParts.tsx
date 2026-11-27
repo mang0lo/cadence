@@ -13,20 +13,14 @@ import { Badge, Button, ProgressBar, Table, TD, TH, cn } from '@/components/ui';
 import { useFormat, type Formatter } from '@/lib/format';
 import { useI18n, type Lang, type TFunction } from '@/lib/i18n';
 import { sportIcon, sportLabel } from '@/lib/sports';
+import { classicDistance, goalElevation, type GoalRounding } from '../lib';
 import { achievementIcon, Medallion } from './Medallion';
-
-/** Distance with one decimal only where needed (3.8 km, 21.1 km, 100 km). */
-export function shortDistance(fmt: Formatter, m: number): string {
-  const v = Math.round(fmt.distanceValue(m) * 10) / 10;
-  return fmt.distance(m, Number.isInteger(v) ? 0 : 1);
-}
 
 export function achievementTitle(a: Achievement, t: TFunction, fmt: Formatter, lang: Lang): string {
   if (a.name) return t(`consistency.trophies.names.${a.name}`);
   const vars = {
     count: a.threshold,
-    n: fmt.int(a.threshold),
-    distance: shortDistance(fmt, a.threshold),
+    distance: classicDistance(fmt, a.threshold),
     elevation: fmt.elevation(a.threshold),
     sport: a.sport ? sportLabel(a.sport, lang) : '',
   };
@@ -36,8 +30,7 @@ export function achievementTitle(a: Achievement, t: TFunction, fmt: Formatter, l
 export function achievementDesc(a: Achievement, t: TFunction, fmt: Formatter, lang: Lang): string {
   const vars = {
     count: a.threshold,
-    n: fmt.int(a.threshold),
-    distance: shortDistance(fmt, a.threshold),
+    distance: classicDistance(fmt, a.threshold),
     elevation: fmt.elevation(a.threshold),
     sport: a.sport ? sportLabel(a.sport, lang) : '',
   };
@@ -46,9 +39,9 @@ export function achievementDesc(a: Achievement, t: TFunction, fmt: Formatter, la
     const tri = TRIATHLON_DISTANCES.find((d) => d.key === a.name);
     if (tri)
       return t('consistency.trophies.kinds.triathlon.desc', {
-        swim: shortDistance(fmt, tri.swim),
-        ride: shortDistance(fmt, tri.ride),
-        run: shortDistance(fmt, tri.run),
+        swim: classicDistance(fmt, tri.swim),
+        ride: classicDistance(fmt, tri.ride),
+        run: classicDistance(fmt, tri.run),
       });
   }
   return t(`consistency.trophies.kinds.${a.kind}.desc`, vars);
@@ -57,12 +50,13 @@ export function achievementDesc(a: Achievement, t: TFunction, fmt: Formatter, la
 /** "12.4 / 50 km", "16 / 30 days", "3 / 10" */
 export function achievementProgress(a: Achievement, t: TFunction, fmt: Formatter): string {
   switch (a.kind) {
+    // the progress rounds down: 49.96 of 50 km is not "50 km / 50 km"
     case 'sport_distance':
     case 'longest':
     case 'triathlon':
-      return `${shortDistance(fmt, a.progress)} / ${shortDistance(fmt, a.threshold)}`;
+      return `${classicDistance(fmt, a.progress, 'down')} / ${classicDistance(fmt, a.threshold)}`;
     case 'elevation':
-      return `${fmt.elevation(a.progress)} / ${fmt.elevation(a.threshold)}`;
+      return `${goalElevation(fmt, a.progress, 'down')} / ${fmt.elevation(a.threshold)}`;
     case 'daily_streak':
     case 'move_streak':
     case 'exercise_streak':
@@ -132,16 +126,17 @@ export function challengeIcon(def: ChallengeDef): LucideIcon {
 
 export function challengeTitle(def: ChallengeDef, t: TFunction, fmt: Formatter): string {
   return t(`consistency.challenges.names.${def.key}`, {
-    distance: shortDistance(fmt, def.metric === 'runs5k' ? 5000 : def.target),
+    distance: classicDistance(fmt, def.metric === 'runs5k' ? 5000 : def.target),
     elevation: fmt.elevation(def.target),
     count: def.target,
   });
 }
 
-export function challengeValue(def: ChallengeDef, v: number, fmt: Formatter): string {
-  if (def.metric === 'distance') return shortDistance(fmt, v);
-  if (def.metric === 'elevation') return fmt.elevation(v);
-  return fmt.int(v);
+/** `rounding` 'down' for the progress of an open challenge (never printed as its target before it is reached). */
+export function challengeValue(def: ChallengeDef, v: number, fmt: Formatter, rounding: GoalRounding = 'nearest'): string {
+  if (def.metric === 'distance') return classicDistance(fmt, v, rounding);
+  if (def.metric === 'elevation') return goalElevation(fmt, v, rounding);
+  return fmt.int(rounding === 'down' ? Math.floor(v) : v);
 }
 
 /** Current month's challenge with progress (or the completion day). */
@@ -166,7 +161,7 @@ export function ChallengeItem({ def, item }: { def: ChallengeDef; item: Challeng
           <div className="truncate text-xs text-fg-3">
             {done
               ? t('consistency.challenges.completedOn', { date: fmt.day(item.completedDay!, 'dayShort') })
-              : `${challengeValue(def, item.value, fmt)} / ${challengeValue(def, def.target, fmt)}`}
+              : `${challengeValue(def, item.value, fmt, 'down')} / ${challengeValue(def, def.target, fmt)}`}
           </div>
         </div>
       </div>

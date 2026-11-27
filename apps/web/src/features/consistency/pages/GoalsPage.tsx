@@ -1,16 +1,30 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Lightbulb, Plus, Target } from 'lucide-react';
-import type { GoalInput, GoalSuggestion, GoalWithProgress } from '@cadence/shared';
+import type { CalendarDay, GoalInput, GoalSuggestion, GoalWithProgress } from '@cadence/shared';
 import { Button, Card, CardHeader, Dialog, EmptyState, ErrorState, Page, PageHeader, Skeleton } from '@/components/ui';
 import { useFormat } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
-import { useConsistencyMutations, useGoals } from '../api';
+import { useCalendar, useConsistencyMutations, useGoals } from '../api';
 import { AsOfNote } from '../components/AsOfNote';
 import { GoalDialog } from '../components/GoalDialog';
 import { GoalCard, GoalIcon } from '../components/GoalParts';
 import { formatGoalValue, goalTargetText, goalTitle } from '../lib';
 
-function Suggestions({ items, onAdd }: { items: GoalSuggestion[]; onAdd: (s: GoalSuggestion) => void }) {
+const suggestionKey = (s: GoalSuggestion) => `${s.period}-${s.metric}-${s.sport}`;
+
+/** The day the goals are judged on already counts as an active day for this goal (all sports, or its sport). */
+const activeOn = (day: CalendarDay | undefined, g: GoalWithProgress) =>
+  !!day && day.count > 0 && (g.sport === null || day.sports.includes(g.sport));
+
+function Suggestions({
+  items,
+  adding,
+  onAdd,
+}: {
+  items: GoalSuggestion[];
+  adding: ReadonlySet<string>;
+  onAdd: (s: GoalSuggestion) => void;
+}) {
   const { t, lang } = useI18n();
   const fmt = useFormat();
   return (
@@ -18,7 +32,7 @@ function Suggestions({ items, onAdd }: { items: GoalSuggestion[]; onAdd: (s: Goa
       <CardHeader title={t('consistency.goals.suggestions.title')} subtitle={t('consistency.goals.suggestions.subtitle')} icon={Lightbulb} />
       <ul className="divide-y divide-border">
         {items.map((s) => (
-          <li key={`${s.period}-${s.metric}-${s.sport}`} className="flex items-center gap-3 py-2.5">
+          <li key={suggestionKey(s)} className="flex items-center gap-3 py-2.5">
             <GoalIcon sport={s.sport} size={28} />
             <div className="min-w-0 flex-1">
               <div className="truncate text-sm font-medium text-fg">
@@ -31,7 +45,7 @@ function Suggestions({ items, onAdd }: { items: GoalSuggestion[]; onAdd: (s: Goa
                 })}
               </div>
             </div>
-            <Button size="sm" icon={Plus} onClick={() => onAdd(s)}>
+            <Button size="sm" icon={Plus} loading={adding.has(suggestionKey(s))} onClick={() => onAdd(s)}>
               {t('consistency.goals.suggestions.add')}
             </Button>
           </li>
@@ -49,7 +63,13 @@ export default function GoalsPage() {
   const [toDelete, setToDelete] = useState<GoalWithProgress | null>(null);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<unknown>(null);
+  // suggestions being added: the list only changes after the refetch, so a second click must not post the goal twice
+  const pending = useRef(new Set<string>());
+  const [adding, setAdding] = useState<ReadonlySet<string>>(new Set());
   const d = q.data;
+  // "N more active days needed, M left": M must not count asOf when it already is an active day
+  const asOfDay = useCalendar(d?.goals.some((g) => g.metric === 'active_days') ? { from: d.asOf, to: d.asOf } : null);
+  const asOfData = asOfDay.data?.days.find((x) => x.day === d?.asOf);
 
   const check = async (id: number, done: boolean, day?: string) => {
     setActionError(null);
@@ -61,11 +81,18 @@ export default function GoalsPage() {
   };
 
   const add = async (s: GoalSuggestion) => {
+    const key = suggestionKey(s);
+    if (pending.current.has(key)) return;
+    pending.current.add(key);
+    setAdding(new Set(pending.current));
     setActionError(null);
     try {
       await createGoal({ period: s.period, sport: s.sport, metric: s.metric, target: s.target });
     } catch (e) {
       setActionError(e);
+    } finally {
+      pending.current.delete(key);
+      setAdding(new Set(pending.current));
     }
   };
 
@@ -115,13 +142,14 @@ export default function GoalsPage() {
                     goal={g}
                     onEdit={() => setDialog({ initial: { id: g.id, period: g.period, sport: g.sport, metric: g.metric, target: g.target } })}
                     onDelete={() => setToDelete(g)}
-                    onCheck={(done) => void check(g.id, done)}
+                    onCheck={(done, day) => void check(g.id, done, day)}
                     onToggleHistory={(h) => void check(g.id, !h.manual, h.start)}
+                    asOfActive={g.metric === 'active_days' && activeOn(asOfData, g)}
                   />
                 ))}
               </div>
             )}
-            {d.suggestions.length > 0 && <Suggestions items={d.suggestions} onAdd={(s) => void add(s)} />}
+            {d.suggestions.length > 0 && <Suggestions items={d.suggestions} adding={adding} onAdd={(s) => void add(s)} />}
           </>
         )}
       </div>

@@ -356,6 +356,8 @@ describe('query helpers', () => {
       end_lat: 48.21,
       end_lon: 16.41,
       efficiency: null,
+      efficiency_basis: null,
+      pace_efficiency: null,
       gap_speed: null,
     };
     expect(sameRoute(base, { ...base, id: 2, start_lat: 48.2005 })).toBe(true);

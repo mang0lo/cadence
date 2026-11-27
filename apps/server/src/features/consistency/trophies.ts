@@ -2,6 +2,8 @@
  * Trophies: the derive step evaluates the catalog against the full history and caches the results in
  * consistency_achievements (with the day + activity that earned each one). Reads recompute lazily when the
  * cache is missing or was written by an older rule version. Monthly challenges are computed on the fly.
+ * The cache's state (rule version, week start) lives in the setting consistency.achievementsMeta, which a data reset
+ * removes together with the rows (Feature.onReset).
  */
 import {
   ACHIEVEMENT_TIERS,
@@ -13,10 +15,10 @@ import {
   type TrophiesResponse,
   type WorkoutStatistic,
 } from '@cadence/shared';
-import { all, json, run, tx, type Db } from '../../db/db';
+import { all, get, json, run, tx, type Db } from '../../db/db';
 import { getSetting, setSetting } from '../../core/settings';
-import type { DeriveStep } from '../types';
-import { nowSec } from '../../lib/time';
+import type { DeriveContext, DeriveStep } from '../types';
+import { localDay, nowSec } from '../../lib/time';
 import { ACHIEVEMENTS_VERSION, buildCatalog, evaluateAchievements, type EvalInput, type EvalWorkout } from './achievements';
 import { CHALLENGES, computeChallenges, type ChallengeWorkout } from './challenges';
 import { loadRings, loadWorkouts, resolveDays, ringFractions, weekStartOfAthlete } from './data';
@@ -31,6 +33,17 @@ interface History {
   sports: string[];
   hasRings: boolean;
   challengeWorkouts: ChallengeWorkout[];
+}
+
+/** Visible workouts as input of the monthly challenges (sport, local day, distance, elevation). */
+function loadChallengeWorkouts(db: Db, athleteId: number): ChallengeWorkout[] {
+  return loadWorkouts(db, athleteId).map((w) => ({
+    id: w.id,
+    sport: w.sport,
+    day: localDay(w.start_ts, w.tz_min),
+    distanceM: w.distance_m ?? 0,
+    elevationM: w.elevation_gain_m ?? 0,
+  }));
 }
 
 /** Swim / bike / run legs of visible multisport workouts (triathlons) with the distance of each leg. */
@@ -93,10 +106,10 @@ function loadHistory(db: Db, athleteId: number): History {
 }
 
 /** Challenge results for every month from the first activity to asOf's month (oldest first). */
-function challengeMonths(h: History, asOf: string): ChallengeMonth[] {
+function challengeMonths(workouts: ChallengeWorkout[], asOf: string): ChallengeMonth[] {
   const last = asOf.slice(0, 7);
-  const first = h.challengeWorkouts.reduce((m, w) => (w.day.slice(0, 7) < m ? w.day.slice(0, 7) : m), last);
-  return computeChallenges(h.challengeWorkouts, first, last);
+  const first = workouts.reduce((m, w) => (w.day.slice(0, 7) < m ? w.day.slice(0, 7) : m), last);
+  return computeChallenges(workouts, first, last);
 }
 
 export interface RecomputeResult {
@@ -105,16 +118,26 @@ export interface RecomputeResult {
   newlyEarned: number;
 }
 
-/** Evaluate and store all achievements of an athlete. */
-export function recomputeAchievements(db: Db, athleteId: number, now = nowSec()): RecomputeResult {
+/**
+ * Evaluate and store all achievements of an athlete. Trophies earned since the previous computation are stamped
+ * as new (first_seen_at), except on an initial computation: no cache yet (first import, after a data reset), a cache
+ * of another rule version or week start (also when an import runs before anyone opened the trophies after the
+ * change), or `initial` set by the caller (the first import). Those only repeat the history; nothing there is news.
+ */
+export function recomputeAchievements(
+  db: Db,
+  athleteId: number,
+  now = nowSec(),
+  o: { initial?: boolean } = {},
+): RecomputeResult {
   const h = loadHistory(db, athleteId);
   const { asOf } = resolveDays(db, athleteId);
-  h.input.challengeDays = challengeMonths(h, asOf).flatMap((m) =>
+  h.input.challengeDays = challengeMonths(h.challengeWorkouts, asOf).flatMap((m) =>
     m.items.flatMap((i) => (i.completedDay ? [i.completedDay] : [])),
   );
   const catalog = buildCatalog({ sports: h.sports, hasRings: h.hasRings });
   const results = evaluateAchievements(catalog, h.input);
-  const initial = getSetting<unknown>(db, athleteId, META_KEY, null) === null;
+  const meta = getSetting<{ version?: number; weekStart?: number } | null>(db, athleteId, META_KEY, null);
   let earned = 0;
   let newlyEarned = 0;
   tx(db, () => {
@@ -125,6 +148,12 @@ export function recomputeAchievements(db: Db, athleteId: number, now = nowSec())
         [athleteId],
       ).map((r) => [r.key, r]),
     );
+    const initial =
+      !!o.initial ||
+      !meta ||
+      meta.version !== ACHIEVEMENTS_VERSION ||
+      meta.weekStart !== h.input.weekStart ||
+      prev.size === 0;
     run(db, 'DELETE FROM consistency_achievements WHERE athlete_id = ?', [athleteId]);
     catalog.forEach((d, i) => {
       const r = results[i]!;
@@ -166,11 +195,19 @@ export function recomputeAchievements(db: Db, athleteId: number, now = nowSec())
   return { total: catalog.length, earned, newlyEarned };
 }
 
-/** Recompute when the cache is missing or stale (older rules, never derived, other week start). */
+/**
+ * Recompute when the cache is missing or stale (older rules, never derived, other week start). Trophies that only
+ * appear because of that are not news: nothing is flagged new.
+ */
 export function ensureAchievements(db: Db, athleteId: number): void {
   const meta = getSetting<{ version?: number; weekStart?: number } | null>(db, athleteId, META_KEY, null);
   if (!meta || meta.version !== ACHIEVEMENTS_VERSION || meta.weekStart !== weekStartOfAthlete(db, athleteId))
-    recomputeAchievements(db, athleteId);
+    recomputeAchievements(db, athleteId, nowSec(), { initial: true });
+}
+
+/** "Delete all data" empties consistency_achievements (Feature.onReset): the state of the cache goes with it. */
+export function resetAchievements(db: Db, athleteId: number): void {
+  run(db, 'DELETE FROM settings WHERE athlete_id = ? AND key = ?', [athleteId, META_KEY]);
 }
 
 interface AchievementRow {
@@ -232,7 +269,7 @@ export function trophiesResponse(db: Db, athleteId: number, today?: string): Tro
       return [t, { earned: of.filter((a) => a.earned).length, total: of.length }];
     }),
   ) as TrophiesResponse['summary']['tiers'];
-  const months = challengeMonths(loadHistory(db, athleteId), days.asOf);
+  const months = challengeMonths(loadChallengeWorkouts(db, athleteId), days.asOf);
   const current = months[months.length - 1]!;
   return {
     today: days.today,
@@ -252,13 +289,33 @@ export function trophiesResponse(db: Db, athleteId: number, today?: string): Tro
   };
 }
 
+/**
+ * True when this run's workouts are all the athlete has (the first import, also after a data reset): the same rule as
+ * the import summary's `initial`. A trophies page opened while that import ran may have cached a partial history.
+ * The run also names older workouts whose routes the import linked: during an import job, a workout stored before the
+ * job started means it is no first import. (Recovery and command line runs know no such start: every named workout
+ * counts as new there.)
+ */
+function firstImport(ctx: DeriveContext): boolean {
+  if (ctx.workoutIds === 'all' || !ctx.workoutIds.length) return false;
+  const total = get<{ n: number }>(ctx.db, 'SELECT COUNT(*) AS n FROM workouts WHERE athlete_id = ?', [ctx.athleteId])!.n;
+  if (ctx.workoutIds.length < total) return false;
+  const job = get<{ t: number | null }>(
+    ctx.db,
+    "SELECT MAX(started_at) AS t FROM import_jobs WHERE athlete_id = ? AND kind = 'import' AND status = 'running'",
+    [ctx.athleteId],
+  );
+  if (job?.t == null) return true;
+  return !get(ctx.db, 'SELECT 1 FROM workouts WHERE athlete_id = ? AND created_at < ? LIMIT 1', [ctx.athleteId, job.t]);
+}
+
 export const achievementsStep: DeriveStep = {
   id: 'consistency.achievements',
   label: 'Trophies & challenges',
   weight: 0.3,
   run(ctx) {
     ctx.checkCancelled();
-    const r = recomputeAchievements(ctx.db, ctx.athleteId);
+    const r = recomputeAchievements(ctx.db, ctx.athleteId, nowSec(), { initial: firstImport(ctx) });
     ctx.report(1, `${r.earned}/${r.total} trophies${r.newlyEarned ? `, ${r.newlyEarned} new` : ''}`);
   },
 };

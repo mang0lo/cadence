@@ -25,6 +25,31 @@ describe('training kind', () => {
     expect(hardReps([0, 1, 2], [3, 3, 3])).toBe(0);
   });
 
+  it('counts repetitions with standing recoveries (no samples while not moving)', () => {
+    // [seconds, speed]; null: standing, the caller leaves those samples out
+    const t: number[] = [];
+    const v: number[] = [];
+    let now = 0;
+    const add = (s: number, speed: number | null) => {
+      for (let i = 0; i < s; i++, now++) if (speed !== null) (t.push(now), v.push(speed + Math.sin(now / 7) * 0.03));
+    };
+    add(600, 2.8);
+    for (let r = 0; r < 8; r++) (add(90, 4.2), add(90, null));
+    add(600, 2.7);
+    expect(hardReps(t, v)).toBe(8);
+    // a short stop (traffic light) inside a repetition does not split it
+    const t2: number[] = [];
+    const v2: number[] = [];
+    now = 0;
+    const add2 = (s: number, speed: number | null) => {
+      for (let i = 0; i < s; i++, now++) if (speed !== null) (t2.push(now), v2.push(speed));
+    };
+    add2(900, 2.8);
+    for (let r = 0; r < 4; r++) (add2(60, 4.2), add2(15, null), add2(60, 4.2), add2(120, 2.5));
+    add2(600, 2.7);
+    expect(hardReps(t2, v2)).toBe(4);
+  });
+
   it('classifies by repetitions, length and heart-rate zones', () => {
     const base = { sport: 'run', movingS: 3000, distanceM: 9000, zones: [600, 1800, 400, 150, 50], hardReps: 0 };
     expect(trainingKind(base)).toBe('easy');

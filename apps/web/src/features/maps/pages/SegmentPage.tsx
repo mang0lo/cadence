@@ -2,23 +2,14 @@ import { useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Check, Pencil, Star, Trash2, Trophy, Waypoints, X } from 'lucide-react';
-import {
-  M_PER_FT,
-  sportInfo,
-  workoutTitle,
-  type MapsSegmentDetail,
-  type MapsSegmentEffort,
-} from '@cadence/shared';
+import { M_PER_FT, type MapsSegmentDetail } from '@cadence/shared';
 import { ChartCard } from '@/components/charts/ChartCard';
 import { EChart } from '@/components/charts/EChart';
 import { areaSeries, axisTooltip, grid, tooltipHtml, valueAxis } from '@/components/charts/options';
 import { useChartTheme } from '@/components/charts/theme';
-import { overlayColors } from '@/components/map/styles';
 import {
-  Badge,
   Button,
   Card,
-  CardHeader,
   Dialog,
   EmptyState,
   ErrorState,
@@ -29,22 +20,17 @@ import {
   Skeleton,
   Stat,
   StatRow,
-  Table,
-  TD,
-  TH,
-  cn,
 } from '@/components/ui';
 import { api, useApi } from '@/lib/api';
 import { useFormat } from '@/lib/format';
-import { useI18n, useT } from '@/lib/i18n';
-import { useSettings } from '@/lib/settings';
-import { SportBadge, SportIcon, sportColorVar, useSportLabel } from '@/lib/sports';
+import { useT } from '@/lib/i18n';
+import { SportBadge } from '@/lib/sports';
 import { decodePolyline, toLngLat } from '@/lib/polyline';
-import { useResolvedTheme } from '@/lib/theme';
+import { EffortTable, type EffortRow } from '../components/EffortTable';
 import { EffortTrend } from '../components/EffortTrend';
-import { LineMap, type MapLine, type MapMarker } from '../components/LineMap';
+import { LineMap, useShownOverlayColors, type MapLine, type MapMarker } from '../components/LineMap';
 import { unionBox, type BBox } from '../lib/home';
-import { gradeAt } from '../lib/segments';
+import { distanceAxisLabel, gradeAt } from '../lib/segments';
 
 export default function SegmentPage() {
   const t = useT();
@@ -114,7 +100,24 @@ function Body({ detail }: { detail: MapsSegmentDetail }) {
   };
 
   const latest = efforts[0];
-  const best = efforts.find((e) => e.rank === 1);
+  const rows = useMemo<EffortRow[]>(() => {
+    const best = efforts.find((e) => e.rank === 1);
+    return efforts.map((e) => ({
+      key: `${e.workoutId}:${e.idx}`,
+      workoutId: e.workoutId,
+      name: e.name,
+      sport: e.sport,
+      startTs: e.startTs,
+      tzMin: e.tzMin,
+      timeS: e.elapsedS,
+      movingS: e.movingS,
+      avgSpeed: e.avgSpeed,
+      avgHr: e.avgHr,
+      rank: e.rank,
+      best: e === best,
+      pr: e.pr,
+    }));
+  }, [efforts]);
   return (
     <div className="grid min-w-0 gap-4">
       <PageHeader
@@ -212,7 +215,7 @@ function Body({ detail }: { detail: MapsSegmentDetail }) {
             value={fmt.int(s.efforts)}
             hint={
               latest
-                ? `${t('maps.routes.latest')}: ${fmt.date(latest.startTs, latest.tzMin, 'dayShort')}`
+                ? `${t('maps.routes.latest')}: ${fmt.dateHint(latest.startTs, latest.tzMin)}`
                 : undefined
             }
           />
@@ -252,10 +255,14 @@ function Body({ detail }: { detail: MapsSegmentDetail }) {
             title={t('maps.segments.trendTitle')}
             subtitle={t('maps.routes.trendSubtitle')}
           />
-          <Leaderboard
-            efforts={efforts}
+          <EffortTable
+            title={t('maps.segments.leaderboard')}
+            subtitle={t('maps.segments.leaderboardHint')}
+            rows={rows}
             sport={s.sport}
-            bestId={best ? `${best.workoutId}:${best.idx}` : null}
+            bestLabel={t('maps.segments.prBadge')}
+            leaderboard
+            initialSort={{ col: 'rank', dir: 'asc' }}
           />
         </>
       )}
@@ -283,10 +290,8 @@ function Body({ detail }: { detail: MapsSegmentDetail }) {
 
 function SegmentMap({ detail }: { detail: MapsSegmentDetail }) {
   const t = useT();
-  const { settings } = useSettings();
-  const appTheme = useResolvedTheme();
   const chart = useChartTheme();
-  const overlay = overlayColors(settings.mapStyle, appTheme);
+  const [overlay, onStylePref] = useShownOverlayColors();
   const { segment } = detail;
   const { lines, markers, bounds } = useMemo(() => {
     const coords = toLngLat(decodePolyline(segment.polyline));
@@ -309,6 +314,7 @@ function SegmentMap({ detail }: { detail: MapsSegmentDetail }) {
         markers={markers}
         bounds={bounds}
         padding={64}
+        onStylePref={onStylePref}
       >
         <div className="pointer-events-none absolute left-3 top-3 z-10 rounded-lg border border-border bg-surface/90 px-2.5 py-1.5 text-xs text-fg-2 shadow-card backdrop-blur">
           <span className="inline-flex items-center gap-2">
@@ -341,6 +347,7 @@ function ProfileChart({ detail }: { detail: MapsSegmentDetail }) {
       fmt.distanceValue(d),
       profile.ele[i] == null ? null : eleVal(profile.ele[i]!),
     ]);
+    const maxDist = fmt.distanceValue(profile.dist[profile.dist.length - 1] ?? 0);
     return {
       grid: grid({ top: 12, right: 30 }),
       tooltip: axisTooltip(theme, (params) => {
@@ -356,17 +363,19 @@ function ProfileChart({ detail }: { detail: MapsSegmentDetail }) {
       }),
       xAxis: valueAxis(theme, {
         min: 0,
-        max: fmt.distanceValue(profile.dist[profile.dist.length - 1] ?? 0),
+        max: maxDist,
         splitLine: { show: false },
         axisLine: { show: true, lineStyle: { color: theme.axis } },
         axisLabel: {
           color: theme.muted,
           fontSize: 11,
-          formatter: (v: number) => `${fmt.num(v, v < 10 ? 1 : 0)} ${fmt.distanceUnit}`,
+          // short segments step by 0.03 km (two decimals); the end, the segment's length, keeps apart from the last step
+          formatter: distanceAxisLabel(fmt, maxDist),
         },
       }),
       yAxis: valueAxis(theme, {
         scale: true,
+        minInterval: 1, // whole m / ft like the labels: a flat segment read '166 m, 166 m, 165 m, 165 m'
         axisLabel: { color: theme.muted, fontSize: 11, formatter: (v: number) => `${fmt.num(v)} ${eleUnit}` },
       }),
       series: [areaSeries(theme, name, data as never, theme.accent, { showSymbol: false })],
@@ -378,7 +387,8 @@ function ProfileChart({ detail }: { detail: MapsSegmentDetail }) {
     <ChartCard
       title={name}
       subtitle={hasEle ? undefined : t('maps.segments.noElevation')}
-      table={{
+      // rows only while the table view is open (a long segment's profile has thousands of points)
+      table={() => ({
         columns: [
           { key: 'd', label: t('common.distance'), numeric: true },
           { key: 'e', label: t('common.elevation'), numeric: true },
@@ -395,7 +405,7 @@ function ProfileChart({ detail }: { detail: MapsSegmentDetail }) {
               g: g === null ? '–' : `${fmt.signed(g, 1)} %`,
             };
           }),
-      }}
+      })}
     >
       {hasEle ? (
         <EChart option={option as never} height={280} ariaLabel={name} />
@@ -403,131 +413,5 @@ function ProfileChart({ detail }: { detail: MapsSegmentDetail }) {
         <EmptyState title={t('maps.segments.noElevation')} className="py-16" />
       )}
     </ChartCard>
-  );
-}
-
-type SortCol = 'rank' | 'date' | 'pace' | 'hr';
-
-function Leaderboard({
-  efforts,
-  sport,
-  bestId,
-}: {
-  efforts: MapsSegmentEffort[];
-  sport: string;
-  bestId: string | null;
-}) {
-  const t = useT();
-  const fmt = useFormat();
-  const { lang } = useI18n();
-  const sportLabel = useSportLabel();
-  const [sort, setSort] = useState<{ col: SortCol; dir: 'asc' | 'desc' }>({ col: 'rank', dir: 'asc' });
-  const [all, setAll] = useState(false);
-  const mixed = new Set(efforts.map((e) => e.sport)).size > 1;
-  const rows = useMemo(() => {
-    const key = (e: MapsSegmentEffort) =>
-      sort.col === 'rank'
-        ? e.rank
-        : sort.col === 'date'
-          ? e.startTs
-          : sort.col === 'pace'
-            ? e.avgSpeed
-            : (e.avgHr ?? 0);
-    const list = [...efforts].sort((a, b) => key(a) - key(b) || a.startTs - b.startTs);
-    return sort.dir === 'desc' ? list.reverse() : list;
-  }, [efforts, sort]);
-  const visible = all ? rows : rows.slice(0, 15);
-  const th = (col: SortCol, label: string, numeric = false, className?: string) => (
-    <TH
-      numeric={numeric}
-      className={className}
-      onClick={() =>
-        setSort((s) =>
-          s.col === col
-            ? { col, dir: s.dir === 'asc' ? 'desc' : 'asc' }
-            : { col, dir: col === 'date' || col === 'pace' ? 'desc' : 'asc' },
-        )
-      }
-      sorted={sort.col === col ? sort.dir : null}
-    >
-      {label}
-    </TH>
-  );
-  return (
-    <Card padded={false}>
-      <div className="p-4 pb-0 sm:p-5 sm:pb-0">
-        <CardHeader title={t('maps.segments.leaderboard')} subtitle={t('maps.segments.leaderboardHint')} />
-      </div>
-      <Table>
-        <thead>
-          <tr>
-            {th('rank', t('maps.routes.rank'), true, 'w-16')}
-            {th('date', t('common.day'))}
-            <TH numeric>{t('maps.routes.time')}</TH>
-            {th('pace', sportInfo(sport).speedMode === 'speed' ? t('common.speed') : t('common.pace'), true)}
-            {th('hr', t('common.avgHr'), true)}
-          </tr>
-        </thead>
-        <tbody>
-          {visible.map((e) => {
-            const isBest = bestId === `${e.workoutId}:${e.idx}`;
-            return (
-              <tr key={`${e.workoutId}:${e.idx}`} className={cn('hover:bg-surface-2', isBest && 'bg-good/5')}>
-                <TD numeric>
-                  {isBest ? (
-                    <Badge tone="good" icon={Trophy}>
-                      {t('maps.segments.prBadge')}
-                    </Badge>
-                  ) : (
-                    <span className="tabular">{e.rank}</span>
-                  )}
-                </TD>
-                <TD>
-                  <Link
-                    to={`/activities/${e.workoutId}`}
-                    className="font-medium text-fg hover:text-accent-fg"
-                  >
-                    {fmt.date(e.startTs, e.tzMin, 'day')}
-                  </Link>
-                  <span className="ml-2 text-xs text-fg-3">
-                    {fmt.time(e.startTs, e.tzMin)} · {workoutTitle(e, lang)}
-                  </span>
-                  {mixed && (
-                    <span className="ml-2 inline-flex items-center gap-1 text-xs text-fg-3">
-                      <span style={{ color: sportColorVar(e.sport) }}>
-                        <SportIcon sport={e.sport} size={12} strokeWidth={2.5} />
-                      </span>
-                      {sportLabel(e.sport)}
-                    </span>
-                  )}
-                  {e.pr && !isBest && (
-                    <Badge tone="neutral" className="ml-2" icon={Trophy}>
-                      {t('maps.segments.wasPr')}
-                    </Badge>
-                  )}
-                </TD>
-                <TD numeric>
-                  <span className="font-semibold text-fg">{fmt.duration(e.elapsedS)}</span>
-                  {e.movingS !== null && Math.abs(e.movingS - e.elapsedS) >= 5 && (
-                    <span className="block text-xs text-fg-3">
-                      {t('common.movingTime')} {fmt.duration(e.movingS)}
-                    </span>
-                  )}
-                </TD>
-                <TD numeric>{fmt.pace(e.avgSpeed, e.sport)}</TD>
-                <TD numeric>{e.avgHr ? fmt.hr(e.avgHr) : '–'}</TD>
-              </tr>
-            );
-          })}
-        </tbody>
-      </Table>
-      {rows.length > 15 && (
-        <div className="flex justify-center p-3">
-          <Button size="sm" variant="ghost" onClick={() => setAll((v) => !v)}>
-            {all ? t('common.less') : t('maps.routes.showAllEfforts', { count: rows.length })}
-          </Button>
-        </div>
-      )}
-    </Card>
   );
 }

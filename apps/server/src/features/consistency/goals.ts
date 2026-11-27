@@ -3,7 +3,10 @@
  * periods, suggestions from recent averages and the defaults used when an athlete has no goals.
  */
 import {
+  DISTANCE_TOLERANCE,
   LONGEST_PRESETS,
+  M_PER_FT,
+  M_PER_MI,
   goalMetricsFor,
   sportInfo,
   type GoalInput,
@@ -12,6 +15,7 @@ import {
   type GoalPeriodProgress,
   type GoalPeriodResult,
   type GoalSuggestion,
+  type Units,
 } from '@cadence/shared';
 import { daysBetween, periodRange, plusDays, previousPeriodStart } from './days';
 
@@ -72,6 +76,15 @@ export function goalValue(rows: Iterable<DailyRow>, metric: GoalMetric, sport: s
   return metric === 'active_days' ? days.size : v;
 }
 
+/**
+ * True when a period's value reaches the target. A single-activity distance ('longest') is judged with the GPS
+ * tolerance of the distance trophies (a 42,150 m run is a marathon there, so it also reaches a marathon goal); totals
+ * need their exact target.
+ */
+export function goalReached(metric: GoalMetric, value: number, target: number): boolean {
+  return value >= (metric === 'longest' ? target * DISTANCE_TOLERANCE : target);
+}
+
 /** Rows whose day lies inside [start, end] (rows sorted by day → binary search would do; n is small). */
 export function rowsIn(rows: DailyRow[], start: string, end: string): DailyRow[] {
   return rows.filter((r) => r.day >= start && r.day <= end);
@@ -91,6 +104,8 @@ export function goalProjection(o: {
   single?: boolean;
   /** Checked off by hand: done whatever the value. */
   checked?: boolean;
+  /** The goal's measure (see goalReached); without it the value must reach the target exactly. */
+  metric?: GoalMetric;
 }): GoalPeriodProgress {
   const totalDays = daysBetween(o.start, o.end) + 1;
   const elapsedDays = Math.max(0, Math.min(totalDays, daysBetween(o.start, o.asOf)));
@@ -98,16 +113,18 @@ export function goalProjection(o: {
   const target = Math.max(0, o.target);
   const expected = totalDays ? (target * elapsedDays) / totalDays : target;
   const projected = (o.value * totalDays) / Math.max(1, Math.min(totalDays, elapsedDays + 1));
-  const remaining = Math.max(0, target - o.value);
+  const reached = o.metric ? goalReached(o.metric, o.value, target) : o.value >= target;
+  // reached within the tolerance of a single-activity distance: nothing left, the bar full
+  const remaining = reached ? 0 : Math.max(0, target - o.value);
   const checked = !!o.checked;
   const status =
-    checked || o.value >= target ? 'done' : o.single ? 'open' : o.value + 1e-9 >= expected ? 'on_track' : 'behind';
+    checked || reached ? 'done' : o.single ? 'open' : o.value + 1e-9 >= expected ? 'on_track' : 'behind';
   return {
     start: o.start,
     end: o.end,
     value: o.value,
     target,
-    fraction: target > 0 ? o.value / target : 1,
+    fraction: target > 0 ? (reached ? Math.max(1, o.value / target) : o.value / target) : 1,
     elapsedDays,
     totalDays,
     expected: o.single ? 0 : expected,
@@ -168,7 +185,7 @@ export function goalHistory(
     const range = periodRange(start, goal.period, weekStart);
     if (range.end < firstDay) break;
     const value = goalValue(buckets.get(range.start) ?? [], goal.metric, goal.sport);
-    const reached = value >= goal.target;
+    const reached = goalReached(goal.metric, value, goal.target);
     const manual = !reached && isChecked(opts.checks, range.start, range.end);
     const pending = !reached && !manual && opts.horizon !== undefined && range.end > opts.horizon;
     out.push({
@@ -193,9 +210,19 @@ export function roundNice(v: number): number {
   return Math.max(step, Math.round(v / step) * step);
 }
 
-/** A target from an average per period: a ~10 % stretch, rounded to a nice number in display-friendly units. */
-export function niceTarget(metric: GoalMetric, period: GoalPeriod, average: number, stretch = 1.1): number {
+/**
+ * A target from an average per period: a ~10 % stretch, rounded to a nice number in the units the athlete reads
+ * (kilometres or miles, metres or feet). The result stays canonical (m, s, kcal …).
+ */
+export function niceTarget(
+  metric: GoalMetric,
+  period: GoalPeriod,
+  average: number,
+  stretch = 1.1,
+  units: Units = 'metric',
+): number {
   const v = average * stretch;
+  const imperial = units === 'imperial';
   switch (metric) {
     case 'active_days':
       return Math.max(1, Math.min(PERIOD_DAYS_MAX[period] - (period === 'year' ? 1 : 0), period === 'year' ? Math.round(v / 5) * 5 : Math.round(v)));
@@ -205,12 +232,15 @@ export function niceTarget(metric: GoalMetric, period: GoalPeriod, average: numb
       // nice in hours from 2 h on ("6 h"), else in minutes ("90 min")
       return v >= 7200 ? roundNice(v / 3600) * 3600 : roundNice(v / 60) * 60;
     case 'distance':
-      return Math.max(1000, roundNice(v));
-    case 'longest':
-      // whole kilometres from 10 km on, else half kilometres
-      return v >= 10_000 ? Math.round(v / 1000) * 1000 : Math.max(500, Math.round(v / 500) * 500);
+      return imperial ? Math.max(1, roundNice(v / M_PER_MI)) * M_PER_MI : Math.max(1000, roundNice(v));
+    case 'longest': {
+      // whole kilometres (miles) from 10 km (6 mi) on, else halves
+      const unit = imperial ? M_PER_MI : 1000;
+      const n = v / unit;
+      return (n >= (imperial ? 6 : 10) ? Math.round(n) : Math.max(0.5, Math.round(n * 2) / 2)) * unit;
+    }
     case 'elevation':
-      return Math.max(100, roundNice(v));
+      return imperial ? Math.max(300, roundNice(v / M_PER_FT)) * M_PER_FT : Math.max(100, roundNice(v));
     case 'calories':
       return Math.max(50, roundNice(v));
   }
@@ -260,7 +290,7 @@ function trailingYear(rows: DailyRow[], metric: GoalMetric, sport: string | null
 const sameGoal = (a: Pick<GoalInput, 'period' | 'metric' | 'sport'>, b: Pick<GoalInput, 'period' | 'metric' | 'sport'>) =>
   a.period === b.period && a.metric === b.metric && (a.sport ?? null) === (b.sport ?? null);
 
-/** Suggested goals from recent averages, excluding combinations that already exist. */
+/** Suggested goals from recent averages, excluding combinations that already exist (targets nice in `units`). */
 export function suggestGoals(
   rows: DailyRow[],
   existing: Pick<GoalInput, 'period' | 'metric' | 'sport'>[],
@@ -268,6 +298,7 @@ export function suggestGoals(
   weekStart: 0 | 1,
   firstDay: string | null,
   max = 5,
+  units: Units = 'metric',
 ): GoalSuggestion[] {
   if (!firstDay || !rows.length) return [];
   const recent = rowsIn(rows, plusDays(asOf, -180), asOf);
@@ -314,7 +345,12 @@ export function suggestGoals(
     }
     if (avg.average <= 0) continue;
     if (c.metric === 'elevation' && avg.average < 200) continue;
-    out.push({ ...c, target: niceTarget(c.metric, c.period, avg.average), average: avg.average, periods: avg.periods });
+    out.push({
+      ...c,
+      target: niceTarget(c.metric, c.period, avg.average, undefined, units),
+      average: avg.average,
+      periods: avg.periods,
+    });
     if (out.length >= max) break;
   }
   if (longSuggestion && !out.includes(longSuggestion) && out.length < max) out.push(longSuggestion);
@@ -322,7 +358,13 @@ export function suggestGoals(
 }
 
 /** Sensible starting goals: 3+ active days and the WHO's 150 min per week, plus a monthly distance goal. */
-export function defaultGoals(rows: DailyRow[], asOf: string, weekStart: 0 | 1, firstDay: string | null): GoalInput[] {
+export function defaultGoals(
+  rows: DailyRow[],
+  asOf: string,
+  weekStart: 0 | 1,
+  firstDay: string | null,
+  units: Units = 'metric',
+): GoalInput[] {
   const weekB = bucketByPeriod(rows, 'week', weekStart);
   const days = recentAverage({ period: 'week', metric: 'active_days', sport: null }, weekB, asOf, weekStart, firstDay, 8);
   const time = recentAverage({ period: 'week', metric: 'time', sport: null }, weekB, asOf, weekStart, firstDay, 8);
@@ -346,7 +388,7 @@ export function defaultGoals(rows: DailyRow[], asOf: string, weekStart: 0 | 1, f
     const monthB = bucketByPeriod(rows, 'month', weekStart);
     const dist = recentAverage({ period: 'month', metric: 'distance', sport: top }, monthB, asOf, weekStart, firstDay, 3);
     if (dist.periods && dist.average > 0)
-      out.push({ period: 'month', sport: top, metric: 'distance', target: niceTarget('distance', 'month', dist.average, 1) });
+      out.push({ period: 'month', sport: top, metric: 'distance', target: niceTarget('distance', 'month', dist.average, 1, units) });
   }
   return out;
 }

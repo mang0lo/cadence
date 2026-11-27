@@ -1,4 +1,5 @@
 import type { Migration } from '../../db/migrate';
+import { reclassifyEcgs } from './ecg';
 
 /** Migrations of the health feature (ids are prefixed `health_`). */
 export const healthMigrations: Migration[] = [
@@ -71,5 +72,36 @@ export const healthMigrations: Migration[] = [
       ALTER TABLE health_sleep_nights ADD COLUMN avg_hr REAL;
       ALTER TABLE health_sleep_nights ADD COLUMN min_hr REAL;
     `,
+  },
+  {
+    id: 'health_004_record_sources',
+    up: /* sql */ `
+      -- Samples per record type, source and device over the whole history (GET /api/health/metric/sources without a
+      -- range). Recounted by the health.record-sources derive step for every type whose record_type_stats changed;
+      -- stamp = 'count|last_ts' of the type when it was counted (the route counts live while it differs).
+      CREATE TABLE health_record_sources (
+        athlete_id INTEGER NOT NULL,
+        type_id INTEGER NOT NULL,
+        source_id INTEGER NOT NULL,
+        device_id INTEGER,
+        n INTEGER NOT NULL,
+        first_ts INTEGER NOT NULL,
+        last_ts INTEGER NOT NULL
+      );
+      CREATE INDEX ix_health_record_sources ON health_record_sources(athlete_id, type_id);
+      CREATE TABLE health_record_sources_stamp (
+        athlete_id INTEGER NOT NULL,
+        type_id INTEGER NOT NULL,
+        stamp TEXT NOT NULL,
+        PRIMARY KEY (athlete_id, type_id)
+      ) WITHOUT ROWID;
+    `,
+  },
+  {
+    // ECG classifications in French, Spanish and Japanese were stored as 'other'
+    id: 'health_005_ecg_classes',
+    up: (db) => {
+      reclassifyEcgs(db);
+    },
   },
 ];

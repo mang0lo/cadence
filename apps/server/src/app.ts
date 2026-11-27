@@ -34,6 +34,8 @@ export async function buildApp(config: Config, db: Db, opts: BuildAppOptions = {
   const app = Fastify({
     logger: { level: config.logLevel },
     bodyLimit: 25 * 1024 * 1024,
+    // opt-in (CADENCE_TRUST_PROXY): client address and https from the proxy's X-Forwarded-* headers
+    trustProxy: config.trustProxy,
   });
 
   app.decorate('config', config);
@@ -56,7 +58,14 @@ export async function buildApp(config: Config, db: Db, opts: BuildAppOptions = {
     if (err instanceof ZodError) {
       return reply.code(400).send({ error: { code: 'invalid_request', message: err.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ') } });
     }
-    const e = err as { statusCode?: number; code?: string; message?: string };
+    const e = err as { statusCode?: number; code?: string; message?: string; errcode?: number };
+    // SQLITE_BUSY (also its extended codes): a job held the write lock longer than busy_timeout; worth a retry
+    if (typeof e.errcode === 'number' && (e.errcode & 0xff) === 5) {
+      return reply
+        .code(503)
+        .header('retry-after', 2)
+        .send({ error: { code: 'busy', message: 'The database is busy with a running job. Try again in a moment.' } });
+    }
     const status = e.statusCode && e.statusCode >= 400 ? e.statusCode : 500;
     if (status >= 500) req.log.error(err);
     return reply
@@ -74,7 +83,8 @@ export async function buildApp(config: Config, db: Db, opts: BuildAppOptions = {
 
   await app.register(compress, { global: true, threshold: 2048 });
   await app.register(multipart, { limits: { fileSize: 64 * 1024 ** 3, files: 1 } });
-  registerAuth(app, config.password);
+  // Host / Origin / password checks: on the root, before any route, so every route below inherits them
+  registerAuth(app, config);
 
   await app.register(coreRoutes, { prefix: '/api' });
   await app.register(workoutRoutes, { prefix: '/api' });

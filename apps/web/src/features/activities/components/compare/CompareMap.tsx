@@ -4,14 +4,15 @@ import { useChartTheme } from '@/components/charts/theme';
 import { BaseMap } from '@/components/map/BaseMap';
 import { lineFeature, setGeoJSON } from '@/components/map/layers';
 import { overlayColors } from '@/components/map/styles';
+import { shownStylePref, useMapOverlay, useOverlayEffect } from '@/components/map/useMapOverlay';
 import { useI18n } from '@/lib/i18n';
+import type { Store } from '@/lib/store';
 import { useResolvedTheme } from '@/lib/theme';
 import { positionAt, replayAt, type Alignment } from '../../lib/compare';
 import type { Playback } from '../../lib/playback';
 import type { RouteGeometry } from '../../lib/route';
-import type { Store } from '../../lib/store';
 import { fracIndex, haversine, type Prepared } from '../../lib/streams';
-import { DOT, START_HTML, currentPref, markerEl } from '../detail/ActivityMap';
+import { DOT, START_HTML, markerEl } from '../detail/ActivityMap';
 
 type Side = 'a' | 'b';
 /** DOM colors of A and B (the map layers use the resolved chart theme colors of the same slots). */
@@ -76,10 +77,9 @@ export function CompareMap({ A, B, geoA, geoB, al, playback, hover, names }: Com
   const { t } = useI18n();
   const theme = useChartTheme();
   const resolved = useResolvedTheme();
-  const colorsRef = useRef({ a: theme.series[0]!, b: theme.series[1]!, resolved });
-  colorsRef.current = { a: theme.series[0]!, b: theme.series[1]!, resolved };
+  const colorA = theme.series[0]!;
+  const colorB = theme.series[1]!;
   const bounds = useMemo(() => union(geoA.bounds, geoB.bounds), [geoA, geoB]);
-  const mapRef = useRef<Map | null>(null);
   const markers = useRef<{ a: Marker; b: Marker; ha: Marker; hb: Marker } | null>(null);
   const frame = useRef<number | null>(null);
 
@@ -117,46 +117,8 @@ export function CompareMap({ A, B, geoA, geoB, al, playback, hover, names }: Com
     };
   }, [playback, hover, request]);
 
-  // called again after every basemap or light/dark switch, with the colors of the new theme
-  const onStyleLoad = useCallback(
-    (map: Map) => {
-      const c = colorsRef.current;
-      const { casing } = overlayColors(currentPref(map), c.resolved);
-      const sides: [Side, RouteGeometry][] = [
-        ['b', geoB],
-        ['a', geoA],
-      ];
-      for (const [side, g] of sides)
-        g.parts.forEach((p, i) => setGeoJSON(map, layerId(side, i), lineFeature(g.coords.slice(p.v0, p.v1 + 1))));
-      // bottom → top: B casing, A casing, B line (wide), A line (narrow): where both share the road A runs inside B
-      const add = (side: Side, g: RouteGeometry, kind: 'casing' | 'line') =>
-        g.parts.forEach((_, i) => {
-          const id = layerId(side, i);
-          const lid = kind === 'casing' ? `${id}-casing` : id;
-          if (map.getLayer(lid)) return;
-          map.addLayer({
-            id: lid,
-            type: 'line',
-            source: id,
-            layout: { 'line-cap': 'round', 'line-join': 'round' },
-            paint:
-              kind === 'casing'
-                ? { 'line-color': casing, 'line-width': side === 'b' ? 10 : 7 }
-                : { 'line-color': side === 'a' ? c.a : c.b, 'line-width': side === 'b' ? 7 : 3.5 },
-          });
-        });
-      add('b', geoB, 'casing');
-      add('a', geoA, 'casing');
-      add('b', geoB, 'line');
-      add('a', geoA, 'line');
-      request();
-    },
-    [geoA, geoB, request],
-  );
-
   const onReady = useCallback(
     (map: Map) => {
-      mapRef.current = map;
       map.resize();
       map.fitBounds(bounds as LngLatBoundsLike, { padding: FIT_PADDING, maxZoom: 16, animate: false });
       const startEl = () =>
@@ -185,9 +147,51 @@ export function CompareMap({ A, B, geoA, geoB, al, playback, hover, names }: Com
     },
     [bounds, geoA, geoB, names, request, t],
   );
+  const overlay = useMapOverlay({ onReady });
+
+  // both routes, after every style load (a basemap or light/dark switch removes them, with new colors for the theme)
+  // and when the routes or colors change while the style is loaded
+  useOverlayEffect(
+    overlay,
+    (map) => {
+      const { casing } = overlayColors(shownStylePref(map), resolved);
+      const sides: [Side, RouteGeometry][] = [
+        ['b', geoB],
+        ['a', geoA],
+      ];
+      for (const [side, g] of sides)
+        g.parts.forEach((p, i) => setGeoJSON(map, layerId(side, i), lineFeature(g.coords.slice(p.v0, p.v1 + 1))));
+      // bottom → top: B casing, A casing, B line (wide), A line (narrow): where both share the road A runs inside B
+      const add = (side: Side, g: RouteGeometry, kind: 'casing' | 'line') =>
+        g.parts.forEach((_, i) => {
+          const id = layerId(side, i);
+          const lid = kind === 'casing' ? `${id}-casing` : id;
+          const color = kind === 'casing' ? casing : side === 'a' ? colorA : colorB;
+          if (map.getLayer(lid)) {
+            map.setPaintProperty(lid, 'line-color', color);
+            return;
+          }
+          map.addLayer({
+            id: lid,
+            type: 'line',
+            source: id,
+            layout: { 'line-cap': 'round', 'line-join': 'round' },
+            paint:
+              kind === 'casing'
+                ? { 'line-color': color, 'line-width': side === 'b' ? 10 : 7 }
+                : { 'line-color': color, 'line-width': side === 'b' ? 7 : 3.5 },
+          });
+        });
+      add('b', geoB, 'casing');
+      add('a', geoA, 'casing');
+      add('b', geoB, 'line');
+      add('a', geoA, 'line');
+    },
+    [geoA, geoB, colorA, colorB, resolved],
+  );
 
   return (
-    <BaseMap className="h-[min(62vh,520px)] min-h-72" bounds={bounds} onReady={onReady} onStyleLoad={onStyleLoad}>
+    <BaseMap className="h-[min(62vh,520px)] min-h-72" bounds={bounds} {...overlay.bind}>
       <div
         className="pointer-events-none absolute left-2 top-2 z-10 max-w-[70%] rounded-[10px] border border-border bg-surface/90 px-2.5 py-1.5 text-[11px] text-fg-2 shadow-card backdrop-blur"
         role="img"

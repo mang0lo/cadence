@@ -14,12 +14,8 @@ import { buildApp, migrateAll } from '../src/app';
 import { loadConfig } from '../src/config';
 import { all, get, openDb, run, type Db } from '../src/db/db';
 import type { DeriveContext } from '../src/features/types';
-import {
-  ensurePowerBests,
-  POWER_CURVE_VERSION,
-  powerCurveStep,
-  powerWorkoutsToRefresh,
-} from '../src/features/progress/power-curve';
+import { workoutCachesStep } from '../src/features/progress/derive';
+import { ensurePowerBests, POWER_CURVE_VERSION, powerWorkoutsToRefresh } from '../src/features/progress/power-curve';
 import {
   bestAverages,
   criticalPowerFit,
@@ -373,7 +369,7 @@ describe('power curve API', () => {
       `INSERT INTO daily_metrics (athlete_id, metric, day, value) VALUES (1, 'HKQuantityTypeIdentifierBodyMass', ?, 70), (1, 'HKQuantityTypeIdentifierBodyMass', ?, 72)`,
       [addDays(TODAY, -300), addDays(TODAY, -20)],
     );
-    await powerCurveStep.run(ctx());
+    await workoutCachesStep.run(ctx());
   }, 60_000);
 
   afterAll(async () => {
@@ -528,7 +524,7 @@ describe('power curve API', () => {
         st: stream((t) => (t < d ? 260 + 18_000 / d : 100), d + 600),
       });
     }
-    await powerCurveStep.run(ctx());
+    await workoutCachesStep.run(ctx());
     const f = await getJson<ProgressFtpResponse>(`/api/progress/power/ftp?sport=handcycle&today=${TODAY}`);
     expect(f.criticalPowerIssue).toBeNull();
     expect(f.criticalPower!.cpW).toBeCloseTo(260, 0);

@@ -50,19 +50,29 @@ const CONVERSIONS: Record<string, Conversion> = {
   'mi/hr': { to: 'm/s', f: mul(M_PER_MI / 3600) },
   'ft/s': { to: 'm/s', f: mul(M_PER_FT) },
   mL: { to: 'L', f: mul(0.001) },
+  dL: { to: 'L', f: mul(0.1) },
   'fl_oz_us': { to: 'L', f: mul(0.0295735295625) },
   'cup_us': { to: 'L', f: mul(0.2365882365) },
+  'pt_us': { to: 'L', f: mul(0.473176473) },
+  // imperial (UK) volumes, e.g. water in "fl oz" with a British region
+  'fl_oz_imp': { to: 'L', f: mul(0.0284130625) },
+  'cup_imp': { to: 'L', f: mul(0.284130625) },
+  'pt_imp': { to: 'L', f: mul(0.56826125) },
 };
+
+/** Own keys only: a unit like 'toString' in a crafted export must not reach Object's methods. */
+const conversion = (unit: string): Conversion | undefined =>
+  Object.hasOwn(CONVERSIONS, unit) ? CONVERSIONS[unit] : undefined;
 
 /** Normalise a value exported by Apple Health into the canonical unit. */
 export function normalizeUnit(value: number, unit: string | null | undefined): { value: number; unit: string | null } {
   if (!unit) return { value, unit: null };
-  const c = CONVERSIONS[unit];
+  const c = conversion(unit);
   return c ? { value: c.f(value), unit: c.to } : { value, unit };
 }
 
 /** The canonical unit a raw Apple Health unit normalises to. */
 export function canonicalUnit(unit: string | null | undefined): string | null {
   if (!unit) return null;
-  return CONVERSIONS[unit]?.to ?? unit;
+  return conversion(unit)?.to ?? unit;
 }

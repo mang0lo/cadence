@@ -63,6 +63,14 @@ export const messages: Dictionary = {
         },
       },
       showImport: 'Show import',
+      errors: {
+        login: 'COROS did not accept this email address and password.',
+        unreachable: 'COROS could not be reached. Try again later.',
+        rateLimited: 'COROS is limiting requests – try again in a few minutes.',
+        downloads: { one: '1 activity could not be downloaded.', other: '{count} activities could not be downloaded.' },
+        health: 'Health data: {error}',
+        mobile: 'Sleep & daily data: {error}',
+      },
     },
   },
   de: {
@@ -131,6 +139,17 @@ export const messages: Dictionary = {
         },
       },
       showImport: 'Import anzeigen',
+      errors: {
+        login: 'COROS hat diese E-Mail-Adresse und dieses Passwort nicht akzeptiert.',
+        unreachable: 'COROS ist nicht erreichbar. Versuch es später noch einmal.',
+        rateLimited: 'COROS begrenzt gerade die Anfragen – versuch es in ein paar Minuten noch einmal.',
+        downloads: {
+          one: '1 Aktivität konnte nicht geladen werden.',
+          other: '{count} Aktivitäten konnten nicht geladen werden.',
+        },
+        health: 'Gesundheitsdaten: {error}',
+        mobile: 'Schlaf & Tageswerte: {error}',
+      },
     },
   },
 };

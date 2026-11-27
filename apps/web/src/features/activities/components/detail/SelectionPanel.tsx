@@ -1,9 +1,8 @@
 import { useMemo } from 'react';
 import { Scissors, X } from 'lucide-react';
 import { Button, Card, CardHeader } from '@/components/ui';
-import { clock, useFormat } from '@/lib/format';
+import { clock, showsPace, useFormat } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
-import { isPaceSport } from '../../lib/display';
 import { rangeStats, type Prepared } from '../../lib/streams';
 
 /** Stats of the section selected on the charts (or picked from splits, laps, climbs, efforts). */
@@ -21,7 +20,7 @@ export function SelectionPanel({
   const { t } = useI18n();
   const fmt = useFormat();
   const s = useMemo(() => rangeStats(P, selection[0], selection[1], sport), [P, selection, sport]);
-  const pace = isPaceSport(sport);
+  const pace = showsPace(sport);
   const items: [string, string][] = [];
   if (s.distanceM !== null) items.push([t('common.distance'), fmt.distance(s.distanceM)]);
   items.push([t('activities.stats.moving'), fmt.duration(s.movingS)]);

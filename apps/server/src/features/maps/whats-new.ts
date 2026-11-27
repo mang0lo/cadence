@@ -1,11 +1,9 @@
 import type { ImportHighlight } from '@cadence/shared';
 import { all, get } from '../../db/db';
 import type { WhatsNewInput } from '../types';
+import { IN_LIST as NEW_IDS, ROUTE_TIME as TIME, idList, visible } from './sql';
 
-const VISIBLE = 'w.hidden = 0 AND w.duplicate_of IS NULL';
-const NEW_IDS = '(SELECT value FROM json_each(?))';
-/** Moving time, falling back to Apple's active time (as in route-api.ts). */
-const TIME = 'COALESCE(NULLIF(w.moving_s, 0), w.duration_s)';
+const VISIBLE = visible();
 
 /** Explorer tiles at `z` that only the new activities visited. */
 function newTiles(db: WhatsNewInput['db'], athleteId: number, ids: string, z: number): number {
@@ -23,12 +21,47 @@ function newTiles(db: WhatsNewInput['db'], athleteId: number, ids: string, z: nu
 }
 
 /**
+ * New activities that only replace a copy the athlete already had: the watch's own file of a workout that came from
+ * Apple Health before (or the other way round) is preferred over the old copy, which turns into its duplicate. They
+ * bring no new tiles, routes or efforts – unless the old copy had no GPS route (some vendor apps write workouts to
+ * Apple Health without it), then everything on the maps is new. "Already had" = the copy is not among the workouts
+ * the import added (`imported`); without that list, it was stored before the running import job started.
+ */
+function replacements(db: WhatsNewInput['db'], athleteId: number, ids: string, imported?: number[]): Set<number> {
+  const copies = `SELECT DISTINCT duplicate_of AS id FROM workouts
+       WHERE athlete_id = ? AND hidden = 0 AND has_route = 1 AND duplicate_of IN ${NEW_IDS}`;
+  if (imported)
+    return new Set(
+      all<{ id: number }>(db, `${copies} AND id NOT IN ${NEW_IDS}`, [athleteId, ids, idList(imported)]).map(
+        (r) => r.id,
+      ),
+    );
+  const job = get<{ t: number | null }>(
+    db,
+    "SELECT MAX(started_at) AS t FROM import_jobs WHERE athlete_id = ? AND status = 'running'",
+    [athleteId],
+  );
+  if (job?.t == null) return new Set();
+  return new Set(all<{ id: number }>(db, `${copies} AND created_at < ?`, [athleteId, ids, job.t]).map((r) => r.id));
+}
+
+/**
  * New explorer tiles, new recurring routes, route bests and segment PRs of the new activities. A first import only
  * reports nothing here: every tile, route and effort would be new.
  */
-export function mapsWhatsNew({ db, athleteId, workoutIds, initial }: WhatsNewInput): ImportHighlight[] {
-  if (initial || !workoutIds.length) return [];
-  const ids = JSON.stringify(workoutIds);
+export function mapsWhatsNew({
+  db,
+  athleteId,
+  workoutIds: newIds,
+  importedIds,
+  initial,
+}: WhatsNewInput): ImportHighlight[] {
+  if (initial || !newIds.length) return [];
+  const replaced = replacements(db, athleteId, idList(newIds), importedIds);
+  // replacements count as known activities below, like every other visible workout that is not new
+  const workoutIds = newIds.filter((id) => !replaced.has(id));
+  if (!workoutIds.length) return [];
+  const ids = idList(workoutIds);
   const isNew = new Set(workoutIds);
   const out: ImportHighlight[] = [];
 
@@ -69,8 +102,9 @@ export function mapsWhatsNew({ db, athleteId, workoutIds, initial }: WhatsNewInp
     };
     const old = list.filter((e) => !isNew.has(e.workout_id));
     const best = list.reduce((a, b) => (b.time_s < a.time_s ? b : a));
-    if (!old.length) out.push({ feature: 'maps', kind: 'newRoute', workoutId: best.workout_id, data: base });
-    else if (isNew.has(best.workout_id))
+    // a route is recurring (listed on the Routes page) from its second activity on: new if it got there with this import
+    if (old.length < 2) out.push({ feature: 'maps', kind: 'newRoute', workoutId: best.workout_id, data: base });
+    if (old.length && isNew.has(best.workout_id))
       out.push({
         feature: 'maps',
         kind: 'routeBest',

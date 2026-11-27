@@ -23,7 +23,7 @@ export function WhatsNewCard({ job }: { job: ImportJob & { stats: { summary: Imp
         ? fmt.day(s.fromDay, 'day')
         : `${fmt.day(s.fromDay, 'day')} – ${fmt.day(s.toDay, 'day')}`
       : null;
-  const finished = job.finishedAt ? fmt.date(job.finishedAt, -new Date().getTimezoneOffset(), 'dateTime') : '';
+  const finished = job.finishedAt ? fmt.browserDate(job.finishedAt, 'dateTime') : '';
   const sections = featureModules.flatMap((f) => {
     const items = s.highlights.filter((h) => h.feature === f.name);
     return f.whatsNew && items.length ? [{ name: f.name, Component: f.whatsNew, items }] : [];
@@ -36,17 +36,17 @@ export function WhatsNewCard({ job }: { job: ImportJob & { stats: { summary: Imp
         <p className="text-sm text-fg-2">
           {t('platform.whatsNew.nothing')}
           {job.stats.recordsInserted > 0 && (
-            <span className="text-fg-3"> {t('platform.whatsNew.healthRecords', { count: fmt.int(job.stats.recordsInserted) })}</span>
+            <span className="text-fg-3"> {t('platform.whatsNew.healthRecords', { count: job.stats.recordsInserted })}</span>
           )}
         </p>
       ) : (
         <div className="flex flex-col gap-5">
           <div>
             <p className="text-base font-semibold text-fg">
-              {t(s.initial ? 'platform.whatsNew.initial' : 'platform.whatsNew.activities', { count: s.count, n: fmt.int(s.count) })}
+              {t(s.initial ? 'platform.whatsNew.initial' : 'platform.whatsNew.activities', { count: s.count })}
             </p>
             <p className="text-sm text-fg-3">
-              {[range, job.stats.recordsInserted > 0 ? t('platform.whatsNew.healthRecords', { count: fmt.int(job.stats.recordsInserted) }) : null]
+              {[range, job.stats.recordsInserted > 0 ? t('platform.whatsNew.healthRecords', { count: job.stats.recordsInserted }) : null]
                 .filter(Boolean)
                 .join(' · ')}
             </p>
@@ -57,7 +57,7 @@ export function WhatsNewCard({ job }: { job: ImportJob & { stats: { summary: Imp
                     <SportIcon sport={x.sport} size={11} strokeWidth={2.5} />
                   </span>
                   <span className="font-medium text-fg">
-                    {x.count} × {sportLabel(x.sport, lang)}
+                    {fmt.int(x.count)} × {sportLabel(x.sport, lang)}
                   </span>
                   <span className="tabular text-fg-3">
                     {x.distanceM > 0 ? `${fmt.distance(x.distanceM)} · ` : ''}

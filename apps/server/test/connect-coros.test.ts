@@ -8,7 +8,9 @@ import { getSettings, updateSettings } from '../src/core/settings';
 import { heartMetric } from '../src/core/sources';
 import { all, get, openDb, run, type Db } from '../src/db/db';
 import { CorosClient, CorosHttpError, md5Hex } from '../src/features/connect/coros-client';
+import { CorosMobileClient } from '../src/features/connect/coros-mobile';
 import { CorosSync } from '../src/features/connect/coros-sync';
+import { resetAthleteData } from '../src/import/reset';
 import { executeJob } from '../src/import/run-job';
 import { buildFit } from './fit-fixture';
 
@@ -71,6 +73,10 @@ function fakeCoros(activities: FakeActivity[], health: FakeDay[] = []) {
     queries: 0,
     rateLimitNext: 0,
     password: md5Hex('secret'),
+    /** Runs on every accepted download request (e.g. a Training Hub login in a browser replaces the token). */
+    onDownload: null as null | ((labelId: string) => void),
+    /** Files the storage host fails to deliver: HTTP 503, or cut off after 100 bytes. */
+    fileFaults: new Map<string, 'unavailable' | 'truncated'>(),
   };
   const ok = (data: unknown) => new Response(JSON.stringify({ result: '0000', message: 'OK', data }));
   const fail = (result: string, message: string) => new Response(JSON.stringify({ result, message }));
@@ -129,7 +135,10 @@ function fakeCoros(activities: FakeActivity[], health: FakeDay[] = []) {
     }
     if (url.hostname === 'files.example') {
       const a = activities.find((x) => x.labelId === url.searchParams.get('id'))!;
-      return new Response(buildFit({ start: a.startTime, serial: Number(a.labelId) }));
+      const fault = state.fileFaults.get(a.labelId);
+      if (fault === 'unavailable') return new Response('Service Unavailable', { status: 503 });
+      const bytes = buildFit({ start: a.startTime, serial: Number(a.labelId) });
+      return new Response(fault === 'truncated' ? bytes.slice(0, 100) : bytes);
     }
     const headers = (init?.headers ?? {}) as Record<string, string>;
     switch (url.pathname) {
@@ -174,6 +183,7 @@ function fakeCoros(activities: FakeActivity[], health: FakeDay[] = []) {
         if (headers.accessToken !== state.token) return fail('1019', 'Access token invalid');
         expect(url.searchParams.get('fileType')).toBe('4');
         const id = url.searchParams.get('labelId')!;
+        state.onDownload?.(id);
         if (id === 'broken') return fail('5001', 'File not found');
         state.downloads.push(id);
         return ok({ fileUrl: `https://files.example/fit?id=${id}` });
@@ -188,10 +198,15 @@ function fakeCoros(activities: FakeActivity[], health: FakeDay[] = []) {
 function setup(activities: FakeActivity[], health: FakeDay[] = []) {
   const fake = fakeCoros(activities, health);
   const enqueued: { path: string; files: string[] }[] = [];
+  const derives: { workoutIds?: unknown; sinceDay?: unknown; origin?: unknown }[] = [];
   const jobs = {
     enqueueImport(_a: number, p: string, o: { options?: { files?: string[] } } = {}) {
       enqueued.push({ path: p, files: o.options?.files ?? [] });
       return { id: `job-${enqueued.length}` } as never;
+    },
+    enqueueDerive(_a: number, o: { workoutIds?: unknown; sinceDay?: unknown; origin?: unknown } = {}) {
+      derives.push(o);
+      return { id: `derive-${derives.length}` } as never;
     },
   };
   const sync = new CorosSync({
@@ -200,8 +215,30 @@ function setup(activities: FakeActivity[], health: FakeDay[] = []) {
     dataDir: dir,
     client: { fetch: fake.fetchImpl, sleep: async () => {}, minIntervalMs: 0 },
   });
-  return { fake, sync, enqueued };
+  return { fake, sync, enqueued, derives };
 }
+
+/** Run the import job of `files` (as the job worker does), e.g. the part of a job that ran before it stopped. */
+const importFiles = (files: string[]) =>
+  executeJob(
+    db,
+    { id: 'j', kind: 'import', athleteId: 1, sourcePath: path.join(dir, 'connect', 'coros'), options: { files } },
+    { progress: () => {}, checkCancelled: () => {}, log: () => {} },
+  );
+/** The job's row as the job manager leaves it. */
+const jobRow = (id: string, status: 'done' | 'failed' | 'cancelled', error: string | null = null) =>
+  run(db, "INSERT INTO import_jobs (id, athlete_id, kind, status, error) VALUES (?, 1, 'import', ?, ?)", [
+    id,
+    status,
+    error,
+  ]);
+const activity = (remoteId: string) =>
+  get<{ status: string; job_id: string | null; attempts: number; next_retry_at: number | null; error: string | null }>(
+    db,
+    'SELECT status, job_id, attempts, next_retry_at, error FROM connect_activities WHERE remote_id = ?',
+    [remoteId],
+  );
+const names = (files: string[]) => files.map((f) => path.basename(f)).sort();
 
 const act = (i: number, extra: Partial<FakeActivity> = {}): FakeActivity => ({
   labelId: String(1000 + i),
@@ -234,6 +271,37 @@ describe('COROS client', () => {
     expect(new CorosClient({ region: 'eu' }).baseUrl).toBe('https://teameuapi.coros.com');
     expect(new CorosClient({ region: 'en' }).baseUrl).toBe('https://teamapi.coros.com');
   });
+
+  it('spaces API requests but not the file downloads from the storage host', async () => {
+    const { fetchImpl } = fakeCoros([act(1), act(2)]);
+    const waits: number[] = [];
+    const c = new CorosClient({
+      region: 'eu',
+      fetch: fetchImpl,
+      minIntervalMs: 60_000,
+      sleep: async (ms) => void waits.push(ms),
+    });
+    await c.login('me@example.com', md5Hex('secret'));
+    await c.downloadFit('1001', 100);
+    await c.downloadFit('1002', 100);
+    // one wait before each download link request; the file requests right after them wait for nothing
+    expect(waits).toHaveLength(2);
+  });
+
+  it('retries the COROS app API too when it is rate limited', async () => {
+    const { state, fetchImpl } = fakeCoros([]);
+    const waits: number[] = [];
+    const m = new CorosMobileClient({
+      region: 'eu',
+      fetch: fetchImpl,
+      minIntervalMs: 0,
+      sleep: async (ms) => void waits.push(ms),
+      retryDelaysMs: [10, 20],
+    });
+    state.rateLimitNext = 1;
+    expect(await m.login('me@example.com', md5Hex('secret'))).toBe('m-1');
+    expect(waits).toEqual([10]);
+  });
 });
 
 describe('COROS sync', () => {
@@ -245,6 +313,20 @@ describe('COROS sync', () => {
     const raw = get<{ value: string }>(db, "SELECT value FROM settings WHERE key = 'connect.coros'")!.value;
     expect(raw).not.toContain('secret');
     expect(JSON.stringify(s)).not.toContain(md5Hex('secret'));
+  });
+
+  it('leaves no copy of the login hash or token in the database files after disconnecting', async () => {
+    const { fake, sync } = setup([act(1)]);
+    await sync.connect(1, 'me@example.com', 'secret', 'eu');
+    fake.state.token = 'replaced'; // one more login and token during the sync
+    await sync.start(1);
+    sync.disconnect(1);
+    const files = ['cadence.db', 'cadence.db-wal'].map((f) => path.join(dir, f)).filter((f) => fs.existsSync(f));
+    const bytes = Buffer.concat(files.map((f) => fs.readFileSync(f)));
+    expect(bytes.length).toBeGreaterThan(0);
+    for (const secret of [md5Hex('secret'), 'tok-2', 'tok-3'])
+      expect(bytes.includes(Buffer.from(secret)), secret).toBe(false);
+    expect(sync.status(1).connected).toBe(false);
   });
 
   it('downloads new activities, imports them, and only fetches new ones next time', async () => {
@@ -328,7 +410,190 @@ describe('COROS sync', () => {
     const p = await sync.start(1);
     expect(p.state).toBe('failed');
     expect(p.error).toMatch(/connect the account again/);
-    expect(sync.status(1).lastError).toMatch(/connect the account again/);
+    expect(sync.status(1)).toMatchObject({ lastError: expect.stringMatching(/connect the account again/), needsReconnect: true });
+    // the auto sync stops sending a failing login every few hours
+    sync.autoTick();
+    expect(sync.isSyncing(1)).toBe(false);
+    expect(fake.state.logins).toBe(1);
+    // connecting again with the new password resumes it
+    await sync.connect(1, 'me@example.com', 'changed', 'eu');
+    expect(sync.status(1).needsReconnect).toBe(false);
+    sync.autoTick();
+    expect(sync.isSyncing(1)).toBe(true);
+    expect(await sync.start(1)).toMatchObject({ state: 'done', downloaded: 1 });
+  });
+
+  it('pauses the auto sync when the login is refused after the downloads', async () => {
+    const { fake, sync, enqueued } = setup([act(1)]);
+    await sync.connect(1, 'me@example.com', 'secret', 'eu');
+    // the password changes on COROS while the sync downloads: the health part's new login is refused
+    fake.state.onDownload = () => {
+      fake.state.token = 'expired';
+      fake.state.password = md5Hex('changed');
+    };
+    expect(await sync.start(1)).toMatchObject({ state: 'done', downloaded: 1 });
+    expect(enqueued).toHaveLength(1);
+    expect(sync.status(1)).toMatchObject({
+      lastError: expect.stringMatching(/connect the account again/),
+      needsReconnect: true,
+    });
+    sync.autoTick();
+    expect(sync.isSyncing(1)).toBe(false);
+  });
+
+  it('logs in again only when COROS rejects the token, not for other errors', async () => {
+    const { fake, sync } = setup([act(1), act(2, { labelId: 'broken' }), act(3), act(4)]);
+    await sync.connect(1, 'me@example.com', 'secret', 'eu');
+    // the missing file must not use up the login; then a browser login replaces the token
+    fake.state.onDownload = (id) => {
+      if (id === 'broken') fake.state.token = 'browser';
+    };
+    const p = await sync.start(1);
+    expect(p).toMatchObject({ state: 'done', downloaded: 3, failed: 1 });
+    expect(fake.state.logins).toBe(2); // connect + one new login
+    expect(sync.status(1).activities).toMatchObject({ fetched: 3, failed: 1 });
+  });
+
+  it('stops when COROS keeps rejecting new logins and leaves the rest for the next sync', async () => {
+    const { fake, sync, enqueued } = setup([act(1), act(2), act(3), act(4)]);
+    await sync.connect(1, 'me@example.com', 'secret', 'eu');
+    // every download request signs Cadence out again (e.g. a script logging in elsewhere)
+    fake.state.onDownload = (id) => void (fake.state.token = `elsewhere-${id}`);
+    const p = await sync.start(1);
+    expect(p.state).toBe('failed');
+    expect(p.error).toMatch(/keeps rejecting the login/);
+    expect(fake.state.logins).toBe(3); // connect + at most two per sync
+    expect(sync.status(1).activities).toMatchObject({ fetched: 3, failed: 0 });
+    expect(enqueued[0]!.files).toHaveLength(3);
+    fake.state.onDownload = null;
+    expect(await sync.start(1)).toMatchObject({ state: 'done', toDownload: 1, downloaded: 1 });
+  });
+});
+
+describe('COROS sync: unfinished imports and failed downloads', () => {
+  const workouts = () => get<{ n: number }>(db, 'SELECT COUNT(*) AS n FROM workouts')!.n;
+
+  it('imports again what a cancelled or interrupted import job did not finish', async () => {
+    const { fake, sync, enqueued } = setup(Array.from({ length: 5 }, (_, i) => act(i)));
+    await sync.connect(1, 'me@example.com', 'secret', 'eu');
+    expect(await sync.start(1)).toMatchObject({ downloaded: 5, jobId: 'job-1' });
+    // the job was cancelled after the first 2 files (Import page → Cancel)
+    await importFiles(enqueued[0]!.files.slice(0, 2));
+    jobRow('job-1', 'cancelled');
+    fake.state.downloads = [];
+    expect(await sync.start(1)).toMatchObject({ state: 'done', toDownload: 0, jobId: 'job-2' });
+    expect(fake.state.downloads).toEqual([]); // straight from the cache
+    expect(names(enqueued[1]!.files)).toEqual(['1002.fit', '1003.fit', '1004.fit']);
+    // this time the server stopped while the job ran
+    jobRow('job-2', 'failed', 'Interrupted: the server stopped');
+    expect(await sync.start(1)).toMatchObject({ jobId: 'job-3' });
+    expect(names(enqueued[2]!.files)).toEqual(['1002.fit', '1003.fit', '1004.fit']);
+    await importFiles(enqueued[2]!.files);
+    jobRow('job-3', 'done');
+    // done: nothing is imported again
+    expect(await sync.start(1)).toMatchObject({ toDownload: 0, jobId: null });
+    expect(workouts()).toBe(5);
+    expect(sync.status(1).activities).toMatchObject({ fetched: 5, failed: 0 });
+  });
+
+  it('imports the files of a sync that was cut off before its import job', async () => {
+    const { fake, sync, enqueued } = setup(Array.from({ length: 4 }, (_, i) => act(i)));
+    await sync.connect(1, 'me@example.com', 'secret', 'eu');
+    await sync.start(1);
+    // the app quit after the downloads: rows fetched, no job (as every row of an earlier version)
+    run(db, 'UPDATE connect_activities SET job_id = NULL');
+    enqueued.length = 0;
+    fake.state.downloads = [];
+    expect(await sync.start(1)).toMatchObject({ toDownload: 0, jobId: 'job-1' });
+    expect(fake.state.downloads).toEqual([]);
+    expect(enqueued[0]!.files).toHaveLength(4);
+    // rows whose workout exists are left alone
+    await importFiles(enqueued[0]!.files);
+    run(db, 'UPDATE connect_activities SET job_id = NULL');
+    expect(await sync.start(1)).toMatchObject({ jobId: null });
+    expect(activity('1000')).toMatchObject({ status: 'fetched', job_id: 'imported' });
+  });
+
+  it('gives up on a file after three import jobs that did not finish (a full sync tries again)', async () => {
+    const { sync, enqueued } = setup([act(1)]);
+    await sync.connect(1, 'me@example.com', 'secret', 'eu');
+    for (let i = 1; i <= 3; i++) {
+      expect(await sync.start(1)).toMatchObject({ jobId: `job-${i}` });
+      jobRow(`job-${i}`, 'failed', 'Worker crashed');
+    }
+    expect(await sync.start(1)).toMatchObject({ jobId: null });
+    expect(activity('1001')).toMatchObject({ status: 'failed', error: 'Import did not finish: Worker crashed' });
+    expect(sync.status(1).activities).toMatchObject({ fetched: 0, failed: 1 });
+    expect(await sync.start(1)).toMatchObject({ toDownload: 0, jobId: null });
+    expect(await sync.start(1, true)).toMatchObject({ toDownload: 1, jobId: 'job-4' });
+    expect(enqueued[3]!.files).toHaveLength(1);
+    expect(activity('1001')).toMatchObject({ status: 'fetched', job_id: 'job-4' });
+  });
+
+  it('retries a failed download with a growing delay in normal syncs', async () => {
+    const { fake, sync } = setup([act(1), act(2)]);
+    await sync.connect(1, 'me@example.com', 'secret', 'eu');
+    fake.state.fileFaults.set('1002', 'unavailable');
+    const t0 = Math.floor(Date.now() / 1000);
+    expect(await sync.start(1)).toMatchObject({ downloaded: 1, failed: 1 });
+    expect(activity('1002')).toMatchObject({ status: 'failed', attempts: 1 });
+    expect(activity('1002')!.next_retry_at! - t0).toBeGreaterThanOrEqual(3 * 3600);
+    // not due yet
+    fake.state.downloads = [];
+    expect(await sync.start(1)).toMatchObject({ toDownload: 0 });
+    // three hours later, still failing: the next try waits longer
+    run(db, "UPDATE connect_activities SET next_retry_at = 0 WHERE remote_id = '1002'");
+    expect(await sync.start(1)).toMatchObject({ toDownload: 1, failed: 1 });
+    expect(activity('1002')).toMatchObject({ status: 'failed', attempts: 2 });
+    expect(activity('1002')!.next_retry_at! - t0).toBeGreaterThanOrEqual(12 * 3600);
+    // then COROS delivers it: one download, nothing else
+    fake.state.fileFaults.clear();
+    run(db, "UPDATE connect_activities SET next_retry_at = 0 WHERE remote_id = '1002'");
+    fake.state.downloads = [];
+    expect(await sync.start(1)).toMatchObject({ toDownload: 1, downloaded: 1, failed: 0 });
+    expect(fake.state.downloads).toEqual(['1002']);
+    expect(sync.status(1)).toMatchObject({ activities: { fetched: 2, failed: 0 }, lastError: null });
+  });
+
+  it('rejects a cut-off file instead of importing it', async () => {
+    const { fake, sync } = setup([act(1)]);
+    await sync.connect(1, 'me@example.com', 'secret', 'eu');
+    fake.state.fileFaults.set('1001', 'truncated');
+    expect(await sync.start(1)).toMatchObject({ downloaded: 0, failed: 1, jobId: null });
+    expect(activity('1001')).toMatchObject({ status: 'failed', error: 'COROS returned an incomplete FIT file' });
+    expect(fs.existsSync(path.join(dir, 'connect', 'coros', '1001.fit'))).toBe(false);
+  });
+
+  it('full sync downloads only what is not cached and imports only what is missing', async () => {
+    const { fake, sync, enqueued } = setup([act(1), act(2), act(3)]);
+    await sync.connect(1, 'me@example.com', 'secret', 'eu');
+    await sync.start(1);
+    await importFiles(enqueued[0]!.files);
+    fs.rmSync(path.join(dir, 'connect', 'coros', '1002.fit'));
+    fake.state.downloads = [];
+    // every workout exists: nothing to import
+    expect(await sync.start(1, true)).toMatchObject({ state: 'done', toDownload: 3, downloaded: 3, jobId: null });
+    expect(fake.state.downloads).toEqual(['1002']);
+    expect(enqueued).toHaveLength(1);
+    expect(activity('1002')).toMatchObject({ status: 'fetched', job_id: 'imported' });
+    // a workout that is missing is imported again
+    run(db, "DELETE FROM workouts WHERE json_extract(meta, '$.FitFile') = '1003.fit'");
+    expect(await sync.start(1, true)).toMatchObject({ jobId: 'job-2' });
+    expect(names(enqueued[1]!.files)).toEqual(['1003.fit']);
+  });
+
+  it('imports everything from the cache again after "Delete all data", without downloading', async () => {
+    const { fake, sync, enqueued } = setup([act(1), act(2), act(3)]);
+    await sync.connect(1, 'me@example.com', 'secret', 'eu');
+    await sync.start(1);
+    await importFiles(enqueued[0]!.files);
+    resetAthleteData(db, 1);
+    expect(workouts()).toBe(0);
+    fake.state.downloads = [];
+    expect(await sync.start(1)).toMatchObject({ toDownload: 3, jobId: 'job-2' });
+    expect(fake.state.downloads).toEqual([]);
+    await importFiles(enqueued[1]!.files);
+    expect(workouts()).toBe(3);
   });
 });
 
@@ -439,6 +704,28 @@ describe('COROS health sync', () => {
     expect(fake.state.mobileLogins).toBe(2);
   });
 
+  it('walks the COROS app history once more after the update to repair the rings', async () => {
+    const { fake, sync } = setup([], healthDays(today, 40));
+    await sync.connect(1, 'me@example.com', 'secret', 'eu');
+    await sync.start(1);
+    // as an earlier version left it: no COROS copy of the rings, a rest day stored as closed (goal = its value)
+    const day = new Date(Date.parse(`${today}T00:00:00Z`) - 35 * 86400_000).toISOString().slice(0, 10);
+    run(db, 'DELETE FROM connect_rings');
+    run(db, 'UPDATE activity_summaries SET exercise_goal_min = exercise_min WHERE day = ?', [day]);
+    run(db, "UPDATE settings SET value = json_remove(value, '$.mobileVersion') WHERE key = 'connect.coros'");
+    fake.state.mobileCalls = [];
+    await sync.start(1);
+    expect(fake.state.mobileCalls.length).toBeGreaterThan(6); // more than the one window of a normal sync
+    expect(get(db, 'SELECT exercise_min, exercise_goal_min FROM activity_summaries WHERE day = ?', [day])).toEqual({
+      exercise_min: 18,
+      exercise_goal_min: 30,
+    });
+    // once
+    fake.state.mobileCalls = [];
+    await sync.start(1);
+    expect(fake.state.mobileCalls).toHaveLength(6);
+  });
+
   it('leaves the COROS app API alone when sleep & daily data is switched off', async () => {
     const { fake, sync } = setup([], healthDays(today, 5));
     await sync.connect(1, 'me@example.com', 'secret', 'eu');
@@ -449,10 +736,53 @@ describe('COROS health sync', () => {
   });
 
   it('keeps an explicitly chosen watch when COROS is connected', async () => {
-    const { sync } = setup([]);
+    const { sync, derives } = setup([]);
     updateSettings(db, 1, { watch: 'apple' });
     await sync.connect(1, 'me@example.com', 'secret', 'eu');
     expect(getSettings(db, 1).watch).toBe('apple');
+    expect(derives).toEqual([]);
+  });
+
+  it('rebuilds the analysis when connecting makes COROS the watch, as Settings does', async () => {
+    const { sync, derives } = setup([]);
+    // nothing to rebuild yet
+    await sync.connect(1, 'me@example.com', 'secret', 'eu');
+    expect(derives).toEqual([]);
+    sync.disconnect(1);
+    run(db, "DELETE FROM settings WHERE key = 'core.settings'");
+    // Apple workouts exist: the watch's copy of overlapping workouts wins from now on
+    run(
+      db,
+      `INSERT INTO workouts (athlete_id, ext_key, activity_type, sport, start_ts, end_ts, tz_min, duration_s)
+       VALUES (1, 'apple:1', 'HKWorkoutActivityTypeRunning', 'run', ?, ?, 60, 1800)`,
+      [START, START + 1800],
+    );
+    await sync.connect(1, 'me@example.com', 'secret', 'eu');
+    expect(getSettings(db, 1).watch).toBe('coros');
+    expect(derives).toEqual([{ origin: 'settings' }]);
+    // connecting again changes nothing
+    await sync.connect(1, 'me@example.com', 'secret', 'eu');
+    expect(derives).toHaveLength(1);
+  });
+
+  it('keeps the sleep & daily data choice and where the syncs got to when the account is connected again', async () => {
+    const { fake, sync } = setup([], healthDays(today, 30));
+    await sync.connect(1, 'me@example.com', 'secret', 'eu');
+    sync.setMobileData(1, false);
+    await sync.start(1);
+    // the password changed on COROS: the sync fails, the athlete connects again
+    fake.state.password = md5Hex('changed');
+    fake.state.token = 'expired';
+    expect(await sync.start(1)).toMatchObject({ state: 'failed' });
+    await sync.connect(1, 'me@example.com', 'changed', 'eu');
+    expect(sync.status(1).mobileData).toBe(false);
+    fake.state.analyseCalls = [];
+    expect(await sync.start(1)).toMatchObject({ state: 'done', error: null });
+    expect(fake.state.mobileLogins).toBe(0); // the phone app stays signed in
+    expect(fake.state.analyseCalls).toHaveLength(1); // the recent days, not the whole history again
+    // another account starts from scratch, but the choice stays
+    await sync.connect(1, 'me@example.com', 'changed', 'en');
+    expect(sync.status(1).mobileData).toBe(false);
   });
 });
 

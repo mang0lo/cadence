@@ -2,7 +2,9 @@ import { TrendingUp, Medal, Gauge, Zap } from 'lucide-react';
 import type { FeatureModule } from '../types';
 import { messages } from './messages';
 
-/** "progress" feature (web). Routes are children of the app shell; pages are lazy-loaded. */
+const widgets = () => import('./widgets');
+
+/** "progress" feature (web). Routes are children of the app shell; pages and dashboard widgets are lazy-loaded. */
 const feature: FeatureModule = {
   name: 'progress',
   messages,
@@ -17,6 +19,11 @@ const feature: FeatureModule = {
     { path: '/progress/records', labelKey: 'progress.nav.records', icon: Medal, group: 'training', order: 30 },
     { path: '/progress/power', labelKey: 'progress.nav.power', icon: Zap, group: 'training', order: 35 },
     { path: '/progress/fitness', labelKey: 'progress.nav.fitness', icon: Gauge, group: 'training', order: 40 },
+  ],
+  widgets: [
+    { id: 'weekly-snapshot', order: 10, component: () => widgets().then((m) => m.WeeklySnapshotWidget) },
+    { id: 'fitness', order: 30, component: () => widgets().then((m) => m.FitnessWidget) },
+    { id: 'power', order: 40, component: () => widgets().then((m) => m.PowerWidget) },
   ],
 };
 

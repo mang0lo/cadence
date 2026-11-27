@@ -2,11 +2,13 @@
   "name": "@cadence/desktop",
   "version": "1.0.0",
   "private": true,
+  "license": "PolyForm-Noncommercial-1.0.0",
   "description": "Cadence desktop app for Linux and Windows (Electron shell around the bundled server and web UI).",
   "main": "dist/main.cjs",
   "scripts": {
     "build": "node build.mjs",
     "typecheck": "tsc --noEmit -p .",
+    "test": "vitest run",
     "start": "npm run build && electron .",
     "dist": "npm run build && electron-builder --linux --publish never",
     "dist:win": "npm run build && electron-builder --win --publish never"

@@ -6,9 +6,9 @@
  */
 import type { Goal, GoalInput, GoalMetric, GoalPeriod, GoalsResponse, GoalWithProgress } from '@cadence/shared';
 import { all, get, run, tx, type Db } from '../../db/db';
-import { getSetting, setSetting } from '../../core/settings';
+import { getSetting, getSettings, setSetting } from '../../core/settings';
 import { firstDataDay, loadDaily, resolveDays, weekStartOfAthlete } from './data';
-import { periodRange } from './days';
+import { periodRange, plusDays } from './days';
 import {
   bucketByPeriod,
   defaultGoals,
@@ -80,7 +80,8 @@ export function loadChecks(db: Db, athleteId: number): Map<number, string[]> {
 
 /**
  * Check a goal off by hand for the period containing `day` (or remove the check mark). Returns the period, or null
- * when the goal does not exist.
+ * when the goal does not exist. The mark is stored on the first day of the period, for weeks on its middle (the
+ * fourth day): that day lies in the week the mark was set for with either week start (Sunday or Monday).
  */
 export function setGoalCheck(
   db: Db,
@@ -94,7 +95,11 @@ export function setGoalCheck(
     if (!goal) return null;
     const { start, end } = periodRange(day, goal.period, weekStartOfAthlete(db, athleteId));
     run(db, 'DELETE FROM consistency_goal_checks WHERE goal_id = ? AND day >= ? AND day <= ?', [id, start, end]);
-    if (done) run(db, 'INSERT INTO consistency_goal_checks (goal_id, day) VALUES (?, ?)', [id, start]);
+    if (done)
+      run(db, 'INSERT INTO consistency_goal_checks (goal_id, day) VALUES (?, ?)', [
+        id,
+        goal.period === 'week' ? plusDays(start, 3) : start,
+      ]);
     writeBackup(db, athleteId);
     return { start, end, done };
   });
@@ -167,7 +172,8 @@ export function deleteGoal(db: Db, athleteId: number, id: number): boolean {
 
 /**
  * Goals of the athlete. When there are none: restore the mirror after a data reset, or — once, as soon as
- * there is data — seed sensible defaults derived from recent activity.
+ * there is data — seed sensible defaults derived from recent activity. `seed: false` (an import or sync is still
+ * running, so the daily totals may be missing) postpones the seeding to a later call.
  */
 export function ensureGoals(
   db: Db,
@@ -176,6 +182,7 @@ export function ensureGoals(
   asOf: string,
   weekStart: 0 | 1,
   firstDay: string | null,
+  seed = true,
 ): Goal[] {
   const goals = listGoals(db, athleteId);
   if (goals.length) return goals;
@@ -189,9 +196,10 @@ export function ensureGoals(
           run(db, 'INSERT INTO consistency_goal_checks (goal_id, day) VALUES (?, ?)', [id, day]);
       }),
     );
-  } else if (!state.seeded && firstDay) {
+  } else if (seed && !state.seeded && firstDay) {
     tx(db, () => {
-      defaultGoals(rows, asOf, weekStart, firstDay).forEach((g, i) => insertGoal(db, athleteId, g, i));
+      const units = getSettings(db, athleteId).units;
+      defaultGoals(rows, asOf, weekStart, firstDay, units).forEach((g, i) => insertGoal(db, athleteId, g, i));
       writeBackup(db, athleteId);
     });
   } else return goals;
@@ -228,6 +236,7 @@ export function goalWithProgress(
       asOf: ref,
       single: daily || goal.metric === 'longest',
       checked: isChecked(o.checks, start, end),
+      metric: goal.metric,
     }),
     history,
     hitRate: judged.length ? judged.filter((h) => h.hit).length / judged.length : null,
@@ -244,12 +253,13 @@ export function periodBuckets(rows: DailyRow[], weekStart: 0 | 1): (period: Goal
   };
 }
 
-export function goalsResponse(db: Db, athleteId: number, today?: string): GoalsResponse {
+/** `seed`: whether default goals may be seeded now (see ensureGoals). */
+export function goalsResponse(db: Db, athleteId: number, today?: string, o: { seed?: boolean } = {}): GoalsResponse {
   const weekStart = weekStartOfAthlete(db, athleteId);
   const days = resolveDays(db, athleteId, today);
   const firstDay = firstDataDay(db, athleteId);
   const rows = loadDaily(db, athleteId);
-  const goals = ensureGoals(db, athleteId, rows, days.asOf, weekStart, firstDay);
+  const goals = ensureGoals(db, athleteId, rows, days.asOf, weekStart, firstDay, o.seed ?? true);
   const buckets = periodBuckets(rows, weekStart);
   const checks = loadChecks(db, athleteId);
   return {
@@ -259,6 +269,6 @@ export function goalsResponse(db: Db, athleteId: number, today?: string): GoalsR
     goals: goals.map((g) =>
       goalWithProgress(g, rows, buckets, days.asOf, weekStart, firstDay, { checks: checks.get(g.id), today: days.today }),
     ),
-    suggestions: suggestGoals(rows, goals, days.asOf, weekStart, firstDay),
+    suggestions: suggestGoals(rows, goals, days.asOf, weekStart, firstDay, undefined, getSettings(db, athleteId).units),
   };
 }

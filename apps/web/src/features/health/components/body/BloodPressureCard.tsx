@@ -3,13 +3,13 @@ import { AlertTriangle, CheckCircle2, CircleAlert, HeartPulse, OctagonAlert, typ
 import { classifyBloodPressure, mean, type BloodPressureCategory, type BloodPressureReading } from '@cadence/shared';
 import { ChartCard } from '@/components/charts/ChartCard';
 import { EChart } from '@/components/charts/EChart';
+import { measureColor } from '@/components/charts/measures';
 import { axisTooltip, grid, legend, lineSeries, timeAxis, tooltipHtml, valueAxis } from '@/components/charts/options';
 import { useChartTheme } from '@/components/charts/theme';
 import { Badge } from '@/components/ui';
 import { useFormat } from '@/lib/format';
 import { useT } from '@/lib/i18n';
-import { LEGEND_LINE_ICON, dayAxisLabelUtc } from '../../lib/chart';
-import { measureColor } from '../../lib/colors';
+import { LEGEND_LINE_ICON, dayAxisLabelUtc, numAxisLabel } from '../../lib/chart';
 
 /** Status colors are only used together with an icon and a label (the badge text). */
 const CATEGORY: Record<BloodPressureCategory, { tone: 'good' | 'warning' | 'critical'; icon: LucideIcon }> = {
@@ -62,7 +62,7 @@ export function BloodPressureCard({ readings, loading }: { readings: BloodPressu
         return tooltipHtml(fmt.date(r.ts, r.tzMin, 'dateTime'), rows, theme);
       }),
       xAxis: timeAxis(theme, { axisLabel: { color: theme.muted, fontSize: 11, hideOverlap: true, formatter: dayAxisLabelUtc(fmt) } }),
-      yAxis: valueAxis(theme, { scale: true, axisLabel: { color: theme.muted, fontSize: 11 } }),
+      yAxis: valueAxis(theme, { scale: true, axisLabel: { color: theme.muted, fontSize: 11, formatter: numAxisLabel(fmt) } }),
       series: [sys, dia],
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -77,9 +77,10 @@ export function BloodPressureCard({ readings, loading }: { readings: BloodPressu
       title={`${t('health.body.bp.title')} (mmHg)`}
       subtitle={t('health.body.bp.subtitle')}
       icon={HeartPulse}
+      // rows only while the table view is open: up to thousands of readings, each with a badge
       table={
         readings.length
-          ? {
+          ? () => ({
               columns: [
                 { key: 'when', label: t('health.common.date') },
                 { key: 'sys', label: sysName, numeric: true },
@@ -92,7 +93,7 @@ export function BloodPressureCard({ readings, loading }: { readings: BloodPressu
                 dia: fmt.int(r.diastolic),
                 cat: <BloodPressureBadge systolic={r.systolic} diastolic={r.diastolic} />,
               })),
-            }
+            })
           : undefined
       }
       footer={

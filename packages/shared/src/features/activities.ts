@@ -5,11 +5,14 @@
  * Endpoints (mounted under /api/activities):
  *   GET /summary?today=&weekStart=   → ActivitiesSummary   (athlete card on the dashboard)
  *   GET /list?…                      → ActivityListPage    (feed + activities list, with medals and totals)
+ *   GET /export.csv?…&lang=&units=   → text/csv attachment (every activity matching the list filters, no paging)
  *   GET /:id/nav                     → ActivityNav         (previous / next activity)
  *   GET /:id/analysis                → ActivityAnalysis    (computed from the streams, cached)
- *   GET /:id/similar                 → ActivitySimilar     (similar efforts for the comparison chart)
+ *   GET /:id/similar?limit=          → ActivitySimilar     (similar efforts for the comparison chart)
  *
- * All values are canonical units (m, s, m/s, bpm, W); never localised on the server.
+ * All JSON values are canonical units (m, s, m/s, bpm, W); never localised on the server. The one exception is the
+ * CSV export: a spreadsheet for people, with headers in `lang` ('en' | 'de') and values in `units` ('metric' |
+ * 'imperial', default: the athlete's setting).
  */
 import type { Page, WorkoutSummary } from '../core';
 
@@ -58,6 +61,8 @@ export interface ActivitiesSummary {
   /** The 7 days of the current week. */
   week: ActivityWeekDay[];
   firstActivityTs: number | null;
+  /** Local day 'YYYY-MM-DD' of the first activity, in its own time zone ("training since"). */
+  firstActivityDay: string | null;
   lastActivityTs: number | null;
   /** Best efforts set in the last 30 days that are still the all-time best (rank 1). */
   recentPrs: number;
@@ -82,13 +87,26 @@ export interface ActivityListItem extends WorkoutSummary {
 
 export type ActivitySort = 'start' | 'distance' | 'time' | 'pace' | 'elevation' | 'hr' | 'effort';
 
-/** GET /api/activities/list query (same filters as GET /api/workouts plus more sort keys). */
+/**
+ * GET /api/activities/list (and /export.csv) query. Duplicates are always left out; limit ≤ 200.
+ */
 export interface ActivityListQuery {
   /** Comma separated sport keys. */
   sport?: string;
   /** Start time range, unix seconds (from inclusive, to exclusive). */
   from?: number;
   to?: number;
+  /**
+   * Local days 'YYYY-MM-DD' (both inclusive): every activity on the day of its own time zone, like the calendar and
+   * the heatmap (a run at 23:30 in New York stays on its day for a viewer in Berlin).
+   */
+  fromDay?: string;
+  toDay?: string;
+  /**
+   * Search: name, notes and source; the places the activity starts, ends at or passes (also by their German names,
+   * e.g. "Wien" → Vienna); the countries it passes (English or German name); and the localized default names of
+   * unnamed activities by time of day ("Morning Run", "Lauf am Morgen").
+   */
   q?: string;
   hasRoute?: boolean;
   includeHidden?: boolean;
@@ -128,14 +146,17 @@ export interface ActivityNav {
 // Analysis (GET /api/activities/:id/analysis)
 // ---------------------------------------------------------------------------
 
-/** Aerobic decoupling: output:HR of the first vs the second half of the moving time. */
+/** Aerobic decoupling: output:HR of the first vs the second half of the moving time after the warm-up. */
 export interface ActivityDecoupling {
   /** 'pace' = (grade adjusted) speed : heart rate, 'power' = power : heart rate. */
   basis: 'pace' | 'power';
   /** Average output (m/s or W) and heart rate of each half. */
   first: { output: number; hr: number };
   second: { output: number; hr: number };
-  /** (ratio₁ − ratio₂) / ratio₁ × 100. Below 5 % = well coupled (aerobically fit for this effort). */
+  /**
+   * (ratio₁ − ratio₂) / ratio₁ × 100. Below 5 % = well coupled (aerobically fit for this effort). Values beyond
+   * ±60 % are recording problems and left out.
+   */
   pct: number;
 }
 
@@ -219,7 +240,17 @@ export interface ActivityAnalysis {
   avgSpeed: number | null;
   /** Grade adjusted average speed over the moving time (m/s) — foot sports with elevation data. */
   gapSpeed: number | null;
+  /** Power based for rides with power, else from the (grade adjusted) speed. */
   efficiency: ActivityEfficiency | null;
+  /**
+   * Efficiency from the (grade adjusted) speed ('gap' / 'speed' basis), also for rides with power where `efficiency`
+   * is power based. Progress → Trends plots it as "efficiency" (m per beat = m/min per bpm).
+   */
+  paceEfficiency?: ActivityEfficiency | null;
+  /**
+   * Power based for rides with power, else from the (grade adjusted) speed. Leaves out the first 5 minutes of moving
+   * time (warm-up) and needs 20 more minutes. Progress → Trends shows the same value.
+   */
   decoupling: ActivityDecoupling | null;
   climbs: ActivityClimb[];
   /** From 'lap' workout events. */
@@ -252,8 +283,15 @@ export interface ActivitySimilarItem {
   avgHr: number | null;
   elevationGainM: number | null;
   effort: number | null;
+  /**
+   * Efficiency factor on `ActivitySimilar.efficiencyBasis` (never mixed units); null when the activity has none on
+   * that basis.
+   */
   efficiency: number | null;
-  /** Same start and finish (±300 m) and distance (±10 %) as the activity asked for. */
+  /**
+   * On the route of the activity asked for: the same route in Maps → Routes; for an activity without one there (e.g.
+   * a track with breaks) the same start and finish (±300 m) and distance (±10 %).
+   */
   sameRoute: boolean;
   /** The activity asked for. */
   current: boolean;
@@ -264,6 +302,12 @@ export interface ActivitySimilar {
   sport: string;
   /** 'distance' = same sport within ±15 % distance; 'duration' = same sport within ±25 % duration. */
   basis: 'distance' | 'duration';
+  /**
+   * Basis of every `items[].efficiency`: the current activity's efficiency basis (else the most common one).
+   * Rides with power compare W per bpm with other rides with power; rides without power compare the speed based
+   * efficiency of all rides.
+   */
+  efficiencyBasis?: ActivityEfficiency['basis'] | null;
   /** The distance (m) or duration (s) window used. */
   min: number;
   max: number;
@@ -272,7 +316,11 @@ export interface ActivitySimilar {
   /** 1 = fastest (distance basis) / hardest effort (duration basis) among `items`. */
   rank: number | null;
   count: number;
-  /** Rank and count among `sameRoute` items (including the current one). */
+  /**
+   * On a route of Maps → Routes: rank by time and count of every visible activity on it (also those not in `items`),
+   * the same numbers as the activity's route card. Without such a route: rank (as `rank`) and count among the
+   * `sameRoute` items, including the current one. Rank null when the route has a single activity.
+   */
   routeRank: number | null;
   routeCount: number;
 }

@@ -3,9 +3,13 @@
  * for a given camera, the canvas is saved as a JPEG, and the image is kept in IndexedDB — every preview is rendered
  * once and then shown from the browser like any image (no WebGL per preview, no API key).
  *
+ * Previews hold the image they show (`holdSnapshot`): a queued render nobody holds any more (scrolled away, resized
+ * to another size) is skipped, and the object URLs of images no preview shows are freed beyond a small reserve.
+ *
  * Nothing here touches the DOM at import time (the module is also imported by Node tests through shareImage.ts).
  */
 import type { ErrorEvent, Map as MapLibreMap } from 'maplibre-gl';
+import { queryClient } from '../../lib/api';
 import { DARK, FALLBACK_STYLE, LIBERTY, POSITRON } from './styles';
 import { unproject, type FitView, type ThumbnailBasemap } from './tiles';
 
@@ -135,8 +139,23 @@ function waitFor(map: MapLibreMap, event: 'idle' | 'style.load', ms: number): Pr
   });
 }
 
+/**
+ * The first render waits until the page has loaded its data and the browser is idle: downloading MapLibre (about
+ * 1.6 MB of script) and starting WebGL must not compete with the first paint of the page (a cold cache on the
+ * dashboard). Previews show the plain route until then.
+ */
+async function pageSettled(): Promise<void> {
+  const until = Date.now() + 4000;
+  while (queryClient.isFetching() > 0 && Date.now() < until) await new Promise((r) => setTimeout(r, 150));
+  await new Promise<void>((resolve) => {
+    if (typeof requestIdleCallback === 'function') requestIdleCallback(() => resolve(), { timeout: 1500 });
+    else setTimeout(resolve, 100);
+  });
+}
+
 async function renderer(style: string): Promise<Renderer> {
   rendererPromise ??= (async () => {
+    await pageSettled();
     const [{ Map: MapLibre, setWorkerUrl }, worker] = await Promise.all([
       import('maplibre-gl'),
       import('maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'),
@@ -180,83 +199,207 @@ async function renderer(style: string): Promise<Renderer> {
   return rendererPromise;
 }
 
-let chain: Promise<unknown> = Promise.resolve();
-
-interface Rendered {
+export interface Rendered {
   blob: Blob;
   /** False when the fallback style was used: the image is shown but not kept. */
   keep: boolean;
 }
 
+/** A queued render that nobody waited for any more when its turn came. */
+export const SKIPPED = 'skipped';
+
 /** Render one snapshot; null when the map could not be rendered completely (offline, tile errors, timeout). */
-function renderSnapshot(req: SnapshotRequest): Promise<Rendered | null> {
-  const job = async (): Promise<Rendered | null> => {
-    const wanted = STYLE_URL[req.base];
-    const r = await renderer(wanted);
-    const { map, el } = r;
-    const style = failedStyles.has(wanted) ? FALLBACK_STYLE : wanted;
-    if (r.style !== style) {
-      r.style = style;
-      map.setStyle(style);
-      await waitFor(map, 'style.load', 20_000);
-    }
-    el.style.width = `${Math.round(req.width)}px`;
-    el.style.height = `${Math.round(req.height)}px`;
-    map.setPixelRatio(req.pixelRatio);
-    map.resize();
-    let failed = false;
-    const onError = (e: ErrorEvent) => {
-      const ev = e as unknown as { tile?: unknown; sourceId?: string };
-      if (ev.tile || ev.sourceId) failed = true;
-    };
-    map.on('error', onError);
-    const [lon, lat] = unproject(req.view.cx, req.view.cy);
-    // MapLibre's world is 512 CSS px wide at zoom 0
-    map.jumpTo({ center: [lon, lat], zoom: Math.max(0, Math.log2(req.view.scale / 512)) });
-    map.triggerRepaint();
-    const idle = await waitFor(map, 'idle', 20_000);
-    map.off('error', onError);
-    if (!idle || failed) return null;
-    const keep = r.style === wanted;
-    return new Promise<Rendered | null>((resolve) =>
-      map.getCanvas().toBlob((blob) => resolve(blob ? { blob, keep } : null), 'image/jpeg', 0.86),
-    );
+async function renderOne(req: SnapshotRequest, wanted: () => boolean): Promise<Rendered | null | typeof SKIPPED> {
+  const wantedStyle = STYLE_URL[req.base];
+  const r = await renderer(wantedStyle);
+  // the first render waits for the page to settle: the preview may be gone by now
+  if (!wanted()) return SKIPPED;
+  const { map, el } = r;
+  const style = failedStyles.has(wantedStyle) ? FALLBACK_STYLE : wantedStyle;
+  if (r.style !== style) {
+    r.style = style;
+    map.setStyle(style);
+    await waitFor(map, 'style.load', 20_000);
+  }
+  el.style.width = `${Math.round(req.width)}px`;
+  el.style.height = `${Math.round(req.height)}px`;
+  map.setPixelRatio(req.pixelRatio);
+  map.resize();
+  let failed = false;
+  const onError = (e: ErrorEvent) => {
+    const ev = e as unknown as { tile?: unknown; sourceId?: string };
+    if (ev.tile || ev.sourceId) failed = true;
   };
-  const p = chain.then(job, job);
-  chain = p.catch(() => null);
-  return p.catch(() => null);
+  map.on('error', onError);
+  const [lon, lat] = unproject(req.view.cx, req.view.cy);
+  // MapLibre's world is 512 CSS px wide at zoom 0
+  map.jumpTo({ center: [lon, lat], zoom: Math.max(0, Math.log2(req.view.scale / 512)) });
+  map.triggerRepaint();
+  const idle = await waitFor(map, 'idle', 20_000);
+  map.off('error', onError);
+  if (!idle || failed) return null;
+  const keep = r.style === wantedStyle;
+  return new Promise<Rendered | null>((resolve) =>
+    map.getCanvas().toBlob((blob) => resolve(blob ? { blob, keep } : null), 'image/jpeg', 0.86),
+  );
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
+// In-page store: one entry per key with its object URL and the previews holding it; one render at a time.
 
-const urls = new Map<string, Promise<string | null>>();
-const ready = new Map<string, string>();
+export interface SnapshotBackend {
+  /** The cached image of a key, or null. */
+  get(key: string): Promise<Blob | null>;
+  /** Render one image (never two at once); SKIPPED when `wanted()` turned false while it waited. */
+  render(req: SnapshotRequest, wanted: () => boolean): Promise<Rendered | null | typeof SKIPPED>;
+  /** Keep a rendered image in the cache. */
+  put(key: string, blob: Blob): void;
+  createUrl(blob: Blob): string;
+  revokeUrl(url: string): void;
+}
 
-/** The object URL of a snapshot when it is already available in this page (for a flicker-free first render). */
-export const peekSnapshot = (key: string): string | null => ready.get(key) ?? null;
+export interface SnapshotHold {
+  /** Object URL of the image; null when it cannot be rendered. */
+  promise: Promise<string | null>;
+  /** The preview no longer shows (or waits for) the image. */
+  release(): void;
+}
 
-/** Object URL of the map image for a view (from the cache or rendered now); null when it cannot be rendered. */
-export function mapSnapshot(req: SnapshotRequest): Promise<string | null> {
-  const key = snapshotKey(req);
-  let p = urls.get(key);
-  if (!p) {
-    p = (async () => {
-      let blob = await cacheGet(key);
+export interface SnapshotStore {
+  peek(key: string): string | null;
+  /** The image without a hold: always rendered, and its URL stays valid for a minute at least. */
+  get(req: SnapshotRequest): Promise<string | null>;
+  hold(req: SnapshotRequest): SnapshotHold;
+}
+
+interface Entry {
+  promise: Promise<string | null>;
+  url: string | null;
+  /** Previews showing or waiting for the image: it is only rendered while someone holds it. */
+  holders: number;
+  /** Asked for without a hold (share image): rendered in any case, and not freed before `keepUntil`. */
+  forced: boolean;
+  keepUntil: number;
+}
+
+/** Ready images that no preview shows stay in memory up to this number (the most recently used); older ones are freed. */
+const MAX_IDLE_URLS = 100;
+/** A failed image is tried again when it is asked for after this time (e.g. back online). */
+const RETRY_MS = 30_000;
+/** How long an image handed out without a hold stays valid at least. */
+const FORCED_KEEP_MS = 60_000;
+
+export function createSnapshotStore(backend: SnapshotBackend, maxIdle = MAX_IDLE_URLS): SnapshotStore {
+  /** In the order of their last use. */
+  const entries = new Map<string, Entry>();
+  let queue: Promise<unknown> = Promise.resolve();
+
+  const touch = (key: string, e: Entry) => {
+    entries.delete(key);
+    entries.set(key, e);
+  };
+  const drop = (key: string, e: Entry) => {
+    if (entries.get(key) === e) entries.delete(key);
+  };
+  const prune = () => {
+    let idle = 0;
+    for (const e of entries.values()) if (e.url && e.holders === 0) idle++;
+    const now = Date.now();
+    for (const [key, e] of entries) {
+      if (idle <= maxIdle) break;
+      if (!e.url || e.holders > 0 || e.keepUntil > now) continue;
+      backend.revokeUrl(e.url);
+      entries.delete(key);
+      idle--;
+    }
+  };
+  /** Queue a render; whether it is still wanted is decided when its turn comes. */
+  const render = (req: SnapshotRequest, wanted: () => boolean) => {
+    const job = () => (wanted() ? backend.render(req, wanted) : SKIPPED);
+    const p = queue.then(job, job);
+    queue = p.catch(() => null);
+    return p.catch(() => null);
+  };
+  const load = (req: SnapshotRequest, forced: boolean): Entry => {
+    const key = snapshotKey(req);
+    const known = entries.get(key);
+    if (known) {
+      touch(key, known);
+      if (forced) {
+        known.forced = true;
+        if (known.url) known.keepUntil = Date.now() + FORCED_KEEP_MS;
+      }
+      return known;
+    }
+    const e: Entry = { promise: Promise.resolve(null), url: null, holders: 0, forced, keepUntil: 0 };
+    const wanted = () => e.forced || e.holders > 0;
+    e.promise = (async () => {
+      let blob = await backend.get(key);
       if (!blob) {
-        const rendered = await renderSnapshot(req);
+        let rendered: Rendered | null | typeof SKIPPED;
+        do rendered = await render(req, wanted);
+        while (rendered === SKIPPED && wanted());
+        if (rendered === SKIPPED) {
+          // nobody waits for it any more (scrolled away, resized): rendered when it is asked for again
+          drop(key, e);
+          return null;
+        }
         blob = rendered?.blob ?? null;
-        if (rendered?.keep) void cachePut(key, rendered.blob);
+        if (rendered?.keep) backend.put(key, rendered.blob);
       }
       if (!blob) {
-        // try again later (e.g. back online)
-        window.setTimeout(() => urls.delete(key), 30_000);
+        setTimeout(() => drop(key, e), RETRY_MS);
         return null;
       }
-      const url = URL.createObjectURL(blob);
-      ready.set(key, url);
-      return url;
+      e.url = backend.createUrl(blob);
+      if (e.forced) e.keepUntil = Date.now() + FORCED_KEEP_MS;
+      prune();
+      return e.url;
     })();
-    urls.set(key, p);
-  }
-  return p;
+    entries.set(key, e);
+    return e;
+  };
+
+  return {
+    peek(key) {
+      const e = entries.get(key);
+      if (!e?.url) return null;
+      touch(key, e);
+      return e.url;
+    },
+    get: (req) => load(req, true).promise,
+    hold(req) {
+      const key = snapshotKey(req);
+      const e = load(req, false);
+      e.holders++;
+      let held = true;
+      return {
+        promise: e.promise,
+        release() {
+          if (!held) return;
+          held = false;
+          e.holders--;
+          if (entries.get(key) === e) touch(key, e);
+          prune();
+        },
+      };
+    },
+  };
 }
+
+const store = createSnapshotStore({
+  get: cacheGet,
+  render: renderOne,
+  put: (key, blob) => void cachePut(key, blob),
+  createUrl: (blob) => URL.createObjectURL(blob),
+  revokeUrl: (url) => URL.revokeObjectURL(url),
+});
+
+/** The object URL of a snapshot when it is already available in this page (for a flicker-free first render). */
+export const peekSnapshot = (key: string): string | null => store.peek(key);
+
+/** Object URL of the map image for a view (from the cache or rendered now); null when it cannot be rendered. */
+export const mapSnapshot = (req: SnapshotRequest): Promise<string | null> => store.get(req);
+
+/** The map image of a preview for as long as it is shown: release it when the preview unmounts or changes. */
+export const holdSnapshot = (req: SnapshotRequest): SnapshotHold => store.hold(req);

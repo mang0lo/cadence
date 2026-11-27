@@ -32,6 +32,7 @@ export const messages: Dictionary = {
     },
     heatmap: {
       subtitle: 'All your routes on one map. Streets you use often glow brighter.',
+      activities: { one: '{count} activity', other: '{count} activities' },
       timelapse: 'Time-lapse',
       period: 'Period',
       colors: 'Colors',
@@ -63,9 +64,9 @@ export const messages: Dictionary = {
       stats: {
         tiles: 'Visited tiles',
         maxSquare: 'Max square',
-        maxSquareHint: '{count} tiles in one block',
+        maxSquareHint: { one: '{count} tile in one block', other: '{count} tiles in one block' },
         maxCluster: 'Max cluster',
-        maxClusterHint: '{count} tiles with all neighbours',
+        maxClusterHint: { one: '{count} tile with all neighbours', other: '{count} tiles with all neighbours' },
         maxClusterHelp:
           'A cluster is a connected group of visited tiles that all have a visited tile on all four sides (north, east, south, west).',
         newThisMonth: 'New this month',
@@ -114,6 +115,8 @@ export const messages: Dictionary = {
       latest: 'Latest',
       showMore: 'Show {count} more',
       empty: 'No repeated routes yet',
+      noneAtMin: 'No route done at least {min} times yet.',
+      showFromTwice: 'Show routes done twice or more',
       emptyHint:
         'A route shows up here once you have followed the same course at least twice (same start, same finish, same path).',
       notFound: 'Route not found',
@@ -204,7 +207,6 @@ export const messages: Dictionary = {
       rank: '#{rank} of {count}',
       segment: 'Segment',
       time: 'Time',
-      pace: 'Pace',
       hr: 'Avg HR',
       rankCol: 'Rank',
       pr: 'PR',
@@ -241,6 +243,7 @@ export const messages: Dictionary = {
     },
     heatmap: {
       subtitle: 'Alle deine Strecken auf einer Karte. Häufig genutzte Straßen leuchten heller.',
+      activities: { one: '{count} Aktivität', other: '{count} Aktivitäten' },
       timelapse: 'Zeitraffer',
       period: 'Zeitraum',
       colors: 'Farben',
@@ -273,9 +276,9 @@ export const messages: Dictionary = {
       stats: {
         tiles: 'Besuchte Kacheln',
         maxSquare: 'Max. Quadrat',
-        maxSquareHint: '{count} Kacheln in einem Block',
+        maxSquareHint: { one: '{count} Kachel in einem Block', other: '{count} Kacheln in einem Block' },
         maxCluster: 'Max. Cluster',
-        maxClusterHint: '{count} Kacheln mit allen Nachbarn',
+        maxClusterHint: { one: '{count} Kachel mit allen Nachbarn', other: '{count} Kacheln mit allen Nachbarn' },
         maxClusterHelp:
           'Ein Cluster ist eine zusammenhängende Gruppe besuchter Kacheln, bei denen auf allen vier Seiten (Nord, Ost, Süd, West) ebenfalls eine besuchte Kachel liegt.',
         newThisMonth: 'Neu in diesem Monat',
@@ -330,6 +333,8 @@ export const messages: Dictionary = {
       latest: 'Letzte',
       showMore: '{count} weitere anzeigen',
       empty: 'Noch keine wiederholten Strecken',
+      noneAtMin: 'Noch keine Strecke, die du mindestens {min}-mal gemacht hast.',
+      showFromTwice: 'Strecken ab zwei Durchgängen zeigen',
       emptyHint:
         'Eine Strecke erscheint hier, sobald du denselben Kurs mindestens zweimal gemacht hast (gleicher Start, gleiches Ziel, gleicher Verlauf).',
       notFound: 'Strecke nicht gefunden',
@@ -423,7 +428,6 @@ export const messages: Dictionary = {
       rank: 'Platz {rank} von {count}',
       segment: 'Segment',
       time: 'Zeit',
-      pace: 'Pace',
       hr: 'Ø HF',
       rankCol: 'Platz',
       pr: 'PR',

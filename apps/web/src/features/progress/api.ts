@@ -1,4 +1,4 @@
-import { useQueryClient } from '@tanstack/react-query';
+import { useQueryClient, type Query, type QueryClient } from '@tanstack/react-query';
 import { useCallback } from 'react';
 import type {
   PaceAtHrResponse,
@@ -141,13 +141,29 @@ export const usePowerCurve = (p: PowerCurveParams | null) =>
 export const useFtpEstimate = (sport: string | null) =>
   useApi<ProgressFtpResponse>(key('power-ftp'), '/progress/power/ftp', { sport: sportParam(sport), today: todayKey() });
 
+/**
+ * The cache after `band` was saved for `sport`. The card already shows that band (it asks for it explicitly), so
+ * nothing is fetched again: the cached responses of the sport list it as their 'saved' suggestion (first, like the
+ * server does), and only the responses without an explicit band, whose default was the old saved band, are
+ * invalidated (refetched if shown, otherwise when next used). Other sports keep their own saved band.
+ */
+export function applySavedHrBand(qc: QueryClient, sport: string, band: ProgressHrBand): Promise<void> {
+  const params = (q: Query) => q.queryKey[2] as { sport?: string; lo?: number } | null | undefined;
+  qc.setQueriesData<PaceAtHrResponse>({ queryKey: key('pace-at-hr'), predicate: (q) => params(q)?.sport === sport }, (old) =>
+    old
+      ? { ...old, suggestions: [{ key: 'saved', lo: band.lo, hi: band.hi }, ...old.suggestions.filter((s) => s.key !== 'saved')] }
+      : old,
+  );
+  return qc.invalidateQueries({ queryKey: key('pace-at-hr'), predicate: (q) => params(q)?.sport === sport && params(q)?.lo === undefined });
+}
+
 /** Remember the heart-rate band of a sport (server-side preference, shared by all devices). */
 export function useSaveHrBand() {
   const qc = useQueryClient();
   return useCallback(
     async (sport: string, band: ProgressHrBand) => {
       await api.patch<ProgressPreferences>('/progress/preferences', { hrBands: { [sport]: band } });
-      await qc.invalidateQueries({ queryKey: key('pace-at-hr') });
+      await applySavedHrBand(qc, sport, band);
     },
     [qc],
   );

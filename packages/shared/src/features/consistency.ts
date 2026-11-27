@@ -160,6 +160,7 @@ export interface DayHealth {
   activeEnergyKcal: number | null;
   exerciseMin: number | null;
   restingHr: number | null;
+  /** Asleep minutes of the night that ended on this day (the sleep pages' night: one source, COROS included). */
   sleepMin: number | null;
 }
 
@@ -252,6 +253,13 @@ export const LONGEST_PRESETS: Record<'run' | 'ride' | 'swim', { key: string; dis
     { key: 'swim10k', distanceM: 10000 },
   ],
 };
+
+/**
+ * GPS/rounding tolerance of single-activity distances: an activity of at least this share of a distance counts
+ * ("a 5K" = ≥ 4,975 m; 42,150 m earn the marathon trophy and reach a 42,195 m 'longest' goal). The server's
+ * trophies, challenges and goals and the web's goal display use this one value.
+ */
+export const DISTANCE_TOLERANCE = 0.995;
 
 /** Triathlon distances (m) per leg: swim, bike, run. */
 export const TRIATHLON_DISTANCES: { key: 'olympicTri' | 'halfIronman' | 'ironman'; swim: number; ride: number; run: number }[] = [
@@ -411,7 +419,10 @@ export interface Achievement {
   progress: number;
   earned: boolean;
   earnedDay: string | null;
-  /** Activity that earned it (null for ring / streak-of-weeks achievements without a single activity). */
+  /**
+   * Activity that earned it: for streaks the first activity of the day (or week) that completed them; null for ring
+   * achievements and when no single activity applies.
+   */
   workout: AchievementWorkout | null;
   /** Earned since the last few imports (within 14 days of being detected). */
   isNew: boolean;
@@ -535,6 +546,7 @@ export interface YearHealth {
   stepsPerDay: YearHealthValue;
   stepsTotal: number | null;
   bestStepsDay: { day: string; value: number } | null;
+  /** Mean asleep minutes per night (nights of more than an hour, by wake-up day). */
   sleepPerNightMin: YearHealthValue;
   activeEnergyKcal: YearHealthValue;
   flights: YearHealthValue;

@@ -15,8 +15,7 @@ import { useApi } from '@/lib/api';
 import { useFormat } from '@/lib/format';
 import { useI18n, useT } from '@/lib/i18n';
 import { Spark } from '../components/Spark';
-
-const browserTz = () => -new Date().getTimezoneOffset();
+import { itemDate } from '../lib/explorer';
 
 const ITEM_LINK: Record<string, string> = {
   ecg: '/health/ecg',
@@ -53,10 +52,10 @@ function OtherItems({ items }: { items: ExplorerItem[] }) {
               </span>
               <div className="min-w-0">
                 <div className="truncate text-sm font-medium text-fg">{label}</div>
-                <div className="text-xs text-fg-3 tabular">{t('health.explorer.items.count', { count: fmt.int(it.count) })}</div>
+                <div className="text-xs text-fg-3 tabular">{t('health.explorer.items.count', { count: it.count })}</div>
                 {it.firstTs !== null && it.lastTs !== null && (
                   <div className="truncate text-xs text-fg-3">
-                    {fmt.date(it.firstTs, browserTz(), 'day')} – {fmt.date(it.lastTs, browserTz(), 'day')}
+                    {itemDate(fmt, it.key, it.firstTs)} – {itemDate(fmt, it.key, it.lastTs)}
                   </div>
                 )}
               </div>
@@ -93,8 +92,8 @@ function TypeRow({ type }: { type: ExplorerType }) {
       </TD>
       <TD numeric>{fmt.int(type.count)}</TD>
       <TD className="hidden whitespace-nowrap text-xs text-fg-3 md:table-cell">
-        {type.firstTs !== null ? fmt.date(type.firstTs, browserTz(), 'day') : '–'} –{' '}
-        {type.lastTs !== null ? fmt.date(type.lastTs, browserTz(), 'day') : '–'}
+        {type.firstTs !== null ? fmt.browserDate(type.firstTs, 'day') : '–'} –{' '}
+        {type.lastTs !== null ? fmt.browserDate(type.lastTs, 'day') : '–'}
       </TD>
       <TD className="hidden w-[120px] sm:table-cell">
         <Spark data={type.spark} height={26} dot={false} ariaLabel={name} />

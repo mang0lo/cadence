@@ -7,7 +7,10 @@ import { cn } from '@/components/ui';
 import { useT } from '@/lib/i18n';
 import { useSettings } from '@/lib/settings';
 import { useResolvedTheme } from '@/lib/theme';
-import { FALLBACK_STYLE, MAP_STYLE_KEYS, mapStyleFor, TERRAIN_SOURCE, TERRAIN_SOURCE_ID } from './styles';
+import { isStyleReady, markStyleReady, trackStyleReady } from './layers';
+import { FALLBACK_STYLE, MAP_STYLE_KEYS, mapStyleFor } from './styles';
+import { applyTerrain, useTerrain } from './terrain';
+import './map.css';
 
 // MapLibre 6 resolves its worker relative to its own module, which bundlers relocate — point it at
 // the Vite-bundled worker instead.
@@ -26,7 +29,7 @@ export interface BaseMapProps {
   zoom?: number;
   padding?: number;
   interactive?: boolean;
-  /** 3D terrain (raster DEM) + sky. */
+  /** 3D terrain (raster DEM) + sky. Applied without moving the camera; the built-in 3D button also tilts it. */
   terrain?: boolean;
   terrainExaggeration?: number;
   /** Built-in style switcher + 3D toggle in the top-right corner. */
@@ -36,7 +39,9 @@ export interface BaseMapProps {
   onReady?: (map: Map) => void;
   /**
    * Called after EVERY style load (initial and after switching style/theme). Add your sources and
-   * layers here — switching the basemap removes them.
+   * layers here — switching the basemap removes them. Effects that change overlays later must check
+   * `isStyleReady(map)` (components/map/layers.ts), not `map.isStyleLoaded()`, and rely on this callback to
+   * re-apply them after a style switch.
    */
   onStyleLoad?: (map: Map) => void;
   /** Overlay UI (absolutely positioned children). */
@@ -66,29 +71,15 @@ export function BaseMap({
   const theme = useResolvedTheme();
   const t = useT();
   const [pref, setPref] = useState<MapStylePref>(styleKey ?? settings.mapStyle);
-  const [terrain, setTerrain] = useState(terrainProp);
+  const { on: terrain, toggle: toggleTerrain } = useTerrain(mapRef, terrainProp, terrainExaggeration);
   const [menu, setMenu] = useState(false);
   const styleLoadRef = useRef(onStyleLoad);
   styleLoadRef.current = onStyleLoad;
   const terrainRef = useRef(terrain);
   terrainRef.current = terrain;
+  const scaleRef = useRef<ScaleControl | null>(null);
 
   useEffect(() => setPref(styleKey ?? settings.mapStyle), [styleKey, settings.mapStyle]);
-  useEffect(() => setTerrain(terrainProp), [terrainProp]);
-
-  const applyTerrain = (map: Map, on: boolean) => {
-    if (on) {
-      if (!map.getSource(TERRAIN_SOURCE_ID)) map.addSource(TERRAIN_SOURCE_ID, TERRAIN_SOURCE);
-      map.setTerrain({ source: TERRAIN_SOURCE_ID, exaggeration: terrainExaggeration });
-      try {
-        map.setSky({ 'sky-color': '#9cc3ef', 'horizon-color': '#e8eef5', 'sky-horizon-blend': 0.6 });
-      } catch {
-        /* sky unsupported */
-      }
-    } else if (map.getTerrain()) {
-      map.setTerrain(null);
-    }
-  };
 
   // create once
   useEffect(() => {
@@ -105,18 +96,21 @@ export function BaseMap({
       fadeDuration: 150,
     });
     mapRef.current = map;
+    // registered first, so the style is ready before every other 'style.load' listener runs (e.g. whenStyleReady)
+    trackStyleReady(map);
     if (controls && interactive) {
       map.addControl(new NavigationControl({ visualizePitch: true }), 'bottom-right');
-      map.addControl(new ScaleControl({ unit: settings.units === 'imperial' ? 'imperial' : 'metric' }), 'bottom-left');
+      scaleRef.current = new ScaleControl({ unit: settings.units === 'imperial' ? 'imperial' : 'metric' });
+      map.addControl(scaleRef.current, 'bottom-left');
     }
     map.on('style.load', () => {
-      applyTerrain(map, terrainRef.current);
+      applyTerrain(map, terrainRef.current, terrainExaggeration);
       styleLoadRef.current?.(map);
     });
     map.on('error', (e) => {
       // a style that cannot be loaded (e.g. renamed upstream) falls back to the light map instead of a blank one
       const url = (e.error as { url?: string } | undefined)?.url;
-      if (url && url !== FALLBACK_STYLE && /\/styles?\//.test(url) && !map.isStyleLoaded()) map.setStyle(FALLBACK_STYLE);
+      if (url && url !== FALLBACK_STYLE && /\/styles?\//.test(url) && !isStyleReady(map)) map.setStyle(FALLBACK_STYLE);
       console.warn('[map]', e.error?.message ?? e);
     });
     if (import.meta.env.DEV) (window as unknown as { __map: Map }).__map = map;
@@ -127,6 +121,7 @@ export function BaseMap({
       ro.disconnect();
       map.remove();
       mapRef.current = null;
+      scaleRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -138,16 +133,17 @@ export function BaseMap({
       first.current = false;
       return;
     }
-    mapRef.current?.setStyle(mapStyleFor(pref, theme), { diff: false });
+    const map = mapRef.current;
+    if (!map) return;
+    // overlays must wait for 'style.load' (their effects check isStyleReady and onStyleLoad re-adds them)
+    markStyleReady(map, false);
+    map.setStyle(mapStyleFor(pref, theme), { diff: false });
   }, [pref, theme]);
 
+  // the scale bar follows the unit setting
   useEffect(() => {
-    const map = mapRef.current;
-    if (map?.isStyleLoaded()) applyTerrain(map, terrain);
-    if (map && terrain && map.getPitch() < 30) map.easeTo({ pitch: 55, duration: 800 });
-    if (map && !terrain && map.getPitch() > 0) map.easeTo({ pitch: 0, duration: 600 });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [terrain]);
+    scaleRef.current?.setUnit(settings.units === 'imperial' ? 'imperial' : 'metric');
+  }, [settings.units]);
 
   return (
     <div className={cn('relative overflow-hidden rounded-card bg-surface-2', className)}>
@@ -158,7 +154,7 @@ export function BaseMap({
         <div className="absolute right-2 top-2 z-10 flex flex-col items-end gap-1.5">
           <div className="flex gap-1.5">
             <button
-              onClick={() => setTerrain((v) => !v)}
+              onClick={toggleTerrain}
               className={cn(
                 'grid size-8 place-items-center rounded-[10px] border border-border bg-surface text-fg-2 shadow-card hover:text-fg',
                 terrain && 'text-accent-fg',

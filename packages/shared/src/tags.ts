@@ -58,7 +58,8 @@ export function trainingKind(i: TrainingKindInput): TrainingKind | null {
 /**
  * Hard repetitions in a pace or power stream: stretches of at least 40 s clearly above the activity's median
  * (≥ 112 %), each after at least 30 s that was not hard. `t` in seconds, samples while not moving left out by the
- * caller. Hard time above 60 % of the activity is a hard steady effort, not intervals (0).
+ * caller: a gap of 30 s or more is a standing rest. Hard time above 60 % of the activity is a hard steady effort,
+ * not intervals (0).
  */
 export function hardReps(t: ArrayLike<number>, v: ArrayLike<number | null>): number {
   const ts: number[] = [];
@@ -86,27 +87,27 @@ export function hardReps(t: ArrayLike<number>, v: ArrayLike<number | null>): num
   let hardStart = -1;
   let restStart = ts[0]!;
   let rested = true;
+  // the hard stretch ends at `end`: from 40 s it is hard time, and a repetition when it followed a rest
+  const close = (end: number) => {
+    const len = end - hardStart;
+    if (len >= 40) {
+      hardTime += len;
+      if (rested) reps++;
+    }
+    hardStart = -1;
+    restStart = end;
+  };
   for (let i = 0; i < vs.length; i++) {
-    const hard = smooth[i]! >= 1.12 * median && (i === 0 || ts[i]! - ts[i - 1]! < 30);
-    if (hard) {
+    // standing still ends the stretch at its last moving sample, so the rest is neither hard time nor missing
+    if (hardStart >= 0 && i > 0 && ts[i]! - ts[i - 1]! >= 30) close(ts[i - 1]!);
+    if (smooth[i]! >= 1.12 * median) {
       if (hardStart < 0) {
         hardStart = ts[i]!;
         rested = ts[i]! - restStart >= 30;
       }
-    } else if (hardStart >= 0) {
-      const len = ts[i]! - hardStart;
-      if (len >= 40) {
-        hardTime += len;
-        if (rested) reps++;
-      }
-      hardStart = -1;
-      restStart = ts[i]!;
-    }
+    } else if (hardStart >= 0) close(ts[i]!);
   }
-  if (hardStart >= 0 && ts[ts.length - 1]! - hardStart >= 40) {
-    hardTime += ts[ts.length - 1]! - hardStart;
-    if (rested) reps++;
-  }
+  if (hardStart >= 0) close(ts[ts.length - 1]!);
   const total = ts[ts.length - 1]! - ts[0]!;
   return total > 0 && hardTime / total > 0.6 ? 0 : reps;
 }

@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import {
   SPORTS,
+  isSport,
   sportFromActivityType,
   workoutTitle,
   type Page,
@@ -40,7 +41,8 @@ const patchBody = z
   .object({
     name: z.string().max(200),
     notes: z.string().max(20_000).nullable(),
-    sport: z.string().refine((s) => s in SPORTS, { message: 'Unknown sport' }),
+    // own keys only: 'toString' or '__proto__' are in every object, but no sport
+    sport: z.string().max(40).refine(isSport, { message: 'Unknown sport' }),
     hidden: z.boolean(),
   })
   .partial();
@@ -207,12 +209,14 @@ export default async function workoutRoutes(app: FastifyInstance) {
       if (sportChanged)
         run(app.db, 'UPDATE best_efforts SET sport = ? WHERE workout_id = ?', [body.sport, id]);
       refreshDailyActivity(app.db, req.athleteId, localDay(w.start_ts, w.tz_min));
-      // sport changes alter moving thresholds / best efforts; both change what features aggregate
+      // sport changes alter moving thresholds / best efforts; both change what features aggregate. No health
+      // record changed: only this workout and its day are derived again (not the daily metrics of every type).
       if (sportChanged || hiddenChanged)
         app.jobs.enqueueDerive(req.athleteId, {
           origin: 'workout',
           workoutIds: [id],
           sinceDay: localDay(w.start_ts, w.tz_min),
+          records: false,
         });
     }
     return getWorkoutDetail(app.db, req.athleteId, id)!;
@@ -232,6 +236,7 @@ export default async function workoutRoutes(app: FastifyInstance) {
     const lang = req.query.lang === 'de' ? 'de' : 'en';
     const title = workoutTitle({ name: w.name, sport: w.sport, startTs: w.start_ts, tzMin: w.tz_min }, lang);
     const halfCadence = w.sport === 'run' || w.sport === 'walk' || w.sport === 'hike';
+    const gpxType = Object.hasOwn(GPX_TYPE, w.sport) ? GPX_TYPE[w.sport]! : xmlEscape(w.sport);
     const out: string[] = [
       '<?xml version="1.0" encoding="UTF-8"?>',
       '<gpx version="1.1" creator="Cadence" xmlns="http://www.topografix.com/GPX/1/1"',
@@ -239,7 +244,7 @@ export default async function workoutRoutes(app: FastifyInstance) {
       ' xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"',
       ' xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd http://www.garmin.com/xmlschemas/TrackPointExtension/v1 http://www.garmin.com/xmlschemas/TrackPointExtensionv1.xsd">',
       ` <metadata><name>${xmlEscape(title)}</name><time>${formatIsoUtc(w.start_ts)}</time></metadata>`,
-      ` <trk><name>${xmlEscape(title)}</name><type>${GPX_TYPE[w.sport] ?? w.sport}</type><trkseg>`,
+      ` <trk><name>${xmlEscape(title)}</name><type>${gpxType}</type><trkseg>`,
     ];
     // every part of the track (see WorkoutStreams.breaks) is its own <trkseg>
     const breaks = new Set(s.breaks ?? []);

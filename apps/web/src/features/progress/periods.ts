@@ -1,5 +1,5 @@
 import type { ProgressBucket } from '@cadence/shared';
-import { addDays, diffDays } from '@/lib/time';
+import { addDays, dayKey, diffDays } from '@/lib/time';
 
 /** Period presets of the progress filters. */
 export type PeriodPreset = '3m' | '6m' | '12m' | 'ytd' | 'all';
@@ -45,4 +45,35 @@ export function defaultBucket(range: { fromDay: string; toDay: string }): Progre
   const days = diffDays(range.fromDay, range.toDay);
   if (days > 6 * 366) return 'year';
   return days > 460 ? 'month' : 'week';
+}
+
+/** Scopes of the records page. */
+export type RecordScope = 'allTime' | 'thisYear' | 'last12m';
+
+/** First local day of a records scope as of `today` (null = all time): Jan 1, or one year back, as /records counts. */
+export function recordScopeStart(scope: RecordScope, today: string): string | null {
+  if (scope === 'thisYear') return `${today.slice(0, 4)}-01-01`;
+  if (scope === 'last12m') return addDays(shiftMonths(today, -12), 1);
+  return null;
+}
+
+/**
+ * The fastest `n` attempts of a scope (by their local day, up to `today`), ranked from 1; ties go to the earlier
+ * attempt, as in the server's all-time Top 10.
+ */
+export function scopedTop<T extends { startTs: number; tzMin: number; elapsedS: number }>(
+  attempts: readonly T[],
+  scope: RecordScope,
+  today: string,
+  n = 10,
+): (T & { rank: number })[] {
+  const from = recordScopeStart(scope, today);
+  return attempts
+    .filter((a) => {
+      const day = dayKey(a.startTs, a.tzMin);
+      return (from === null || day >= from) && day <= today;
+    })
+    .sort((a, b) => a.elapsedS - b.elapsedS || a.startTs - b.startTs)
+    .slice(0, n)
+    .map((a, i) => ({ ...a, rank: i + 1 }));
 }

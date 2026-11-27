@@ -5,6 +5,9 @@ import { isMainThread } from 'node:worker_threads';
 if (isMainThread) {
   const { startServer } = await import('./server');
   await startServer();
+  const { loadConfig, timeZoneWarning } = await import('./config');
+  const warning = timeZoneWarning(loadConfig());
+  if (warning) console.warn(warning);
 } else {
   const { runWorker } = await import('./import/worker');
   await runWorker();

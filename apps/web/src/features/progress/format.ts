@@ -5,7 +5,7 @@ import {
   type ProgressTrendMetric,
   type ProgressVolumeMetric,
 } from '@cadence/shared';
-import { clock, type Formatter } from '@/lib/format';
+import { numberFormat, speedFormat, type Formatter, type TrendFormat } from '@/lib/format';
 import type { TFunction } from '@/lib/i18n';
 
 // ---------------------------------------------------------------------------
@@ -81,61 +81,10 @@ export function volumeAxisLabel(fmt: Formatter, metric: ProgressVolumeMetric, n:
 // Per-activity trend metrics
 // ---------------------------------------------------------------------------
 
-export interface TrendFormat {
-  /** Canonical value → chart value. */
-  toChart: (v: number) => number;
-  /** Chart value → axis tick label. */
-  axisLabel: (n: number) => string;
-  /** Canonical value → text with unit. */
-  format: (v: number) => string;
-  /** Short unit for axis names. */
-  unit: string;
-  /** Pace axes run inverted so that faster is up. */
-  inverse: boolean;
-  /** Signed difference between two canonical values, e.g. '−0:12 /km', '+3 bpm'. */
-  delta: (from: number, to: number) => string;
-}
-
 /** fmt.signed, but rounded before the sign is chosen (no "+0.0" / "−0" for tiny differences). */
 export function signedRounded(fmt: Formatter, v: number, digits = 0): string {
   const r = Math.round(v * 10 ** digits) / 10 ** digits;
   return fmt.signed(r === 0 ? 0 : r, digits);
-}
-
-function numberFormat(fmt: Formatter, unit: string, digits: number, scale = 1): TrendFormat {
-  const withUnit = (s: string) => (unit ? `${s} ${unit}` : s);
-  return {
-    toChart: (v) => v * scale,
-    axisLabel: (n) => fmt.num(n, digits),
-    format: (v) => withUnit(fmt.num(v * scale, digits)),
-    unit,
-    inverse: false,
-    delta: (a, b) => withUnit(signedRounded(fmt, (b - a) * scale, digits)),
-  };
-}
-
-/** Speed metric of a sport: pace (min/km, min/100 m) or speed (km/h, mph). */
-export function speedFormat(fmt: Formatter, sport: string): TrendFormat {
-  const mode = sportInfo(sport).speedMode;
-  const imperial = fmt.units === 'imperial';
-  if (mode === 'pace' || mode === 'pace100') {
-    const per = mode === 'pace100' ? (imperial ? 91.44 : 100) : fmt.paceSeconds(1);
-    const unit = fmt.paceParts(1, sport).unit;
-    const secs = (v: number) => per / v;
-    return {
-      toChart: secs,
-      axisLabel: (n) => clock(n),
-      format: (v) => fmt.pace(v, sport),
-      unit,
-      inverse: true,
-      delta: (a, b) => {
-        const d = Math.round(secs(b) - secs(a));
-        return `${d > 0 ? '+' : d < 0 ? '−' : '±'}${clock(Math.abs(d))} ${unit}`;
-      },
-    };
-  }
-  const k = imperial ? 3600 / 1609.344 : 3.6;
-  return numberFormat(fmt, imperial ? 'mph' : 'km/h', 1, k);
 }
 
 export function trendFormat(fmt: Formatter, t: TFunction, metric: ProgressTrendMetric, sport: string): TrendFormat {

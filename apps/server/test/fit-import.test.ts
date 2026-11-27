@@ -115,6 +115,17 @@ describe('FIT import', () => {
     expect(again.workoutsInserted).toBe(0);
   });
 
+  it('imports a virtual ride without its game-world route, with distance and speed from the sensors', async () => {
+    writeFit('zwift.fit', { start: START, sport: 'cycling', subSport: 'virtualActivity', serial: 77 });
+    const stats = await importPath(path.join(dir, 'fit'));
+    expect(stats).toMatchObject({ workoutsInserted: 1, routesParsed: 0 });
+    const w = get<Record<string, unknown>>(db, 'SELECT * FROM workouts')!;
+    expect(w).toMatchObject({ sport: 'ride', indoor: 1, has_route: 0, polyline: null, start_lat: null });
+    expect(w.distance_m as number).toBeCloseTo(5400, -1);
+    expect(w.avg_speed as number).toBeCloseTo(3, 1);
+    expect(all(db, 'SELECT 1 FROM workout_routes')).toEqual([]);
+  });
+
   it('imports only the listed files of a folder and applies the sidecar name', async () => {
     const a = writeFit('a.fit', { start: START });
     writeFit('b.fit', { start: START + 86_400, serial: 999 });

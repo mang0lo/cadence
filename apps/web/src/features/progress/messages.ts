@@ -36,6 +36,7 @@ export const messages: Dictionary = {
       date: 'Date',
       activity: 'Activity',
       activities: 'Activities',
+      activityCount: { one: '{count} activity', other: '{count} activities' },
       value: 'Value',
       total: 'Total',
       other: 'Other',
@@ -94,8 +95,6 @@ export const messages: Dictionary = {
       title: 'Per-activity trends',
       subtitle: 'Each dot is one activity · rolling median of {n} · linear trend',
       metrics: {
-        pace: 'Pace',
-        speed: 'Speed',
         hr: 'Avg heart rate',
         ef: 'Efficiency',
         cadenceFoot: 'Cadence',
@@ -109,13 +108,14 @@ export const messages: Dictionary = {
       help: {
         speed: 'Average moving speed of each activity.',
         hr: 'Average heart rate depends on how hard you trained, so it gets no verdict.',
-        ef: 'Efficiency factor: distance per heartbeat (speed ÷ heart rate). Higher means fitter.',
+        ef: 'Efficiency factor: distance per heartbeat (speed ÷ heart rate), grade adjusted for runs, walks and hikes. Higher means fitter.',
         cadence: 'Average steps (running) or pedal revolutions (cycling) per minute.',
         power: 'Average power measured by the Apple Watch or a power meter.',
         stride: 'Apple Watch running dynamics: average stride length.',
         gct: 'Apple Watch running dynamics: time each foot spends on the ground. Lower is more economical.',
         vo: 'Apple Watch running dynamics: vertical bounce per step. Lower is more economical.',
-        decoupling: 'Aerobic decoupling: how much distance per heartbeat drops in the second half. Below 5 % = solid endurance.',
+        decoupling:
+          'Aerobic decoupling: how much distance per heartbeat (grade adjusted on foot) or, on rides with power, power per heartbeat drops in the second half, leaving out the first 5 minutes – the value of the activity page. Below 5 % = solid endurance.',
       },
       legend: { points: 'Activities', median: 'Rolling median', trend: 'Trend' },
       improved: 'Improved by {value}',
@@ -148,6 +148,7 @@ export const messages: Dictionary = {
       empty: 'No heart-rate data with pace for this sport',
       emptyHint: 'Pace at heart rate needs activities with heart rate and GPS or distance.',
       pickSport: 'Choose a sport with distance to compare its pace at the same heart rate',
+      notSaved: 'This band could not be saved. It applies until you leave the page.',
     },
     intensity: {
       title: 'Intensity distribution',
@@ -168,7 +169,6 @@ export const messages: Dictionary = {
         subtitle: 'Fastest time per distance · {scope}',
         distance: 'Distance',
         time: 'Time',
-        pace: 'Pace',
         date: 'Date',
         attempts: 'Attempts',
         allTimePr: 'All-time PR',
@@ -188,6 +188,7 @@ export const messages: Dictionary = {
         title: 'Top 10 · {distance}',
         rank: '#',
         avgHr: 'Avg HR',
+        emptyScope: 'No attempts at this distance in this period',
       },
       highlights: {
         title: 'Highlights',
@@ -241,6 +242,7 @@ export const messages: Dictionary = {
         activity: 'Activity',
         mass: 'W/kg with your weight of {kg} on {date}.',
         noMass: 'Log your weight in Apple Health to see W/kg.',
+        borrowedMass: 'No weight is logged for “{name}”: its W/kg use the same weight.',
         method:
           'Each value is the best average within one activity. Seconds without power data count as 0 W, and parts of a track separated by a break are never joined.',
       },
@@ -424,6 +426,7 @@ export const messages: Dictionary = {
       date: 'Datum',
       activity: 'Aktivität',
       activities: 'Aktivitäten',
+      activityCount: { one: '{count} Aktivität', other: '{count} Aktivitäten' },
       value: 'Wert',
       total: 'Gesamt',
       other: 'Andere',
@@ -482,8 +485,6 @@ export const messages: Dictionary = {
       title: 'Trends pro Aktivität',
       subtitle: 'Jeder Punkt ist eine Aktivität · gleitender Median über {n} · linearer Trend',
       metrics: {
-        pace: 'Pace',
-        speed: 'Geschwindigkeit',
         hr: 'Ø Herzfrequenz',
         ef: 'Effizienz',
         cadenceFoot: 'Schrittfrequenz',
@@ -497,13 +498,14 @@ export const messages: Dictionary = {
       help: {
         speed: 'Durchschnittliches Tempo in Bewegung pro Aktivität.',
         hr: 'Die Ø Herzfrequenz hängt davon ab, wie hart du trainiert hast – daher ohne Wertung.',
-        ef: 'Effizienzfaktor: Strecke pro Herzschlag (Tempo ÷ Herzfrequenz). Höher heißt fitter.',
+        ef: 'Effizienzfaktor: Strecke pro Herzschlag (Tempo ÷ Herzfrequenz), bei Läufen, Spaziergängen und Wanderungen steigungsbereinigt. Höher heißt fitter.',
         cadence: 'Durchschnittliche Schritte (Laufen) bzw. Kurbelumdrehungen (Radfahren) pro Minute.',
         power: 'Durchschnittliche Leistung, gemessen von der Apple Watch oder einem Powermeter.',
         stride: 'Laufdynamik der Apple Watch: durchschnittliche Schrittlänge.',
         gct: 'Laufdynamik der Apple Watch: Zeit, die jeder Fuß am Boden ist. Weniger ist ökonomischer.',
         vo: 'Laufdynamik der Apple Watch: Auf und Ab pro Schritt. Weniger ist ökonomischer.',
-        decoupling: 'Aerobe Entkopplung: wie stark die Strecke pro Herzschlag in der zweiten Hälfte sinkt. Unter 5 % = solide Ausdauer.',
+        decoupling:
+          'Aerobe Entkopplung: wie stark die Strecke pro Herzschlag (zu Fuß steigungsbereinigt) bzw. bei Radfahrten mit Leistungsmessung die Leistung pro Herzschlag in der zweiten Hälfte sinkt, ohne die ersten 5 Minuten – derselbe Wert wie auf der Aktivitätsseite. Unter 5 % = solide Ausdauer.',
       },
       legend: { points: 'Aktivitäten', median: 'Gleitender Median', trend: 'Trend' },
       improved: 'Verbessert um {value}',
@@ -536,6 +538,7 @@ export const messages: Dictionary = {
       empty: 'Keine Herzfrequenzdaten mit Pace für diese Sportart',
       emptyHint: 'Dafür braucht es Aktivitäten mit Herzfrequenz und GPS oder Distanz.',
       pickSport: 'Wähle eine Sportart mit Distanz, um ihre Pace bei gleicher Herzfrequenz zu vergleichen',
+      notSaved: 'Dieser Bereich konnte nicht gespeichert werden. Er gilt, bis du die Seite verlässt.',
     },
     intensity: {
       title: 'Intensitätsverteilung',
@@ -556,7 +559,6 @@ export const messages: Dictionary = {
         subtitle: 'Schnellste Zeit pro Distanz · {scope}',
         distance: 'Distanz',
         time: 'Zeit',
-        pace: 'Pace',
         date: 'Datum',
         attempts: 'Versuche',
         allTimePr: 'Allzeit-Rekord',
@@ -576,6 +578,7 @@ export const messages: Dictionary = {
         title: 'Top 10 · {distance}',
         rank: '#',
         avgHr: 'Ø HF',
+        emptyScope: 'Keine Versuche über diese Distanz in diesem Zeitraum',
       },
       highlights: {
         title: 'Highlights',
@@ -629,6 +632,7 @@ export const messages: Dictionary = {
         activity: 'Aktivität',
         mass: 'W/kg mit deinem Gewicht von {kg} am {date}.',
         noMass: 'Trage dein Gewicht in Apple Health ein, um W/kg zu sehen.',
+        borrowedMass: 'Für „{name}“ ist kein Gewicht eingetragen: Die W/kg nutzen dasselbe Gewicht.',
         method:
           'Jeder Wert ist der beste Durchschnitt innerhalb einer Aktivität. Sekunden ohne Leistungsdaten zählen als 0 W, durch eine Unterbrechung getrennte Streckenteile werden nie verbunden.',
       },

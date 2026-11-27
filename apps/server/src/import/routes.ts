@@ -7,17 +7,15 @@ import { z } from 'zod';
 import type { ImportJob } from '@cadence/shared';
 import { invalidateStatusCounts } from '../core/routes';
 import { HttpError, badRequest, notFound } from '../lib/http';
+import { zDay } from '../lib/params';
 import { resetAthleteData } from './reset';
+import { isClinicalDocument } from './source';
 
 const localBody = z.object({ path: z.string().min(1).max(4096) });
 const rederiveBody = z
   .object({
     workoutIds: z.array(z.number().int().positive()).max(100_000).optional(),
-    sinceDay: z
-      .string()
-      .regex(/^\d{4}-\d{2}-\d{2}$/)
-      .nullable()
-      .optional(),
+    sinceDay: zDay.nullable().optional(),
   })
   .optional();
 const resetBody = z.object({ confirm: z.literal('DELETE') });
@@ -32,7 +30,7 @@ function safeName(name: string): string {
 
 /**
  * /api/import — upload or local-path import, job list/progress, cancel, full rebuild of derived data, reset.
- * Progress of the running job: GET /api/import/jobs/:id (poll ~1/s).
+ * Progress of the running job: GET /api/import/jobs/:id (the web app polls it every 1.5 s while a job runs).
  */
 export default async function importRoutes(app: FastifyInstance) {
   const jobs = app.jobs;
@@ -43,7 +41,7 @@ export default async function importRoutes(app: FastifyInstance) {
     const file = await req.file();
     if (!file) throw badRequest('No file in upload');
     const name = safeName(file.filename);
-    if (!/\.(zip|xml|fit)$/i.test(name)) {
+    if (!/\.(zip|xml|fit)$/i.test(name) || isClinicalDocument(name)) {
       file.file.resume();
       throw badRequest(
         'Upload the export.zip (or export.xml) from the Health app, or FIT files (.fit / .zip)',

@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Link } from 'react-router';
-import { Popup, type LngLat } from 'maplibre-gl';
+import type { LngLat } from 'maplibre-gl';
 import type { MapsExplorerTile } from '@cadence/shared';
 import { BaseMap, type Map as MapLibreMap } from '@/components/map/BaseMap';
-import { fitTo } from '@/components/map/layers';
 import { overlayColors } from '@/components/map/styles';
+import { useFitBounds, useMapOverlay, useMapPopup, useOverlayEffect } from '@/components/map/useMapOverlay';
 import { useChartTheme } from '@/components/charts/theme';
 import { useFormat } from '@/lib/format';
 import { useT } from '@/lib/i18n';
@@ -21,7 +21,6 @@ import {
   setSquare,
   setTileData,
   tilesCollection,
-  visitSteps,
   type ExplorerColorBy,
   type FirstBuckets,
 } from '../lib/explorerLayers';
@@ -33,6 +32,8 @@ export interface ExplorerMapProps {
   zoom: 14 | 17;
   tiles: MapsExplorerTile[];
   buckets: FirstBuckets;
+  /** Visit-count buckets of the tiles (visitSteps), shared with the legend. */
+  steps: number[];
   /** Visited zoom-17 tiles (keys), drawn for the current viewport only. */
   detail: Set<number> | null;
   square: { x: number; y: number; size: number } | null;
@@ -47,12 +48,15 @@ export interface ExplorerMapProps {
   children?: ReactNode;
 }
 
+const POPUP = { closeButton: true, maxWidth: '300px', offset: 6 } as const;
+
 /** Visited tiles on a map: fill by visits / first visit, max cluster outline, max square, optional detail tiles. */
 export function ExplorerMap({
   className,
   zoom,
   tiles,
   buckets,
+  steps,
   detail,
   square,
   next,
@@ -63,8 +67,6 @@ export function ExplorerMap({
   onZoomChange,
   children,
 }: ExplorerMapProps) {
-  const mapRef = useRef<MapLibreMap | null>(null);
-  const [styleVersion, setStyleVersion] = useState(0);
   const chart = useChartTheme();
   const appTheme = useResolvedTheme();
   const darkBase = overlayColors(base, appTheme).darkBase;
@@ -74,7 +76,6 @@ export function ExplorerMap({
   );
   const colorsRef = useRef(colors);
   colorsRef.current = colors;
-  const steps = useMemo(() => visitSteps(Math.max(1, ...tiles.map((t) => t.visits))), [tiles]);
   const stepsRef = useRef(steps);
   stepsRef.current = steps;
   const detailRef = useRef(detail);
@@ -85,75 +86,70 @@ export function ExplorerMap({
   onZoomRef.current = onZoomChange;
 
   const [picked, setPicked] = useState<{ i: number; lngLat: LngLat } | null>(null);
-  const popupEl = useMemo(() => document.createElement('div'), []);
-  const popupRef = useRef<Popup | null>(null);
-
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map) return;
-    if (!picked) {
-      popupRef.current?.remove();
-      popupRef.current = null;
-      return;
-    }
-    if (!popupRef.current) {
-      const p = new Popup({ closeButton: true, maxWidth: '300px', offset: 6 }).setDOMContent(popupEl);
-      p.on('close', () => {
-        if (popupRef.current === p) {
-          popupRef.current = null;
-          setPicked(null);
-        }
-      });
-      popupRef.current = p;
-      p.setLngLat(picked.lngLat).addTo(map);
-    } else popupRef.current.setLngLat(picked.lngLat);
-  }, [picked, popupEl]);
+  const bindEvents = (map: MapLibreMap) => {
+    map.on('click', (e) => {
+      if (zoomRef.current !== 14 || !map.getLayer(ID.fill)) return;
+      const f = map.queryRenderedFeatures(e.point, { layers: [ID.fill] })[0];
+      const i = f?.properties?.i;
+      setPicked(typeof i === 'number' ? { i, lngLat: e.lngLat } : null);
+    });
+    map.on('mousemove', (e) => {
+      const over =
+        zoomRef.current === 14 &&
+        map.getLayer(ID.fill) &&
+        map.queryRenderedFeatures(e.point, { layers: [ID.fill] }).length > 0;
+      map.getCanvas().style.cursor = over ? 'pointer' : '';
+    });
+    map.on('moveend', () => {
+      if (zoomRef.current === 17) setDetailTilesInView(map, detailRef.current);
+      onZoomRef.current?.(map.getZoom());
+    });
+  };
+  const overlay = useMapOverlay({ onReady: bindEvents });
+  const popupEl = useMapPopup(overlay.mapRef, picked?.lngLat ?? null, () => setPicked(null), POPUP);
   useEffect(() => setPicked(null), [tiles, zoom]);
 
-  // layers
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || styleVersion === 0) return;
-    ensureExplorerLayers(map, colorsRef.current, stepsRef.current);
-    applyExplorerColors(map, colors, colorBy, steps);
-  }, [styleVersion, colors, colorBy, steps]);
+  // layers: only while the style is loaded (a theme or basemap switch replaces it), and again after every style load
+  useOverlayEffect(
+    overlay,
+    (map) => {
+      ensureExplorerLayers(map, colorsRef.current, stepsRef.current);
+      applyExplorerColors(map, colors, colorBy, steps);
+    },
+    [colors, colorBy, steps],
+  );
 
   const collection = useMemo(() => tilesCollection(tiles, buckets), [tiles, buckets]);
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || styleVersion === 0) return;
-    ensureExplorerLayers(map, colorsRef.current, stepsRef.current);
-    setTileData(map, zoom === 14 ? collection : null);
-    setExplorerMode(map, zoom);
-  }, [collection, zoom, styleVersion]);
+  useOverlayEffect(
+    overlay,
+    (map) => {
+      ensureExplorerLayers(map, colorsRef.current, stepsRef.current);
+      setTileData(map, zoom === 14 ? collection : null);
+      setExplorerMode(map, zoom);
+    },
+    [collection, zoom],
+  );
 
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || styleVersion === 0) return;
-    ensureExplorerLayers(map, colorsRef.current, stepsRef.current);
-    setSquare(map, square, zoom);
-    setNextTiles(map, zoom === 14 ? next : [], 14);
-  }, [square, next, zoom, styleVersion]);
+  useOverlayEffect(
+    overlay,
+    (map) => {
+      ensureExplorerLayers(map, colorsRef.current, stepsRef.current);
+      setSquare(map, square, zoom);
+      setNextTiles(map, zoom === 14 ? next : [], 14);
+    },
+    [square, next, zoom],
+  );
 
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || styleVersion === 0) return;
-    ensureExplorerLayers(map, colorsRef.current, stepsRef.current);
-    setDetailTilesInView(map, zoom === 17 ? detail : null);
-  }, [detail, zoom, styleVersion]);
+  useOverlayEffect(
+    overlay,
+    (map) => {
+      ensureExplorerLayers(map, colorsRef.current, stepsRef.current);
+      setDetailTilesInView(map, zoom === 17 ? detail : null);
+    },
+    [detail, zoom],
+  );
 
-  const boundsKey = bounds ? bounds.join(',') : '';
-  const first = useRef(true);
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !bounds) return;
-    if (first.current) {
-      first.current = false;
-      return;
-    }
-    fitTo(map, bounds, 48, true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [boundsKey, fitNonce]);
+  useFitBounds(overlay.mapRef, bounds, fitNonce, 48);
 
   return (
     <>
@@ -163,30 +159,7 @@ export function ExplorerMap({
         bounds={bounds}
         padding={48}
         switcher={false}
-        onReady={(map) => {
-          mapRef.current = map;
-          map.on('click', (e) => {
-            if (zoomRef.current !== 14 || !map.getLayer(ID.fill)) return;
-            const f = map.queryRenderedFeatures(e.point, { layers: [ID.fill] })[0];
-            const i = f?.properties?.i;
-            setPicked(typeof i === 'number' ? { i, lngLat: e.lngLat } : null);
-          });
-          map.on('mousemove', (e) => {
-            const over =
-              zoomRef.current === 14 &&
-              map.getLayer(ID.fill) &&
-              map.queryRenderedFeatures(e.point, { layers: [ID.fill] }).length > 0;
-            map.getCanvas().style.cursor = over ? 'pointer' : '';
-          });
-          map.on('moveend', () => {
-            if (zoomRef.current === 17) setDetailTilesInView(map, detailRef.current);
-            onZoomRef.current?.(map.getZoom());
-          });
-        }}
-        onStyleLoad={(map) => {
-          mapRef.current = map;
-          setStyleVersion((v) => v + 1);
-        }}
+        {...overlay.bind}
       >
         {children}
       </BaseMap>

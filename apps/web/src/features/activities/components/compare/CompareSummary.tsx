@@ -1,10 +1,10 @@
 import { Scale } from 'lucide-react';
-import { M_PER_KM, M_PER_MI, sportInfo, type WorkoutDetail } from '@cadence/shared';
+import type { WorkoutDetail } from '@cadence/shared';
 import { Card, CardHeader, Delta, Table, TD, TH } from '@/components/ui';
-import { clock, useFormat, type Formatter } from '@/lib/format';
+import { clock, showsPace, useFormat, type Formatter } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
 import { summaryRows, type SummaryRow } from '../../lib/compare';
-import { isPaceSport } from '../../lib/display';
+import { speedDiff } from '../../lib/display';
 import { SIDE_VAR } from './CompareMap';
 
 const sign = (v: number) => (v > 0 ? '+' : v < 0 ? '−' : '±');
@@ -25,16 +25,9 @@ function cells(r: SummaryRow, sport: string, fmt: Formatter): { a: string; b: st
       const a = v(r.a, (x) => fmt.pace(x, sport));
       const b = v(r.b, (x) => fmt.pace(x, sport));
       if (r.a === null || r.b === null) return { a, b, diff: null, dir: 0 };
-      if (isPaceSport(sport)) {
-        // the difference of the paces (seconds per km / mi / 100 m): negative = A faster
-        const imperial = fmt.units === 'imperial';
-        const per = sportInfo(sport).speedMode === 'pace100' ? (imperial ? 91.44 : 100) : imperial ? M_PER_MI : M_PER_KM;
-        const d = Math.round(per / r.a - per / r.b);
-        return { a, b, diff: `${sign(d)}${clock(Math.abs(d))} ${fmt.paceParts(r.a, sport).unit}`, dir: d };
-      }
-      const k = fmt.units === 'imperial' ? 3600 / M_PER_MI : 3.6;
-      const d = (r.a - r.b) * k;
-      return { a, b, diff: `${fmt.signed(d, 1)} ${fmt.speedParts(1).unit}`, dir: Math.round(d * 10) };
+      // the difference of the paces (seconds per km / mi / 100 m: negative = A faster) or of the speeds
+      const d = speedDiff(r.a, r.b, sport, fmt);
+      return { a, b, diff: d?.text ?? null, dir: d?.value ?? 0 };
     }
     case 'avgHr':
     case 'maxHr':
@@ -77,7 +70,7 @@ export function CompareSummary({
   const { t } = useI18n();
   const fmt = useFormat();
   const rows = summaryRows(a, b, common);
-  const pace = isPaceSport(sport);
+  const pace = showsPace(sport);
   const label = (r: SummaryRow) =>
     r.key === 'commonTime'
       ? t('activities.compare.summary.commonTime', { distance: fmt.distance(common!.distM) })

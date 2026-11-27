@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FocusEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FocusEvent } from 'react';
 import { HeartPulse } from 'lucide-react';
 import type { EChartsOption } from 'echarts';
 import { sportInfo, type PaceAtHrResponse, type ProgressHrBand } from '@cadence/shared';
@@ -16,11 +16,10 @@ import {
 } from '@/components/charts/options';
 import { sportColor, useChartTheme, type ChartTheme } from '@/components/charts/theme';
 import { Delta, EmptyState, ErrorState, Input, SegmentedControl } from '@/components/ui';
-import { useFormat, type Formatter } from '@/lib/format';
+import { speedFormat, useFormat, type Formatter, type TrendFormat } from '@/lib/format';
 import { useT, type TFunction } from '@/lib/i18n';
 import { usePaceAtHr, useSaveHrBand, type RangeParams } from '../api';
 import { bucketLabel, chartLegend, clockAxis } from '../chart';
-import { speedFormat, type TrendFormat } from '../format';
 import { ChartSkeleton } from './common';
 
 const HEIGHT = 240;
@@ -92,7 +91,7 @@ function distributionOption(
     yAxis: { type: 'value', show: false },
     tooltip: itemTooltip(theme, (p: unknown) => {
       const { dataIndex } = p as { dataIndex: number };
-      return tooltipHtml(`${bpms[dataIndex]} bpm`, [{ color, label: '', value: fmt.durationShort(dist.seconds[dataIndex]!) }], theme);
+      return tooltipHtml(fmt.hr(bpms[dataIndex]), [{ color, label: '', value: fmt.durationShort(dist.seconds[dataIndex]!) }], theme);
     }),
     series: [
       barSeries(
@@ -114,12 +113,16 @@ export function PaceAtHrCard({ sport, range }: { sport: string; range: RangePara
   const fmt = useFormat();
   const theme = useChartTheme();
   const save = useSaveHrBand();
-  const [band, setBand] = useState<ProgressHrBand | null>(null);
-  const [customOpen, setCustomOpen] = useState(false);
-  useEffect(() => {
-    setBand(null);
-    setCustomOpen(false);
-  }, [sport]);
+  // the picked band and the open custom inputs belong to the sport they were chosen for. Derived per sport, not reset
+  // in an effect: the render after a sport change must not request the new sport with the old sport's band
+  const [picked, setPicked] = useState<{ sport: string; band: ProgressHrBand } | null>(null);
+  const [customFor, setCustomFor] = useState<string | null>(null);
+  // another sport closes the custom inputs for good (cleared while rendering, which commits nothing stale): kept, they
+  // would reopen when the sport comes back, showing the other sport's bounds that a blur or Enter would then save
+  if (customFor !== null && customFor !== sport) setCustomFor(null);
+  const band = picked?.sport === sport ? picked.band : null;
+  const customOpen = customFor === sport;
+  const setCustomOpen = (open: boolean) => setCustomFor(open ? sport : null);
   const single = sport !== 'all' && sportInfo(sport).distance;
   const q = usePaceAtHr(single ? sport : null, range, band);
   const data = single ? q.data : undefined;
@@ -147,13 +150,21 @@ export function PaceAtHrCard({ sport, range }: { sport: string; range: RangePara
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bandKey, customOpen]);
 
+  // the band applies at once and is saved in the background; a failed save would silently bring back the old band on
+  // the next visit, so say so (only for the latest pick of the sport on screen)
+  const [failedFor, setFailedFor] = useState<string | null>(null);
+  const saves = useRef(0);
   const pick = (b: ProgressHrBand) => {
-    setBand(b);
-    void save(sport, b).catch(() => undefined);
+    setPicked({ sport, band: b });
+    const n = ++saves.current;
+    setFailedFor(null);
+    save(sport, b).catch(() => {
+      if (n === saves.current) setFailedFor(sport);
+    });
   };
   const applyCustom = () => {
-    const a = Math.round(Number(lo));
-    const b = Math.round(Number(hi)) + 1;
+    const a = Math.round(fmt.parseNumber(lo));
+    const b = Math.round(fmt.parseNumber(hi)) + 1;
     if (!Number.isFinite(a) || !Number.isFinite(b) || a < 30 || b > 240 || b <= a) return;
     if (data && data.band.lo === a && data.band.hi === b) return;
     pick({ lo: a, hi: b });
@@ -250,7 +261,8 @@ export function PaceAtHrCard({ sport, range }: { sport: string; range: RangePara
                   onChange={(e) => setLo(e.target.value)}
                   onBlur={onBlurGroup}
                   onKeyDown={(e) => e.key === 'Enter' && applyCustom()}
-                  className="h-8 w-16 text-xs"
+                  size="sm"
+                  className="w-16"
                 />
                 <span className="text-xs text-fg-3">–</span>
                 <Input
@@ -260,12 +272,18 @@ export function PaceAtHrCard({ sport, range }: { sport: string; range: RangePara
                   onChange={(e) => setHi(e.target.value)}
                   onBlur={onBlurGroup}
                   onKeyDown={(e) => e.key === 'Enter' && applyCustom()}
-                  className="h-8 w-16 text-xs"
+                  size="sm"
+                  className="w-16"
                 />
                 <span className="text-xs text-fg-3">bpm</span>
               </div>
             )}
           </div>
+          {failedFor === sport && (
+            <p role="alert" className="mb-2 text-xs text-critical-fg">
+              {t('progress.paceAtHr.notSaved')}
+            </p>
+          )}
           {distOption && (
             <div className="mb-3">
               <EChart

@@ -3,5 +3,5 @@
   "compilerOptions": {
     "types": ["node"]
   },
-  "include": ["src", "build.mjs"]
+  "include": ["src", "test", "build.mjs", "vitest.config.mts"]
 }

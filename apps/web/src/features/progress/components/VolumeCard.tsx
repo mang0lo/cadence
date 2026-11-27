@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { BarChart3 } from 'lucide-react';
 import type { EChartsOption } from 'echarts';
 import type { ProgressBucket, ProgressVolumeBucket, ProgressVolumeMetric, ProgressVolumeResponse } from '@cadence/shared';
@@ -28,7 +28,7 @@ import { ChartSkeleton } from './common';
 const HEIGHT = 300;
 
 function bucketTitle(fmt: Formatter, b: ProgressVolumeBucket, bucket: ProgressBucket): string {
-  if (bucket === 'week') return `${fmt.day(b.fromDay, 'dayShort')} – ${fmt.day(b.toDay, 'day')}`;
+  if (bucket === 'week') return fmt.dayRange(b.fromDay, b.toDay);
   return bucketLabel(fmt, b.key, 'long');
 }
 
@@ -117,9 +117,10 @@ export function VolumeCard({
   const fmt = useFormat();
   const theme = useChartTheme();
   const { lang } = useI18n();
-  const [picked, setPicked] = useState<ProgressBucket | null>(null);
-  useEffect(() => setPicked(null), [range?.fromDay]);
-  const bucket = picked ?? (range ? defaultBucket(range) : 'week');
+  // a picked bucket belongs to the period it was picked for; another period starts with its default bucket. Derived,
+  // not reset in an effect: the render after a period change must not request the new period with the old bucket
+  const [picked, setPicked] = useState<{ fromDay: string | undefined; bucket: ProgressBucket } | null>(null);
+  const bucket = (picked?.fromDay === range?.fromDay ? picked?.bucket : undefined) ?? (range ? defaultBucket(range) : 'week');
   const q = useVolume(sport, bucket, range);
   const data = q.data;
   const sportName = sport === 'all' ? t('common.allSports') : sportLabel(sport, lang);
@@ -166,7 +167,7 @@ export function VolumeCard({
         <SegmentedControl
           size="sm"
           value={bucket}
-          onChange={setPicked}
+          onChange={(b) => setPicked({ fromDay: range?.fromDay, bucket: b })}
           label={t('progress.common.period')}
           items={(['week', 'month', 'year'] as const).map((b) => ({ value: b, label: t(`progress.buckets.${b}`) }))}
         />
@@ -175,7 +176,7 @@ export function VolumeCard({
         data && !empty
           ? t('progress.volume.footer', {
               value: formatVolume(fmt, metric, totalsValue(data.totals, metric)),
-              count: t('common.activities', { count: data.totals.count }),
+              count: t('progress.common.activityCount', { count: data.totals.count }),
             })
           : undefined
       }

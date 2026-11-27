@@ -1,0 +1,207 @@
+import type { ImportErrorCode, ImportJob } from '@cadence/shared';
+import { describeError } from '@/lib/errors';
+import type { TFunction } from '@/lib/i18n';
+
+/** Pure logic of the import job list: which job is current, what finished, how to poll, translated labels. */
+
+export const isActive = (j: ImportJob) => j.status === 'queued' || j.status === 'running';
+
+/**
+ * The job the server works on, else the next one in line. The list is newest first and the server runs queued jobs
+ * oldest first, so the next one is the last queued job of the list (not the first active one).
+ */
+export function currentJob(jobs: ImportJob[]): ImportJob | null {
+  return jobs.find((j) => j.status === 'running') ?? jobs.filter((j) => j.status === 'queued').at(-1) ?? null;
+}
+
+/** Jobs waiting behind the current one. */
+export const waitingJobs = (jobs: ImportJob[]): number =>
+  Math.max(0, jobs.filter(isActive).length - 1);
+
+/**
+ * Jobs that finished since the previous list: active before, or new and already over (a COROS batch or a derive
+ * after a settings change can start and finish between two polls). Nothing on the first load, so the history of
+ * finished jobs does not count.
+ */
+export function finishedSince(prev: ImportJob[] | undefined, next: ImportJob[]): ImportJob[] {
+  if (!prev) return [];
+  const before = new Map(prev.map((j) => [j.id, j]));
+  return next.filter((j) => {
+    if (isActive(j)) return false;
+    const old = before.get(j.id);
+    return old ? isActive(old) : true;
+  });
+}
+
+export interface JobsIo {
+  /** GET /api/import/jobs (newest first). */
+  list: (limit?: number) => Promise<ImportJob[]>;
+  /** GET /api/import/jobs/:id */
+  get: (id: string) => Promise<ImportJob>;
+}
+
+/**
+ * Whether a poll loads the whole list: when the list was invalidated (a job was just started, settings changed …)
+ * and, while a job runs (then only that job is polled), at least every `everyMs` for jobs queued meanwhile. While
+ * nothing runs the newest job tells whether anything changed.
+ */
+export function wantsFullList(
+  prev: ImportJob[] | undefined,
+  invalidated: boolean,
+  msSinceFull: number,
+  everyMs: number,
+): boolean {
+  return invalidated || (!!prev?.some(isActive) && msSinceFull > everyMs);
+}
+
+const sameState = (a: ImportJob | undefined, b: ImportJob | undefined) =>
+  a?.id === b?.id && a?.status === b?.status && a?.finishedAt === b?.finishedAt;
+
+/**
+ * Loads the job list with as little as needed: while a job runs only that job (its progress), while nothing runs
+ * only the newest job to see whether anything new arrived; the whole list when something changed or `full` is set.
+ * `full` in the result tells whether the whole list was loaded.
+ */
+export async function loadJobs(
+  prev: ImportJob[] | undefined,
+  io: JobsIo,
+  full: boolean,
+): Promise<{ jobs: ImportJob[]; full: boolean }> {
+  if (prev && !full) {
+    const running = prev.find((j) => j.status === 'running');
+    if (running) {
+      const job = await io.get(running.id).catch(() => null);
+      if (job?.status === 'running') return { jobs: prev.map((j) => (j.id === job.id ? job : j)), full: false };
+    } else if (!prev.some(isActive)) {
+      const newest = await io.list(1).catch(() => null);
+      if (newest && sameState(newest[0], prev[0])) return { jobs: prev, full: false };
+    }
+  }
+  return { jobs: await io.list(), full: true };
+}
+
+// ---- labels ------------------------------------------------------------------------------------------------------
+// The server describes progress in English (job.message, job.step = the label of the running derive step, job.error).
+// The interface shows translated labels derived from the structured fields instead: status, phase, the id of the
+// derive step (job.stepId) and the code of a failed job (job.errorCode).
+
+/** Derive steps by id (job.stepId) → key in platform.import.steps. */
+const STEP_KEYS: Record<string, string> = {
+  'core.workouts': 'workouts',
+  'core.duplicates': 'duplicates',
+  'core.daily-metrics': 'dailyMetrics',
+  'core.effort': 'effort',
+  'core.daily-activity': 'dailyActivity',
+  'activities.analysis': 'activityAnalysis',
+  'progress.workout-caches': 'paceAndPower',
+  'connect.coros': 'corosDaily',
+  'consistency.achievements': 'trophies',
+  'maps.geometry': 'mapGeometry',
+  'maps.segments': 'segments',
+  'maps.routes': 'routes',
+  'health.sleep': 'sleep',
+  'health.ecg': 'ecg',
+  'health.record-sources': 'recordSources',
+};
+
+/** Key of a derive step id in platform.import.steps, null when unknown. */
+export const stepKey = (stepId: string | null | undefined): string | null =>
+  stepId && Object.hasOwn(STEP_KEYS, stepId) ? STEP_KEYS[stepId]! : null;
+
+/** What the job does right now, e.g. "Analysing workouts". */
+export function jobPhaseLabel(t: TFunction, job: ImportJob): string {
+  if (job.status === 'queued') return t('platform.import.status.queued');
+  return job.phase ? t(`platform.import.phases.${job.phase}`) : t(`platform.import.status.${job.status}`);
+}
+
+/** The running derive step, translated; a step this version does not know is only shown in English. */
+export function jobStepLabel(t: TFunction, lang: string, job: ImportJob): string | null {
+  if (job.status !== 'running' || job.phase !== 'derive' || !(job.stepId || job.step)) return null;
+  const key = stepKey(job.stepId);
+  if (key) return t(`platform.import.steps.${key}`);
+  return lang === 'en' ? (job.step ?? null) : null;
+}
+
+/**
+ * Error codes (job.errorCode) → key in platform.import.errors. Every code of the contract needs one, except 'failed'
+ * (any other error): its text, the server's English one, is all there is. The server's text of the others stays the
+ * tooltip of the history cell.
+ */
+const ERROR_KEYS: Record<ImportErrorCode, string | null> = {
+  interrupted: 'interrupted',
+  not_resumed: 'notResumed',
+  source_gone: 'sourceGone',
+  worker_crashed: 'crashed',
+  invalid_input: 'invalidInput',
+  failed: null,
+};
+
+/** The code of the server's own wording, for callers that only have the text. */
+function codeOfText(error: string): ImportErrorCode | null {
+  // import/jobs.ts: a restart interrupted the job or did not resume it, an upload vanished, the worker thread died;
+  // import/source.ts: the file was moved or deleted while the job waited
+  if (/^Interrupted\b/.test(error)) return 'interrupted';
+  if (/^Not resumed\b/.test(error)) return 'not_resumed';
+  if (error === 'Source file is gone' || error.startsWith('File not found: ')) return 'source_gone';
+  if (/^(Import worker (crashed|exited)|Could not start the import worker)/.test(error)) return 'worker_crashed';
+  return null;
+}
+
+/** A failed job's error in the language of the interface where its code (job.errorCode) is known, else as it is. */
+export function jobErrorText(t: TFunction, error: string, code?: ImportErrorCode | null): string {
+  const c = code ?? codeOfText(error);
+  // a code this version does not know yet shows the server's text
+  const key = c && Object.hasOwn(ERROR_KEYS, c) ? ERROR_KEYS[c] : null;
+  return key ? t(`platform.import.errors.${key}`) : error;
+}
+
+/** Source column of the history: the file name, or what a sync or rebuild brought. */
+export function jobSourceLabel(t: TFunction, job: ImportJob): string {
+  if (job.kind === 'rederive') return t('platform.import.rederive');
+  // COROS names its batches "COROS (3 activities)" (features/connect/coros-sync.ts)
+  const coros = /^COROS \((\d+) activit(?:y|ies)\)$/.exec(job.sourceName ?? '');
+  if (coros) return t('platform.import.corosBatch', { count: Number(coros[1]) });
+  return job.sourceName ?? '–';
+}
+
+/**
+ * The error to show after uploading `total` files, null when none failed: for a single file what the server said, for
+ * several which of them failed (and why, in the user's language with the server's text as the detail, when only one
+ * did).
+ */
+export function uploadFailure(t: TFunction, total: number, failed: { name: string; error: unknown }[]): unknown {
+  if (!failed.length) return null;
+  if (total === 1) return failed[0]!.error;
+  const which = t('platform.import.uploadsFailed', { count: failed.length, names: failed.map((f) => f.name).join(', ') });
+  if (failed.length > 1) return new Error(which);
+  const cause = failed[0]!.error;
+  return new Error(`${which} ${describeError(cause, t).message}`, { cause });
+}
+
+/**
+ * Files to upload one after the other. Files added while a series runs (dropped during an upload) join that series
+ * instead of being ignored.
+ */
+export function uploadQueue<T>() {
+  const waiting: T[] = [];
+  let running = false;
+  return {
+    /** Adds files; true when no series runs, so the caller starts one and takes the files with `next`. */
+    add(files: T[]): boolean {
+      waiting.push(...files);
+      if (running || !waiting.length) return false;
+      running = true;
+      return true;
+    },
+    /** The next file of the series; undefined ends it. */
+    next(): T | undefined {
+      const file = waiting.shift();
+      if (file === undefined) running = false;
+      return file;
+    },
+    /** Files still waiting in the series. */
+    get waiting(): number {
+      return waiting.length;
+    },
+  };
+}

@@ -153,6 +153,16 @@ export const SHARE_SIZES: Record<ShareFormat, { width: number; height: number }>
   story: { width: 1080, height: 1920 },
 };
 
+/**
+ * Most map tiles one share image can need: fitTracks draws them at 128–256 px, so a W × H image touches at most
+ * (⌈W/128⌉ + 1) × (⌈H/128⌉ + 1) tiles — 160 for a story (typically about 80). The share image's tile cache holds that
+ * many: a re-rendered preview asks for the same tiles in the same order, and an LRU smaller than one image would drop
+ * each tile just before it is needed again.
+ */
+export const MAX_SHARE_TILES = Math.max(
+  ...SHARE_FORMATS.map((f) => (Math.ceil(SHARE_SIZES[f].width / 128) + 1) * (Math.ceil(SHARE_SIZES[f].height / 128) + 1)),
+);
+
 // ---------------------------------------------------------------------------
 // Privacy zones
 // ---------------------------------------------------------------------------

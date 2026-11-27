@@ -1,13 +1,14 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { Link } from 'react-router';
 import { Route as RouteIcon, Search, Trophy } from 'lucide-react';
 import { workoutTitle, type WorkoutSummary } from '@cadence/shared';
-import { Badge, Dialog, EmptyState, ErrorState, Input, Skeleton } from '@/components/ui';
+import { Badge, Dialog, EmptyState, ErrorState, Skeleton } from '@/components/ui';
 import { useFormat } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
 import { sportLabel } from '@/lib/sports';
 import { routeTitle } from '../../../maps/lib/routeName';
 import { useRouteDetail, useRouteLinks, useSimilar, useSportActivities } from '../../api';
+import { DebouncedSearch } from '../DebouncedSearch';
 
 interface Candidate {
   id: number;
@@ -68,12 +69,8 @@ function Section({ title, icon, children }: { title: string; icon?: ReactNode; c
 export function CompareDialog({ w, onClose }: { w: Pick<WorkoutSummary, 'id' | 'sport' | 'hasRoute'>; onClose: () => void }) {
   const { t, lang } = useI18n();
   const fmt = useFormat();
-  const [q, setQ] = useState('');
+  /** The search text, committed 250 ms after the last keystroke. */
   const [debounced, setDebounced] = useState('');
-  useEffect(() => {
-    const id = window.setTimeout(() => setDebounced(q.trim()), 250);
-    return () => window.clearTimeout(id);
-  }, [q]);
 
   const links = useRouteLinks(w.id, w.hasRoute);
   const route = links.data?.route ?? null;
@@ -154,17 +151,13 @@ export function CompareDialog({ w, onClose }: { w: Pick<WorkoutSummary, 'id' | '
   return (
     <Dialog open onClose={onClose} title={t('activities.compare.dialogTitle')}>
       <div className="grid gap-3">
-        <label className="relative block">
-          <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-fg-3" aria-hidden />
-          <Input
-            type="search"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder={t('activities.compare.search', { sport })}
-            aria-label={t('activities.compare.search', { sport })}
-            className="pl-9"
-          />
-        </label>
+        <DebouncedSearch
+          value={debounced}
+          onChange={setDebounced}
+          delay={250}
+          label={t('activities.compare.search', { sport })}
+          placeholder={t('activities.compare.search', { sport })}
+        />
         <div className="-mx-2 grid max-h-[min(60vh,480px)] gap-3 overflow-y-auto scrollbar-thin">
           {error ? (
             <ErrorState error={error} className="mx-2" />

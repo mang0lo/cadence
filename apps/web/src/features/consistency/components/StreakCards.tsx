@@ -5,7 +5,7 @@ import type { ConsistencyOverview, StreakInfo } from '@cadence/shared';
 import { Card, Delta, Skeleton } from '@/components/ui';
 import { useFormat } from '@/lib/format';
 import { useT } from '@/lib/i18n';
-import { rangeLabel } from '../lib';
+import { previousYearCovered } from '../lib';
 
 function StreakCard({
   icon: Icon,
@@ -81,6 +81,8 @@ export function StreakCards({ data }: { data: ConsistencyOverview }) {
     <StreakCard icon={icon} label={label} value={fmt.int(s.current)} unit={dayUnit(s.current)} hint={ringHint(s)} />
   );
   const yearDelta = data.activeDays.thisYear - data.activeDays.lastYearToDate;
+  // a previous year the data only partly covers is no comparison (the year review hides it the same way)
+  const showYearDelta = data.activeDays.lastYearToDate > 0 && previousYearCovered(data.firstDay, data.activeDays.year);
 
   return (
     <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
@@ -96,7 +98,7 @@ export function StreakCards({ data }: { data: ConsistencyOverview }) {
         label={t('consistency.streaks.longest')}
         value={fmt.int(daily.longest)}
         unit={dayUnit(daily.longest)}
-        hint={daily.longestStart && daily.longestEnd ? rangeLabel(fmt, daily.longestStart, daily.longestEnd) : null}
+        hint={daily.longestStart && daily.longestEnd ? fmt.dayRange(daily.longestStart, daily.longestEnd) : null}
       />
       <StreakCard
         icon={CalendarCheck}
@@ -117,7 +119,7 @@ export function StreakCards({ data }: { data: ConsistencyOverview }) {
         value={fmt.int(data.activeDays.thisYear)}
         unit={dayUnit(data.activeDays.thisYear)}
         hint={
-          data.activeDays.lastYearToDate > 0 ? (
+          showYearDelta ? (
             <span className="inline-flex flex-wrap items-center gap-1">
               <Delta value={yearDelta} text={fmt.signed(yearDelta)} />
               {t('consistency.streaks.vsLastYear')}

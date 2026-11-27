@@ -29,16 +29,17 @@ export function msDay(ms: number): string {
   return new Date(ms).toISOString().slice(0, 10);
 }
 
-const monthYearCache = new Map<string, Intl.DateTimeFormat>();
-
-/** "Jan 2026" / "Jan. 2026" ('monthYearShort' would print "Jan 26", which reads like a date). */
-export function monthYearLabel(fmt: Formatter, day: string): string {
-  let f = monthYearCache.get(fmt.locale);
-  if (!f) {
-    f = new Intl.DateTimeFormat(fmt.locale, { month: 'short', year: 'numeric', timeZone: 'UTC' });
-    monthYearCache.set(fmt.locale, f);
-  }
-  return f.format(new Date(`${day.slice(0, 10)}T00:00:00Z`));
+/**
+ * Both ends of a series' fitted trend on the local time axis. The fit runs from the series' first to its last
+ * workout (fit.startTs / endTs are their UTC start times); each end takes that workout's own UTC offset, which
+ * differs across DST or travel. Without it a run on Jan 31 at 19:30 in New York would start the trend in February.
+ */
+export function fitEnds(
+  workouts: readonly { tzMin: number }[],
+  points: readonly (readonly [number, number])[],
+  fit: { startTs: number; endTs: number },
+): [number, number] {
+  return [localMs(fit.startTs, workouts[points[0]![0]]!.tzMin), localMs(fit.endTs, workouts[points[points.length - 1]![0]]!.tzMin)];
 }
 
 /**
@@ -56,7 +57,8 @@ export function timeAxisLabel(fmt: Formatter, spanDays: number): (v: number) => 
 /** Label of a bucket key ('YYYY-MM-DD' week start, 'YYYY-MM', 'YYYY'). */
 export function bucketLabel(fmt: Formatter, key: string, style: 'short' | 'long' = 'short'): string {
   if (key.length === 4) return key;
-  if (key.length === 7) return style === 'short' ? monthYearLabel(fmt, `${key}-01`) : fmt.day(`${key}-01`, 'month');
+  // 'monthYear' ("Jan 2026"): 'monthYearShort' would print "Jan 26", which reads like a date
+  if (key.length === 7) return fmt.day(`${key}-01`, style === 'short' ? 'monthYear' : 'month');
   return fmt.day(key, style === 'short' ? 'dayShort' : 'day');
 }
 

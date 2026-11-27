@@ -1,125 +1,39 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useSearchParams } from 'react-router';
-import { ChevronLeft, ChevronRight, Download, Eye, EyeOff, ListChecks, MapPin, RotateCcw, Search, Shapes, Upload } from 'lucide-react';
-import {
-  sportInfo,
-  workoutTitle,
-  type ActivityListItem,
-  type ActivityListQuery,
-  type ActivitySort,
-  type ActivityTotals,
-} from '@cadence/shared';
-import {
-  Badge,
-  Button,
-  Card,
-  EmptyState,
-  ErrorState,
-  FilterBar,
-  IconButton,
-  Input,
-  Page,
-  PageHeader,
-  Select,
-  Skeleton,
-  Stat,
-  Table,
-  TD,
-  TH,
-  cn,
-} from '@/components/ui';
-import { PlaceText } from '@/components/map/PlaceText';
-import { WorkoutTags } from '@/components/WorkoutTags';
+import { Link } from 'react-router';
+import { Download, EyeOff, ListChecks, MapPin, RotateCcw, Upload } from 'lucide-react';
+import { workoutTitle, type ActivityListQuery, type ActivitySort } from '@cadence/shared';
+import { Button, Card, EmptyState, ErrorState, FilterBar, Input, Page, PageHeader, Select, Skeleton, cn } from '@/components/ui';
 import { useFormat } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
 import { useSettings } from '@/lib/settings';
 import { SportIcon, sportColorVar, sportLabel } from '@/lib/sports';
-import { addDays, dayStartTs, startOfMonth, startOfWeek, startOfYear, todayKey } from '@/lib/time';
-import { useActivityList, usePatchWorkout, useSportCounts } from '../api';
-import { MedalBadge } from '../components/MedalBadge';
+import { todayKey } from '@/lib/time';
+import { useUrlParams } from '@/lib/urlParams';
+import { listPageQuery, useActivityList, usePatchWorkout, useSportCounts } from '../api';
+import { DebouncedSearch } from '../components/DebouncedSearch';
+import { ListCards } from '../components/list/ListCards';
+import { ListTable } from '../components/list/ListTable';
+import { Pagination } from '../components/list/Pagination';
+import type { RowActions } from '../components/list/RowActions';
+import { Totals } from '../components/list/Totals';
 import { ToggleChip, chipClass } from '../components/ToggleChip';
 import { SportDialog } from '../components/SportDialog';
-import { StatList } from '../components/StatList';
-import { keyStats, shortDistanceParts } from '../lib/display';
+import {
+  RANGES,
+  SORT_OPTIONS,
+  parseListParams,
+  patchListParams,
+  sortOption,
+  sortPatch,
+} from '../lib/listParams';
+import { useMediaQuery } from '../lib/useMediaQuery';
 
-const RANGES = ['all', 'week', 'month', 'year', 'd30', 'd90', 'm12', 'custom'] as const;
-type Range = (typeof RANGES)[number];
-const SORTS: ActivitySort[] = ['start', 'distance', 'time', 'pace', 'elevation', 'hr', 'effort'];
-const SIZES = ['25', '50', '100'] as const;
-/** Sort choices of the card layout (narrow screens have no clickable column headers). */
-const SORT_OPTIONS = [
-  'start-desc',
-  'start-asc',
-  'distance-desc',
-  'time-desc',
-  'pace-desc',
-  'elevation-desc',
-  'hr-desc',
-  'effort-desc',
-] as const;
-const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
-
-/** Filters, sorting and paging live in the URL (shareable, back button friendly). */
+/** Filters, sorting and paging live in the URL (shareable, back button friendly); see lib/listParams.ts. */
 function useListParams() {
-  const [params, setParams] = useSearchParams();
-  const get = (k: string) => params.get(k) ?? '';
-  const range = (RANGES as readonly string[]).includes(get('range')) ? (get('range') as Range) : 'all';
-  const sort = (SORTS as string[]).includes(get('sort')) ? (get('sort') as ActivitySort) : 'start';
-  const size = (SIZES as readonly string[]).includes(get('size')) ? Number(get('size')) : 25;
-  const state = {
-    sports: get('sport') ? get('sport').split(',').filter(Boolean) : [],
-    range,
-    fromDay: DAY_RE.test(get('from')) ? get('from') : '',
-    toDay: DAY_RE.test(get('to')) ? get('to') : '',
-    q: get('q'),
-    gps: get('gps') === '1',
-    hidden: get('hidden') === '1',
-    sort,
-    order: get('order') === 'asc' ? ('asc' as const) : ('desc' as const),
-    page: Math.max(1, Number.parseInt(get('page'), 10) || 1),
-    size,
-  };
-  /** Update some params; every change except paging goes back to page 1. */
-  const update = (patch: Record<string, string | null>) => {
-    setParams(
-      (prev) => {
-        const next = new URLSearchParams(prev);
-        for (const [k, v] of Object.entries(patch)) {
-          if (v === null || v === '') next.delete(k);
-          else next.set(k, v);
-        }
-        if (!('page' in patch)) next.delete('page');
-        return next;
-      },
-      { replace: true },
-    );
-  };
-  return { state, update, reset: () => setParams(new URLSearchParams(), { replace: true }), active: params.toString() !== '' };
-}
-
-function rangeBounds(range: Range, fromDay: string, toDay: string, weekStart: 0 | 1): { from?: number; to?: number } {
-  const today = todayKey();
-  switch (range) {
-    case 'week':
-      return { from: dayStartTs(startOfWeek(today, weekStart)) };
-    case 'month':
-      return { from: dayStartTs(startOfMonth(today)) };
-    case 'year':
-      return { from: dayStartTs(startOfYear(today)) };
-    case 'd30':
-      return { from: dayStartTs(addDays(today, -29)) };
-    case 'd90':
-      return { from: dayStartTs(addDays(today, -89)) };
-    case 'm12':
-      return { from: dayStartTs(addDays(today, -364)) };
-    case 'custom':
-      return {
-        from: fromDay ? dayStartTs(fromDay) : undefined,
-        to: toDay ? dayStartTs(addDays(toDay, 1)) : undefined,
-      };
-    default:
-      return {};
-  }
+  /** `update` changes some params; every change except paging goes back to page 1. */
+  const [params, update, reset] = useUrlParams(patchListParams);
+  const state = useMemo(() => parseListParams(params), [params]);
+  return { state, update, reset, active: params.toString() !== '' };
 }
 
 function SportChips({ selected, onChange }: { selected: string[]; onChange: (s: string[]) => void }) {
@@ -154,321 +68,28 @@ function SportChips({ selected, onChange }: { selected: string[]; onChange: (s: 
   );
 }
 
-function SearchBox({ value, onChange }: { value: string; onChange: (q: string) => void }) {
-  const { t } = useI18n();
-  const [text, setText] = useState(value);
-  useEffect(() => setText(value), [value]);
-  useEffect(() => {
-    if (text === value) return;
-    const id = window.setTimeout(() => onChange(text.trim()), 300);
-    return () => window.clearTimeout(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [text]);
-  return (
-    <div className="relative w-full min-w-48 sm:w-64">
-      <Search size={15} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-fg-3" aria-hidden />
-      <Input
-        type="search"
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        placeholder={t('activities.list.search')}
-        aria-label={t('common.search')}
-        className="pl-8"
-      />
-    </div>
-  );
-}
-
-function Totals({ totals, dim }: { totals: ActivityTotals; dim: boolean }) {
-  const { t } = useI18n();
-  const fmt = useFormat();
-  const d = fmt.distanceParts(totals.distanceM, 0);
-  const e = fmt.elevationParts(totals.elevationM);
-  return (
-    <Card className={cn('mb-4 transition-opacity', dim && 'opacity-60')} aria-label={t('activities.list.totals')}>
-      <div className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3 lg:grid-cols-6">
-        <Stat size="sm" label={t('activities.athlete.count')} value={fmt.int(totals.count)} />
-        {totals.distanceM > 0 && <Stat size="sm" label={t('common.distance')} value={d.value} unit={d.unit} />}
-        <Stat size="sm" label={t('common.movingTime')} value={fmt.num(totals.movingS / 3600, 1)} unit="h" />
-        {totals.elevationM >= 1 && <Stat size="sm" label={t('common.elevationGain')} value={e.value} unit={e.unit} />}
-        <Stat size="sm" label={t('common.calories')} value={fmt.compact(totals.energyKcal)} unit="kcal" />
-        <Stat size="sm" label={t('common.effort')} value={fmt.int(totals.effort)} />
-      </div>
-    </Card>
-  );
-}
-
-interface RowActions {
-  onHide: (w: ActivityListItem) => void;
-  onSport: (w: ActivityListItem) => void;
-  busyId: number | null;
-}
-
-function Actions({ w, a }: { w: ActivityListItem; a: RowActions }) {
-  const { t } = useI18n();
-  return (
-    <div className="flex items-center justify-end gap-0.5">
-      <IconButton
-        icon={w.hidden ? Eye : EyeOff}
-        label={w.hidden ? t('activities.list.unhide') : t('activities.list.hide')}
-        onClick={() => a.onHide(w)}
-        disabled={a.busyId === w.id}
-      />
-      <IconButton icon={Shapes} label={t('activities.list.changeSport')} onClick={() => a.onSport(w)} />
-    </div>
-  );
-}
-
-function distanceText(w: ActivityListItem, fmt: ReturnType<typeof useFormat>): string {
-  if (!w.distanceM || !sportInfo(w.sport).distance) return '–';
-  if (w.sport === 'swim') {
-    const p = shortDistanceParts(w.distanceM, fmt);
-    return `${p.value} ${p.unit}`;
-  }
-  return fmt.distance(w.distanceM);
-}
-
-function ListTable({
-  items,
-  sort,
-  order,
-  onSort,
-  actions,
-}: {
-  items: ActivityListItem[];
-  sort: ActivitySort;
-  order: 'asc' | 'desc';
-  onSort: (s: ActivitySort) => void;
-  actions: RowActions;
-}) {
-  const { t, lang } = useI18n();
-  const fmt = useFormat();
-  const th = (key: ActivitySort | null, label: string, numeric = true, className?: string) => (
-    <TH
-      className={className}
-      numeric={numeric}
-      onClick={key ? () => onSort(key) : undefined}
-      sorted={key && sort === key ? order : null}
-    >
-      {key ? (
-        <span title={t('activities.list.sortBy', { column: label })}>{label}</span>
-      ) : (
-        label
-      )}
-    </TH>
-  );
-  return (
-    <Table>
-      <thead>
-        <tr>
-          {th('start', t('activities.list.columns.date'), false)}
-          {th(null, t('activities.list.columns.title'), false)}
-          {th('distance', t('activities.list.columns.distance'))}
-          {th('time', t('activities.list.columns.time'))}
-          {th('pace', t('activities.list.columns.pace'))}
-          {th('elevation', t('activities.list.columns.elevation'), true, 'hidden xl:table-cell')}
-          {th('hr', t('activities.list.columns.hr'), true, 'hidden xl:table-cell')}
-          {th('effort', t('activities.list.columns.effort'))}
-          <TH numeric>
-            <span className="sr-only">{t('activities.list.columns.actions')}</span>
-          </TH>
-        </tr>
-      </thead>
-      <tbody>
-        {items.map((w) => {
-          const title = workoutTitle(w, lang);
-          const info = sportInfo(w.sport);
-          return (
-            <tr key={w.id} className={cn('hover:bg-surface-2/60', w.hidden && 'opacity-60')}>
-              <TD className="whitespace-nowrap">
-                <div className="text-fg">{fmt.date(w.startTs, w.tzMin, 'dayShort')}</div>
-                <div className="text-xs text-fg-3">
-                  {fmt.date(w.startTs, w.tzMin, 'year')} · {fmt.time(w.startTs, w.tzMin)}
-                </div>
-              </TD>
-              <TD className="w-full max-w-0 min-w-44">
-                <div className="flex min-w-0 items-center gap-1.5">
-                  <span
-                    className="grid size-6 shrink-0 place-items-center rounded-full text-white"
-                    style={{ background: sportColorVar(w.sport) }}
-                    title={sportLabel(w.sport, lang)}
-                  >
-                    <SportIcon sport={w.sport} size={13} strokeWidth={2.25} />
-                  </span>
-                  <Link
-                    to={`/activities/${w.id}`}
-                    title={title}
-                    className="truncate font-medium text-fg hover:text-accent-fg hover:underline"
-                  >
-                    {title}
-                  </Link>
-                </div>
-                <div className="mt-0.5 flex min-w-0 items-center gap-1.5 overflow-hidden pl-7.5 text-xs text-fg-3">
-                  <span className="shrink-0">{sportLabel(w.sport, lang)}</span>
-                  {w.place && (
-                    <>
-                      <span aria-hidden>·</span>
-                      <PlaceText w={w} size={11} />
-                    </>
-                  )}
-                  {w.hidden && <Badge icon={EyeOff} className="shrink-0">{t('activities.list.hiddenBadge')}</Badge>}
-                </div>
-                <WorkoutTags w={w} className="mt-1 pl-7.5" />
-                {/* medals in their own line, so the place is never squeezed to its icon */}
-                {w.medals[0] && (
-                  <div className="mt-1 flex min-w-0 items-center gap-1.5 overflow-hidden pl-7.5">
-                    <MedalBadge rank={w.medals[0].rank} effort={w.medals[0].effort} sport={w.sport} elapsedS={w.medals[0].elapsedS} />
-                    {w.medals.length > 1 && <Badge>{t('activities.medal.more', { count: w.medals.length - 1 })}</Badge>}
-                  </div>
-                )}
-              </TD>
-              <TD numeric className="whitespace-nowrap">
-                {distanceText(w, fmt)}
-              </TD>
-              <TD numeric className="whitespace-nowrap">
-                {fmt.duration(w.movingS ?? w.durationS)}
-              </TD>
-              <TD numeric className="whitespace-nowrap">
-                {info.speedMode !== 'none' && w.avgSpeed ? fmt.pace(w.avgSpeed, w.sport) : '–'}
-              </TD>
-              <TD numeric className="hidden whitespace-nowrap xl:table-cell">
-                {w.hasRoute && w.elevationGainM !== null ? fmt.elevation(w.elevationGainM) : '–'}
-              </TD>
-              <TD numeric className="hidden xl:table-cell">
-                {w.avgHr ? fmt.int(w.avgHr) : '–'}
-              </TD>
-              <TD numeric>
-                {w.effort !== null ? (
-                  <span title={w.effortEstimated ? t('common.estimated') : undefined}>
-                    {fmt.int(w.effort)}
-                    {w.effortEstimated && <span className="text-fg-3">*</span>}
-                  </span>
-                ) : (
-                  '–'
-                )}
-              </TD>
-              <TD numeric>
-                <Actions w={w} a={actions} />
-              </TD>
-            </tr>
-          );
-        })}
-      </tbody>
-    </Table>
-  );
-}
-
-function ListCards({ items, actions }: { items: ActivityListItem[]; actions: RowActions }) {
-  const { t, lang } = useI18n();
-  const fmt = useFormat();
-  return (
-    <div className="grid gap-3">
-      {items.map((w) => (
-        <Card key={w.id} className={cn(w.hidden && 'opacity-60')}>
-          <div className="flex items-start gap-3">
-            <span
-              className="grid size-9 shrink-0 place-items-center rounded-full text-white"
-              style={{ background: sportColorVar(w.sport) }}
-              title={sportLabel(w.sport, lang)}
-            >
-              <SportIcon sport={w.sport} size={17} strokeWidth={2.25} />
-            </span>
-            <div className="min-w-0 flex-1">
-              <Link to={`/activities/${w.id}`} className="block truncate font-semibold text-fg hover:text-accent-fg">
-                {workoutTitle(w, lang)}
-              </Link>
-              <div className="flex min-w-0 items-center gap-x-1 text-xs text-fg-3">
-                <span className="shrink-0">
-                  {fmt.date(w.startTs, w.tzMin, 'dateTime')} · {sportLabel(w.sport, lang)}
-                </span>
-                {w.place && (
-                  <>
-                    <span aria-hidden>·</span>
-                    <PlaceText w={w} size={11} />
-                  </>
-                )}
-              </div>
-            </div>
-            <Actions w={w} a={actions} />
-          </div>
-          <StatList items={keyStats(w, fmt, t, 4)} size="sm" className="mt-3" />
-          <WorkoutTags w={w} className="mt-3" />
-          {(w.medals.length > 0 || w.hidden) && (
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {w.medals.slice(0, 3).map((m) => (
-                <MedalBadge key={m.effort} rank={m.rank} effort={m.effort} sport={w.sport} elapsedS={m.elapsedS} />
-              ))}
-              {w.hidden && <Badge icon={EyeOff}>{t('activities.list.hiddenBadge')}</Badge>}
-            </div>
-          )}
-        </Card>
-      ))}
-    </div>
-  );
-}
-
-function Pagination({
-  page,
-  size,
-  total,
-  onPage,
-  onSize,
-}: {
-  page: number;
-  size: number;
-  total: number;
-  onPage: (p: number) => void;
-  onSize: (s: string) => void;
-}) {
-  const { t } = useI18n();
-  const fmt = useFormat();
-  const pages = Math.max(1, Math.ceil(total / size));
-  const from = total ? (page - 1) * size + 1 : 0;
-  const to = Math.min(total, page * size);
-  return (
-    <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm text-fg-2">
-      <span className="tabular">{t('activities.list.showing', { from: fmt.int(from), to: fmt.int(to), total: fmt.int(total) })}</span>
-      <div className="flex items-center gap-2">
-        <label className="flex items-center gap-2 text-xs text-fg-3">
-          {t('activities.list.perPage')}
-          <span className="w-20">
-            <Select value={String(size)} onChange={onSize} options={SIZES.map((s) => ({ value: s, label: s }))} className="h-8" />
-          </span>
-        </label>
-        <IconButton icon={ChevronLeft} label={t('activities.list.prev')} disabled={page <= 1} onClick={() => onPage(page - 1)} />
-        <span className="tabular">
-          {fmt.int(page)} / {fmt.int(pages)}
-        </span>
-        <IconButton icon={ChevronRight} label={t('activities.list.next')} disabled={page >= pages} onClick={() => onPage(page + 1)} />
-      </div>
-    </div>
-  );
-}
-
 /** '/activities' — filterable, sortable list of every activity with totals and quick actions. */
 export default function ActivitiesPage() {
   const { t, lang } = useI18n();
   const { settings } = useSettings();
-  const { state: s, update, reset, active } = useListParams();
+  const { state: s, update, reset: resetParams, active } = useListParams();
   const patch = usePatchWorkout();
   const [sportFor, setSportFor] = useState<{ id: number; sport: string; title: string } | null>(null);
   const [busyId, setBusyId] = useState<number | null>(null);
+  // one layout at a time: the table from Tailwind's lg up, the cards below
+  const wide = useMediaQuery('(min-width: 64rem)');
+  // a new search box on reset: a search typed just before must not come back with its pending commit
+  const [searchKey, setSearchKey] = useState(0);
+  const reset = () => {
+    resetParams();
+    setSearchKey((k) => k + 1);
+  };
 
-  const query = useMemo<ActivityListQuery>(() => {
-    const b = rangeBounds(s.range, s.fromDay, s.toDay, settings.weekStart);
-    return {
-      sport: s.sports.join(',') || undefined,
-      from: b.from,
-      to: b.to,
-      q: s.q || undefined,
-      hasRoute: s.gps ? true : undefined,
-      includeHidden: s.hidden || undefined,
-      sort: s.sort,
-      order: s.order,
-      limit: s.size,
-      offset: (s.page - 1) * s.size,
-    };
-  }, [s.sports, s.range, s.fromDay, s.toDay, s.q, s.gps, s.hidden, s.sort, s.order, s.size, s.page, settings.weekStart]);
+  // the period as local days: the server puts every activity on the day of its own time zone, not the browser's
+  const query = useMemo<ActivityListQuery>(
+    () => listPageQuery(s, settings.weekStart, todayKey()),
+    [s, settings.weekStart],
+  );
   const list = useActivityList(query);
   const data = list.data;
   // the same selection as a spreadsheet (all pages)
@@ -559,18 +180,24 @@ export default function ActivitiesPage() {
                 </div>
               </>
             )}
-            <SearchBox value={s.q} onChange={(q) => update({ q: q || null })} />
-            <div className="w-52 lg:hidden">
-              <Select
-                value={`${s.sort}-${s.order}`}
-                onChange={(v) => {
-                  const [sort, order] = v.split('-') as [ActivitySort, 'asc' | 'desc'];
-                  update({ sort: sort === 'start' ? null : sort, order: order === 'asc' ? 'asc' : null });
-                }}
-                options={SORT_OPTIONS.map((o) => ({ value: o, label: t(`activities.list.sortOptions.${o}`) }))}
-                aria-label={t('activities.list.sort')}
-              />
-            </div>
+            <DebouncedSearch
+              key={searchKey}
+              value={s.q}
+              onChange={(q) => update({ q: q || null })}
+              label={t('common.search')}
+              placeholder={t('activities.list.search')}
+              className="w-full min-w-48 sm:w-64"
+            />
+            {!wide && (
+              <div className="w-52">
+                <Select
+                  value={sortOption(s.sort, s.order)}
+                  onChange={(v) => update(sortPatch(v))}
+                  options={SORT_OPTIONS.map((o) => ({ value: o, label: t(`activities.list.sortOptions.${o}`) }))}
+                  aria-label={t('activities.list.sort')}
+                />
+              </div>
+            )}
             <ToggleChip active={s.gps} onChange={(v) => update({ gps: v ? '1' : null })} icon={MapPin}>
               {t('activities.list.withGps')}
             </ToggleChip>
@@ -618,12 +245,13 @@ export default function ActivitiesPage() {
             </Card>
           ) : (
             <div className={cn('transition-opacity', stale && 'opacity-60')}>
-              <Card padded={false} className="hidden overflow-hidden lg:block">
-                <ListTable items={data.items} sort={s.sort} order={s.order} onSort={onSort} actions={actions} />
-              </Card>
-              <div className="lg:hidden">
+              {wide ? (
+                <Card padded={false} className="overflow-hidden">
+                  <ListTable items={data.items} sort={s.sort} order={s.order} onSort={onSort} actions={actions} />
+                </Card>
+              ) : (
                 <ListCards items={data.items} actions={actions} />
-              </div>
+              )}
               <Pagination
                 page={s.page}
                 size={s.size}

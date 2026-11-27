@@ -6,8 +6,10 @@ import {
   PROGRESS_POWER_COMPARES,
   PROGRESS_POWER_PERIODS,
   sportInfo,
+  type ProgressBodyMass,
   type ProgressDayRange,
   type ProgressPowerCompare,
+  type ProgressPowerCurve,
   type ProgressPowerEffort,
   type ProgressPowerPeriod,
 } from '@cadence/shared';
@@ -45,15 +47,19 @@ export function durationLabel(t: TFunction, fmt: Formatter, s: number): string {
 export const powerValue = (p: ProgressPowerEffort, unit: PowerUnit): number | null =>
   unit === 'wkg' ? p.wkg : p.watts;
 
+/**
+ * A curve without a body mass of its own (weighing started after its period) with W/kg from `mass`, the period's
+ * body mass, so a comparison does not silently vanish from the W/kg chart. The curve keeps `bodyMass: null` (no W/kg
+ * column of its own in the table); the card says which weight was used. Other curves are returned as they are.
+ */
+export function withBorrowedMass(curve: ProgressPowerCurve, mass: ProgressBodyMass | null): ProgressPowerCurve {
+  if (curve.bodyMass || !mass) return curve;
+  return { ...curve, points: curve.points.map((p) => ({ ...p, wkg: Math.round((p.watts / mass.kg) * 100) / 100 })) };
+}
+
 /** "255 W" / "3.5 W/kg". */
 export function formatPower(fmt: Formatter, v: number, unit: PowerUnit, wkgDigits = 1): string {
   return unit === 'wkg' ? `${fmt.num(v, wkgDigits)} W/kg` : `${fmt.int(v)} W`;
-}
-
-export function rangeLabel(fmt: Formatter, r: ProgressDayRange): string {
-  if (r.fromDay === r.toDay) return fmt.day(r.fromDay, 'day');
-  const sameYear = r.fromDay.slice(0, 4) === r.toDay.slice(0, 4);
-  return `${fmt.day(r.fromDay, sameYear ? 'dayShort' : 'day')} – ${fmt.day(r.toDay, 'day')}`;
 }
 
 const PERIOD_DAYS: Partial<Record<ProgressPowerPeriod, number>> = { '42d': 42, '90d': 90 };
@@ -74,7 +80,7 @@ export function curveName(
     return t(kind === 'current' ? 'progress.power.series.last12m' : 'progress.power.series.before12m');
   if (period === 'year') return r.fromDay.slice(0, 4);
   if (period === 'all') return t('progress.power.periods.all');
-  return rangeLabel(fmt, r);
+  return fmt.dayRange(r.fromDay, r.toDay);
 }
 
 /** Label of an FTP history bucket: 'YYYY-MM' → "Jan 2026", 'YYYY-Qn' → "Q1 2026". */

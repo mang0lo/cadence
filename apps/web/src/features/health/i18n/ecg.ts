@@ -4,7 +4,7 @@ export const ecg: Dictionary = {
   en: {
     subtitle: 'Apple Watch ECG recordings on ECG paper',
     recordings: 'Recordings',
-    count: '{count} recordings',
+    count: { one: '{count} recording', other: '{count} recordings' },
     class: {
       sinus: 'Sinus rhythm',
       afib: 'Atrial fibrillation',
@@ -52,7 +52,7 @@ export const ecg: Dictionary = {
   de: {
     subtitle: 'EKG-Aufzeichnungen deiner Apple Watch auf EKG-Papier',
     recordings: 'Aufzeichnungen',
-    count: '{count} Aufzeichnungen',
+    count: { one: '{count} Aufzeichnung', other: '{count} Aufzeichnungen' },
     class: {
       sinus: 'Sinusrhythmus',
       afib: 'Vorhofflimmern',

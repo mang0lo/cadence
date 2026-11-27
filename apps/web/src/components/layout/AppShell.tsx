@@ -4,6 +4,7 @@ import { ArrowUpDown, ChevronDown, ChevronUp, GripVertical, Menu, Moon, Sparkles
 import { featureModules } from '@/features/registry';
 import type { NavGroup, NavItem } from '@/features/types';
 import { useImportJobs } from '@/features/platform/useImportJobs';
+import { jobPhaseLabel, jobStepLabel } from '@/features/platform/importJobs';
 import {
   latestSummaryJob,
   markSummarySeen,
@@ -102,7 +103,6 @@ function NavEntry({ item, onNavigate }: { item: NavItem; onNavigate?: () => void
 /** Finished import with news the user has not looked at yet (from the last 3 days). */
 function WhatsNewNote() {
   const t = useT();
-  const fmt = useFormat();
   const { jobs } = useImportJobs();
   const seen = useSeenSummaryId();
   const job = latestSummaryJob(jobs);
@@ -111,10 +111,7 @@ function WhatsNewNote() {
   const s = job.stats.summary;
   const c = summaryCounts(s);
   const parts = [
-    t(s.initial ? 'platform.whatsNew.initial' : 'platform.whatsNew.activities', {
-      count: s.count,
-      n: fmt.int(s.count),
-    }),
+    t(s.initial ? 'platform.whatsNew.initial' : 'platform.whatsNew.activities', { count: s.count }),
     c.records ? t('platform.whatsNew.records', { count: c.records }) : null,
     c.trophies ? t('platform.whatsNew.trophies', { count: c.trophies }) : null,
   ].filter(Boolean);
@@ -143,16 +140,18 @@ function WhatsNewNote() {
 
 function ImportIndicator() {
   const t = useT();
-  const { active } = useImportJobs();
-  if (!active) return <WhatsNewNote />;
+  const fmt = useFormat();
+  // the job the server works on (not the newest queued one); its English message is not shown
+  const { current } = useImportJobs();
+  if (!current) return <WhatsNewNote />;
   return (
     <Link to="/import" className="block rounded-control border border-border bg-surface-2 p-2.5 text-xs">
       <div className="mb-1.5 flex items-center justify-between font-medium text-fg">
         <span>{t('common.importRunning')}</span>
-        <span className="tabular text-fg-3">{Math.round(active.progress * 100)}%</span>
+        <span className="tabular text-fg-3">{fmt.pct(current.progress)}</span>
       </div>
-      <ProgressBar value={active.progress} height={5} />
-      {active.message && <div className="mt-1.5 truncate text-fg-3">{active.message}</div>}
+      <ProgressBar value={current.progress} height={5} />
+      <div className="mt-1.5 truncate text-fg-3">{jobStepLabel(t, fmt.lang, current) ?? jobPhaseLabel(t, current)}</div>
     </Link>
   );
 }
@@ -362,9 +361,9 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const t = useT();
   const { athlete, settings, update } = useSettings();
   const [editing, setEditing] = useState(false);
-  // the order being edited: shown at once, saved in the background (one request after the other)
+  // the order being edited, shown at once (also every move of a drag, saved when it ends). update() shows a saved
+  // order at once too and sends the changes one after the other; the order loads nothing again.
   const [draft, setDraft] = useState<NavPrefs | null>(null);
-  const saving = useRef<Promise<unknown>>(Promise.resolve());
   const savedPrefs = useMemo<NavPrefs>(
     () => ({ order: settings.navOrder ?? [], groups: settings.navGroups ?? [] }),
     [settings.navOrder, settings.navGroups],
@@ -372,13 +371,11 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const nav = useNav(draft ?? savedPrefs);
   const save = (next: NavPrefs) => {
     setDraft(next);
-    saving.current = saving.current
-      .then(() => update({ navOrder: [...next.order], navGroups: [...next.groups] }, { refetch: false }))
-      .catch(() => undefined);
+    void update({ navOrder: [...next.order], navGroups: [...next.groups] }).catch(() => undefined);
   };
   const finish = () => {
     setEditing(false);
-    void saving.current.then(() => setDraft(null));
+    setDraft(null);
   };
   const shownPrefs = draft ?? savedPrefs;
   const custom = shownPrefs.order.length > 0 || shownPrefs.groups.length > 0;

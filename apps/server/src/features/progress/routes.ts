@@ -3,13 +3,15 @@ import { z } from 'zod';
 import { PROGRESS_POWER_COMPARES, PROGRESS_POWER_PERIODS, type ProgressPreferences } from '@cadence/shared';
 import { setSetting } from '../../core/settings';
 import { badRequest, notFound } from '../../lib/http';
-import { addDays, parseDay } from '../../lib/time';
+import { addDays, parseDay, today as serverToday } from '../../lib/time';
 import { firstActivityDay, resolveToday, zDay, zSport, zVolumeMetric } from './common';
 import { fitness, physiology } from './fitness';
 import { ftpEstimate, powerCurve } from './power';
+import { athletesMissingPowerBests } from './power-curve';
 import { effortHistory, predictions, records } from './records';
 import { getPreferences, intensity, paceAtHr, PREFERENCES_KEY, trends } from './trends';
 import { compare, overview, volume, weeklySnapshot, yearOverYear } from './volume';
+import { athletesMissingMetrics } from './workout-metrics';
 
 const MAX_RANGE_DAYS = 40 * 366;
 
@@ -44,6 +46,17 @@ const bpm = z.coerce.number().int().min(30).max(240);
 
 /** Progress endpoints, mounted under /api/progress. */
 export default async function progressRoutes(app: FastifyInstance) {
+  // After an update that changed a cache version (or a database from before a cache existed), workouts have no
+  // current rows: fill them in the background (the derive steps catch up every stale row) instead of in the first
+  // request, which would compute them all on the server's main thread. One queued job is enough (busy).
+  app.addHook('onReady', async () => {
+    if (!app.jobs) return;
+    for (const athleteId of new Set([...athletesMissingMetrics(app.db), ...athletesMissingPowerBests(app.db)])) {
+      if (!app.jobs.busy(athleteId))
+        app.jobs.enqueueDerive(athleteId, { origin: 'upgrade', workoutIds: [], sinceDay: serverToday() });
+    }
+  });
+
   app.get('/overview', async (req) => overview(app.db, req.athleteId));
 
   app.get('/volume', async (req) => {
@@ -151,8 +164,12 @@ export default async function progressRoutes(app: FastifyInstance) {
   });
 
   app.get('/power/ftp', async (req) => {
-    const q = z.object({ sport: zSport, today: zDay.optional() }).parse(req.query);
-    return ftpEstimate(app.db, req.athleteId, { sport: q.sport, today: resolveToday(q.today) });
+    const q = z
+      .object({ sport: zSport, today: zDay.optional(), history: z.enum(['0', '1', 'true', 'false']).optional() })
+      .parse(req.query);
+    // history=0: the dashboard widget, which shows no monthly history (a window query per bucket and body mass)
+    const history = q.history !== '0' && q.history !== 'false';
+    return ftpEstimate(app.db, req.athleteId, { sport: q.sport, today: resolveToday(q.today), history });
   });
 
   app.get('/preferences', async (req): Promise<ProgressPreferences> => getPreferences(app.db, req.athleteId));

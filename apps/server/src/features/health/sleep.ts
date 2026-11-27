@@ -1,12 +1,12 @@
 import { all, run, tx, type Db } from '../../db/db';
 import { SLEEP_TYPE } from '../../import/hk';
-import { getSettings } from '../../core/settings';
+import { getSetting, getSettings, setSetting } from '../../core/settings';
 import { preferred } from '../../core/sources';
-import { addDays, parseDay } from '../../lib/time';
+import { addDays, dayString, parseDay } from '../../lib/time';
 import { tzOffsetMinutes } from '../../lib/tz';
-import type { DeriveStep } from '../types';
+import type { DeriveChanges, DeriveStep } from '../types';
 import { buildSleepNights, type BuiltSleep, type RawSleepRecord } from './sleep-builder';
-import { typeIdByIdentifier } from './util';
+import { localDayRange, typeIdByIdentifier } from './util';
 
 interface SleepRecordRow {
   start_ts: number;
@@ -52,22 +52,32 @@ function insertNight(db: Db, athleteId: number, n: BuiltSleep): void {
 }
 
 /**
+ * Setting: the heart source preference ('apple' | 'device') the stored nights were built with. It decides whether
+ * Apple's or the watch's night wins on a day with both (mergeExternalNights).
+ */
+const NIGHTS_SOURCE_KEY = 'health.sleepNightsSource';
+
+/**
  * Rebuild the sleep nights of an athlete. With `sinceDay` only nights waking up on or after (sinceDay − 2) are
- * recomputed from the records of the days around them; `null` rebuilds everything.
- * Returns the number of stored sessions.
+ * recomputed from the records of the days around them; `null` rebuilds everything. A heart source preference that
+ * changed since the nights were built (or is not known) rebuilds everything too: the history must not mix Apple's and
+ * the watch's nights. Returns the number of stored sessions.
  */
 export function rebuildSleepNights(db: Db, athleteId: number, sinceDay: string | null, check?: () => void): number {
+  const source = preferred(getSettings(db, athleteId), 'heart');
+  if (getSetting<string | null>(db, athleteId, NIGHTS_SOURCE_KEY, null) !== source) sinceDay = null;
   const typeId = typeIdByIdentifier(db, SLEEP_TYPE);
   const fromDay = sinceDay ? addDays(sinceDay, -2) : null;
   if (typeId === null) {
     // no Apple sleep data (left): only nights from device clouds
     return tx(db, () => {
       run(db, 'DELETE FROM health_sleep_nights WHERE athlete_id = ? AND day >= ?', [athleteId, fromDay ?? '0000-00-00']);
+      setSetting(db, athleteId, NIGHTS_SOURCE_KEY, source);
       return mergeExternalNights(db, athleteId, fromDay);
     });
   }
-  // records from well before fromDay so sessions that end on fromDay are complete (offsets reach ±14 h)
-  const lo = fromDay ? (parseDay(addDays(fromDay, -2)) ?? 0) * 86400 - 14 * 3600 : -1e12;
+  // records from well before fromDay so sessions that end on fromDay are complete
+  const lo = fromDay ? localDayRange(addDays(fromDay, -2)).lo : -1e12;
   const rows = all<SleepRecordRow>(
     db,
     `SELECT r.start_ts, r.end_ts, r.tz_min, r.text, r.source_id, s.name
@@ -89,6 +99,7 @@ export function rebuildSleepNights(db: Db, athleteId: number, sinceDay: string |
   return tx(db, () => {
     run(db, 'DELETE FROM health_sleep_nights WHERE athlete_id = ? AND day >= ?', [athleteId, fromDay ?? '0000-00-00']);
     for (const n of nights) insertNight(db, athleteId, n);
+    setSetting(db, athleteId, NIGHTS_SOURCE_KEY, source);
     return nights.length + mergeExternalNights(db, athleteId, fromDay);
   });
 }
@@ -174,13 +185,41 @@ export function mergeExternalNights(db: Db, athleteId: number, fromDay: string |
   return n;
 }
 
+/**
+ * The day from which the nights must be rebuilt after a derive run, or undefined when they are up to date. The nights
+ * depend on the sleep records (and on the heart source preference they were built with, see rebuildSleepNights; COROS
+ * nights are merged by the connector itself): a run that names the changed record types without sleep analysis (a
+ * workout edit, new heart rate samples) changes no night, and new sleep records only change the nights around them.
+ */
+export function sleepRebuildFrom(
+  db: Db,
+  athleteId: number,
+  sinceDay: string | null,
+  recordTypes: DeriveChanges['recordTypes'] | undefined,
+): string | null | undefined {
+  if (!recordTypes || recordTypes === 'all') return sinceDay;
+  if (getSetting<string | null>(db, athleteId, NIGHTS_SOURCE_KEY, null) !== preferred(getSettings(db, athleteId), 'heart'))
+    return null;
+  const ts = recordTypes.get(SLEEP_TYPE);
+  if (ts === undefined) return undefined;
+  // one day of margin before the UTC day: local days start up to 14 h earlier (rebuildSleepNights adds two more)
+  const day = dayString(Math.floor(ts / 86400) - 1);
+  return sinceDay !== null && sinceDay > day ? sinceDay : day;
+}
+
 export const sleepStep: DeriveStep = {
   id: 'health.sleep',
   label: 'Sleep nights',
   weight: 1,
   run(ctx) {
+    const from = sleepRebuildFrom(ctx.db, ctx.athleteId, ctx.sinceDay, ctx.changes?.recordTypes);
+    if (from === undefined) {
+      ctx.log('health.sleep: no new sleep records');
+      ctx.report(1);
+      return;
+    }
     ctx.report(0.1);
-    const n = rebuildSleepNights(ctx.db, ctx.athleteId, ctx.sinceDay, ctx.checkCancelled);
+    const n = rebuildSleepNights(ctx.db, ctx.athleteId, from, ctx.checkCancelled);
     ctx.log(`health.sleep: ${n} sleep sessions`);
     ctx.report(1);
   },

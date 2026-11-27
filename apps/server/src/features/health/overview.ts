@@ -1,3 +1,4 @@
+import { familyOf, lastCompleteDay, sourceEnd, type RecordFamily } from '../../core/coverage';
 import { getSettings } from '../../core/settings';
 import { heartMetric } from '../../core/sources';
 import {
@@ -11,7 +12,7 @@ import {
   type SnapshotValue,
 } from '@cadence/shared';
 import { all, get, type Db } from '../../db/db';
-import { addDays, today } from '../../lib/time';
+import { addDays, nowSec } from '../../lib/time';
 import { aggregationOfMetric, dataRange, getHealthSettings } from './util';
 
 interface DayRow {
@@ -137,10 +138,31 @@ export function buildMeta(db: Db, athleteId: number): HealthMeta {
   };
 }
 
+/**
+ * Last day the windows of a metric may use. Cumulative metrics (steps, energy, mindful minutes …) count days without
+ * a record as 0, so they end at the last complete day of their own source, judged from the data rather than the
+ * clock: an Apple export does not cover the days a COROS sync adds after it, and the day it was taken on holds only
+ * the hours before the export. Other metrics end at `asOf`.
+ */
+function windowEnds(db: Db, athleteId: number, asOf: string): (metric: string, cumulative: boolean) => string {
+  const now = nowSec();
+  const complete = new Map<RecordFamily, string | null>();
+  return (metric, cumulative) => {
+    if (!cumulative) return asOf;
+    const family = familyOf(metric);
+    if (!complete.has(family)) {
+      const end = sourceEnd(db, athleteId, family, now);
+      complete.set(family, end ? lastCompleteDay(end, now) : null);
+    }
+    const day = complete.get(family)!;
+    return day !== null && day < asOf ? day : asOf;
+  };
+}
+
 export function buildOverview(db: Db, athleteId: number): HealthOverview {
   const { asOf } = dataRange(db, athleteId);
   if (!asOf) return { asOf: null, cards: [] };
-  const todayKey = today();
+  const windowEnd = windowEnds(db, athleteId, asOf);
   const cards: HealthMetricCard[] = [];
   const settings = getSettings(db, athleteId);
   for (const base of OVERVIEW_METRICS) {
@@ -153,8 +175,7 @@ export function buildOverview(db: Db, athleteId: number): HealthOverview {
     if (!firstDay) continue;
     const agg = def.metric === 'sleep' ? 'avg' : aggregationOfMetric(db, def.metric);
     const cumulative = agg === 'sum' || agg === 'duration';
-    // today is incomplete for cumulative metrics: compare complete days only
-    const end = cumulative && asOf >= todayKey ? addDays(asOf, -1) : asOf;
+    const end = windowEnd(def.metric, cumulative);
     const rows = dailyValues(db, athleteId, def.metric, addDays(end, -(OVERVIEW_SPARK_DAYS - 1)), end);
     const latest = latestValue(db, athleteId, def.metric, end);
     cards.push({
@@ -182,7 +203,7 @@ function snapshotValue(
   const byDay = new Map(rows.map((r) => [r.day, r.value]));
   const spark: (number | null)[] = [];
   for (let i = sparkDays - 1; i >= 0; i--) spark.push(byDay.get(addDays(asOf, -i)) ?? null);
-  return { day: latest.day, value: latest.value, spark };
+  return { metric, day: latest.day, value: latest.value, spark };
 }
 
 export function buildSnapshot(db: Db, athleteId: number): HealthSnapshot {
@@ -203,11 +224,14 @@ export function buildSnapshot(db: Db, athleteId: number): HealthSnapshot {
       goalMin: getHealthSettings(db, athleteId).sleepGoalMin,
     };
   }
+  // Apple's steps of the day an export was taken on are only its morning: show the last complete day instead
+  const steps = heartMetric(db, athleteId, 'steps');
+  const stepsEnd = windowEnds(db, athleteId, asOf)(steps, aggregationOfMetric(db, steps) === 'sum');
   return {
     asOf,
     restingHr: snapshotValue(db, athleteId, heartMetric(db, athleteId, 'restingHr'), asOf, 14),
     hrv: snapshotValue(db, athleteId, heartMetric(db, athleteId, 'hrv'), asOf, 14),
-    steps: snapshotValue(db, athleteId, heartMetric(db, athleteId, 'steps'), asOf, 14),
+    steps: snapshotValue(db, athleteId, steps, stepsEnd, 14),
     sleep,
   };
 }

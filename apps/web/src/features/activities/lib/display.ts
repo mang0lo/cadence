@@ -1,6 +1,7 @@
 import { BEST_EFFORTS, sportInfo, type WorkoutSummary } from '@cadence/shared';
-import type { Formatter } from '@/lib/format';
+import { speedChartValue, speedFormat, speedLabel, type Formatter } from '@/lib/format';
 import type { Lang, TFunction } from '@/lib/i18n';
+import { dayKey, diffDays, startOfWeek, todayKey, weekday } from '@/lib/time';
 
 /** "UTC+01:00" for an offset in minutes. */
 export function tzLabel(tzMin: number): string {
@@ -35,15 +36,94 @@ export function shortDistanceParts(m: number, fmt: Formatter): { value: string; 
   return fmt.units === 'imperial' ? { value: fmt.int(m / 0.9144), unit: 'yd' } : { value: fmt.int(m), unit: 'm' };
 }
 
-/** Whether a sport shows pace (min/km) rather than speed. */
-export const isPaceSport = (sport: string) => {
-  const m = sportInfo(sport).speedMode;
-  return m === 'pace' || m === 'pace100';
-};
+/** Cycling sports (ride, handcycle): cadence in rpm, power with an FTP. */
+export const isCycling = (sport: string) => sportInfo(sport).group === 'cycle';
 
-/** Label for the speed metric of a sport: "Pace" or "Speed". */
-export function speedLabel(sport: string, t: TFunction): string {
-  return isPaceSport(sport) ? t('common.pace') : t('common.speed');
+/** Cadence unit of a sport (the same rule as fmt.cadence). */
+export const cadenceUnit = (sport: string) => (isCycling(sport) ? 'rpm' : 'spm');
+
+/**
+ * The number charts, axes and legends show for a speed (m/s): speedChartValue (seconds per km / mi, per 100 m / 100 yd
+ * for swims, or km/h / mph), NaN without a speed.
+ */
+export function paceValue(mps: number, sport: string, units: Formatter['units']): number {
+  return mps > 0 ? speedChartValue(mps, sport, units) : NaN;
+}
+
+/**
+ * A − B of two speeds (m/s) as the compare pages show it, with speedFormat's difference: the pace difference for pace
+ * sports ("+0:12 /km", positive = A slower), else the speed difference ("−1.2 km/h"). From the speeds themselves (also
+ * below the walking speed the charts hide); null unless both are known. `value` is the shown difference (rounded),
+ * for its direction.
+ */
+export function speedDiff(a: number, b: number, sport: string, fmt: Formatter): { value: number; text: string } | null {
+  const d = paceValue(a, sport, fmt.units) - paceValue(b, sport, fmt.units);
+  if (!Number.isFinite(d)) return null;
+  const sf = speedFormat(fmt, sport);
+  // paces in whole seconds, speeds with one decimal, as the text shows them
+  return { value: sf.inverse ? Math.round(d) : Math.round(d * 10) / 10, text: sf.delta(b, a) };
+}
+
+/** Axis tick of a duration in minutes: "0", "30m", "2h" (en) / "30 Min.", "2 Std." (de). */
+export function minutesTick(min: number, fmt: Formatter): string {
+  return min === 0 ? '0' : fmt.durationShort(min * 60);
+}
+
+/**
+ * Value axis for minutes up to `maxMin`: at most three steps above 0, of 15 or 30 minutes up to an hour and of whole
+ * hours beyond, so every minutesTick label is exact (never "2h" for a 90-minute tick).
+ */
+export function minutesAxis(maxMin: number): { max: number; interval: number } {
+  for (const step of [15, 30, 60, 120, 180, 240, 360, 480, 720]) {
+    const n = Math.max(1, Math.ceil(maxMin / step));
+    if (n <= 3 && (step >= 60 || n * step <= 60)) return { max: n * step, interval: step };
+  }
+  const step = Math.ceil(maxMin / 3 / 1440) * 1440;
+  return { max: 3 * step, interval: step };
+}
+
+/**
+ * How long ago an activity was, by the calendar: minutes or hours on its own day, then calendar days ("yesterday" is
+ * the day before today, never 30 hours ago two days back), calendar weeks from `weekStart` ("last week"), months and
+ * years. `ts`/`tzMin` give the activity's local day; `now` (unix s) and `today` (browser day key) are the reference.
+ */
+export function relativeTime(
+  ts: number,
+  tzMin: number,
+  fmt: Formatter,
+  weekStart: 0 | 1,
+  now = Date.now() / 1000,
+  today = todayKey(),
+): string {
+  const rtf = new Intl.RelativeTimeFormat(fmt.locale, { numeric: 'auto' });
+  const day = dayKey(ts, tzMin);
+  const days = diffDays(day, today);
+  if (days <= 0) {
+    const diff = ts - now;
+    return Math.abs(diff) < 3600 ? rtf.format(Math.round(diff / 60), 'minute') : rtf.format(Math.round(diff / 3600), 'hour');
+  }
+  if (days < 7) return rtf.format(-days, 'day');
+  const weeks = diffDays(startOfWeek(day, weekStart), startOfWeek(today, weekStart)) / 7;
+  if (weeks < 5) return rtf.format(-weeks, 'week');
+  const monthIndex = (d: string) => Number(d.slice(0, 4)) * 12 + Number(d.slice(5, 7));
+  const months = monthIndex(today) - monthIndex(day);
+  if (months < 12) return rtf.format(-Math.max(1, months), 'month');
+  return rtf.format(-Math.max(1, Number(today.slice(0, 4)) - Number(day.slice(0, 4))), 'year');
+}
+
+/** Short weekday name of a day key ("Tue", "Di."), whatever the locale's date pattern looks like. */
+export function weekdayShort(day: string, fmt: Formatter): string {
+  return fmt.weekdayNames(0)[weekday(day)]!;
+}
+
+/**
+ * Elevation gain to show for a workout (the detail page's rule): also without a route, where it comes from the
+ * workout's own data (a route file missing from the export, a FIT total ascent) — the list sorts by it and its totals
+ * add it up. Null when unknown, and without a route when it is zero.
+ */
+export function shownGain(w: Pick<WorkoutSummary, 'hasRoute' | 'elevationGainM'>): number | null {
+  const g = w.elevationGainM;
+  return g !== null && (w.hasRoute || g > 0) ? g : null;
 }
 
 /** Sport-specific key stats of a workout for cards and list rows. */
@@ -57,10 +137,10 @@ export function keyStats(w: WorkoutSummary, fmt: Formatter, t: TFunction, max = 
     out.push({ key: 'distance', label: t('common.distance'), value: d.value, unit: d.unit });
     if (info.speedMode !== 'none' && w.avgSpeed) {
       const p = fmt.paceParts(w.avgSpeed, w.sport);
-      out.push({ key: 'pace', label: speedLabel(w.sport, t), value: p.value, unit: p.unit });
+      out.push({ key: 'pace', label: speedLabel(t, w.sport), value: p.value, unit: p.unit });
     }
     out.push({ key: 'time', label: t('common.movingTime'), value: fmt.duration(time) });
-    if (w.hasRoute && (w.elevationGainM ?? 0) >= 1) {
+    if ((shownGain(w) ?? 0) >= 1) {
       const e = fmt.elevationParts(w.elevationGainM);
       out.push({ key: 'elevation', label: t('common.elevationGain'), value: e.value, unit: e.unit });
     }

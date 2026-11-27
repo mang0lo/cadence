@@ -1,16 +1,18 @@
 /**
- * Dashboard widgets of the "progress" feature, placed on the home page by the activities feature.
+ * Dashboard widgets of the "progress" feature, registered in ./index.tsx (FeatureModule.widgets).
  * Each widget renders its own <Card> and fetches its own data; return null when there is nothing to show.
  */
 import type { ReactNode } from 'react';
 import { Link } from 'react-router';
 import { ArrowRight, CalendarDays, Gauge, Zap } from 'lucide-react';
+import type { ProgressFtpResponse } from '@cadence/shared';
 import { Card, CardHeader, Delta, ErrorState, Skeleton, Stat } from '@/components/ui';
+import { useApi } from '@/lib/api';
 import { useFormat, type Formatter } from '@/lib/format';
 import { useI18n, useT } from '@/lib/i18n';
 import { sportLabel } from '@/lib/sports';
 import { addDays, todayKey } from '@/lib/time';
-import { useFitness, useFtpEstimate, usePowerCurve, useSnapshot } from './api';
+import { useFitness, useSnapshot } from './api';
 import { signedRounded } from './format';
 import { FormZoneBadge } from './components/FormZoneBadge';
 import { Spark } from './components/Spark';
@@ -180,22 +182,25 @@ export function PowerWidget() {
   const t = useT();
   const fmt = useFormat();
   const { lang } = useI18n();
-  const ftp = useFtpEstimate(null);
-  const period = ftp.data?.windowDays === 90 ? '90d' : '42d';
-  const curve = usePowerCurve(ftp.data ? { sport: ftp.data.sport, period, compare: 'none' } : null);
+  // one cheap request: the estimate of the default power sport with the bests of its window, without the monthly
+  // history the power page charts
+  const ftp = useApi<ProgressFtpResponse>(['progress', 'power-ftp'], '/progress/power/ftp', {
+    today: todayKey(),
+    history: 0,
+  });
   const title = t('progress.widgets.power.title');
-  const error = ftp.error ?? curve.error;
-  if (error)
+  if (ftp.error)
     return (
       <Card>
         <CardHeader title={title} icon={Zap} />
-        <ErrorState error={error} />
+        <ErrorState error={ftp.error} />
       </Card>
     );
-  if (!curve.data || !ftp.data) return <WidgetSkeleton title={title} icon={Zap} />;
-  if (!curve.data.sports.length) return null;
+  if (!ftp.data) return <WidgetSkeleton title={title} icon={Zap} />;
   const d = ftp.data;
-  const peak = (s: number) => curve.data!.current.points.find((p) => p.durationS === s);
+  if (!d.sports.length) return null;
+  const period = d.windowDays === 90 ? '90d' : '42d';
+  const peak = (s: number) => d.windowBests.find((p) => p.durationS === s);
   const tile = (s: number) => {
     const p = peak(s);
     return (

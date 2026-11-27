@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Flame } from 'lucide-react';
 import type { EChartsOption } from 'echarts';
 import type { ProgressIntensityResponse } from '@cadence/shared';
@@ -32,7 +32,7 @@ export function zoneLabels(t: TFunction, bounds: number[]): string[] {
 }
 
 function bucketTitle(fmt: Formatter, b: { key: string; fromDay: string; toDay: string }, bucket: 'week' | 'month'): string {
-  return bucket === 'week' ? `${fmt.day(b.fromDay, 'dayShort')} – ${fmt.day(b.toDay, 'day')}` : bucketLabel(fmt, b.key, 'long');
+  return bucket === 'week' ? fmt.dayRange(b.fromDay, b.toDay) : bucketLabel(fmt, b.key, 'long');
 }
 
 function buildOption(data: ProgressIntensityResponse, o: { theme: ChartTheme; fmt: Formatter; t: TFunction; labels: string[] }): EChartsOption {
@@ -68,9 +68,11 @@ export function IntensityCard({ sport, range }: { sport: string; range: RangePar
   const t = useT();
   const fmt = useFormat();
   const theme = useChartTheme();
-  const [picked, setPicked] = useState<'week' | 'month' | null>(null);
-  useEffect(() => setPicked(null), [range?.fromDay]);
-  const bucket = picked ?? (range && diffDays(range.fromDay, range.toDay) > 460 ? 'month' : 'week');
+  // a picked bucket belongs to the period it was picked for (derived, so a period change never requests the old one)
+  const [picked, setPicked] = useState<{ fromDay: string | undefined; bucket: 'week' | 'month' } | null>(null);
+  const bucket =
+    (picked?.fromDay === range?.fromDay ? picked?.bucket : undefined) ??
+    (range && diffDays(range.fromDay, range.toDay) > 460 ? 'month' : 'week');
   const q = useIntensity(sport, bucket, range);
   const data = q.data;
   const labels = useMemo(() => zoneLabels(t, data?.zoneBounds ?? []), [t, data?.zoneBounds]);
@@ -102,12 +104,16 @@ export function IntensityCard({ sport, range }: { sport: string; range: RangePar
         <SegmentedControl
           size="sm"
           value={bucket}
-          onChange={setPicked}
+          onChange={(b) => setPicked({ fromDay: range?.fromDay, bucket: b })}
           label={t('progress.common.period')}
           items={(['week', 'month'] as const).map((b) => ({ value: b, label: t(`progress.buckets.${b}`) }))}
         />
       }
-      footer={data && data.coverage.workouts > 0 ? t('progress.intensity.coverage', { n: data.coverage.withZones, total: data.coverage.workouts }) : undefined}
+      footer={
+        data && data.coverage.workouts > 0
+          ? t('progress.intensity.coverage', { n: fmt.int(data.coverage.withZones), total: fmt.int(data.coverage.workouts) })
+          : undefined
+      }
     >
       {q.error ? (
         <ErrorState error={q.error} />

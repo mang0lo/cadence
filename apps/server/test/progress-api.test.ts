@@ -5,6 +5,7 @@ import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   BEST_EFFORTS,
+  type ActivityAnalysis,
   type ImportJob,
   type PaceAtHrResponse,
   type ProgressCompareResponse,
@@ -159,9 +160,10 @@ describe('progress API with the sample export', () => {
     const from = addDays(TODAY, -55);
     const v = await getJson<ProgressVolumeResponse>(`/api/progress/volume?bucket=week&fromDay=${from}&toDay=${TODAY}`);
     expect(v.bucket).toBe('week');
-    for (let i = 1; i < v.buckets.length; i++) expect(v.buckets[i]!.fromDay).toBe(addDays(v.buckets[i - 1]!.fromDay, 7));
-    expect(v.buckets[0]!.fromDay <= from).toBe(true);
-    expect(v.totals.count).toBe(countWorkouts(null, v.buckets[0]!.fromDay, TODAY));
+    for (let i = 1; i < v.buckets.length; i++) expect(v.buckets[i]!.key).toBe(addDays(v.buckets[i - 1]!.key, 7));
+    expect(v.buckets[0]!.key <= from).toBe(true);
+    expect(v.buckets[0]!.fromDay).toBe(from);
+    expect(v.totals.count).toBe(countWorkouts(null, from, TODAY));
     for (const b of v.buckets) {
       const sum = Object.values(b.bySport).reduce((s, t) => s + t.count, 0);
       expect(sum).toBe(b.total.count);
@@ -171,6 +173,26 @@ describe('progress API with the sample export', () => {
     const runs = await getJson<ProgressVolumeResponse>(`/api/progress/volume?sport=run&bucket=month&fromDay=${from}&toDay=${TODAY}`);
     expect(runs.sports).toEqual(['run']);
     expect(runs.buckets.every((b) => Object.keys(b.bySport).every((s) => s === 'run'))).toBe(true);
+  });
+
+  it('volume and intensity totals cover the requested days, whatever the bucket size', async () => {
+    const from = addDays(TODAY, -100); // a Thursday in the middle of a month
+    const to = addDays(TODAY, -9);
+    const n = countWorkouts(null, from, to);
+    expect(n).toBeGreaterThan(0);
+    for (const bucket of ['week', 'month', 'year']) {
+      const v = await getJson<ProgressVolumeResponse>(`/api/progress/volume?bucket=${bucket}&fromDay=${from}&toDay=${to}`);
+      expect(v.totals.count, bucket).toBe(n);
+      expect(v.buckets.reduce((s, b) => s + b.total.count, 0)).toBe(n);
+      expect(v.buckets[0]!.fromDay).toBe(from);
+      expect(v.buckets.at(-1)!.toDay).toBe(to);
+    }
+    for (const bucket of ['week', 'month']) {
+      const r = await getJson<ProgressIntensityResponse>(`/api/progress/intensity?bucket=${bucket}&fromDay=${from}&toDay=${to}`);
+      expect(r.coverage.workouts, bucket).toBe(n);
+      expect(r.buckets[0]!.fromDay).toBe(from);
+      expect(r.buckets.at(-1)!.toDay).toBe(to);
+    }
   });
 
   it('year over year accumulates by calendar date', async () => {
@@ -215,6 +237,20 @@ describe('progress API with the sample export', () => {
     expect([...ts].sort((a, b) => a - b)).toEqual(ts);
     expect(t.series.map((s) => s.metric)).toEqual(expect.arrayContaining(['hr', 'ef', 'cadence', 'stride', 'gct', 'vo']));
     expect(t.series.find((s) => s.metric === 'gct')!.better).toBe('down');
+  });
+
+  it('decoupling and efficiency trends show the values of the activity page', async () => {
+    for (const sport of ['run', 'ride', 'walk']) {
+      const t = await getJson<ProgressTrendsResponse>(`/api/progress/trends?sport=${sport}&today=${TODAY}`);
+      for (const metric of ['decoupling', 'ef'] as const) {
+        const series = t.series.find((s) => s.metric === metric);
+        if (sport === 'run') expect(series?.points.length ?? 0).toBeGreaterThan(3);
+        for (const [i, v] of series?.points ?? []) {
+          const a = await getJson<ActivityAnalysis>(`/api/activities/${t.workouts[i]!.id}/analysis`);
+          expect(v).toBeCloseTo(metric === 'decoupling' ? a.decoupling!.pct : a.paceEfficiency!.value, 3);
+        }
+      }
+    }
   });
 
   it('hidden workouts drop out of every aggregate', async () => {

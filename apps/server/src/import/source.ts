@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import type { Readable } from 'node:stream';
+import { pipeline, type Readable } from 'node:stream';
 import zlib from 'node:zlib';
 import yauzl from 'yauzl';
 
@@ -49,14 +49,27 @@ function isExportXml(name: string): boolean {
 
 export class ImportInputError extends Error {}
 
+/** The file or folder to import is not there (any more): moved or deleted after the job was queued. */
+export class SourceGoneError extends ImportInputError {}
+
+/** Largest file read into memory from a zip (routes, ECGs, clinical files, FIT files): far above any real one. */
+export const READ_CAP = 256 * 1024 * 1024;
+
+/** export_cda.xml (clinical document, next to export.xml in the unzipped export) is no Apple Health export.xml. */
+export function isClinicalDocument(name: string): boolean {
+  return /export_cda\.xml$/i.test(name);
+}
+
 export async function openExportSource(input: string): Promise<ExportSource> {
   let st: fs.Stats;
   try {
     st = fs.statSync(input);
   } catch {
-    throw new ImportInputError(`File not found: ${input}`);
+    throw new SourceGoneError(`File not found: ${input}`);
   }
   if (st.isDirectory()) return openDir(input);
+  if (isClinicalDocument(input))
+    throw new ImportInputError('export_cda.xml is the clinical document export: choose export.xml or the export.zip');
   const fd = fs.openSync(input, 'r');
   const head = Buffer.alloc(4);
   fs.readSync(fd, head, 0, 4, 0);
@@ -70,13 +83,18 @@ export async function openExportSource(input: string): Promise<ExportSource> {
 // ---------------------------------------------------------------------------
 
 async function openZip(file: string): Promise<ExportSource> {
-  const zip = await yauzl.openPromise(file, {
-    lazyEntries: true,
-    autoClose: false,
-    decodeStrings: true,
-    validateEntrySizes: true,
-    strictFileNames: false,
-  });
+  let zip: yauzl.ZipFile;
+  try {
+    zip = await yauzl.openPromise(file, {
+      lazyEntries: true,
+      autoClose: false,
+      decodeStrings: true,
+      validateEntrySizes: true,
+      strictFileNames: false,
+    });
+  } catch (err) {
+    throw new ImportInputError(`Not a readable zip file: ${(err as Error).message}`);
+  }
   const entries: yauzl.Entry[] = [];
   try {
     for await (const e of zip.eachEntry()) if (!e.fileName.endsWith('/')) entries.push(e);
@@ -108,10 +126,9 @@ async function openZip(file: string): Promise<ExportSource> {
   const openEntry = async (e: yauzl.Entry): Promise<Readable> => {
     if (e.compressionMethod === 8 && !e.isEncrypted()) {
       const raw = await zip.openReadStreamPromise(e, { decodeFileData: false });
-      // Own inflater: 1 MB output chunks instead of zlib's default 16 KB.
-      const inflate = zlib.createInflateRaw({ chunkSize: 1 << 20 });
-      raw.on('error', (err) => inflate.destroy(err));
-      return raw.pipe(inflate);
+      // Own inflater: 1 MB output chunks instead of zlib's default 16 KB. pipeline() also destroys the zip's stream
+      // when the reader stops early (cancel, error); a dangling one keeps the zip file open until the server exits.
+      return pipeline(raw, zlib.createInflateRaw({ chunkSize: 1 << 20 }), () => {});
     }
     return zip.openReadStreamPromise(e);
   };
@@ -135,9 +152,17 @@ async function openZip(file: string): Promise<ExportSource> {
     async read(p) {
       const e = byKey.get(key(p));
       if (!e) throw new Error(`Missing file in export: ${p}`);
+      // the sizes in a zip are only claims: never buffer more than the entry declares (callers check that)
+      if (e.uncompressedSize > READ_CAP)
+        throw new Error(`File too large (${Math.round(e.uncompressedSize / 1048576)} MB)`);
       const s = await openEntry(e);
       const chunks: Buffer[] = [];
-      for await (const c of s) chunks.push(c as Buffer);
+      let n = 0;
+      for await (const c of s) {
+        n += (c as Buffer).length;
+        if (n > e.uncompressedSize) throw new Error(`More data than the zip declares (${e.uncompressedSize} bytes)`);
+        chunks.push(c as Buffer);
+      }
       return Buffer.concat(chunks);
     },
     close: () => zip.close(),

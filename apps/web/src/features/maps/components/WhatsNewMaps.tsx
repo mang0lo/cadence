@@ -48,7 +48,10 @@ export default function WhatsNewMaps({ items }: WhatsNewProps) {
         <Row key={key} icon={Grid3x3} to="/maps/explorer">
           {strong(t('maps.whatsNew.tiles', { count: Number(h.data.count) }))}
           {Number(h.data.squadratinhos) > 0 && (
-            <span className="text-fg-3"> · {t('maps.whatsNew.squadratinhos', { count: Number(h.data.squadratinhos) })}</span>
+            <span className="text-fg-3">
+              {' · '}
+              {t('maps.whatsNew.squadratinhos', { count: Number(h.data.squadratinhos) })}
+            </span>
           )}
         </Row>,
       );

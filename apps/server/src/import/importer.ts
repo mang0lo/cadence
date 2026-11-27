@@ -1,10 +1,10 @@
 import type { ImportPhase, ImportStats } from '@cadence/shared';
 import { get, prepare, tx, type Db } from '../db/db';
 import { gzipFloat32 } from '../lib/gzip';
-import { dayString } from '../lib/time';
 import { parseEcgCsv } from './ecg';
 import { parseGpx } from './gpx';
 import { AppleHealthHandler } from './parser';
+import { ChangeScope, notePending } from './scope';
 import { normalizeRelPath, openExportSource, type ExportSource } from './source';
 import { encodeTrack, type Track } from './track';
 import { emptyStats, ImportWriter } from './writer';
@@ -31,14 +31,13 @@ export interface RunImportOptions {
 
 export interface ImportResult {
   stats: ImportStats;
-  /** Workouts that are new or got a new route → input for derive. */
-  changedWorkoutIds: number[];
-  /** Workouts inserted by this import (a subset of changedWorkoutIds). */
+  /**
+   * What this import changed (new records per type, new workouts and workouts with a new route, days). It is
+   * already persisted as the athlete's pending derive scope (see scope.ts), which the derive takes over.
+   */
+  scope: ChangeScope;
+  /** Workouts inserted by this import. */
   newWorkoutIds: number[];
-  /** Earliest local day with new data (minus one day margin), or null if nothing changed. */
-  sinceDay: string | null;
-  /** record type id → earliest start_ts of newly inserted records. */
-  typeSince: Map<number, number>;
   elapsedMs: number;
 }
 
@@ -88,11 +87,10 @@ export async function runImport(o: RunImportOptions): Promise<ImportResult> {
     writer.flush();
     stats.bytesProcessed = Math.max(stats.bytesProcessed, stats.bytesTotal);
     stats.recordTypes = get<{ n: number }>(o.db, 'SELECT COUNT(*) AS n FROM record_types')!.n;
-    const changed = new Set<number>(writer.newWorkoutIds);
 
     // ---- workout routes ----
     report('routes', W_PARSE, 'Reading workout routes', true);
-    await importRoutes(o.db, o.athleteId, src, writer, changed, stats, check, (f, msg) =>
+    await importRoutes(o.db, o.athleteId, src, writer, stats, check, (f, msg) =>
       report('routes', W_PARSE + W_ROUTES * f, msg),
     );
 
@@ -107,22 +105,11 @@ export async function runImport(o: RunImportOptions): Promise<ImportResult> {
     await attachClinicalResources(o.db, o.athleteId, src, writer);
     writer.finishWarnings();
 
-    let minTs = writer.minChangedTs;
-    if (changed.size) {
-      const r = get<{ t: number | null }>(
-        o.db,
-        `SELECT MIN(start_ts) AS t FROM workouts WHERE id IN (${[...changed].join(',')})`,
-      );
-      if (r?.t !== null && r?.t !== undefined && r.t < minTs) minTs = r.t;
-    }
-    const sinceDay = Number.isFinite(minTs) ? dayString(Math.floor(minTs / 86400) - 1) : null;
     report('finalize', 1, 'Import finished', true);
     return {
       stats,
-      changedWorkoutIds: [...changed].sort((a, b) => a - b),
+      scope: writer.scope,
       newWorkoutIds: [...writer.newWorkoutIds].sort((a, b) => a - b),
-      sinceDay,
-      typeSince: writer.typeMinTs,
       elapsedMs: Date.now() - t0,
     };
   } finally {
@@ -139,7 +126,6 @@ async function importRoutes(
   athleteId: number,
   src: ExportSource,
   writer: ImportWriter,
-  changed: Set<number>,
   stats: ImportStats,
   check: () => void,
   progress: (fraction: number, message: string) => void,
@@ -169,6 +155,7 @@ async function importRoutes(
   const pending: { workoutId: number; file: string; track: Track; linkedBy: string }[] = [];
   const flush = () => {
     if (!pending.length) return;
+    const delta = new ChangeScope();
     tx(db, () => {
       for (const p of pending) {
         const n = p.track.t.length;
@@ -181,10 +168,13 @@ async function importRoutes(
           p.linkedBy,
           encodeTrack(p.track),
         );
-        changed.add(p.workoutId);
+        delta.noteWorkout(p.workoutId);
         stats.routesParsed++;
       }
+      // a workout that got a route has to be derived again (new ones are pending already)
+      notePending(db, athleteId, delta.without(writer.scope));
     });
+    writer.scope.merge(delta);
     pending.length = 0;
   };
   const readTrack = async (path: string): Promise<Track | null> => {

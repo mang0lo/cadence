@@ -1,12 +1,12 @@
 /**
- * Dashboard widgets of the "consistency" feature, placed on the home page by the activities feature.
+ * Dashboard widgets of the "consistency" feature, registered in ./index.tsx (FeatureModule.widgets).
  * Each widget renders its own <Card> and fetches its own data; it returns null when there is nothing to show.
  *
  *   <StreakWidget />    current daily streak, longest + weekly streak, the last 14 days
  *   <GoalsWidget />     the first goals (daily ones first) with progress, status and a check-off button
  *   <CalendarWidget />  activity calendar of the last 18 weeks
  */
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router';
 import { CalendarRange, ChevronRight, Flame, Target } from 'lucide-react';
 import type { GoalPeriod } from '@cadence/shared';
@@ -18,7 +18,7 @@ import { useSettings } from '@/lib/settings';
 import { useCalendar, useConsistencyMutations, useGoals, useStreaks } from './api';
 import { GoalCheckButton, GoalIcon, GoalProgressBar, GoalStatusBadge } from './components/GoalParts';
 import { PendingNote } from './components/StreakCards';
-import { formatGoalValue, goalTitle } from './lib';
+import { formatGoalValue, goalTitle, reachedRounding } from './lib';
 
 function MoreLink({ to, label }: { to: string; label: string }) {
   return (
@@ -130,6 +130,12 @@ export function GoalsWidget() {
   const fmt = useFormat();
   const q = useGoals();
   const { checkGoal } = useConsistencyMutations();
+  // the check marks are server state without an optimistic update: a failed request must say so
+  const [checkError, setCheckError] = useState<unknown>(null);
+  const check = (id: number, done: boolean, day: string) => {
+    setCheckError(null);
+    void checkGoal(id, done, day).catch(setCheckError);
+  };
   // daily goals first (they are the ones to tick off today), then the shortest periods; a few more when there are
   // daily goals so the weekly ones stay in view
   const goals = useMemo(() => {
@@ -164,12 +170,14 @@ export function GoalsWidget() {
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-sm font-medium text-fg">{title}</div>
                 </div>
-                <GoalCheckButton goal={g} compact onCheck={(done) => void checkGoal(g.id, done).catch(() => undefined)} />
+                <GoalCheckButton goal={g} compact onCheck={(done, day) => check(g.id, done, day)} />
               </div>
               <GoalProgressBar current={g.current} label={title} height={8} />
               <div className="mt-1.5 flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-xs text-fg-3">
                 <span className="tabular">
-                  <span className="font-medium text-fg">{formatGoalValue(fmt, t, g.metric, g.current.value)}</span>
+                  <span className="font-medium text-fg">
+                    {formatGoalValue(fmt, t, g.metric, g.current.value, reachedRounding(g.current.value, g.current.target, g.metric))}
+                  </span>
                   {' / '}
                   {formatGoalValue(fmt, t, g.metric, g.current.target)}
                   {' · '}
@@ -181,6 +189,7 @@ export function GoalsWidget() {
           );
         })}
       </ul>
+      {checkError ? <ErrorState error={checkError} className="mt-3" /> : null}
     </Card>
   );
 }

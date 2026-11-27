@@ -1,16 +1,15 @@
-import { useEffect, useMemo, useRef, type PointerEvent as ReactPointerEvent } from 'react';
-import { Pause, Play, RotateCcw } from 'lucide-react';
-import { Button, IconButton, Select } from '@/components/ui';
-import { clock, useFormat } from '@/lib/format';
+import { memo, useEffect, useMemo, useRef, type PointerEvent as ReactPointerEvent } from 'react';
+import { clock, speedLabel, useFormat } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
-import { SPEEDS, type Playback, type Speed } from '../../lib/playback';
-import { useStore, useThrottledStore } from '../../lib/store';
-import { isPaceSport } from '../../lib/display';
+import { useThrottledStore } from '@/lib/store';
+import type { Playback } from '../../lib/playback';
+import { cadenceUnit } from '../../lib/display';
 import { zoneOf } from '../../lib/route';
 import { buckets, bucketMean, indexAtTime, valueAt, type Prepared } from '../../lib/streams';
+import { ReplayTransport } from '../ReplayTransport';
 
 /** Timeline with pauses (hatched), the elevation profile as a silhouette and a draggable thumb. */
-function Scrubber({ P, playback }: { P: Prepared; playback: Playback }) {
+const Scrubber = memo(function Scrubber({ P, playback }: { P: Prepared; playback: Playback }) {
   const { t } = useI18n();
   const track = useRef<HTMLDivElement>(null);
   const fill = useRef<HTMLDivElement>(null);
@@ -19,10 +18,11 @@ function Scrubber({ P, playback }: { P: Prepared; playback: Playback }) {
   const time = useThrottledStore(playback.time, 250);
 
   useEffect(() => {
+    // every frame of the replay: transforms only, so the track is not laid out again (width / left would)
     const paint = (time: number) => {
       const f = P.duration > 0 ? Math.max(0, Math.min(1, time / P.duration)) : 0;
-      if (fill.current) fill.current.style.width = `${f * 100}%`;
-      if (thumb.current) thumb.current.style.left = `${f * 100}%`;
+      if (fill.current) fill.current.style.transform = `scaleX(${f})`;
+      if (thumb.current) thumb.current.style.transform = `translateX(${f * 100}%)`;
     };
     paint(playback.time.get());
     return playback.time.subscribe(paint);
@@ -76,7 +76,8 @@ function Scrubber({ P, playback }: { P: Prepared; playback: Playback }) {
           <path d={silhouette} fill="currentColor" opacity={0.16} />
         </svg>
       )}
-      <div ref={fill} className="absolute inset-y-0 left-0 bg-accent-soft" />
+      {/* scaled by the replay position (the same inline value on every render, so React never resets it) */}
+      <div ref={fill} className="absolute inset-0 origin-left bg-accent-soft" style={{ transform: 'scaleX(0)' }} />
       {P.pauses.map(([a, b]) => (
         <div
           key={a}
@@ -89,12 +90,16 @@ function Scrubber({ P, playback }: { P: Prepared; playback: Playback }) {
           }}
         />
       ))}
-      <div ref={thumb} className="absolute inset-y-0 -ml-px w-0.5 bg-accent">
-        <div className="absolute -left-[5px] top-1/2 size-3 -translate-y-1/2 rounded-full border-2 border-surface bg-accent shadow-card" />
+      {/* a layer as wide as the track, moved by the replay position (translateX of its own width), with the thumb at
+          its left edge; it lets pointer events through to the pauses and the track */}
+      <div ref={thumb} className="pointer-events-none absolute inset-0">
+        <div className="absolute inset-y-0 left-0 -ml-px w-0.5 bg-accent">
+          <div className="absolute -left-[5px] top-1/2 size-3 -translate-y-1/2 rounded-full border-2 border-surface bg-accent shadow-card" />
+        </div>
       </div>
     </div>
   );
-}
+});
 
 function Readout({ label, value, unit, extra }: { label: string; value: string; unit?: string; extra?: string }) {
   return (
@@ -110,7 +115,17 @@ function Readout({ label, value, unit, extra }: { label: string; value: string; 
 }
 
 /** Live values at the replay position. */
-function LiveReadout({ P, playback, sport, zoneBounds }: { P: Prepared; playback: Playback; sport: string; zoneBounds: number[] }) {
+const LiveReadout = memo(function LiveReadout({
+  P,
+  playback,
+  sport,
+  zoneBounds,
+}: {
+  P: Prepared;
+  playback: Playback;
+  sport: string;
+  zoneBounds: number[];
+}) {
   const { t } = useI18n();
   const fmt = useFormat();
   const time = useThrottledStore(playback.time, 120);
@@ -126,7 +141,7 @@ function LiveReadout({ P, playback, sport, zoneBounds }: { P: Prepared; playback
     const sp = valueAt(P.speed, fi);
     const moving = P.moving[Math.min(P.n - 1, Math.ceil(fi))];
     const p = fmt.paceParts(moving ? sp : null, sport);
-    items.push({ key: 's', label: isPaceSport(sport) ? t('common.pace') : t('common.speed'), value: p.value, unit: p.unit });
+    items.push({ key: 's', label: speedLabel(t, sport), value: p.value, unit: p.unit });
   }
   if (P.hr) {
     const h = valueAt(P.hr, fi);
@@ -148,7 +163,7 @@ function LiveReadout({ P, playback, sport, zoneBounds }: { P: Prepared; playback
   }
   if (P.cadence) {
     const c = valueAt(P.cadence, fi);
-    items.push({ key: 'c', label: t('activities.charts.cadence'), value: c === c ? fmt.int(c) : '–', unit: sport === 'ride' ? 'rpm' : 'spm' });
+    items.push({ key: 'c', label: t('activities.charts.cadence'), value: c === c ? fmt.int(c) : '–', unit: cadenceUnit(sport) });
   }
   if (P.power) {
     const w = valueAt(P.power, fi);
@@ -161,41 +176,17 @@ function LiveReadout({ P, playback, sport, zoneBounds }: { P: Prepared; playback
       ))}
     </div>
   );
-}
+});
 
-/** Play/pause, speed, timeline and live values of the replay. */
+/**
+ * Play/pause, speed, timeline and live values of the replay. Only the clock, the scrubber and the live values
+ * subscribe to the replay time (each throttled on its own); this component re-renders with the page only.
+ */
 export function PlaybackBar({ P, playback, sport, zoneBounds }: { P: Prepared; playback: Playback; sport: string; zoneBounds: number[] }) {
   const { t } = useI18n();
-  const state = useStore(playback.state);
-  const time = useThrottledStore(playback.time, 120);
-  const speedLabel = (s: Speed) => (s === 'fit' ? t('activities.playback.fit') : `${s}×`);
   return (
     <div className="grid gap-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <Button
-          variant="primary"
-          size="sm"
-          icon={state.playing ? Pause : Play}
-          onClick={() => playback.toggle()}
-          aria-keyshortcuts="Space"
-          className="w-28"
-        >
-          {state.playing ? t('activities.playback.pause') : t('activities.playback.play')}
-        </Button>
-        <IconButton icon={RotateCcw} label={t('activities.playback.restart')} onClick={() => playback.reset()} />
-        <span className="min-w-0 flex-1 text-xs tabular text-fg-2">
-          {clock(time)} / {clock(P.duration)}
-        </span>
-        <div className="w-28 shrink-0" title={state.speed === 'fit' ? t('activities.playback.fitHint') : undefined}>
-          <Select
-            value={String(state.speed)}
-            onChange={(v) => playback.setSpeed((v === 'fit' ? 'fit' : Number(v)) as Speed)}
-            options={SPEEDS.map((s) => ({ value: String(s), label: speedLabel(s) }))}
-            aria-label={t('activities.playback.speed')}
-            className="h-8"
-          />
-        </div>
-      </div>
+      <ReplayTransport playback={playback} />
       <Scrubber P={P} playback={playback} />
       <LiveReadout P={P} playback={playback} sport={sport} zoneBounds={zoneBounds} />
       <p className="hidden text-[11px] text-fg-3 sm:block">{t('activities.playback.keys')}</p>

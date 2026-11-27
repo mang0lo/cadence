@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Moon } from 'lucide-react';
 import { Link } from 'react-router';
@@ -30,7 +30,7 @@ import { addDays } from '@/lib/time';
 import { TrendDelta } from '../components/TrendDelta';
 import { NightDetail } from '../components/sleep/NightDetail';
 import { DurationChart, ScheduleChart, StagesChart } from '../components/sleep/SleepCharts';
-import { useHealthMeta } from '../lib/hooks';
+import { useDayParam, useHealthMeta } from '../lib/hooks';
 import { scheduleStats, tracked, wrapMinutes } from '../lib/sleep';
 
 const SPANS = [30, 90, 180] as const;
@@ -50,7 +50,6 @@ export default function SleepPage() {
   const meta = useHealthMeta();
   const { settings } = useSettings();
   const [span, setSpan] = useStoredState<number>('health.sleep.span', 90);
-  const [selected, setSelected] = useState<string | null>(null);
 
   const asOf = meta.data?.asOf ?? null;
   const goalMin = meta.data?.sleepGoalMin ?? 480;
@@ -77,7 +76,8 @@ export default function SleepPage() {
 
   const trackedNow = useMemo(() => tracked(main), [main]);
   const trackedPrev = useMemo(() => tracked(previous), [previous]);
-  const day = selected ?? main[main.length - 1]?.day ?? null;
+  // the selected night (?day=, default: the latest night)
+  const { day, setDay } = useDayParam(main[main.length - 1]?.day ?? null);
 
   const stats = useMemo(() => {
     const asleep = avgOf(trackedNow, (n) => n.asleepS);
@@ -130,7 +130,7 @@ export default function SleepPage() {
                 onChange={(v) => void setGoal(Number(v))}
                 options={goalOptions.map((m) => ({ value: String(m), label: fmt.durationShort(m * 60) }))}
                 aria-label={t('health.sleep.goal.label')}
-                className="h-8 text-xs"
+                size="sm"
               />
             </label>
           )
@@ -222,12 +222,12 @@ export default function SleepPage() {
             </>
           ) : (
             <>
-              {trackedNow.length > 0 && <StagesChart nights={main} selectedDay={day} onSelect={setSelected} />}
+              {trackedNow.length > 0 && <StagesChart nights={main} selectedDay={day} onSelect={setDay} />}
               {trackedNow.length > 0 && (
                 <div className="grid grid-cols-[minmax(0,1fr)] gap-4 xl:grid-cols-2">
                   <DurationChart nights={main} goalMin={goalMin} />
                   {main.some((n) => n.timed) ? (
-                    <ScheduleChart nights={main.filter((n) => n.timed)} selectedDay={day} onSelect={setSelected} />
+                    <ScheduleChart nights={main.filter((n) => n.timed)} selectedDay={day} onSelect={setDay} />
                   ) : (
                     <Card>
                       <EmptyState icon={Moon} title={t('health.sleep.schedule.title')} description={t('health.sleep.untimed')} />
@@ -242,7 +242,7 @@ export default function SleepPage() {
             <NightDetail
               nights={main}
               day={day}
-              onDayChange={setSelected}
+              onDayChange={setDay}
               minDay={meta.data?.firstDay ?? undefined}
               maxDay={asOf ?? undefined}
             />

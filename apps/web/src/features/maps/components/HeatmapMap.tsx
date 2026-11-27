@@ -1,18 +1,26 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Link } from 'react-router';
-import { Popup, type LngLat } from 'maplibre-gl';
+import type { LngLat } from 'maplibre-gl';
 import type { MapsHeatmapActivity } from '@cadence/shared';
 import { workoutTitle } from '@cadence/shared';
 import { BaseMap, type Map as MapLibreMap } from '@/components/map/BaseMap';
-import { fitTo } from '@/components/map/layers';
 import { overlayColors } from '@/components/map/styles';
+import {
+  useFitBounds,
+  useMapOverlay,
+  useMapPopup,
+  useOverlayEffect,
+  useOverlayStore,
+  type FrameValue,
+} from '@/components/map/useMapOverlay';
 import { useFormat } from '@/lib/format';
 import { useI18n, useT } from '@/lib/i18n';
 import { sportColorVar, useSportLabel } from '@/lib/sports';
 import { useResolvedTheme } from '@/lib/theme';
 import {
   LAYER,
+  LapseDrawer,
   applyHeatPalette,
   densityPoints,
   ensureHeatLayers,
@@ -20,21 +28,12 @@ import {
   linesCollection,
   setDensityIntensity,
   setDensityVisible,
-  setHeadLine,
-  setLapseFilter,
   setLinesData,
   setPointsData,
   type HeatBase,
   type HeatLine,
   type HeatTheme,
 } from '../lib/heatmapLayers';
-
-export interface HeatmapLapse {
-  /** Number of finished activities (chronological). */
-  done: number;
-  /** The activity being drawn right now: its part(s) drawn so far (lon/lat). */
-  head: [number, number][][] | null;
-}
 
 export interface HeatmapMapProps {
   className?: string;
@@ -44,12 +43,17 @@ export interface HeatmapMapProps {
   base: HeatBase;
   density: boolean;
   bounds: [number, number, number, number] | null;
-  /** Time-lapse state; `null` shows every activity. */
-  lapse: HeatmapLapse | null;
+  /**
+   * Time-lapse position in activities, chronological (2.5: two finished, the third half drawn); `null` shows every
+   * activity. The map follows it per frame without re-rendering.
+   */
+  lapse: FrameValue<number> | null;
   /** Bump to fit the data again. */
   fitNonce?: number;
   children?: ReactNode;
 }
+
+const POPUP = { closeButton: true, maxWidth: '340px', offset: 6 } as const;
 
 /** Heatmap of all routes: stacked, low-opacity, blurred strokes + optional point density + click popups. */
 export function HeatmapMap({
@@ -64,8 +68,6 @@ export function HeatmapMap({
   fitNonce = 0,
   children,
 }: HeatmapMapProps) {
-  const mapRef = useRef<MapLibreMap | null>(null);
-  const [styleVersion, setStyleVersion] = useState(0);
   const appTheme = useResolvedTheme();
   const darkBase = overlayColors(base, appTheme).darkBase;
   const palette = useMemo(() => heatPalette(theme, darkBase), [theme, darkBase]);
@@ -80,8 +82,6 @@ export function HeatmapMap({
 
   // --- popup (React content rendered into the MapLibre popup through a portal) ---
   const [picked, setPicked] = useState<{ ids: number[]; lngLat: LngLat } | null>(null);
-  const popupEl = useMemo(() => document.createElement('div'), []);
-  const popupRef = useRef<Popup | null>(null);
 
   const bindEvents = (map: MapLibreMap) => {
     const hit = (point: { x: number; y: number }) =>
@@ -93,32 +93,31 @@ export function HeatmapMap({
       const ids = [...new Set(hit(e.point).map((f) => Number(f.properties?.id)))].filter(Number.isFinite);
       setPicked(ids.length ? { ids, lngLat: e.lngLat } : null);
     });
+    // Hover only sets the cursor, but near home thousands of routes overlap and every query materializes all of them:
+    // at most one query per frame, none while the map moves (panning fires mousemove all the time).
+    let frame = 0;
+    let pointer: { x: number; y: number } | null = null;
+    const setCursor = (c: string) => {
+      const style = map.getCanvas().style;
+      if (style.cursor !== c) style.cursor = c;
+    };
     map.on('mousemove', (e) => {
-      const over = !lapseActiveRef.current && hit(e.point).length > 0;
-      map.getCanvas().style.cursor = over ? 'pointer' : '';
+      pointer = e.point;
+      if (!frame)
+        frame = requestAnimationFrame(() => {
+          frame = 0;
+          if (!pointer || map.isMoving()) return;
+          setCursor(!lapseActiveRef.current && hit(pointer).length > 0 ? 'pointer' : '');
+        });
     });
+    map.on('mouseout', () => {
+      pointer = null;
+      setCursor('');
+    });
+    map.on('remove', () => cancelAnimationFrame(frame));
   };
-
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map) return;
-    if (!picked) {
-      popupRef.current?.remove();
-      popupRef.current = null;
-      return;
-    }
-    if (!popupRef.current) {
-      const p = new Popup({ closeButton: true, maxWidth: '340px', offset: 6 }).setDOMContent(popupEl);
-      p.on('close', () => {
-        if (popupRef.current === p) {
-          popupRef.current = null;
-          setPicked(null);
-        }
-      });
-      popupRef.current = p;
-      p.setLngLat(picked.lngLat).addTo(map);
-    } else popupRef.current.setLngLat(picked.lngLat);
-  }, [picked, popupEl]);
+  const overlay = useMapOverlay({ onReady: bindEvents });
+  const popupEl = useMapPopup(overlay.mapRef, picked?.lngLat ?? null, () => setPicked(null), POPUP);
 
   // a new data set invalidates the popup
   useEffect(() => setPicked(null), [activities]);
@@ -127,60 +126,56 @@ export function HeatmapMap({
   }, [lapseActive]);
 
   // --- layers & data ---
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || styleVersion === 0 || !map.isStyleLoaded()) return;
-    ensureHeatLayers(map, paletteRef.current);
-    applyHeatPalette(map, palette);
-  }, [styleVersion, palette]);
+  // Only while the style is loaded and again after every style load: a basemap or theme switch replaces the style,
+  // and the time-lapse changes the map on every frame, also while a new style loads.
+  // Not map.isStyleLoaded(): that is false while any tile or source loads, which dropped palette changes.
+  useOverlayEffect(
+    overlay,
+    (map) => {
+      ensureHeatLayers(map, paletteRef.current);
+      applyHeatPalette(map, palette);
+    },
+    [palette],
+  );
 
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || styleVersion === 0) return;
-    ensureHeatLayers(map, paletteRef.current);
-    setLinesData(map, geo);
-  }, [geo, styleVersion]);
+  useOverlayEffect(
+    overlay,
+    (map) => {
+      ensureHeatLayers(map, paletteRef.current);
+      setLinesData(map, geo);
+    },
+    [geo],
+  );
 
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || styleVersion === 0) return;
-    ensureHeatLayers(map, paletteRef.current);
-    if (density) {
-      const { points, maxPasses } = densityPoints(lines);
-      setPointsData(map, points);
-      setDensityIntensity(map, maxPasses);
-    }
-    setDensityVisible(map, density);
-  }, [density, lines, styleVersion]);
+  // computed once per data set while shown; a style switch only sends it to the new style again
+  const densityData = useMemo(() => (density ? densityPoints(lines) : null), [density, lines]);
+  useOverlayEffect(
+    overlay,
+    (map) => {
+      ensureHeatLayers(map, paletteRef.current);
+      if (densityData) {
+        setPointsData(map, densityData.points);
+        setDensityIntensity(map, densityData.maxPasses);
+      }
+      setDensityVisible(map, density);
+    },
+    [density, densityData],
+  );
 
-  const done = lapse ? lapse.done : null;
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || styleVersion === 0) return;
-    ensureHeatLayers(map, paletteRef.current);
-    setLapseFilter(map, done);
-  }, [done, styleVersion, geo]);
+  // time-lapse: drawn straight from the position on every frame, no React render; the activities not finished yet
+  // are hidden (and left out of the density) through feature state, one update per finished activity
+  const [lapseDrawer] = useState(() => new LapseDrawer());
+  useOverlayStore(
+    overlay,
+    lapse,
+    (map, progress) => {
+      ensureHeatLayers(map, paletteRef.current);
+      lapseDrawer.draw(map, lines, progress, densityData);
+    },
+    [lines, densityData],
+  );
 
-  const head = lapse?.head ?? null;
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || styleVersion === 0) return;
-    ensureHeatLayers(map, paletteRef.current);
-    setHeadLine(map, head);
-  }, [head, styleVersion]);
-
-  const boundsKey = bounds ? bounds.join(',') : '';
-  const first = useRef(true);
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !bounds) return;
-    if (first.current) {
-      first.current = false; // BaseMap already starts with these bounds
-      return;
-    }
-    fitTo(map, bounds, 48, true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [boundsKey, fitNonce]);
+  useFitBounds(overlay.mapRef, bounds, fitNonce, 48);
 
   return (
     <>
@@ -190,14 +185,7 @@ export function HeatmapMap({
         bounds={bounds}
         padding={48}
         switcher={false}
-        onReady={(map) => {
-          mapRef.current = map;
-          bindEvents(map);
-        }}
-        onStyleLoad={(map) => {
-          mapRef.current = map;
-          setStyleVersion((v) => v + 1);
-        }}
+        {...overlay.bind}
       >
         {children}
       </BaseMap>

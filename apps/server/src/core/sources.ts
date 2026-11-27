@@ -1,4 +1,11 @@
-import type { AthleteSettings, DataSourcesInfo, SourcePref } from '@cadence/shared';
+import {
+  APPLE_HEART_METRICS as APPLE,
+  DEVICE_HEART_METRICS as DEVICE,
+  type AthleteSettings,
+  type DataSourcesInfo,
+  type HeartMetric,
+  type SourcePref,
+} from '@cadence/shared';
 import { all, get, type Db } from '../db/db';
 import { getSetting, getSettings } from './settings';
 
@@ -7,24 +14,10 @@ import { getSetting, getSettings } from './settings';
  *
  * COROS values are stored as their own metrics (COROSRestingHeartRate, COROSSleepHRV …) because they are not the
  * same measurement as Apple's (COROS' HRV is an overnight RMSSD, Apple's an SDNN of spot readings): every consumer
- * asks here which identifier to read instead of mixing them.
+ * asks here which identifier to read instead of mixing them. The keys of both sources are in @cadence/shared
+ * (APPLE_HEART_METRICS, DEVICE_HEART_METRICS), so the web names the same ones.
  */
-export type HeartMetric = 'restingHr' | 'hrv' | 'vo2max' | 'steps' | 'heartRate';
-
-const APPLE: Record<HeartMetric, string> = {
-  restingHr: 'HKQuantityTypeIdentifierRestingHeartRate',
-  hrv: 'HKQuantityTypeIdentifierHeartRateVariabilitySDNN',
-  vo2max: 'HKQuantityTypeIdentifierVO2Max',
-  steps: 'HKQuantityTypeIdentifierStepCount',
-  heartRate: 'HKQuantityTypeIdentifierHeartRate',
-};
-const DEVICE: Record<HeartMetric, string> = {
-  restingHr: 'COROSRestingHeartRate',
-  hrv: 'COROSSleepHRV',
-  vo2max: 'COROSVO2Max',
-  steps: 'COROSSteps',
-  heartRate: 'COROSHeartRate',
-};
+export type { HeartMetric };
 
 /** 'device' when the watch's own data (COROS cloud, FIT files) should win, else 'apple'. */
 export function preferred(

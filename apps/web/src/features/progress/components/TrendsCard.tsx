@@ -15,18 +15,18 @@ import { EChart } from '@/components/charts/EChart';
 import { grid, itemTooltip, lineSeries, scatterSeries, timeAxis, tooltipHtml, valueAxis } from '@/components/charts/options';
 import { sportColor, useChartTheme, type ChartTheme } from '@/components/charts/theme';
 import { Button, EmptyState, ErrorState, cn } from '@/components/ui';
-import { useFormat, type Formatter } from '@/lib/format';
+import { speedLabel, useFormat, type Formatter, type TrendFormat } from '@/lib/format';
 import { useI18n, useT, type Lang, type TFunction } from '@/lib/i18n';
 import { sportLabel } from '@/lib/sports';
 import { useTrends, type RangeParams } from '../api';
-import { chartLegend, clockAxis, hitLayer, localMs, monthYearLabel, msDay, timeAxisLabel } from '../chart';
-import { formatChange, trendFormat, type TrendFormat } from '../format';
+import { chartLegend, clockAxis, fitEnds, hitLayer, localMs, msDay, timeAxisLabel } from '../chart';
+import { formatChange, trendFormat } from '../format';
 import { ActivityLink, ChangeBadge, ChartSkeleton } from './common';
 
 const HEIGHT = 300;
 
 export function trendMetricLabel(t: TFunction, metric: ProgressTrendMetric, sport: string): string {
-  if (metric === 'speed') return t(sportInfo(sport).speedMode === 'speed' ? 'progress.trends.metrics.speed' : 'progress.trends.metrics.pace');
+  if (metric === 'speed') return speedLabel(t, sport);
   if (metric === 'cadence')
     return t(sportInfo(sport).group === 'cycle' ? 'progress.trends.metrics.cadenceCycle' : 'progress.trends.metrics.cadenceFoot');
   return t(`progress.trends.metrics.${metric}`);
@@ -62,10 +62,11 @@ function buildOption(
   let trend: number[][] = [];
   if (s.fit) {
     const f = s.fit;
-    const tz = w(s.points[0]![0]).tzMin;
+    // from the first to the last dot, each at its own local time
+    const [x0, x1] = fitEnds(data.workouts, s.points, f);
     trend = Array.from({ length: 25 }, (_, k) => {
       const ts = f.startTs + ((f.endTs - f.startTs) * k) / 24;
-      return [localMs(ts, tz), tf.toChart(f.startValue + (f.slopePerDay * (ts - f.startTs)) / 86400)];
+      return [x0 + ((x1 - x0) * k) / 24, tf.toChart(f.startValue + (f.slopePerDay * (ts - f.startTs)) / 86400)];
     });
   }
   const span = xs.length ? (xs[xs.length - 1]! - xs[0]!) / 86_400_000 : 0;
@@ -162,9 +163,10 @@ export function TrendsCard({
     [data, navigate],
   );
 
+  // rows only while the table view is open: one per workout of the sport, each with a link
   const table = useMemo(() => {
     if (!data || !selected || !tf) return undefined;
-    return {
+    return () => ({
       columns: [
         { key: 'date', label: t('progress.common.date') },
         { key: 'activity', label: t('progress.common.activity') },
@@ -182,7 +184,7 @@ export function TrendsCard({
           };
         })
         .reverse(),
-    };
+    });
   }, [data, selected, tf, fmt, t, dataSport]);
 
   if (sport === 'all') {
@@ -207,6 +209,8 @@ export function TrendsCard({
   }
 
   const verdict = selected && tf ? changeVerdict(selected, fmt, t, tf) : null;
+  // the months of the first and last workout in their local time (like the dots and the table), not in UTC
+  const fitSpan = data && selected?.fit ? fitEnds(data.workouts, selected.points, selected.fit).map(msDay) : null;
   return (
     <ChartCard
       title={t('progress.trends.title')}
@@ -262,8 +266,8 @@ export function TrendsCard({
                   {t('progress.trends.summary', {
                     from: tf.format(selected.fit.startValue),
                     to: tf.format(selected.fit.endValue),
-                    start: monthYearLabel(fmt, msDay(selected.fit.startTs * 1000)),
-                    end: monthYearLabel(fmt, msDay(selected.fit.endTs * 1000)),
+                    start: fmt.day(fitSpan![0]!, 'monthYear'),
+                    end: fmt.day(fitSpan![1]!, 'monthYear'),
                   })}
                 </span>
               )}

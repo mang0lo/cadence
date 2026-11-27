@@ -18,14 +18,15 @@ import { grid, itemTooltip, lineSeries, scatterSeries, timeAxis, tooltipHtml, va
 import { sportColor, useChartTheme, type ChartTheme } from '@/components/charts/theme';
 import { RouteThumbnail } from '@/components/map/RouteThumbnail';
 import { Badge, Card, CardHeader, EmptyState, ErrorState, Skeleton, Table, TD, TH, cn } from '@/components/ui';
-import { clock, useFormat, type Formatter } from '@/lib/format';
+import { clock, speedLabel, useFormat, type Formatter } from '@/lib/format';
 import { useI18n, useT, type Lang, type TFunction } from '@/lib/i18n';
 import { sportColorVar, sportLabel } from '@/lib/sports';
 import { todayKey } from '@/lib/time';
 import { chartLegend, clockAxis, dayMs, hitLayer, localMs, timeAxisLabel } from '../chart';
+import { scopedTop, type RecordScope } from '../periods';
 import { ActivityLink, ChartSkeleton } from './common';
 
-export type RecordScope = 'allTime' | 'thisYear' | 'last12m';
+export type { RecordScope };
 
 export function effortLabel(sport: string, effort: string, lang: Lang): string {
   return BEST_EFFORTS[sport]?.find((d) => d.key === effort)?.label[lang] ?? effort;
@@ -67,7 +68,7 @@ export function EffortsCard({
             <tr>
               <TH>{t('progress.records.table.distance')}</TH>
               <TH numeric>{t('progress.records.table.time')}</TH>
-              <TH numeric>{t('progress.records.table.pace')}</TH>
+              <TH numeric>{speedLabel(t, sport)}</TH>
               <TH>{t('progress.records.table.date')}</TH>
               <TH numeric>{t('progress.records.table.attempts')}</TH>
             </tr>
@@ -75,6 +76,8 @@ export function EffortsCard({
           <tbody>
             {efforts.map((e) => {
               const r = e[scope];
+              // the attempts of the period; the progression (all attempts) can be opened whenever there are any
+              const attempts = e.scopeAttempts[scope];
               const isPr = scope !== 'allTime' && r && e.allTime && r.workoutId === e.allTime.workoutId;
               const active = selected === e.effort;
               return (
@@ -122,7 +125,7 @@ export function EffortsCard({
                       '–'
                     )}
                   </TD>
-                  <TD numeric>{e.attempts ? fmt.int(e.attempts) : '–'}</TD>
+                  <TD numeric>{attempts ? fmt.int(attempts) : '–'}</TD>
                 </tr>
               );
             })}
@@ -175,7 +178,7 @@ function progressionOption(
       const a = h.attempts[i]!;
       const rows = [
         { color, label: t('progress.records.table.time'), value: fmt.duration(a.elapsedS) },
-        { color: 'transparent', label: t('progress.records.table.pace'), value: fmt.pace(h.distanceM / a.elapsedS, h.sport) },
+        { color: 'transparent', label: speedLabel(t, h.sport), value: fmt.pace(h.distanceM / a.elapsedS, h.sport) },
       ];
       if (a.pr) rows.push({ color: 'transparent', label: '', value: t('progress.records.progression.newPr') });
       return tooltipHtml(`${workoutTitle(a, lang)} · ${fmt.date(a.startTs, a.tzMin, 'day')}`, rows, theme);
@@ -228,15 +231,16 @@ export function ProgressionCard({
     }),
     [h, navigate],
   );
+  // rows only while the table view is open: an effort can have hundreds of attempts, each with a link
   const table = useMemo(
     () =>
       h
-        ? {
+        ? () => ({
             columns: [
               { key: 'date', label: t('progress.records.table.date') },
               { key: 'activity', label: t('progress.common.activity') },
               { key: 'time', label: t('progress.records.table.time'), numeric: true },
-              { key: 'pace', label: t('progress.records.table.pace'), numeric: true },
+              { key: 'pace', label: speedLabel(t, h.sport), numeric: true },
               { key: 'pr', label: t('progress.records.progression.pr') },
             ],
             rows: [...h.attempts].reverse().map((a) => ({
@@ -246,7 +250,7 @@ export function ProgressionCard({
               pace: fmt.pace(h.distanceM / a.elapsedS, h.sport),
               pr: a.pr ? <Medal size={14} className="text-accent-fg" aria-label={t('progress.records.progression.newPr')} /> : '',
             })),
-          }
+          })
         : undefined,
     [h, fmt, t],
   );
@@ -277,34 +281,59 @@ export function ProgressionCard({
 // Top 10
 // ---------------------------------------------------------------------------
 
-export function TopTenCard({ sport, effort, history }: { sport: string; effort: string | null; history: ProgressEffortHistory | undefined }) {
+export function TopTenCard({
+  sport,
+  effort,
+  history,
+  scope,
+  error,
+}: {
+  sport: string;
+  effort: string | null;
+  history: ProgressEffortHistory | undefined;
+  /** The page's period: the fastest attempts of this scope. */
+  scope: RecordScope;
+  /** The request failed: say so instead of skeleton rows that never end. */
+  error: unknown;
+}) {
   const t = useT();
   const fmt = useFormat();
   const { lang } = useI18n();
+  // the server ranks all time; a period ranks its own attempts (with the same tie rule)
+  const top = useMemo(
+    () => (!history ? [] : scope === 'allTime' ? history.top : scopedTop(history.attempts, scope, todayKey())),
+    [history, scope],
+  );
   return (
     <Card className="min-w-0">
-      <CardHeader title={t('progress.records.top.title', { distance: effort ? effortLabel(sport, effort, lang) : '' })} icon={ListOrdered} />
-      {!history ? (
+      <CardHeader
+        title={t('progress.records.top.title', { distance: effort ? effortLabel(sport, effort, lang) : '' })}
+        subtitle={t(`progress.records.scope.${scope}`)}
+        icon={ListOrdered}
+      />
+      {error ? (
+        <ErrorState error={error} />
+      ) : !history ? (
         <div className="grid gap-2">
           {Array.from({ length: 8 }, (_, i) => (
             <Skeleton key={i} className="h-7 w-full" />
           ))}
         </div>
-      ) : !history.top.length ? (
-        <EmptyState title={t('progress.records.progression.empty')} />
+      ) : !top.length ? (
+        <EmptyState title={t(scope === 'allTime' ? 'progress.records.progression.empty' : 'progress.records.top.emptyScope')} />
       ) : (
         <Table>
           <thead>
             <tr>
               <TH>{t('progress.records.top.rank')}</TH>
               <TH numeric>{t('progress.records.table.time')}</TH>
-              <TH numeric>{t('progress.records.table.pace')}</TH>
+              <TH numeric>{speedLabel(t, sport)}</TH>
               <TH>{t('progress.records.table.date')}</TH>
               <TH numeric>{t('progress.records.top.avgHr')}</TH>
             </tr>
           </thead>
           <tbody>
-            {history.top.map((r) => (
+            {top.map((r) => (
               <tr key={`${r.workoutId}-${r.rank}`}>
                 <TD className="text-fg">
                   {r.rank === 1 ? <Medal size={15} className="text-accent-fg" aria-label="1" /> : r.rank}
@@ -355,7 +384,16 @@ function highlightValue(h: ProgressHighlight, fmt: Formatter, t: TFunction): str
   }
 }
 
-export function HighlightsCard({ sport, highlights }: { sport: string; highlights: ProgressHighlight[] }) {
+export function HighlightsCard({
+  sport,
+  highlights,
+  scope,
+}: {
+  sport: string;
+  /** The highlights of `scope` (ProgressRecordsResponse.scopeHighlights). */
+  highlights: ProgressHighlight[];
+  scope: RecordScope;
+}) {
   const t = useT();
   const fmt = useFormat();
   const { lang } = useI18n();
@@ -364,7 +402,7 @@ export function HighlightsCard({ sport, highlights }: { sport: string; highlight
     <Card className="min-w-0">
       <CardHeader
         title={t('progress.records.highlights.title')}
-        subtitle={t('progress.records.highlights.subtitle', { sport: sportLabel(sport, lang) })}
+        subtitle={`${t('progress.records.highlights.subtitle', { sport: sportLabel(sport, lang) })} · ${t(`progress.records.scope.${scope}`)}`}
         icon={Medal}
       />
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
@@ -482,7 +520,7 @@ export function PredictorCard({ data, error }: { data: ProgressPredictions | und
             </tbody>
           </Table>
           <div className="mt-3 grid gap-1 text-xs text-fg-3">
-            <p>{t('progress.records.predictor.riegelNote', { exponent: fmt.num(data.riegelExponent, 2), days: data.windowDays })}</p>
+            <p>{t('progress.records.predictor.riegelNote', { exponent: fmt.num(data.riegelExponent, 2), days: fmt.int(data.windowDays) })}</p>
             <p>
               {data.vo2max
                 ? t('progress.records.predictor.vo2Note', { value: fmt.num(data.vo2max.value, 1), date: fmt.day(data.vo2max.day, 'day') })

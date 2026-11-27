@@ -29,13 +29,14 @@ import type {
 import { useApi } from '@/lib/api';
 import { useFormat } from '@/lib/format';
 import { useT } from '@/lib/i18n';
+import { HK } from './identifiers';
 import { useMetricFormat } from './metrics';
 import { wrapMinutes } from './sleep';
 
-const HRV = 'HKQuantityTypeIdentifierHeartRateVariabilitySDNN';
-const RHR = 'HKQuantityTypeIdentifierRestingHeartRate';
-const RESP = 'HKQuantityTypeIdentifierRespiratoryRate';
-const WRIST = 'HKQuantityTypeIdentifierAppleSleepingWristTemperature';
+const HRV = HK.hrv;
+const RHR = HK.restingHr;
+const RESP = HK.respiratory;
+const WRIST = HK.wristTemp;
 
 /** Readiness of `day` (default: the latest day with data) and `days` days of history. */
 export function useReadiness(day: string | undefined, days: number, enabled = true) {
@@ -188,8 +189,8 @@ export function useReadinessFormat() {
           return k('factors.missing.never');
         case 'baseline':
           return f.key === 'load'
-            ? k('factors.missing.baselineLoad', { count: fmt.int(f.baselineDays), min: model.minLoadDays })
-            : k('factors.missing.baseline', { count: fmt.int(f.baselineDays), min: model.minBaselineDays });
+            ? k('factors.missing.baselineLoad', { count: f.baselineDays, min: model.minLoadDays })
+            : k('factors.missing.baseline', { count: f.baselineDays, min: model.minBaselineDays });
         case 'noValue':
           return k(`factors.missing.noValue.${f.key}`, { days: model.hrvDays });
         default:

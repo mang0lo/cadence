@@ -4,7 +4,7 @@
  */
 import type { ConsistencyPrefs, ConsistencyScore, GoalInput, ScoreWeek } from '@cadence/shared';
 import { plusDays, weekStartOf } from './days';
-import { bucketByPeriod, goalValue, isChecked, type DailyRow } from './goals';
+import { bucketByPeriod, goalReached, goalValue, isChecked, type DailyRow } from './goals';
 
 export const SCORE_WEEKS = 12;
 export const TREND_WEEKS = 52;
@@ -29,7 +29,11 @@ export function computeScore(o: {
     const list = buckets.get(ws) ?? [];
     const activeDays = goalValue(list, 'active_days', null);
     const met = useGoals
-      ? goals.every((g) => goalValue(list, g.metric, g.sport) >= g.target || isChecked(g.checks, ws, plusDays(ws, 6)))
+      ? goals.every(
+          (g) =>
+            goalReached(g.metric, goalValue(list, g.metric, g.sport), g.target) ||
+            isChecked(g.checks, ws, plusDays(ws, 6)),
+        )
       : activeDays >= minDays;
     return {
       weekStart: ws,

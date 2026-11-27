@@ -6,6 +6,7 @@ import { Button, Card, EmptyState, ErrorState, Page, Skeleton } from '@/componen
 import { ApiError } from '@/lib/api';
 import { useI18n } from '@/lib/i18n';
 import { useSettings } from '@/lib/settings';
+import { Store } from '@/lib/store';
 import { useAnalysis, useNav, useStreams, useWorkout } from '../api';
 import { ActivityHeader } from '../components/detail/ActivityHeader';
 import { ActivityMap, type CameraMode } from '../components/detail/ActivityMap';
@@ -16,11 +17,19 @@ import { SelectionPanel } from '../components/detail/SelectionPanel';
 import { StreamCharts } from '../components/detail/StreamCharts';
 import { Playback } from '../lib/playback';
 import { routeGeometry } from '../lib/route';
-import { Store } from '../lib/store';
 import { prepareStreams } from '../lib/streams';
 import { usePlaybackKeys } from '../lib/usePlaybackKeys';
 
 const DEFAULT_ZONE_BOUNDS = [114, 133, 152, 171];
+
+/** A number per object (new streams data after a refetch, e.g. a sport change, gets a new one). */
+const ids = new WeakMap<object, number>();
+let lastId = 0;
+function identity(o: object): number {
+  let id = ids.get(o);
+  if (id === undefined) ids.set(o, (id = ++lastId));
+  return id;
+}
 
 /** Map, replay, charts and every analysis section; everything below the header. */
 function ActivityBody({
@@ -172,7 +181,10 @@ function ActivityView({ id }: { id: number }) {
       <HeroStats w={w} analysis={analysis.data} />
       {streams.error && <ErrorState error={streams.error} className="mb-4" />}
       {streams.data ? (
+        // remounted for new streams (refetched after a sport change): the map's listeners and markers, the replay
+        // and the selection all belong to one set of streams
         <ActivityBody
+          key={identity(streams.data)}
           w={w}
           streams={streams.data}
           analysis={analysis.data}
@@ -180,8 +192,21 @@ function ActivityView({ id }: { id: number }) {
           analysisError={analysis.error}
           zoneBounds={zoneBounds}
         />
+      ) : streams.isLoading ? (
+        <Skeleton className="h-[520px] w-full" />
       ) : (
-        streams.isLoading && <Skeleton className="h-[520px] w-full" />
+        // without streams the splits, laps, zones, efforts and comparisons still come from the other endpoints
+        streams.error && (
+          <AnalysisSections
+            w={w}
+            P={null}
+            analysis={analysis.data}
+            analysisLoading={analysis.isLoading}
+            analysisError={analysis.error}
+            zoneBounds={zoneBounds}
+            onSelect={() => undefined}
+          />
+        )
       )}
     </Page>
   );

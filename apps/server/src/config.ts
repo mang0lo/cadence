@@ -15,6 +15,17 @@ export interface Config {
   webDir: string;
   /** Optional shared password for server deployments. When set, every /api request must be authenticated. */
   password: string | null;
+  /**
+   * Reverse proxies whose X-Forwarded-For / -Proto / -Host headers are believed (CADENCE_TRUST_PROXY): their
+   * addresses or networks ('127.0.0.1', '172.16.0.0/12', 'loopback', 'uniquelocal', comma separated), or true for
+   * every peer. Off by default: client address (login throttle) and https (Secure cookie) come from the socket.
+   */
+  trustProxy: boolean | string;
+  /**
+   * Host names the server answers to besides localhost and IP addresses (CADENCE_ALLOWED_HOSTS, '.example.org'
+   * includes subdomains); null = any. Password-less local servers only answer to local names (DNS rebinding).
+   */
+  allowedHosts: string[] | null;
   /** Allow POST /api/import/local {path} (reads a file from the server's own disk). Desktop only by default. */
   allowLocalImport: boolean;
   /** Optional folder that is watched for new Apple Health exports (server deployments). */
@@ -30,7 +41,46 @@ declare const __CADENCE_VERSION__: string | undefined;
 const here = path.dirname(fileURLToPath(import.meta.url));
 // Both apps/server/src (tsx) and apps/server/dist (bundle) sit two levels below apps/.
 const appsDir = path.resolve(here, '..', '..');
-const fromSource = here.endsWith(`${path.sep}src`) || here.includes(`${path.sep}src${path.sep}`);
+// tsx runs the TypeScript sources, the bundle is one .js file (a checkout under ~/src/… is no source run)
+const fromSource = import.meta.url.endsWith('.ts');
+
+/** 127.0.0.1, ::1, localhost: an address only this machine can reach. */
+export function isLoopbackHost(host: string): boolean {
+  const h = host.toLowerCase().replace(/^\[(.*)\]$/, '$1');
+  return h === 'localhost' || h === '::1' || /^127\.\d+\.\d+\.\d+$/.test(h);
+}
+
+function trustProxyFrom(value: string | undefined): boolean | string {
+  const v = (value ?? '').trim();
+  if (!v || /^(0|false|no|off)$/i.test(v)) return false;
+  if (/^(true|yes|on|all)$/i.test(v)) return true;
+  // Fastify never trusts a bare hop count (it cannot tell the proxy from a direct client)
+  if (/^\d+$/.test(v))
+    throw new Error(`CADENCE_TRUST_PROXY=${v}: give the proxy's address or network (e.g. 127.0.0.1, 172.16.0.0/12, loopback) or true`);
+  return v;
+}
+
+function allowedHostsFrom(value: string | undefined, mode: Mode, host: string, password: string | null): string[] | null {
+  const v = (value ?? '').trim();
+  if (v === '*') return null;
+  if (v) return v.split(',').map((h) => h.trim().toLowerCase()).filter(Boolean);
+  // without a password a local server is only safe from web pages when it ignores foreign host names
+  return mode !== 'server' || (!password && isLoopbackHost(host)) ? [] : null;
+}
+
+/**
+ * Startup warning of a server without TZ: FIT workouts without a local time, sleep nights, the intraday heart rate and
+ * "today" follow the zone of the process (in a container usually UTC). Null with TZ set, and in the desktop app or a
+ * dev run, which run in the user's own zone.
+ */
+export function timeZoneWarning(config: Pick<Config, 'mode'>, env: NodeJS.ProcessEnv = process.env): string | null {
+  if (config.mode !== 'server' || env.TZ) return null;
+  const zone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  return (
+    `WARNING: TZ is not set, so local days follow this server's time zone (${zone}): FIT workouts without a local ` +
+    'time, sleep nights, the intraday heart rate and "today". Set TZ to your IANA time zone, e.g. TZ=Europe/Berlin.'
+  );
+}
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const mode: Mode =
@@ -40,15 +90,20 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
         ? 'dev'
         : 'server';
   const dataDir = path.resolve(env.CADENCE_DATA_DIR ?? path.join(appsDir, '..', 'data'));
+  const password = env.CADENCE_PASSWORD || null;
+  // a server without a password stays on this machine unless HOST says otherwise (Docker sets HOST=0.0.0.0)
+  const host = env.HOST ?? (mode === 'server' && password ? '0.0.0.0' : '127.0.0.1');
   return {
     mode,
-    host: env.HOST ?? (mode === 'server' ? '0.0.0.0' : '127.0.0.1'),
+    host,
     port: env.PORT !== undefined ? Number(env.PORT) : 8787,
     dataDir,
     dbPath: path.join(dataDir, 'cadence.db'),
     uploadsDir: path.join(dataDir, 'uploads'),
     webDir: path.resolve(env.CADENCE_WEB_DIR ?? path.join(appsDir, 'web', 'dist')),
-    password: env.CADENCE_PASSWORD || null,
+    password,
+    trustProxy: trustProxyFrom(env.CADENCE_TRUST_PROXY),
+    allowedHosts: allowedHostsFrom(env.CADENCE_ALLOWED_HOSTS, mode, host, password),
     allowLocalImport: env.CADENCE_ALLOW_LOCAL_IMPORT ? env.CADENCE_ALLOW_LOCAL_IMPORT === '1' : mode !== 'server',
     importWatchDir: env.CADENCE_IMPORT_DIR ? path.resolve(env.CADENCE_IMPORT_DIR) : null,
     parentPid: env.CADENCE_PARENT_PID ? Number(env.CADENCE_PARENT_PID) : null,

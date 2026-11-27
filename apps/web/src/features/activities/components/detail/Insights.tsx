@@ -2,10 +2,10 @@ import { useState, type ReactNode } from 'react';
 import { AlertTriangle, CheckCircle2, Gauge, HeartPulse, Mountain, MountainSnow, TrendingDown, Zap } from 'lucide-react';
 import type { ActivityAnalysis, ActivityClimb, ActivitySimilar, WorkoutDetail } from '@cadence/shared';
 import { Badge, Card, CardHeader, Delta, KeyValues, Table, TD, TH, cn } from '@/components/ui';
-import { useFormat } from '@/lib/format';
+import { showsPace, useFormat } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
 import { useSettings } from '@/lib/settings';
-import { isPaceSport } from '../../lib/display';
+import { isCycling } from '../../lib/display';
 import { indexAtDist, type Prepared } from '../../lib/streams';
 
 type OnSelect = (s: [number, number] | null) => void;
@@ -39,7 +39,7 @@ function Decoupling({ a, sport }: { a: NonNullable<ActivityAnalysis['decoupling'
       : pct < 10
         ? { tone: 'warning' as const, icon: AlertTriangle, label: t('activities.analysis.drift') }
         : { tone: 'critical' as const, icon: TrendingDown, label: t('activities.analysis.strongDrift') };
-  const out = (v: number) => (a.basis === 'power' ? fmt.power(v) : isPaceSport(sport) ? fmt.pace(v, sport) : fmt.speed(v));
+  const out = (v: number) => (a.basis === 'power' ? fmt.power(v) : showsPace(sport) ? fmt.pace(v, sport) : fmt.speed(v));
   return (
     <InsightCard title={t('activities.analysis.decoupling')} icon={HeartPulse} hint={t('activities.analysis.decouplingHint')}>
       <div className="flex flex-wrap items-center gap-3">
@@ -62,7 +62,12 @@ function Decoupling({ a, sport }: { a: NonNullable<ActivityAnalysis['decoupling'
 function Efficiency({ a, similar }: { a: NonNullable<ActivityAnalysis['efficiency']>; similar: ActivitySimilar | undefined }) {
   const { t } = useI18n();
   const fmt = useFormat();
-  const others = (similar?.items ?? []).filter((x) => !x.current && x.efficiency !== null).map((x) => x.efficiency!);
+  // the similar activities' values are on similar.efficiencyBasis (the most common one while this activity's analysis
+  // is outdated): compare only like with like, never W per bpm with m/min per bpm
+  const sameBasis = similar?.efficiencyBasis === undefined || similar.efficiencyBasis === a.basis;
+  const others = sameBasis
+    ? (similar?.items ?? []).filter((x) => !x.current && x.efficiency !== null).map((x) => x.efficiency!)
+    : [];
   const mean = others.length >= 3 ? others.reduce((s, v) => s + v, 0) / others.length : null;
   const unit =
     a.basis === 'power'
@@ -104,7 +109,7 @@ function Power({ p, ride }: { p: NonNullable<ActivityAnalysis['power']>; ride: b
   const { t } = useI18n();
   const fmt = useFormat();
   const { settings } = useSettings();
-  const peakLabel = (s: number) => (s < 60 ? `${s} s` : `${s / 60} min`);
+  const peakLabel = (s: number) => fmt.durationShort(s);
   return (
     <InsightCard
       title={t('activities.analysis.power')}
@@ -136,9 +141,9 @@ export function Insights({ w, analysis, similar }: { w: WorkoutDetail; analysis:
   const cards: ReactNode[] = [];
   if (analysis.decoupling) cards.push(<Decoupling key="dec" a={analysis.decoupling} sport={w.sport} />);
   if (analysis.efficiency) cards.push(<Efficiency key="ef" a={analysis.efficiency} similar={similar} />);
-  if (analysis.gapSpeed && isPaceSport(w.sport))
+  if (analysis.gapSpeed && showsPace(w.sport))
     cards.push(<Gap key="gap" gap={analysis.gapSpeed} actual={analysis.avgSpeed ?? w.avgSpeed} sport={w.sport} />);
-  if (analysis.power) cards.push(<Power key="pw" p={analysis.power} ride={w.sport === 'ride' || w.sport === 'handcycle'} />);
+  if (analysis.power) cards.push(<Power key="pw" p={analysis.power} ride={isCycling(w.sport)} />);
   if (!cards.length) return null;
   return <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{cards}</div>;
 }

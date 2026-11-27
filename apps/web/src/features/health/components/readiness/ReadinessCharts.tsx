@@ -4,16 +4,17 @@ import { Activity, BatteryCharging, HeartPulse } from 'lucide-react';
 import type { ReadinessBand, ReadinessModelInfo, ReadinessRange, ReadinessTrendDay } from '@cadence/shared';
 import { ChartCard } from '@/components/charts/ChartCard';
 import { EChart } from '@/components/charts/EChart';
+import { measureColor } from '@/components/charts/measures';
 import { axisTooltip, grid, legend, lineSeries, timeAxis, tooltipHtml, valueAxis } from '@/components/charts/options';
 import { useChartTheme, type ChartTheme } from '@/components/charts/theme';
 import { useFormat } from '@/lib/format';
 import { useT } from '@/lib/i18n';
 import { LEGEND_LINE_ICON, dayAxisLabel } from '../../lib/chart';
-import { measureColor } from '../../lib/colors';
+import { HK } from '../../lib/identifiers';
 import { useMetricFormat } from '../../lib/metrics';
 
-const HRV = 'HKQuantityTypeIdentifierHeartRateVariabilitySDNN';
-const RHR = 'HKQuantityTypeIdentifierRestingHeartRate';
+const HRV = HK.hrv;
+const RHR = HK.restingHr;
 
 const xAxis = (theme: ChartTheme, fmt: ReturnType<typeof useFormat>) =>
   timeAxis(theme, { axisLabel: { color: theme.muted, fontSize: 11, hideOverlap: true, formatter: dayAxisLabel(fmt) } });
@@ -87,8 +88,9 @@ export function ReadinessTrendChart({ history, model, loading }: { history: Read
     } as EChartsOption;
   }, [history, model.bands, theme, fmt, t, total]);
 
+  // rows only while the table view is open
   const table = useMemo(
-    () => ({
+    () => () => ({
       columns: [
         { key: 'day', label: t('health.common.date') },
         { key: 'score', label: t('health.readiness.charts.score'), numeric: true },
@@ -197,8 +199,9 @@ export function HrvBaselineChart({ history, hrvDays, loading }: BaselineProps & 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [history, theme, fmt, m, color, names]);
 
+  // rows only while the table view is open
   const table = useMemo(
-    () => ({
+    () => () => ({
       columns: [
         { key: 'day', label: t('health.common.date') },
         { key: 'daily', label: `${names.daily} (${m.unitLabel(HRV)})`, numeric: true },
@@ -281,8 +284,9 @@ export function RestingHrBaselineChart({ history, loading }: BaselineProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [history, theme, fmt, m, color, names]);
 
+  // rows only while the table view is open
   const table = useMemo(
-    () => ({
+    () => () => ({
       columns: [
         { key: 'day', label: t('health.common.date') },
         { key: 'value', label: `${names.value} (${m.unitLabel(RHR)})`, numeric: true },

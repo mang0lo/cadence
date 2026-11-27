@@ -3,9 +3,9 @@ import { Check, Copy, Download, LineChart, Plus, Share2 } from 'lucide-react';
 import { sportInfo, trackParts, workoutTitle, type WorkoutDetail, type WorkoutStreams } from '@cadence/shared';
 import { thumbnailBasemap } from '@/components/map/tiles';
 import { Button, Dialog, Field, SegmentedControl, Spinner, Switch } from '@/components/ui';
-import { useFormat, type Formatter } from '@/lib/format';
+import { saveFile } from '@/lib/download';
+import { showsPace, speedLabel, useFormat, type Formatter } from '@/lib/format';
 import { useI18n, type TFunction } from '@/lib/i18n';
-import { isNativeShell, postNative } from '@/lib/native';
 import { activityPlace } from '@/lib/places';
 import { decodePolylineParts } from '@/lib/polyline';
 import { useSettings } from '@/lib/settings';
@@ -14,7 +14,7 @@ import { useStoredState } from '@/lib/storage';
 import { useResolvedTheme } from '@/lib/theme';
 import { dayKey } from '@/lib/time';
 import { useStreams } from '../../api';
-import { isPaceSport, shortDistanceParts } from '../../lib/display';
+import { cadenceUnit, shortDistanceParts, shownGain } from '../../lib/display';
 import {
   MAX_SHARE_CHARTS,
   MAX_SHARE_STATS,
@@ -33,7 +33,6 @@ import {
   type ShareTheme,
 } from '../../lib/share';
 import {
-  blobBase64,
   canvasBlob,
   renderShareImage,
   type ShareChart,
@@ -59,12 +58,12 @@ function statCatalog(w: WorkoutDetail, fmt: Formatter, t: TFunction): Partial<Re
     out.pace = { label: t('common.pace'), ...fmt.paceParts(w.avgSpeed, info.speedMode === 'pace100' ? w.sport : 'run') };
     out.speed = { label: t('common.speed'), ...fmt.speedParts(w.avgSpeed) };
   }
-  if (w.hasRoute && (w.elevationGainM ?? 0) >= 1) out.elevation = { label: t('common.elevationGain'), ...fmt.elevationParts(w.elevationGainM) };
+  if ((shownGain(w) ?? 0) >= 1) out.elevation = { label: t('common.elevationGain'), ...fmt.elevationParts(w.elevationGainM) };
   if (w.avgHr) out.avgHr = { label: t('common.avgHr'), value: fmt.int(w.avgHr), unit: 'bpm' };
   if (w.maxHr) out.maxHr = { label: t('common.maxHr'), value: fmt.int(w.maxHr), unit: 'bpm' };
   if (w.avgPower) out.avgPower = { label: t('activities.stats.avgPower'), value: fmt.int(w.avgPower), unit: 'W' };
   if (w.avgCadence)
-    out.cadence = { label: t('activities.stats.avgCadence'), value: fmt.int(w.avgCadence), unit: info.group === 'cycle' ? 'rpm' : 'spm' };
+    out.cadence = { label: t('activities.stats.avgCadence'), value: fmt.int(w.avgCadence), unit: cadenceUnit(w.sport) };
   if (w.energyKcal) out.calories = { label: t('common.calories'), value: fmt.int(w.energyKcal), unit: 'kcal' };
   if (w.effort !== null) out.effort = { label: t('common.effort'), value: fmt.int(w.effort) };
   return out;
@@ -74,7 +73,7 @@ function statCatalog(w: WorkoutDetail, fmt: Formatter, t: TFunction): Partial<Re
 function defaultStats(w: WorkoutDetail): ShareStatKey[] {
   const info = sportInfo(w.sport);
   if (info.distance && (w.distanceM ?? 0) > 0)
-    return ['distance', 'movingTime', isPaceSport(w.sport) ? 'pace' : 'speed', 'elevation'];
+    return ['distance', 'movingTime', showsPace(w.sport) ? 'pace' : 'speed', 'elevation'];
   return ['movingTime', 'calories', 'avgHr', 'effort'];
 }
 
@@ -103,7 +102,7 @@ function chartCatalog(
     const sp = chartSeries(x, v, { ...opts, minRange: 0.5 });
     if (sp)
       out.pace = {
-        label: isPaceSport(w.sport) ? t('common.pace') : t('common.speed'),
+        label: speedLabel(t, w.sport),
         value: w.avgSpeed ? `Ø ${fmt.pace(w.avgSpeed, w.sport)}` : '',
         series: sp,
         color: 'sport',
@@ -262,21 +261,8 @@ export default function ShareDialog({ w, onClose }: { w: WorkoutDetail; onClose:
     if (!result) return;
     setError(false);
     try {
-      const blob = await canvasBlob(result.canvas);
-      // WKWebView does not download blob: links reliably — the Mac app writes the file itself
-      if (isNativeShell()) {
-        postNative('saveFile', { filename, base64: await blobBase64(blob) });
-        setDone('saved');
-        return;
-      }
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
+      // the apps save the file themselves (and show nothing a browser download would)
+      if (await saveFile(filename, await canvasBlob(result.canvas))) setDone('saved');
     } catch {
       setError(true);
     }

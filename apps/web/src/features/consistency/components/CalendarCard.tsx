@@ -8,7 +8,7 @@ import { useFormat } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
 import { sportLabel, sortSports } from '@/lib/sports';
 import { useStoredState } from '@/lib/storage';
-import { CALENDAR_METRICS, calendarValue, formatCalendarValue, type CalendarMetric } from '../lib';
+import { CALENDAR_METRICS, calendarValue, formatCalendarValue, shownCalendarMetric, type CalendarMetric } from '../lib';
 
 /** Move-ring % steps: ≤ 50 %, ≤ 75 %, < 100 %, closed (100–150 %), > 150 %. */
 const MOVE_THRESHOLDS = [0.5, 0.75, 0.999, 1.5];
@@ -34,12 +34,14 @@ export function CalendarCard({
   const { t, lang } = useI18n();
   const fmt = useFormat();
   const [metric, setMetric] = useStoredState<CalendarMetric>('consistency.calendarMetric', 'minutes');
-  const m: CalendarMetric = CALENDAR_METRICS.includes(metric) ? metric : 'minutes';
   const from = `${year}-01-01`;
   // the running year ends at asOf (no fake "inactive" future days)
   const to = asOf >= from && asOf < `${year}-12-31` ? asOf : `${year}-12-31`;
   const days = useMemo(() => (data ? data.days.filter((d) => d.day >= from && d.day <= to) : []), [data, from, to]);
   const byDay = useMemo(() => new Map(days.map((d) => [d.day, d])), [days]);
+  const hasRings = days.some((d) => d.move !== null);
+  // a stored "Move ring" only applies to years with ring data (the choice is kept for the years that have it)
+  const m = shownCalendarMetric(metric, hasRings);
   const values = useMemo(() => {
     const out: Record<string, number> = {};
     for (const d of days) {
@@ -51,9 +53,9 @@ export function CalendarCard({
 
   const active = days.filter((d) => d.count > 0);
   const totalS = active.reduce((s, d) => s + d.durationS, 0);
-  const hasRings = days.some((d) => d.move !== null);
 
-  const table: TableView = {
+  // rows only while the table view is open: up to a year of days, each with a button
+  const table = (): TableView => ({
     columns: [
       { key: 'day', label: t('consistency.calendar.table.day') },
       { key: 'activities', label: t('consistency.calendar.metrics.activities'), numeric: true },
@@ -77,7 +79,7 @@ export function CalendarCard({
         effort: d.count ? fmt.int(d.effort) : '–',
         move: d.move !== null ? fmt.pct(d.move) : '–',
       })),
-  };
+  });
 
   const items = CALENDAR_METRICS.filter((x) => x !== 'move' || hasRings).map((x) => ({
     value: x,
@@ -123,6 +125,7 @@ export function CalendarCard({
             gap={3}
             selectedDay={selectedDay}
             onSelectDay={onSelectDay}
+            formatValue={(v) => formatCalendarValue(fmt, t, m, v)}
             tooltip={(day) => {
               const d = byDay.get(day);
               const v = d ? calendarValue(d, m) : 0;

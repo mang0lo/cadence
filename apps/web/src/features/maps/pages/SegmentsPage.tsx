@@ -157,7 +157,7 @@ export default function SegmentsPage() {
                         <span className="font-semibold text-fg">{fmt.duration(s.prTimeS)}</span>
                         {s.prTs !== null && s.prTzMin !== null && (
                           <span className="block text-xs text-fg-3">
-                            {fmt.date(s.prTs, s.prTzMin, 'dayShort')}
+                            {fmt.dateHint(s.prTs, s.prTzMin)}
                           </span>
                         )}
                       </>

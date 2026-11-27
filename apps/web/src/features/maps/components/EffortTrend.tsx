@@ -1,5 +1,4 @@
 import { useMemo, useState } from 'react';
-import { sportInfo } from '@cadence/shared';
 import { ChartCard } from '@/components/charts/ChartCard';
 import { EChart } from '@/components/charts/EChart';
 import {
@@ -13,19 +12,11 @@ import {
 } from '@/components/charts/options';
 import { sportColor, useChartTheme } from '@/components/charts/theme';
 import { SegmentedControl } from '@/components/ui';
-import { useFormat } from '@/lib/format';
+import { speedLabelKey, useFormat } from '@/lib/format';
 import { useT } from '@/lib/i18n';
+import { effortScale, effortSeries, type EffortMetric, type TrendEffort } from '../lib/effortTrend';
 
-export interface TrendEffort {
-  startTs: number;
-  tzMin: number;
-  timeS: number;
-  avgSpeed: number | null;
-  avgHr: number | null;
-  rank: number;
-}
-
-type Metric = 'time' | 'pace';
+export type { TrendEffort };
 
 /**
  * Time (or pace / speed) of repeated efforts over the calendar, with the running best as a step line. For times and
@@ -48,35 +39,15 @@ export function EffortTrend({
   // the efforts carry the sport's fixed color, the running best is a neutral step line
   const effortColor = sportColor(theme, sport);
   const bestColor = theme.fg2;
-  const mode = sportInfo(sport).speedMode;
-  const paceLike = mode === 'pace' || mode === 'pace100';
-  const [metric, setMetric] = useState<Metric>('time');
+  const [metric, setMetric] = useState<EffortMetric>('time');
   const asc = useMemo(() => [...efforts].sort((a, b) => a.startTs - b.startTs), [efforts]);
 
-  const lowerIsBetter = metric === 'time' || paceLike;
-  const label = (v: number) => (lowerIsBetter ? fmt.duration(v) : fmt.num(v, 1));
-  const metricName =
-    metric === 'time' ? t('maps.routes.time') : paceLike ? t('common.pace') : t('common.speed');
+  // swims per 100 m / 100 yd, runs per km / mi, rides in km/h / mph (tooltip and table with the unit)
+  const scale = useMemo(() => effortScale(fmt, sport, metric), [fmt, sport, metric]);
+  const { lowerIsBetter, label } = scale;
+  const metricName = metric === 'time' ? t('maps.routes.time') : t(speedLabelKey(sport));
 
-  const { points, bestSoFar } = useMemo(() => {
-    const value = (e: TrendEffort): number | null => {
-      if (metric === 'time') return e.timeS;
-      if (e.avgSpeed == null) return null;
-      return paceLike ? fmt.paceSeconds(e.avgSpeed) : fmt.distanceValue(e.avgSpeed * 3600);
-    };
-    const pts: [number, number | null][] = [];
-    const bests: [number, number][] = [];
-    let b: number | null = null;
-    for (const e of asc) {
-      const v = value(e);
-      pts.push([e.startTs * 1000, v]);
-      if (v != null) {
-        b = b === null ? v : lowerIsBetter ? Math.min(b, v) : Math.max(b, v);
-        bests.push([e.startTs * 1000, b]);
-      }
-    }
-    return { points: pts, bestSoFar: bests };
-  }, [asc, metric, fmt, lowerIsBetter, paceLike]);
+  const { points, bestSoFar } = useMemo(() => effortSeries(asc, scale), [asc, scale]);
 
   const option = useMemo(() => {
     const effortName = t('maps.routes.effort');
@@ -89,7 +60,8 @@ export function EffortTrend({
         const eff = ps.find((p) => p.seriesName === effortName);
         const e = eff ? asc[eff.dataIndex] : undefined;
         if (!e || !eff) return '';
-        const rows = [{ color: effortColor, label: effortName, value: label(eff.value[1]) }];
+        const v = eff.value[1] as number | null;
+        const rows = [{ color: effortColor, label: effortName, value: v == null ? '–' : label(v) }];
         const bs = ps.find((p) => p.seriesName === bestName);
         if (bs) rows.push({ color: bestColor, label: bestName, value: label(bs.value[1]) });
         rows.push({
@@ -103,7 +75,8 @@ export function EffortTrend({
       yAxis: valueAxis(theme, {
         scale: true,
         inverse: lowerIsBetter,
-        axisLabel: { color: theme.muted, fontSize: 11, formatter: (v: number) => label(v) },
+        minInterval: scale.minInterval,
+        axisLabel: { color: theme.muted, fontSize: 11, formatter: (v: number) => scale.axisLabel(v) },
       }),
       series: [
         lineSeries(theme, effortName, points, effortColor, {
@@ -118,7 +91,7 @@ export function EffortTrend({
       ],
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [points, bestSoFar, theme, lowerIsBetter, fmt, asc, t, effortColor, bestColor]);
+  }, [points, bestSoFar, theme, scale, fmt, asc, t, effortColor, bestColor]);
 
   return (
     <ChartCard
@@ -132,11 +105,12 @@ export function EffortTrend({
           label={t('maps.routes.metric')}
           items={[
             { value: 'time', label: t('maps.routes.time') },
-            { value: 'pace', label: paceLike ? t('common.pace') : t('common.speed') },
+            { value: 'pace', label: t(speedLabelKey(sport)) },
           ]}
         />
       }
-      table={{
+      // rows only while the table view is open: one per attempt, each looking up the best before it
+      table={() => ({
         columns: [
           { key: 'date', label: t('common.day') },
           { key: 'v', label: metricName, numeric: true },
@@ -152,7 +126,7 @@ export function EffortTrend({
           })(),
           rank: String(e.rank),
         })),
-      }}
+      })}
     >
       <EChart option={option as never} height={300} ariaLabel={title} />
     </ChartCard>

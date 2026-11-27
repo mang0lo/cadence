@@ -1,40 +1,34 @@
-import type { ReactNode } from 'react';
+import { use } from 'react';
 import { Link } from 'react-router';
 import { Activity, Upload } from 'lucide-react';
 import { Button, Card, EmptyState, ErrorState, Page } from '@/components/ui';
+import { dashboardWidgetsFor, loadedWidgets, loadWidgets } from '@/features/registry';
 import { useT } from '@/lib/i18n';
-import { CalendarWidget, GoalsWidget, StreakWidget } from '../../consistency/widgets';
-import { HealthSnapshotCard, ReadinessWidget } from '../../health/widgets';
-import { ExplorerWidget } from '../../maps/widgets';
-import { FitnessWidget, PowerWidget, WeeklySnapshotWidget } from '../../progress/widgets';
+import { useDataSources } from '@/lib/sources';
 import { useActivitiesSummary, useFeed } from '../api';
 import { AthleteCard, AthleteCardSkeleton } from '../components/AthleteCard';
 import { FeedCard, FeedCardSkeleton } from '../components/FeedCard';
 import { WidgetBoundary } from '../components/WidgetBoundary';
 
-/** Other features' dashboard widgets, in the agreed order. Each renders its own Card (or null). */
-const WIDGETS: [string, () => ReactNode][] = [
-  ['weekly-snapshot', WeeklySnapshotWidget],
-  ['readiness', ReadinessWidget],
-  ['fitness', FitnessWidget],
-  ['power', PowerWidget],
-  ['streak', StreakWidget],
-  ['goals', GoalsWidget],
-  ['calendar', CalendarWidget],
-  ['health', HealthSnapshotCard],
-  ['explorer', ExplorerWidget],
-];
-
+/**
+ * The features' dashboard widgets in their order. Each renders its own Card (or null). Their code is loaded already: the
+ * route loads it together with this page (withDashboardWidgets in the registry).
+ */
 function Widgets() {
   const t = useT();
+  const sources = useDataSources().data;
+  const components = loadedWidgets() ?? use(loadWidgets());
   return (
     // minmax(0,1fr): an `auto` track would grow with the widest widget and overflow the side column
     <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-4">
-      {WIDGETS.map(([key, W]) => (
-        <WidgetBoundary key={key} fallback={<ErrorState error={t('activities.widgets.error')} />}>
-          <W />
-        </WidgetBoundary>
-      ))}
+      {dashboardWidgetsFor(sources).map((w) => {
+        const W = components.get(w.id)!;
+        return (
+          <WidgetBoundary key={w.id} fallback={<ErrorState error={t('activities.widgets.error')} />}>
+            <W />
+          </WidgetBoundary>
+        );
+      })}
     </div>
   );
 }
@@ -50,17 +44,23 @@ function Feed() {
         <FeedCardSkeleton />
       </div>
     );
-  if (feed.error) return <ErrorState error={feed.error} />;
+  // only without any loaded page: a failed "load more" or background refetch keeps the cards (TanStack keeps the pages)
+  if (feed.error && !feed.data) return <ErrorState error={feed.error} />;
   const items = feed.data?.pages.flatMap((p) => p.items) ?? [];
   return (
     <div className="grid gap-4">
       {items.map((w) => (
         <FeedCard key={w.id} w={w} />
       ))}
+      {feed.error && <ErrorState error={feed.error} />}
       <div className="flex justify-center py-2">
         {feed.hasNextPage ? (
           <Button onClick={() => void feed.fetchNextPage()} loading={feed.isFetchingNextPage}>
-            {t('activities.feed.loadMore')}
+            {feed.isFetchNextPageError ? t('common.retry') : t('activities.feed.loadMore')}
+          </Button>
+        ) : feed.error ? (
+          <Button onClick={() => void feed.refetch()} loading={feed.isRefetching}>
+            {t('common.retry')}
           </Button>
         ) : (
           items.length > 0 && <span className="text-xs text-fg-3">{t('activities.feed.allLoaded')}</span>

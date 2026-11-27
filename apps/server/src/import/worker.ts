@@ -1,7 +1,8 @@
 import { parentPort, workerData } from 'node:worker_threads';
 import { openDb } from '../db/db';
+import type { ImportErrorCode } from '@cadence/shared';
 import { CancelledError } from '../derive/context';
-import { executeJob, type JobSpec } from './run-job';
+import { errorCodeOf, executeJob, progressSaver, type JobSpec } from './run-job';
 import { emptyStats } from './writer';
 
 /** workerData of an import / derive worker (see jobs.ts). */
@@ -20,11 +21,12 @@ export type WorkerMessage =
       progress: number;
       message: string | null;
       step: string | null;
+      stepId?: string | null;
       stats: unknown;
     }
   | { type: 'log'; message: string }
   | { type: 'done'; stats: unknown }
-  | { type: 'failed'; error: string; cancelled: boolean; stats: unknown };
+  | { type: 'failed'; error: string; code: ImportErrorCode; cancelled: boolean; stats: unknown };
 
 /** Entry of the import worker thread (src/index.ts runs this when !isMainThread). */
 export async function runWorker(): Promise<void> {
@@ -37,12 +39,17 @@ export async function runWorker(): Promise<void> {
   const db = openDb(data.dbPath);
   // the importer benefits from a bigger page cache than the HTTP connection
   db.exec('PRAGMA cache_size = -131072');
+  // the job row's progress is saved here, between (or inside) the job's own transactions, not by the HTTP thread
+  const save = progressSaver(db, data.job.id);
   try {
     await executeJob(
       db,
       data.job,
       {
-        progress: (p) => post({ type: 'progress', ...p, stats: p.stats }),
+        progress: (p) => {
+          post({ type: 'progress', ...p, stats: p.stats });
+          save(p);
+        },
         checkCancelled: () => {
           if (Atomics.load(flag, 0)) throw new CancelledError();
         },
@@ -56,6 +63,7 @@ export async function runWorker(): Promise<void> {
     post({
       type: 'failed',
       error: e instanceof Error ? e.message : String(e),
+      code: errorCodeOf(e),
       cancelled: e instanceof CancelledError,
       stats,
     });

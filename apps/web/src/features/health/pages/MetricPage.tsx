@@ -20,10 +20,9 @@ import { MetricChart, type MetricMode } from '../components/metric/MetricChart';
 import { SamplesCard } from '../components/metric/SamplesCard';
 import { SourcesCard } from '../components/metric/SourcesCard';
 import { identifierColor } from '../lib/colors';
-import { useRange } from '../lib/hooks';
+import { useDayParam, useRange } from '../lib/hooks';
 import { useMetricFormat } from '../lib/metrics';
-
-const browserTz = () => -new Date().getTimezoneOffset();
+import { eventsPerDay } from '../lib/periods';
 
 /** Sensible default grouping for the length of the range. */
 function autoAgg(days: number | null): MetricAgg {
@@ -43,7 +42,6 @@ export default function MetricPage() {
   const { range, setRange, fromDay, toDay, days, meta } = useRange('metric', '1y');
   const [aggPref, setAggPref] = useState<MetricAgg | null>(null);
   const [mode, setMode] = useState<MetricMode>('average');
-  const [pickedDay, setPickedDay] = useState<string | null>(null);
   const agg = aggPref ?? autoAgg(days);
   // the whole history needs no day filter (and no row count over millions of records)
   const listFrom = range === 'all' ? undefined : fromDay;
@@ -61,10 +59,13 @@ export default function MetricPage() {
   const cumulative = info ? info.aggregation !== 'avg' : false;
   const isEvent = !!s && info?.kind === 'category' && s.categories.length > 0 && s.categories.every((c) => c.total === 0);
   const unit = info?.unit ?? null;
-  const intradayDay = pickedDay ?? s?.stats.latestDay ?? meta.data?.asOf ?? null;
+  // the day of the intraday chart (?day=, default: the latest day of this type)
+  const { day: intradayDay, setDay: setIntradayDay } = useDayParam(s?.stats.latestDay ?? meta.data?.asOf ?? null);
 
   const stats = s?.stats;
   const parts = (v: number | null | undefined) => m.parts(identifier, v ?? undefined, unit);
+  // events per calendar day of the range (per day that had an event would be about 1)
+  const eventRate = eventsPerDay(stats?.samples ?? 0, s?.fromDay ?? null, s?.toDay ?? null);
 
   return (
     <Page>
@@ -74,9 +75,9 @@ export default function MetricPage() {
         subtitle={
           info && info.firstTs !== null && info.lastTs !== null
             ? `${identifier} · ${t('health.metric.typeInfo', {
-                count: fmt.int(info.count),
-                from: fmt.date(info.firstTs, browserTz(), 'day'),
-                to: fmt.date(info.lastTs, browserTz(), 'day'),
+                count: info.count,
+                from: fmt.browserDate(info.firstTs, 'day'),
+                to: fmt.browserDate(info.lastTs, 'day'),
               })}`
             : identifier
         }
@@ -141,7 +142,7 @@ export default function MetricPage() {
                     <Stat
                       size="sm"
                       label={`${t('health.metric.stats.average')} (${t('health.metric.stats.perDay')})`}
-                      value={isEvent ? fmt.num(stats.days ? stats.samples / stats.days : 0, 1) : parts(stats.mean).value}
+                      value={isEvent ? fmt.num(eventRate.value, eventRate.digits) : parts(stats.mean).value}
                       unit={isEvent ? '' : parts(stats.mean).unit}
                     />
                     {!isEvent && <Stat size="sm" label={t('health.metric.stats.median')} value={parts(stats.median).value} unit={parts(stats.median).unit} />}
@@ -185,7 +186,7 @@ export default function MetricPage() {
               actions={
                 <DayNav
                   day={intradayDay}
-                  onChange={setPickedDay}
+                  onChange={setIntradayDay}
                   min={meta.data.firstDay ?? undefined}
                   max={meta.data.asOf ?? undefined}
                   prevLabel={t('health.metric.intraday.prev')}

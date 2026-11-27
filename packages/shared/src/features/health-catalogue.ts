@@ -356,6 +356,55 @@ const BY_ID = new Map<string, MetricDef>(DEFS.map((d) => [d.identifier, d]));
 /** Every identifier the catalogue knows (for tests and the explorer's "known types"). */
 export const METRIC_DEFS: readonly MetricDef[] = DEFS;
 
+// ---- Identifiers read by name -------------------------------------------------------------------------------
+
+/**
+ * HealthKit identifiers the server and the web read by name, in one place. Metrics a watch can replace with its own
+ * (HeartMetric) are read through the server's choice instead (core/sources.ts heartMetric, HealthMeta.metrics).
+ */
+export const HK = {
+  heartRate: 'HKQuantityTypeIdentifierHeartRate',
+  restingHr: 'HKQuantityTypeIdentifierRestingHeartRate',
+  walkingHr: 'HKQuantityTypeIdentifierWalkingHeartRateAverage',
+  hrv: 'HKQuantityTypeIdentifierHeartRateVariabilitySDNN',
+  vo2max: 'HKQuantityTypeIdentifierVO2Max',
+  recovery: 'HKQuantityTypeIdentifierHeartRateRecoveryOneMinute',
+  respiratory: 'HKQuantityTypeIdentifierRespiratoryRate',
+  spo2: 'HKQuantityTypeIdentifierOxygenSaturation',
+  wristTemp: 'HKQuantityTypeIdentifierAppleSleepingWristTemperature',
+  steps: 'HKQuantityTypeIdentifierStepCount',
+  bodyMass: 'HKQuantityTypeIdentifierBodyMass',
+  bmi: 'HKQuantityTypeIdentifierBodyMassIndex',
+  bodyFat: 'HKQuantityTypeIdentifierBodyFatPercentage',
+  leanMass: 'HKQuantityTypeIdentifierLeanBodyMass',
+  height: 'HKQuantityTypeIdentifierHeight',
+  systolic: 'HKQuantityTypeIdentifierBloodPressureSystolic',
+} as const;
+
+/**
+ * Metrics a watch records itself (Settings → My watch): stored as metrics of their own because they are not the same
+ * measurement (COROS' HRV is an overnight RMSSD, Apple's an SDNN of spot readings), never mixed.
+ */
+export type HeartMetric = 'restingHr' | 'hrv' | 'vo2max' | 'steps' | 'heartRate';
+
+/** Apple Health's daily_metrics key of every heart metric. */
+export const APPLE_HEART_METRICS: Readonly<Record<HeartMetric, string>> = {
+  restingHr: HK.restingHr,
+  hrv: HK.hrv,
+  vo2max: HK.vo2max,
+  steps: HK.steps,
+  heartRate: HK.heartRate,
+};
+
+/** The watch's own daily_metrics keys (COROS cloud values). */
+export const DEVICE_HEART_METRICS: Readonly<Record<HeartMetric, string>> = {
+  restingHr: 'COROSRestingHeartRate',
+  hrv: 'COROSSleepHRV',
+  vo2max: 'COROSVO2Max',
+  steps: 'COROSSteps',
+  heartRate: 'COROSHeartRate',
+};
+
 /** Splits `<identifier>:<value>` (category metrics of daily_metrics) into its parts. */
 export function splitMetric(metric: string): { identifier: string; value: string | null } {
   const i = metric.indexOf(':');
@@ -438,6 +487,32 @@ export function categoryValueLabel(value: string, lang: 'en' | 'de'): string {
   const known = CATEGORY_VALUE_LABELS[value];
   if (known) return known[lang];
   return value.replace(/([a-z0-9])([A-Z])/g, '$1 $2');
+}
+
+/**
+ * How a category value counts in the daily total of its type (metric page statistics, explorer sparkline):
+ *  - 'add': its minutes (or, for events without a duration, its occurrences) count;
+ *  - 'zero': the day has data but the value adds nothing (stand hours: an Idle hour was worn, not stood);
+ *  - 'skip': not part of the total (sleep: InBed spans the stages and Awake is not sleep; no flow, symptom not present).
+ * Every value still shows as its own category in the stacked charts.
+ */
+export type CategoryValueRole = 'add' | 'zero' | 'skip';
+
+/** Generic and staged asleep values of SleepAnalysis (a night written both ways must be counted once). */
+export const SLEEP_GENERIC_VALUES: readonly string[] = ['Asleep', 'AsleepUnspecified'];
+export const SLEEP_STAGE_VALUES: readonly string[] = ['AsleepCore', 'AsleepDeep', 'AsleepREM'];
+
+export function categoryValueRole(identifier: string, value: string): CategoryValueRole {
+  switch (identifier) {
+    case 'HKCategoryTypeIdentifierSleepAnalysis':
+      return value === 'InBed' || value === 'Awake' ? 'skip' : 'add';
+    case 'HKCategoryTypeIdentifierAppleStandHour':
+      return value === 'Stood' ? 'add' : 'zero';
+    case 'HKCategoryTypeIdentifierMenstrualFlow':
+      return value === 'None' ? 'skip' : 'add';
+  }
+  // symptoms: 'SeverityNotPresent', 'PresenceNotPresent' (logged to say the symptom was absent)
+  return value.endsWith('NotPresent') ? 'skip' : 'add';
 }
 
 // ---------------------------------------------------------------------------------------------------------------

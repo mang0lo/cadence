@@ -1,7 +1,7 @@
 import { EXPLORER_SPARK_DAYS, type ExplorerItem, type ExplorerResponse, type ExplorerType } from '@cadence/shared';
 import { all, get, type Db } from '../../db/db';
 import { addDays, parseDay } from '../../lib/time';
-import { excludedFromCombined } from './series';
+import { combineCategoryRows, type DailyRow } from './series';
 import { dataRange } from './util';
 
 interface TypeRow {
@@ -13,13 +13,6 @@ interface TypeRow {
   count: number;
   first_ts: number | null;
   last_ts: number | null;
-}
-
-interface Acc {
-  /** value per day (quantity types) or minutes per day (category types) */
-  value: Map<string, number>;
-  /** event count per day (category types) */
-  count: Map<string, number>;
 }
 
 const dayTs = (day: string | null): number | null => {
@@ -38,7 +31,9 @@ export function buildExplorer(db: Db, athleteId: number): ExplorerResponse {
     [athleteId],
   );
 
-  const acc = new Map<string, Acc>();
+  /** value per day of quantity types; daily rows per value of category types ('<identifier>:<value>' metrics) */
+  const quantities = new Map<string, Map<string, number>>();
+  const categories = new Map<string, Map<string, DailyRow[]>>();
   const days: string[] = [];
   if (asOf) {
     const lo = addDays(asOf, -(EXPLORER_SPARK_DAYS - 1));
@@ -50,25 +45,35 @@ export function buildExplorer(db: Db, athleteId: number): ExplorerResponse {
     );
     for (const r of daily) {
       const i = r.metric.indexOf(':');
-      const id = i < 0 ? r.metric : r.metric.slice(0, i);
-      let a = acc.get(id);
-      if (!a) acc.set(id, (a = { value: new Map(), count: new Map() }));
-      if (i < 0) a.value.set(r.day, r.value);
-      else {
-        if (excludedFromCombined(id, r.metric.slice(i + 1))) continue;
-        a.value.set(r.day, (a.value.get(r.day) ?? 0) + r.value);
-        a.count.set(r.day, (a.count.get(r.day) ?? 0) + r.n);
+      if (i < 0) {
+        let q = quantities.get(r.metric);
+        if (!q) quantities.set(r.metric, (q = new Map()));
+        q.set(r.day, r.value);
+        continue;
       }
+      const id = r.metric.slice(0, i);
+      const value = r.metric.slice(i + 1);
+      let byValue = categories.get(id);
+      if (!byValue) categories.set(id, (byValue = new Map()));
+      let list = byValue.get(value);
+      if (!list) byValue.set(value, (list = []));
+      list.push({ day: r.day, value: r.value, min: null, max: null, n: r.n });
     }
   }
 
   const types: ExplorerType[] = rows.map((r) => {
-    const a = acc.get(r.identifier);
     let spark: (number | null)[] = days.map(() => null);
-    if (a) {
-      const minutes = [...a.value.values()].some((v) => v > 0);
-      const src = r.kind === 'category' && !minutes ? a.count : a.value;
-      spark = days.map((d) => src.get(d) ?? null);
+    const q = quantities.get(r.identifier);
+    const byValue = categories.get(r.identifier);
+    if (q) spark = days.map((d) => q.get(d) ?? null);
+    else if (byValue) {
+      // the same daily totals as the metric page (combineCategoryRows); events without a duration count occurrences
+      const combined = new Map(combineCategoryRows(byValue, r.identifier).map((c) => [c.day, c]));
+      const minutes = [...combined.values()].some((c) => c.value > 0);
+      spark = days.map((d) => {
+        const c = combined.get(d);
+        return c ? (minutes ? c.value : c.n) : null;
+      });
     }
     return {
       id: r.id,
@@ -99,9 +104,10 @@ export function buildExplorer(db: Db, athleteId: number): ExplorerResponse {
     [athleteId],
   );
   push('workouts', workouts?.n, workouts?.lo ?? null, workouts?.hi ?? null);
+  // visible workouts with a GPS track (has_route is kept by the derive step; the route blobs are not read)
   const routes = get<{ n: number }>(
     db,
-    `SELECT COUNT(*) AS n FROM workout_routes r JOIN workouts w ON w.id = r.workout_id WHERE w.athlete_id = ?`,
+    'SELECT COUNT(*) AS n FROM workouts WHERE athlete_id = ? AND hidden = 0 AND duplicate_of IS NULL AND has_route = 1',
     [athleteId],
   );
   push('routes', routes?.n, workouts?.lo ?? null, workouts?.hi ?? null);

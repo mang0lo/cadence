@@ -15,7 +15,8 @@ import {
 import { all, json, type Db } from '../../db/db';
 import { getSetting } from '../../core/settings';
 import { localDay } from '../../lib/time';
-import { dayTs, visibleWorkoutsInDays, weekStartOf, zoneBoundsOf } from './common';
+import { currentAnalysisSql } from '../activities/store';
+import { clipRange, dayTs, visibleWorkoutsInDays, weekStartOf, zoneBoundsOf } from './common';
 import {
   bandTotals,
   bucketKey,
@@ -48,7 +49,9 @@ interface TrendRow {
   stride_m: number | null;
   gct_ms: number | null;
   vo_m: number | null;
+  /** From the activity analysis: the values the activity page shows. */
   decoupling_pct: number | null;
+  pace_efficiency: number | null;
 }
 
 interface MetricDef {
@@ -78,16 +81,8 @@ function hrOf(r: TrendRow): number | null {
 export const TREND_DEFS: Record<ProgressTrendMetric, MetricDef> = {
   speed: { unit: () => 'm/s', better: () => 'up', changeKind: 'relative', value: speedOf },
   hr: { unit: () => 'bpm', better: () => null, changeKind: 'relative', value: (r) => hrOf(r) },
-  ef: {
-    unit: () => 'm/beat',
-    better: () => 'up',
-    changeKind: 'relative',
-    value: (r, s) => {
-      const v = speedOf(r, s);
-      const hr = hrOf(r);
-      return v !== null && hr !== null ? (v * 60) / hr : null;
-    },
-  },
+  // efficiency factor of the activity analysis: (grade adjusted) speed per heartbeat, also for rides with power
+  ef: { unit: () => 'm/beat', better: () => 'up', changeKind: 'relative', value: (r) => r.pace_efficiency },
   cadence: {
     unit: (s) => (isCycle(s) ? 'rpm' : 'spm'),
     better: (s) => (sportInfo(s).group === 'foot' ? 'up' : null),
@@ -106,7 +101,7 @@ export function medianWindowFor(n: number): number {
   return Math.max(5, Math.min(15, Math.round(n / 10)));
 }
 
-/** Least-squares trend over time; needs ≥ 5 points over ≥ 14 days. */
+/** Least-squares trend over time; needs ≥ 3 points over ≥ 14 days (callers may require more). */
 export function trendFit(ts: readonly number[], values: readonly number[], weights?: readonly number[]): ProgressTrendFit | null {
   if (ts.length < 3) return null;
   const t0 = ts[0]!;
@@ -154,8 +149,9 @@ export function trends(
   const rows = all<TrendRow>(
     db,
     `SELECT w.id, w.name, w.sport, w.start_ts, w.tz_min, w.distance_m, w.moving_s, w.duration_s, w.avg_speed,
-       w.avg_hr, w.avg_cadence, w.avg_power, m.stride_m, m.gct_ms, m.vo_m, m.decoupling_pct
+       w.avg_hr, w.avg_cadence, w.avg_power, m.stride_m, m.gct_ms, m.vo_m, a.decoupling_pct, a.pace_efficiency
      FROM workouts w LEFT JOIN progress_workout_metrics m ON m.workout_id = w.id
+       LEFT JOIN activities_analysis a ON a.workout_id = w.id AND ${currentAnalysisSql('a')}
      WHERE ${where} ORDER BY w.start_ts, w.id`,
     params,
   );
@@ -310,13 +306,14 @@ export function intensity(
   const weekStart = weekStartOf(db, athleteId);
   const buckets = bucketsBetween(q.fromDay, q.toDay, q.bucket, weekStart).map((b) => ({
     ...b,
+    ...clipRange(b, q),
     zones: [0, 0, 0, 0, 0],
     total: 0,
     easyShare: null as number | null,
   }));
   const index = new Map(buckets.map((b, i) => [b.key, i]));
-  const from = buckets[0]?.fromDay ?? q.fromDay;
-  const { where, params } = visibleWorkoutsInDays('', athleteId, q.sport, from, q.toDay);
+  // only the requested days: the first and the last bucket can be partial
+  const { where, params } = visibleWorkoutsInDays('', athleteId, q.sport, q.fromDay, q.toDay);
   const rows = all<{ start_ts: number; tz_min: number; hr_zones: string | null }>(
     db,
     `SELECT start_ts, tz_min, hr_zones FROM workouts WHERE ${where}`,
