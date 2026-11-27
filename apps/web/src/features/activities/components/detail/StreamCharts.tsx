@@ -374,8 +374,8 @@ export function StreamCharts({ P, sport, zoneBounds, playback, hover, selection,
     return fracIndex(xFull, x0 + f * (x1 - x0));
   };
 
-  // ---- table view: one row per km/mi (distance) or 5 minutes (time) ----
-  const table = useMemo<TableView>(() => {
+  // ---- table view (built only while it is open, not on every zoom): one row per km/mi or 5 minutes ----
+  const table = useMemo(() => (): TableView => {
     const step = xMode === 'dist' ? 1 : 300;
     const rows: Record<string, ReactNode>[] = [];
     for (let x = x0; x < x1; x += step) {

@@ -254,23 +254,22 @@ export function MetricChart({ series, mode, loading }: Props) {
             { key: 'value', label: unitLabel ? `${t(titleKey)} (${unitLabel})` : t(titleKey), numeric: true },
             { key: 'days', label: t('health.common.days'), numeric: true },
           ];
-    const rows =
+    // rows only while the table view is open (all days of a long range otherwise), newest first
+    const rows = () =>
       chart.kind === 'category'
-        ? [...chart.keys].reverse().map((k) => {
-            const i = chart.keys.indexOf(k);
-            return {
+        ? chart.keys
+            .map((k, i) => ({
               period: label(k, false),
               ...Object.fromEntries(
                 chart.names.map((_, c) => [`c${c}`, chart.isEvent ? fmt.int(chart.raw[c]![i]!) : m.plain(identifier, chart.raw[c]![i]!, type.unit)]),
               ),
-            };
-          })
-        : [...chart.points].reverse().map((p) => {
-            const i = chart.points.indexOf(p);
-            return { period: label(p.key, false), value: m.plain(identifier, chart.raw[i]!, type.unit), days: fmt.int(p.days) };
-          });
+            }))
+            .reverse()
+        : chart.points
+            .map((p, i) => ({ period: label(p.key, false), value: m.plain(identifier, chart.raw[i]!, type.unit), days: fmt.int(p.days) }))
+            .reverse();
 
-    return { option, columns, rows };
+    return { option, table: () => ({ columns, rows: rows() }) };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [model, theme, fmt, m, t, titleKey, color, unitLabel, agg, identifier, type.unit]);
 
@@ -295,7 +294,7 @@ export function MetricChart({ series, mode, loading }: Props) {
   }
 
   const chart = model!;
-  const { option, columns, rows } = view!;
+  const { option, table } = view!;
   const hasData = series.points.length > 0;
   return (
     <ChartCard
@@ -310,7 +309,7 @@ export function MetricChart({ series, mode, loading }: Props) {
               : 'health.metric.chart.subtitleSum',
       )}
       icon={BarChart3}
-      table={hasData ? { columns, rows } : undefined}
+      table={hasData ? table : undefined}
       footer={
         hasData && (isSum || isCategory) && !isEvent && mode === 'average' && agg !== 'day' ? <span>{t('health.metric.chart.perDayHint')}</span> : undefined
       }

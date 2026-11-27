@@ -88,8 +88,9 @@ export function ReadinessTrendChart({ history, model, loading }: { history: Read
     } as EChartsOption;
   }, [history, model.bands, theme, fmt, t, total]);
 
+  // rows only while the table view is open
   const table = useMemo(
-    () => ({
+    () => () => ({
       columns: [
         { key: 'day', label: t('health.common.date') },
         { key: 'score', label: t('health.readiness.charts.score'), numeric: true },
@@ -198,8 +199,9 @@ export function HrvBaselineChart({ history, hrvDays, loading }: BaselineProps & 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [history, theme, fmt, m, color, names]);
 
+  // rows only while the table view is open
   const table = useMemo(
-    () => ({
+    () => () => ({
       columns: [
         { key: 'day', label: t('health.common.date') },
         { key: 'daily', label: `${names.daily} (${m.unitLabel(HRV)})`, numeric: true },
@@ -282,8 +284,9 @@ export function RestingHrBaselineChart({ history, loading }: BaselineProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [history, theme, fmt, m, color, names]);
 
+  // rows only while the table view is open
   const table = useMemo(
-    () => ({
+    () => () => ({
       columns: [
         { key: 'day', label: t('health.common.date') },
         { key: 'value', label: `${names.value} (${m.unitLabel(RHR)})`, numeric: true },

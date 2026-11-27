@@ -163,9 +163,10 @@ export function TrendsCard({
     [data, navigate],
   );
 
+  // rows only while the table view is open: one per workout of the sport, each with a link
   const table = useMemo(() => {
     if (!data || !selected || !tf) return undefined;
-    return {
+    return () => ({
       columns: [
         { key: 'date', label: t('progress.common.date') },
         { key: 'activity', label: t('progress.common.activity') },
@@ -183,7 +184,7 @@ export function TrendsCard({
           };
         })
         .reverse(),
-    };
+    });
   }, [data, selected, tf, fmt, t, dataSport]);
 
   if (sport === 'all') {

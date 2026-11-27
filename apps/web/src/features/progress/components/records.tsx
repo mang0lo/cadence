@@ -231,10 +231,11 @@ export function ProgressionCard({
     }),
     [h, navigate],
   );
+  // rows only while the table view is open: an effort can have hundreds of attempts, each with a link
   const table = useMemo(
     () =>
       h
-        ? {
+        ? () => ({
             columns: [
               { key: 'date', label: t('progress.records.table.date') },
               { key: 'activity', label: t('progress.common.activity') },
@@ -249,7 +250,7 @@ export function ProgressionCard({
               pace: fmt.pace(h.distanceM / a.elapsedS, h.sport),
               pr: a.pr ? <Medal size={14} className="text-accent-fg" aria-label={t('progress.records.progression.newPr')} /> : '',
             })),
-          }
+          })
         : undefined,
     [h, fmt, t],
   );

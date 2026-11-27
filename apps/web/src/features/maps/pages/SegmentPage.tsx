@@ -387,7 +387,8 @@ function ProfileChart({ detail }: { detail: MapsSegmentDetail }) {
     <ChartCard
       title={name}
       subtitle={hasEle ? undefined : t('maps.segments.noElevation')}
-      table={{
+      // rows only while the table view is open (a long segment's profile has thousands of points)
+      table={() => ({
         columns: [
           { key: 'd', label: t('common.distance'), numeric: true },
           { key: 'e', label: t('common.elevation'), numeric: true },
@@ -404,7 +405,7 @@ function ProfileChart({ detail }: { detail: MapsSegmentDetail }) {
               g: g === null ? '–' : `${fmt.signed(g, 1)} %`,
             };
           }),
-      }}
+      })}
     >
       {hasEle ? (
         <EChart option={option as never} height={280} ariaLabel={name} />

@@ -21,7 +21,7 @@ import type {
   ProgressRampStatus,
   ProgressVo2Level,
 } from '@cadence/shared';
-import { ChartCard, type TableView } from '@/components/charts/ChartCard';
+import { ChartCard, type TableSource, type TableView } from '@/components/charts/ChartCard';
 import { EChart } from '@/components/charts/EChart';
 import { measureColor } from '@/components/charts/measures';
 import {
@@ -238,7 +238,8 @@ export function LoadCharts({ data, loading }: { data: ProgressFitnessResponse; l
   const theme = useChartTheme();
   const load = useMemo(() => loadOption(data, { theme, fmt, t }), [data, theme, fmt, t]);
   const form = useMemo(() => formOption(data, { theme, fmt, t }), [data, theme, fmt, t]);
-  const table = useMemo(() => dayTable(data, fmt, t), [data, fmt, t]);
+  // the day table of both cards, built only while one of them shows it (ten years are thousands of days)
+  const table = useMemo(() => () => dayTable(data, fmt, t), [data, fmt, t]);
   return (
     <>
       <ChartCard
@@ -286,7 +287,7 @@ export function WeeklyLoadCard({ data, loading }: { data: ProgressFitnessRespons
     [data, theme, fmt, t],
   );
   const table = useMemo(
-    () => ({
+    () => () => ({
       columns: [
         { key: 'week', label: t('progress.buckets.week') },
         { key: 'load', label: t('progress.fitness.legend.load'), numeric: true },
@@ -307,7 +308,7 @@ export function WeeklyLoadCard({ data, loading }: { data: ProgressFitnessRespons
   );
 }
 
-export function AcwrCard({ data, loading, table }: { data: ProgressFitnessResponse; loading: boolean; table: TableView | undefined }) {
+export function AcwrCard({ data, loading, table }: { data: ProgressFitnessResponse; loading: boolean; table: TableSource | undefined }) {
   const t = useT();
   const fmt = useFormat();
   const theme = useChartTheme();
@@ -352,13 +353,13 @@ export function AcwrCard({ data, loading, table }: { data: ProgressFitnessRespon
 }
 
 /**
- * The day table of the ACWR and ramp cards (both show the same columns): built once per response for both cards,
- * not on every render of each (about 4 ms for ten years of days).
+ * The day table of the ACWR and ramp cards (both show the same columns): built only while one of them shows it, not
+ * on every render of each (about 4 ms for ten years of days).
  */
-export function useAcwrTable(data: ProgressFitnessResponse | undefined): TableView | undefined {
+export function useAcwrTable(data: ProgressFitnessResponse | undefined): TableSource | undefined {
   const t = useT();
   const fmt = useFormat();
-  return useMemo(() => (data ? dayTableAcwr(data, fmt, t) : undefined), [data, fmt, t]);
+  return useMemo(() => (data ? () => dayTableAcwr(data, fmt, t) : undefined), [data, fmt, t]);
 }
 
 function dayTableAcwr(data: ProgressFitnessResponse, fmt: Formatter, t: TFunction): TableView {
@@ -376,7 +377,7 @@ function dayTableAcwr(data: ProgressFitnessResponse, fmt: Formatter, t: TFunctio
   };
 }
 
-export function RampCard({ data, loading, table }: { data: ProgressFitnessResponse; loading: boolean; table: TableView | undefined }) {
+export function RampCard({ data, loading, table }: { data: ProgressFitnessResponse; loading: boolean; table: TableSource | undefined }) {
   const t = useT();
   const fmt = useFormat();
   const theme = useChartTheme();
@@ -473,7 +474,7 @@ export function Vo2Card({ data, loading, error }: { data: ProgressPhysiology | u
   const table = useMemo(
     () =>
       v
-        ? {
+        ? () => ({
             columns: [
               { key: 'day', label: t('progress.common.date') },
               { key: 'value', label: t('progress.fitness.charts.vo2max'), numeric: true },
@@ -483,7 +484,7 @@ export function Vo2Card({ data, loading, error }: { data: ProgressPhysiology | u
               const m = v.median[v.points.length - 1 - k];
               return { day: fmt.day(p.day, 'day'), value: fmt.num(p.value, 1), median: m == null ? '–' : fmt.num(m, 1) };
             }),
-          }
+          })
         : undefined,
     [v, fmt, t, names],
   );
@@ -569,7 +570,7 @@ export function DailyContextCard({
   const table = useMemo(
     () =>
       series
-        ? {
+        ? () => ({
             columns: [
               { key: 'day', label: t('progress.common.date') },
               { key: 'value', label: names.daily, numeric: true },
@@ -579,7 +580,7 @@ export function DailyContextCard({
               const a = series.avg7[series.points.length - 1 - k];
               return { day: fmt.day(p.day, 'day'), value: `${fmt.num(p.value, 0)} ${unit}`, avg: a == null ? '–' : `${fmt.num(a, 1)} ${unit}` };
             }),
-          }
+          })
         : undefined,
     [series, fmt, t, names, unit],
   );

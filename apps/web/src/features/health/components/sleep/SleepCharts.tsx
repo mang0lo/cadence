@@ -117,7 +117,8 @@ export function StagesChart({ nights, selectedDay, onSelect }: ChartProps) {
       title={t('health.sleep.stages.title')}
       subtitle={t('health.sleep.stages.subtitle')}
       icon={Moon}
-      table={{
+      // rows only while the table view is open
+      table={() => ({
         columns: [
           { key: 'day', label: t('health.sleep.table.date') },
           { key: 'asleep', label: t('health.sleep.table.asleep'), numeric: true },
@@ -130,7 +131,7 @@ export function StagesChart({ nights, selectedDay, onSelect }: ChartProps) {
           ...Object.fromEntries(stages.map((s) => [s, fmt.durationShort(stageSeconds(n, s))])),
           eff: n.efficiency === null ? '–' : fmt.pct(n.efficiency),
         })),
-      }}
+      })}
     >
       <EChart
         option={option}
@@ -201,14 +202,15 @@ export function DurationChart({ nights, goalMin }: { nights: SleepNight[]; goalM
       }),
       series: [daily, avg],
     };
-    const tableRows = [...pts].reverse().map((p) => {
-      const i = pts.indexOf(p);
-      return {
-        day: fmt.day(p.day, 'weekdayShort'),
-        asleep: fmt.durationShort(p.value * HOUR),
-        avg: avg7[i] === null || avg7[i] === undefined ? '–' : fmt.durationShort(avg7[i]! * HOUR),
-      };
-    });
+    // rows only while the table view is open, newest first
+    const tableRows = () =>
+      pts
+        .map((p, i) => ({
+          day: fmt.day(p.day, 'weekdayShort'),
+          asleep: fmt.durationShort(p.value * HOUR),
+          avg: avg7[i] === null || avg7[i] === undefined ? '–' : fmt.durationShort(avg7[i]! * HOUR),
+        }))
+        .reverse();
     return { option: opt, rows: tableRows };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data, goalMin, theme, fmt]);
@@ -218,14 +220,14 @@ export function DurationChart({ nights, goalMin }: { nights: SleepNight[]; goalM
       title={t('health.sleep.duration.title')}
       subtitle={t('health.sleep.duration.subtitle')}
       icon={BedDouble}
-      table={{
+      table={() => ({
         columns: [
           { key: 'day', label: t('health.sleep.table.date') },
           { key: 'asleep', label: t('health.sleep.duration.daily'), numeric: true },
           { key: 'avg', label: t('health.sleep.duration.avg7'), numeric: true },
         ],
-        rows,
-      }}
+        rows: rows(),
+      })}
     >
       <EChart option={option} height={260} ariaLabel={t('health.sleep.duration.title')} />
     </ChartCard>
@@ -334,13 +336,15 @@ export function ScheduleChart({ nights, selectedDay, onSelect }: ChartProps) {
       }),
       series: [base, visible],
     };
-    const tableRows = [...data].reverse().map((n) => ({
-      day: fmt.day(n.day, 'weekdayShort'),
-      bed: fmt.time(n.bedTs, n.tzBedMin),
-      wake: fmt.time(n.wakeTs, n.tzWakeMin),
-      inBed: fmt.durationShort(n.inBedS),
-      asleep: n.asleepS > 0 ? fmt.durationShort(n.asleepS) : '–',
-    }));
+    // rows only while the table view is open
+    const tableRows = () =>
+      [...data].reverse().map((n) => ({
+        day: fmt.day(n.day, 'weekdayShort'),
+        bed: fmt.time(n.bedTs, n.tzBedMin),
+        wake: fmt.time(n.wakeTs, n.tzWakeMin),
+        inBed: fmt.durationShort(n.inBedS),
+        asleep: n.asleepS > 0 ? fmt.durationShort(n.asleepS) : '–',
+      }));
     return { option: opt, rows: tableRows };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data, stats, theme, selectedDay, fmt]);
@@ -350,7 +354,7 @@ export function ScheduleChart({ nights, selectedDay, onSelect }: ChartProps) {
       title={t('health.sleep.schedule.title')}
       subtitle={t('health.sleep.schedule.subtitle')}
       icon={Clock}
-      table={{
+      table={() => ({
         columns: [
           { key: 'day', label: t('health.sleep.table.date') },
           { key: 'bed', label: t('health.sleep.table.bedtime'), numeric: true },
@@ -358,8 +362,8 @@ export function ScheduleChart({ nights, selectedDay, onSelect }: ChartProps) {
           { key: 'inBed', label: t('health.sleep.table.inBed'), numeric: true },
           { key: 'asleep', label: t('health.sleep.table.asleep'), numeric: true },
         ],
-        rows,
-      }}
+        rows: rows(),
+      })}
     >
       <EChart
         option={option}

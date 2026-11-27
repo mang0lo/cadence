@@ -144,12 +144,13 @@ export function IntradayChart({
           yAxis: valueAxis(theme, { axisLabel: { color: theme.muted, fontSize: 11, formatter: numAxisLabel(fmt) } }),
           series: [s],
         },
-        rows: d.buckets.map((b) => ({
-          time: time(b.ts),
-          avg: m.plain(type, b.avg, unit),
-          min: '',
-          max: '',
-        })),
+        rows: () =>
+          d.buckets.map((b) => ({
+            time: time(b.ts),
+            avg: m.plain(type, b.avg, unit),
+            min: '',
+            max: '',
+          })),
         columns: [
           { key: 'time', label: t('health.common.time') },
           { key: 'avg', label: unitLabel || t('health.common.value'), numeric: true },
@@ -233,12 +234,14 @@ export function IntradayChart({
         yAxis: valueAxis(theme, { scale: true, axisLabel: { color: theme.muted, fontSize: 11, formatter: numAxisLabel(fmt) } }),
         series,
       },
-      rows: d.buckets.map((b) => ({
-        time: time(b.ts),
-        avg: m.plain(type, b.avg, unit),
-        min: m.plain(type, b.min, unit),
-        max: m.plain(type, b.max, unit),
-      })),
+      // built only while the table view is open (a day of minute buckets is over a thousand rows)
+      rows: () =>
+        d.buckets.map((b) => ({
+          time: time(b.ts),
+          avg: m.plain(type, b.avg, unit),
+          min: m.plain(type, b.min, unit),
+          max: m.plain(type, b.max, unit),
+        })),
       columns: [
         { key: 'time', label: t('health.common.time') },
         { key: 'avg', label: `${avgName}${unitLabel ? ` (${unitLabel})` : ''}`, numeric: true },
@@ -259,13 +262,18 @@ export function IntradayChart({
     return { lo, hi, avg: sum / n };
   }, [d, cumulative]);
 
+  const table = useMemo(
+    () => (built && d && d.buckets.length ? () => ({ columns: built.columns, rows: built.rows() }) : undefined),
+    [built, d],
+  );
+
   return (
     <ChartCard
       title={title}
       subtitle={subtitle}
       icon={icon}
       actions={actions}
-      table={built && d && d.buckets.length ? { columns: built.columns, rows: built.rows } : undefined}
+      table={table}
       footer={
         d && stats ? (
           <div className="space-y-2">

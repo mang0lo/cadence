@@ -109,7 +109,8 @@ export function EffortTrend({
           ]}
         />
       }
-      table={{
+      // rows only while the table view is open: one per attempt, each looking up the best before it
+      table={() => ({
         columns: [
           { key: 'date', label: t('common.day') },
           { key: 'v', label: metricName, numeric: true },
@@ -125,7 +126,7 @@ export function EffortTrend({
           })(),
           rank: String(e.rank),
         })),
-      }}
+      })}
     >
       <EChart option={option as never} height={300} ariaLabel={title} />
     </ChartCard>

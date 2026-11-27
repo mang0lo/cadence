@@ -235,13 +235,14 @@ function NightSeriesChart({
     <ChartCard
       title={`${title}${unit ? ` (${unit})` : ''}`}
       icon={icon}
-      table={{
+      // rows only while the table view is open (a night of heart rate samples is hundreds)
+      table={() => ({
         columns: [
           { key: 'time', label: t('health.common.time') },
           { key: 'value', label: unit || t('health.common.value'), numeric: true },
         ],
         rows: points.map((p) => ({ time: time(p.ts), value: m.plain(metric, p.value) })),
-      }}
+      })}
     >
       {points.length === 0 ? (
         <p className="py-8 text-center text-sm text-fg-3">{t('health.sleep.physiology.noSamples')}</p>

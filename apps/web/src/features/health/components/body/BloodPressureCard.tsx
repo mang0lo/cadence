@@ -77,9 +77,10 @@ export function BloodPressureCard({ readings, loading }: { readings: BloodPressu
       title={`${t('health.body.bp.title')} (mmHg)`}
       subtitle={t('health.body.bp.subtitle')}
       icon={HeartPulse}
+      // rows only while the table view is open: up to thousands of readings, each with a badge
       table={
         readings.length
-          ? {
+          ? () => ({
               columns: [
                 { key: 'when', label: t('health.common.date') },
                 { key: 'sys', label: sysName, numeric: true },
@@ -92,7 +93,7 @@ export function BloodPressureCard({ readings, loading }: { readings: BloodPressu
                 dia: fmt.int(r.diastolic),
                 cat: <BloodPressureBadge systolic={r.systolic} diastolic={r.diastolic} />,
               })),
-            }
+            })
           : undefined
       }
       footer={
