@@ -13,9 +13,6 @@ import { HttpError, badRequest } from '../lib/http';
  * without losing anything that is not in the Apple Health export (renamed activities, goals, segments …).
  */
 
-/** Exit code that asks the macOS shell (and Docker's restart policy) to start the server again. */
-export const RESTART_EXIT_CODE = 75;
-
 const restorePath = (dbPath: string) => `${dbPath}.restore`;
 
 const stamp = () => new Date().toISOString().replace(/[:.]/g, '-');

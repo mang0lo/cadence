@@ -10,3 +10,4 @@ export * from './features/consistency';
 export * from './features/maps';
 export * from './features/health';
 export * from './features/connect';
+export * from './shell';

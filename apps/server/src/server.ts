@@ -1,8 +1,9 @@
 import fs from 'node:fs';
 import type { AddressInfo } from 'node:net';
+import { LISTENING_PREFIX, RESTART_EXIT_CODE } from '@cadence/shared';
 import { buildApp, migrateAll } from './app';
 import { isLoopbackHost, loadConfig } from './config';
-import { openWithPendingRestore, RESTART_EXIT_CODE } from './core/backup-routes';
+import { openWithPendingRestore } from './core/backup-routes';
 import { openDb } from './db/db';
 
 export async function startServer(): Promise<void> {
@@ -24,8 +25,8 @@ export async function startServer(): Promise<void> {
   const { port } = app.server.address() as AddressInfo;
   const anyHost = config.host === '0.0.0.0' || config.host === '::';
   const url = `http://${anyHost ? 'localhost' : config.host.includes(':') ? `[${config.host}]` : config.host}:${port}`;
-  // Machine readable line: the macOS shell starts us with PORT=0 and reads the chosen port from here.
-  console.log(`CADENCE_LISTENING ${JSON.stringify({ url, port })}`);
+  // Machine readable line: the desktop shells read the port we listen on from here (packages/shared/src/shell.ts).
+  console.log(`${LISTENING_PREFIX}${JSON.stringify({ url, port })}`);
   if (config.mode !== 'desktop') {
     const where = anyHost ? `  (all network interfaces, ${config.host}:${port})` : '';
     console.log(`Cadence ${config.version} (${config.mode}) → ${url}${where}  data: ${config.dataDir}`);

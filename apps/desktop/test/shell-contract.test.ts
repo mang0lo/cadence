@@ -3,8 +3,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
-  BRIDGE_MESSAGES,
   LISTENING_PREFIX,
+  NATIVE_IMPORT_EVENT,
+  NATIVE_MESSAGES,
   parseBridgeMessage,
   parseListening,
   RESTART_EXIT_CODE,
@@ -91,13 +92,14 @@ describe('parseBridgeMessage', () => {
   });
 
   it('knows every message of the contract', () => {
-    for (const type of BRIDGE_MESSAGES) {
+    for (const type of NATIVE_MESSAGES) {
       expect(parseBridgeMessage({ type, filename: 'a.png', base64: 'AA==', url: '' })?.type).toBe(type);
     }
   });
 });
 
-// The contract is kept in four places: the server, the web UI, this shell and the Mac app's ShellContract.swift.
+// The contract is packages/shared/src/shell.ts: the server, the web UI and this shell import it, the Mac app keeps a
+// copy (ShellContract.swift).
 describe('the shell contract', () => {
   const swift = read('apps/macos/Sources/Cadence/ShellContract.swift');
   const swiftBody = (name: string) => {
@@ -115,7 +117,8 @@ describe('the shell contract', () => {
     for (const key of ['CADENCE_MODE', 'HOST', 'NODE_ENV']) expect(envBody).toContain(`"${key}": "${env[key]}"`);
 
     const cases = /enum Message: String, CaseIterable \{\s*case ([\w, ]+)\n/.exec(swift)?.[1];
-    expect(cases?.split(',').map((c) => c.trim()).sort()).toEqual([...BRIDGE_MESSAGES].sort());
+    expect(cases?.split(',').map((c) => c.trim()).sort()).toEqual([...NATIVE_MESSAGES].sort());
+    expect(/importEvent = "([^"]*)"/.exec(swift)?.[1]).toBe(NATIVE_IMPORT_EVENT);
 
     const infoBody = swiftBody('shellInfo');
     expect([...infoBody.matchAll(/"(\w+)":/g)].map((m) => m[1]).sort()).toEqual(
@@ -123,18 +126,23 @@ describe('the shell contract', () => {
     );
   });
 
-  it('matches what the server does', () => {
-    const server = sources('apps/server/src', 'packages/shared/src');
-    const codes = server.flatMap(({ text }) =>
-      [...text.matchAll(/RESTART_EXIT_CODE\s*=\s*(\d+)/g)].map((m) => Number(m[1])),
-    );
-    expect(codes.length, 'RESTART_EXIT_CODE in apps/server/src or packages/shared/src').toBeGreaterThan(0);
-    for (const code of codes) expect(code).toBe(RESTART_EXIT_CODE);
-    const writes = server.some(({ text }) => text.includes(LISTENING_PREFIX));
-    expect(writes, `the server writes "${LISTENING_PREFIX}"`).toBe(true);
+  it('is what the server uses', () => {
+    const server = sources('apps/server/src');
+    // the server keeps no copy of the values: it imports them
+    for (const { file, text } of server) {
+      expect(text, file).not.toMatch(/\bRESTART_EXIT_CODE\s*=/);
+      expect(text, file).not.toMatch(new RegExp(`['"\`]${LISTENING_PREFIX.trim()}`));
+    }
+    for (const name of ['RESTART_EXIT_CODE', 'LISTENING_PREFIX']) {
+      const imports = new RegExp(`import \\{[^}]*\\b${name}\\b[^}]*\\} from '@cadence/shared'`);
+      const user = server.find(({ text }) => imports.test(text));
+      expect(user, `apps/server/src imports ${name} from @cadence/shared`).toBeDefined();
+      expect(user!.text.replace(imports, ''), `${user!.file} uses ${name}`).toMatch(new RegExp(`\\b${name}\\b`));
+    }
     // NODE_ENV is for the libraries; everything else must be read by the server's configuration
+    const config = sources('apps/server/src', 'packages/shared/src');
     for (const key of Object.keys(env).filter((k) => k !== 'NODE_ENV')) {
-      const reads = server.some(({ text }) => new RegExp(`\\benv\\.${key}\\b`).test(text));
+      const reads = config.some(({ text }) => new RegExp(`\\benv\\.${key}\\b`).test(text));
       expect(reads, `the server reads ${key}`).toBe(true);
     }
   });
@@ -147,7 +155,7 @@ describe('the shell contract', () => {
       ),
     );
     expect(posted.size, 'postNative(…) calls in apps/web/src').toBeGreaterThan(0);
-    for (const type of posted) expect(BRIDGE_MESSAGES as readonly string[], `message ${type}`).toContain(type);
+    for (const type of posted) expect(NATIVE_MESSAGES as readonly string[], `message ${type}`).toContain(type);
 
     const decl = [...web, ...sources('packages/shared/src')]
       .map(({ text }) => /interface ShellInfo \{([^}]*)\}/.exec(text)?.[1])

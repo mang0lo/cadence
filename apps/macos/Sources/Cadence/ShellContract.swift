@@ -1,10 +1,10 @@
 import Foundation
 
 /// What the shells and the server agree on: the server's exit code for a restart, the line it announces its address
-/// with, the environment it is started with, and the bridge between the web UI and the shell (messages, ShellInfo).
-/// The desktop app keeps the same values in apps/desktop/src/shell-contract.ts; the server's side is in
-/// apps/server/src (server.ts, config.ts, core/backup-routes.ts), the web UI's in apps/web/src/lib/native.ts.
-/// apps/desktop/test/shell-contract.test.ts checks that all of them still match (it reads this file).
+/// with, the environment it is started with, and the bridge between the web UI and the shell (messages, events,
+/// ShellInfo). This is the Mac app's copy of packages/shared/src/shell.ts, which the server, the web UI and the
+/// desktop app (apps/desktop/src/shell-contract.ts) import; change both together.
+/// apps/desktop/test/shell-contract.test.ts checks that they still match (it reads this file).
 enum ShellContract {
     /// Exit code of the server when it restarts itself on purpose (e.g. to apply a restored backup).
     static let restartExitCode: Int32 = 75
@@ -41,6 +41,9 @@ enum ShellContract {
     enum Message: String, CaseIterable {
         case pickImportFile, openDataFolder, saveFile, connectServer
     }
+
+    /// The window event that hands the import page a path to import (`detail: { path }`).
+    static let importEvent = "cadence:native-import"
 
     /// What the app tells the web UI about itself (`window.cadenceShell`, for Settings → Server).
     static func shellInfo(version: String, remote: URL?) -> [String: Any] {

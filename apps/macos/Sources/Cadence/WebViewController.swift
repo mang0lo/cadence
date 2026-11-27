@@ -247,16 +247,16 @@ final class WebViewController: NSViewController, WKNavigationDelegate, WKUIDeleg
             pendingImport = path
             return
         }
-        guard let data = try? JSONSerialization.data(withJSONObject: [path]),
-              let arr = String(data: data, encoding: .utf8) else { return }
+        guard let data = try? JSONSerialization.data(withJSONObject: [path, ShellContract.importEvent]),
+              let args = String(data: data, encoding: .utf8) else { return }
         evaluate("""
-        (function (p) {
+        (function (p, event) {
           if (location.pathname === '/import') {
-            window.dispatchEvent(new CustomEvent('cadence:native-import', { detail: { path: p } }));
+            window.dispatchEvent(new CustomEvent(event, { detail: { path: p } }));
           } else {
             location.assign('/import?nativePath=' + encodeURIComponent(p));
           }
-        })(\(arr)[0]);
+        }).apply(null, \(args));
         """)
     }
 
