@@ -1,9 +1,10 @@
 /**
- * Variables of a plural message that shows a count ('{n} tiles'): `count` picks the plural form, `n` is the count as
- * the locale writes it (1,234 / 1.234). t() prints variables with String(), so `{count}` would read '1234'.
+ * Variables of a plural message that shows a count ('{count} tiles').
+ * @deprecated t() writes numbers the way the locale writes them (1,234 / 1.234) and picks the plural form from them:
+ * pass `{ ...vars, count }` instead.
  */
 export const countVars = (
-  fmt: { int: (v: number) => string },
+  _fmt: { int: (v: number) => string },
   count: number,
   vars?: Record<string, string | number>,
-): Record<string, string | number> => ({ ...vars, count, n: fmt.int(count) });
+): Record<string, string | number> => ({ ...vars, count });
