@@ -99,6 +99,14 @@ cat >"$APP/Contents/Info.plist" <<PLIST
       <key>LSItemContentTypes</key>
       <array><string>com.garmin.fit</string></array>
     </dict>
+    <!-- the unzipped export or a folder of FIT files dropped on the Dock icon; rank None: Cadence never opens folders otherwise -->
+    <dict>
+      <key>CFBundleTypeName</key><string>Folder</string>
+      <key>CFBundleTypeRole</key><string>Viewer</string>
+      <key>LSHandlerRank</key><string>None</string>
+      <key>LSItemContentTypes</key>
+      <array><string>public.folder</string></array>
+    </dict>
   </array>
   <!-- macOS has no type for FIT files (Garmin, COROS, Wahoo …): without it they could not be dropped on the Dock icon -->
   <key>UTImportedTypeDeclarations</key>

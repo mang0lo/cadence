@@ -67,7 +67,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 
-    /// An export or FIT file dropped on the Dock icon or opened with Cadence → import it.
+    /// An export, a FIT file or a folder of either dropped on the Dock icon or opened with Cadence → import it.
     func application(_ application: NSApplication, open urls: [URL]) {
         guard let url = urls.first(where: ImportFiles.accepts) else { return }
         // a remote server cannot read files on this Mac (and should not learn their paths): its import page uploads
@@ -82,6 +82,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private func startBackend() {
         server.stop()
         web.shellInfo = ShellContract.shellInfo(version: version ?? "dev", remote: Preferences.remoteServerURL)
+        // a remote server cannot read files on this Mac (and should not learn their paths): no panel, no path for it
+        web.importsLocally = Preferences.remoteServerURL == nil
         if let remote = Preferences.remoteServerURL {
             window.subtitle = remote.host ?? ""
             web.load(remote)

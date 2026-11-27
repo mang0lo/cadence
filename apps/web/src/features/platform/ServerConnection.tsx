@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button, Field, Input } from '@/components/ui';
 import { useT } from '@/lib/i18n';
-import { normalizeServerUrl, postNative, shellInfo } from '@/lib/native';
+import { normalizeServerUrl, onNativeCancelled, postNative, shellInfo } from '@/lib/native';
 
 const hostOf = (url: string) => {
   try {
@@ -32,6 +32,8 @@ export function ServerConnection() {
   const [text, setText] = useState(remote ?? '');
   const [problem, setProblem] = useState<'invalid' | 'unreachable' | null>(null);
   const [busy, setBusy] = useState(false);
+  // the app asks before it shows another server: Cancel there ends the wait here
+  useEffect(() => onNativeCancelled('connectServer', () => setBusy(false)), []);
 
   const connect = async (force = false) => {
     const url = normalizeServerUrl(text);
@@ -46,7 +48,8 @@ export function ServerConnection() {
       setProblem('unreachable');
       return;
     }
-    postNative('connectServer', { url });
+    // the app reloads with the other server once the user confirmed it, or tells this page Cancel
+    if (!postNative('connectServer', { url })) setBusy(false);
   };
 
   return (

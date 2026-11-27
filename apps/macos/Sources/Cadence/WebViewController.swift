@@ -216,10 +216,6 @@ final class WebViewController: NSViewController, WKNavigationDelegate, WKUIDeleg
         webView.load(URLRequest(url: url))
     }
 
-    func evaluate(_ js: String) {
-        webView.evaluateJavaScript(js, completionHandler: nil)
-    }
-
     // MARK: - Native import panel
 
     func pickImportFile() {
@@ -237,27 +233,48 @@ final class WebViewController: NSViewController, WKNavigationDelegate, WKUIDeleg
         }
     }
 
+    /// A path to import that waits for the import page, which asks for it once it listens (`importReady`).
     private var pendingImport: String?
+    /// The page finished loading since `load(_:)`; until then a path to import waits for it.
     private var pageLoaded = false
 
-    /// Hands a local path to the web UI (no upload copy needed for multi-GB exports).
+    /// The app shows the server built into it (or a dev server), which imports files on this Mac in place. A remote
+    /// server cannot read them and should not learn their paths: its pages get neither the import panel nor a path
+    /// (its import page uploads), and a path picked for the built-in server is dropped.
+    var importsLocally = true {
+        didSet { if !importsLocally { pendingImport = nil } }
+    }
+
+    /// Hands a local path to the import page (no upload copy needed for multi-GB exports). An open import page imports
+    /// it at once; otherwise the app opens the import page, which asks for the path (`importReady`) and shows it for
+    /// confirmation. No URL carries the path, so no link from elsewhere can start a local import.
     /// Called from the open panel and when an export is dropped on the Dock icon / opened with Cadence.
     func startLocalImport(path: String) {
-        guard pageLoaded else {
-            pendingImport = path
+        guard importsLocally else { return }
+        pendingImport = path
+        if pageLoaded { offerImport(path) } // else once the page has loaded (didFinish)
+    }
+
+    private func offerImport(_ path: String) {
+        // only the app's own page may learn the path (ShellPolicy): another site in the window makes way for /import
+        guard let shown = ShellPolicy.Origin(webView.url), appOrigins.contains(shown) else {
+            if let base = baseURL, let url = URL(string: "/import", relativeTo: base) { webView.load(URLRequest(url: url)) }
             return
         }
-        guard let data = try? JSONSerialization.data(withJSONObject: [path]),
-              let arr = String(data: data, encoding: .utf8) else { return }
-        evaluate("""
-        (function (p) {
-          if (location.pathname === '/import') {
-            window.dispatchEvent(new CustomEvent('cadence:native-import', { detail: { path: p } }));
-          } else {
-            location.assign('/import?nativePath=' + encodeURIComponent(p));
-          }
-        })(\(arr)[0]);
-        """)
+        webView.callAsyncJavaScript(ShellContract.offerImportScript, arguments: ["path": path, "event": ShellContract.importEvent],
+                                    in: nil, in: .page) { [weak self] result in
+            // the open import page took it: nothing waits any more
+            guard case .success(let handled) = result, handled as? Bool == true, self?.pendingImport == path else { return }
+            self?.pendingImport = nil
+        }
+    }
+
+    /// `importReady`: the import page listens now and gets the path that waited for it.
+    private func handOverPendingImport() {
+        guard let path = pendingImport else { return }
+        pendingImport = nil
+        webView.callAsyncJavaScript(ShellContract.handOverImportScript, arguments: ["path": path, "event": ShellContract.importEvent],
+                                    in: nil, in: .page)
     }
 
     // MARK: - WKScriptMessageHandler
@@ -271,7 +288,10 @@ final class WebViewController: NSViewController, WKNavigationDelegate, WKUIDeleg
         guard let body = message.body as? [String: Any], let type = body["type"] as? String,
               let kind = ShellContract.Message(rawValue: type) else { return }
         switch kind {
-        case .pickImportFile: pickImportFile() // the panel picks files and folders: `folder` needs no answer here
+        case .pickImportFile:
+            // the panel picks files and folders: `folder` needs no answer here. A remote server's page gets no panel.
+            if importsLocally { pickImportFile() } else { NSSound.beep() }
+        case .importReady: handOverPendingImport()
         case .openDataFolder: NSWorkspace.shared.open(ServerProcess.dataDirectory)
         case .saveFile: saveFile(body)
         case .connectServer: connectServer(body)
@@ -285,11 +305,18 @@ final class WebViewController: NSViewController, WKNavigationDelegate, WKUIDeleg
             onConnectServer?(nil)
         } else if let url = URL(string: text), ["http", "https"].contains(url.scheme?.lowercased() ?? ""), url.host != nil {
             confirmServer(url) { [weak self] ok in
-                if ok { self?.onConnectServer?(url) } else { self?.webView.reload() } // the page waits for the switch
+                if ok { self?.onConnectServer?(url) } else { self?.tellCancelled(.connectServer) } // the page waits for the switch
             }
         } else {
             NSSound.beep()
+            tellCancelled(.connectServer)
         }
+    }
+
+    /// The user cancelled what message `kind` asked for: the page that waits for the answer stops waiting.
+    private func tellCancelled(_ kind: ShellContract.Message) {
+        webView.callAsyncJavaScript(ShellContract.cancelledScript, arguments: ["type": kind.rawValue, "event": ShellContract.cancelledEvent],
+                                    in: nil, in: .page)
     }
 
     /// Showing another server from now on is confirmed here, in a sheet no page can draw, so a page cannot switch the
@@ -306,15 +333,16 @@ final class WebViewController: NSViewController, WKNavigationDelegate, WKUIDeleg
         alert.beginSheetModal(for: window) { done($0 == .alertFirstButtonReturn) }
     }
 
-    /// A file the web UI created itself (share images): blob downloads are unreliable in WKWebView, so the page
-    /// posts `{ filename, base64 }` and the image is written to ~/Downloads. Only PNG images are accepted.
+    /// A file the web UI created itself (share images, CSV exports): blob downloads are unreliable in WKWebView, so
+    /// the page posts `{ filename, base64 }` and the file is written to ~/Downloads under the name the page gave.
+    /// Only images and data exports are accepted (ShellContract.savedFileTypes).
     private func saveFile(_ body: [String: Any]) {
         guard let name = body["filename"] as? String,
               let base64 = body["base64"] as? String,
               let data = Data(base64Encoded: base64) else { return }
-        var filename = (name as NSString).lastPathComponent
-        if filename.hasPrefix(".") || (filename as NSString).pathExtension.lowercased() != "png" {
-            filename = "cadence.png"
+        guard let filename = ShellContract.savedFileName(name) else {
+            NSSound.beep()
+            return
         }
         let target = uniqueDownloadURL(for: filename)
         do {
@@ -384,7 +412,12 @@ final class WebViewController: NSViewController, WKNavigationDelegate, WKUIDeleg
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
                  decisionHandler: @escaping @MainActor (WKNavigationActionPolicy) -> Void) {
         if navigationAction.shouldPerformDownload {
-            decisionHandler(.download)
+            // a link with `download`: saved only when the main frame of an app page asks (ShellPolicy)
+            let source = navigationAction.sourceFrame
+            let origin = ShellPolicy.Origin(scheme: source.securityOrigin.protocol, host: source.securityOrigin.host,
+                                            port: source.securityOrigin.port)
+            decisionHandler(ShellPolicy.allowsDownload(isMainFrame: source.isMainFrame, from: origin, appOrigins: appOrigins)
+                ? .download : .cancel)
             return
         }
         // Links to other sites open in the default browser (ShellPolicy). New windows (no target frame) go to
@@ -407,13 +440,16 @@ final class WebViewController: NSViewController, WKNavigationDelegate, WKUIDeleg
 
     func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse,
                  decisionHandler: @escaping @MainActor (WKNavigationResponsePolicy) -> Void) {
-        if let http = navigationResponse.response as? HTTPURLResponse,
-           let disposition = http.value(forHTTPHeaderField: "Content-Disposition"),
-           disposition.lowercased().hasPrefix("attachment") {
-            decisionHandler(.download)
+        let attachment = (navigationResponse.response as? HTTPURLResponse)?
+            .value(forHTTPHeaderField: "Content-Disposition")?.lowercased().hasPrefix("attachment") ?? false
+        guard attachment || !navigationResponse.canShowMIMEType else {
+            decisionHandler(.allow)
             return
         }
-        decisionHandler(navigationResponse.canShowMIMEType ? .allow : .download)
+        // saved only for the main frame of an app page (ShellPolicy); anything else is not loaded at all
+        let origin = ShellPolicy.downloadOrigin(of: navigationResponse.response.url)
+        decisionHandler(ShellPolicy.allowsDownload(isMainFrame: navigationResponse.isForMainFrame, from: origin, appOrigins: appOrigins)
+            ? .download : .cancel)
     }
 
     func webView(_ webView: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) {
@@ -438,11 +474,10 @@ final class WebViewController: NSViewController, WKNavigationDelegate, WKUIDeleg
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        // a path picked before the app's page had loaded (an export dropped on the Dock icon launched the app)
+        let first = !pageLoaded
         pageLoaded = true
-        if let path = pendingImport {
-            pendingImport = nil
-            startLocalImport(path: path)
-        }
+        if first, let path = pendingImport { offerImport(path) }
     }
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {

@@ -5,7 +5,8 @@ import Foundation
 ///
 ///  - The app's pages are those of the Cadence server it shows: the origin (scheme, host, port) of that server, and
 ///    the origin the server sent the app's own load to (e.g. a redirect from http to https).
-///  - Only the main frame of an app page reaches the native bridge (import panel, saving files, Settings → Server).
+///  - Only the main frame of an app page reaches the native bridge (import panel, saving files, Settings → Server)
+///    and saves downloads into ~/Downloads (links with `download`, attachments, files the window cannot show).
 ///  - Links and form submissions to other sites open in the default browser instead of the window. Other
 ///    navigations (server redirects, scripts) may still bring another site into the window, but its pages never
 ///    reach the bridge.
@@ -70,5 +71,22 @@ enum ShellPolicy {
     static func acceptsMessage(isMainFrame: Bool, from origin: Origin?, appOrigins: [Origin]) -> Bool {
         guard isMainFrame, let origin else { return false }
         return appOrigins.contains(origin)
+    }
+
+    /// A download into ~/Downloads: like the bridge, only for the main frame of an app page. Frames inside the page
+    /// and pages of other sites in the window (e.g. brought there by a redirect) save nothing.
+    static func allowsDownload(isMainFrame: Bool, from origin: Origin?, appOrigins: [Origin]) -> Bool {
+        acceptsMessage(isMainFrame: isMainFrame, from: origin, appOrigins: appOrigins)
+    }
+
+    /// Where a download the main frame received comes from: its URL's origin, or for a blob: URL the origin of the page
+    /// that made it, which the URL names (`blob:http://127.0.0.1:28787/<uuid>`). The window's own URL cannot tell:
+    /// while the download loads, it already is the download's URL. data: URLs have no origin (and WebKit does not
+    /// navigate the window to them; the app's pages save them through links with `download`).
+    static func downloadOrigin(of url: URL?) -> Origin? {
+        guard let url else { return nil }
+        if let origin = Origin(url) { return origin }
+        guard url.scheme?.lowercased() == "blob" else { return nil }
+        return Origin(URL(string: String(url.absoluteString.dropFirst("blob:".count))))
     }
 }

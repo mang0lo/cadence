@@ -16,7 +16,14 @@ import { app, BrowserWindow, dialog, ipcMain, Menu, session, shell, type MenuIte
 import { importDialogOptions, type ImportPick } from './import-picker';
 import { allowsPermission, isAppFrame, isAppUrl, isExternalUrl, navigationTarget, originOf } from './policy';
 import { DEFAULT_PORT, LocalServer, ServerStopped } from './server-process';
-import { parseBridgeMessage, shellInfo } from './shell-contract';
+import {
+  cancelledEventScript,
+  importEventScript,
+  parseBridgeMessage,
+  savedFileName,
+  shellInfo,
+  type NativeMessage,
+} from './shell-contract';
 
 const APP_NAME = 'Cadence';
 app.setName(APP_NAME);
@@ -64,6 +71,8 @@ function serverUrlOf(text: string): string | null {
   }
 }
 const remoteServer = (): string | null => serverUrlOf(readPrefs().remoteServerUrl ?? '');
+/** The window shows the built-in server (or the dev server): it can import files on this computer in place. */
+const importsLocally = (): boolean => !!process.env.CADENCE_DEV_URL || !remoteServer();
 
 /** server/index.js and the web UI: inside the package (resources) or, unpackaged, from the repo's build output. */
 function resources(): { entry: string; web: string } {
@@ -159,7 +168,14 @@ async function forgetOldLocalOrigins(keep: (string | null)[]): Promise<void> {
     .catch(() => undefined);
 }
 
-/** Native open dialog (a file, or a folder) → import it in place, like the macOS shell. */
+/** A path to import that waits for the import page, which asks for it once it listens (importReady). */
+let pendingImport: string | null = null;
+
+/**
+ * Native open dialog (a file, or a folder) → import it in place, like the macOS shell. An open import page imports
+ * the path at once; otherwise the app opens the import page, which asks for the path (importReady) and shows it for
+ * confirmation. No URL carries the path, so no link from elsewhere can start a local import.
+ */
 async function pickImportFile(pick: ImportPick = 'file'): Promise<void> {
   if (!win) return;
   // a remote server cannot read files on this computer: its import page uploads the file instead
@@ -170,15 +186,25 @@ async function pickImportFile(pick: ImportPick = 'file'): Promise<void> {
   }
   const r = await dialog.showOpenDialog(win, importDialogOptions(pick));
   const file = r.filePaths[0];
-  if (r.canceled || !file) return;
-  const onImportPage = (win.webContents.getURL() ?? '').includes('/import');
-  if (onImportPage) {
-    await win.webContents.executeJavaScript(
-      `window.dispatchEvent(new CustomEvent('cadence:native-import', { detail: { path: ${JSON.stringify(file)} } }))`,
-    );
+  if (r.canceled || !file || !win) return;
+  pendingImport = file;
+  // only the app's own page may learn the path (policy.ts): another site in the window makes way for /import
+  const handled =
+    isAppUrl(win.webContents.getURL(), appOrigins) &&
+    (await win.webContents.executeJavaScript(importEventScript({ path: file })).catch(() => false)) === true;
+  if (handled) {
+    if (pendingImport === file) pendingImport = null; // the open import page took it
   } else if (serverUrl) {
-    await win.loadURL(`${serverUrl.replace(/\/$/, '')}/import?nativePath=${encodeURIComponent(file)}`);
+    await win.loadURL(`${serverUrl.replace(/\/$/, '')}/import`).catch(() => undefined);
   }
+}
+
+/** importReady: the import page listens now and gets the path that waited for it. */
+function handOverPendingImport(): void {
+  const path = pendingImport;
+  pendingImport = null;
+  if (!path || !win || !importsLocally()) return;
+  void win.webContents.executeJavaScript(importEventScript({ path, confirm: true })).catch(() => undefined);
 }
 
 function buildMenu(): void {
@@ -350,6 +376,7 @@ async function createWindow(): Promise<void> {
 /** Settings → Server: show another Cadence server (null = the built-in one, started again when needed). */
 async function connectServer(url: string | null): Promise<void> {
   if (!win) return;
+  pendingImport = null; // a path picked for the server shown so far is not for the next one
   const previous = remoteServer();
   writePrefs({ ...readPrefs(), remoteServerUrl: url });
   // the built-in server is not needed while another one is shown
@@ -379,11 +406,23 @@ async function confirmServer(url: string | null): Promise<boolean> {
   return response === 0;
 }
 
-/** Save a file the web UI made (share image): blob downloads are unreliable in embedded views, like on macOS. */
+/** The user cancelled what message `type` asked for: the page that waits for the answer stops waiting. */
+function tellCancelled(type: NativeMessage['type']): void {
+  void win?.webContents.executeJavaScript(cancelledEventScript(type)).catch(() => undefined);
+}
+
+/**
+ * Save a file the web UI made (share image, CSV export): blob downloads are unreliable in embedded views, like on
+ * macOS. The dialog suggests the name the page gave; only images and data exports are accepted (savedFileName).
+ */
 async function saveFile(filename: string, base64: string): Promise<void> {
+  const name = savedFileName(filename);
+  if (!name) return shell.beep();
   if (!win) return;
+  const type = path.extname(name).slice(1).toLowerCase();
   const r = await dialog.showSaveDialog(win, {
-    defaultPath: path.join(app.getPath('downloads'), path.basename(filename)),
+    defaultPath: path.join(app.getPath('downloads'), name),
+    filters: [{ name: type.toUpperCase(), extensions: [type] }],
   });
   if (r.canceled || !r.filePath) return;
   await fs.promises.writeFile(r.filePath, Buffer.from(base64, 'base64'));
@@ -398,6 +437,9 @@ ipcMain.on('cadence', (event, raw: unknown) => {
     case 'pickImportFile':
       void pickImportFile(msg.folder ? 'folder' : 'file');
       break;
+    case 'importReady':
+      handOverPendingImport();
+      break;
     case 'openDataFolder':
       void shell.openPath(dataDir);
       break;
@@ -407,11 +449,11 @@ ipcMain.on('cadence', (event, raw: unknown) => {
     case 'connectServer': {
       const text = msg.url.trim();
       const url = text ? serverUrlOf(text) : null;
-      if (text && !url) return;
+      if (text && !url) return tellCancelled('connectServer');
       void confirmServer(url)
         .then((ok) => {
           if (ok) return connectServer(url);
-          win?.webContents.reload(); // the page waits for the switch: start it afresh
+          tellCancelled('connectServer'); // the page waits for the switch
         })
         .catch((e: Error) => {
           if (!(e instanceof ServerStopped)) dialog.showErrorBox(APP_NAME, e.message);
