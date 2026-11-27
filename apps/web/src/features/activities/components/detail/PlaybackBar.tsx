@@ -1,8 +1,8 @@
 import { memo, useEffect, useMemo, useRef, type PointerEvent as ReactPointerEvent } from 'react';
 import { clock, useFormat } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
+import { useThrottledStore } from '@/lib/store';
 import type { Playback } from '../../lib/playback';
-import { useThrottledStore } from '../../lib/store';
 import { cadenceUnit, isPaceSport } from '../../lib/display';
 import { zoneOf } from '../../lib/route';
 import { buckets, bucketMean, indexAtTime, valueAt, type Prepared } from '../../lib/streams';

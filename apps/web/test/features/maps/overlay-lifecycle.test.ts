@@ -17,7 +17,7 @@ import {
   useOverlayStore,
   type MapOverlay,
 } from '@/components/map/useMapOverlay';
-import { Store } from '@/features/maps/lib/timelapse';
+import { Store } from '@/lib/store';
 import { renderHook } from './fake-react';
 
 vi.mock('react', async () => (await import('./fake-react')).fakeReact);

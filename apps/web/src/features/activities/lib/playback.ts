@@ -1,5 +1,5 @@
+import { Store } from '@/lib/store';
 import { skipPause, type Prepared } from './streams';
-import { Store } from './store';
 
 /** Playback speeds (activity seconds per real second); 'fit' plays the whole activity in about 30 s. */
 export const SPEEDS = [1, 2, 5, 10, 30, 60, 120, 300, 'fit'] as const;

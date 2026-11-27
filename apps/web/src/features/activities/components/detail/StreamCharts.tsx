@@ -11,9 +11,9 @@ import { clock, useFormat, type Formatter } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
 import type { TFunction } from '@/lib/i18n';
 import { useStoredState } from '@/lib/storage';
+import type { Store } from '@/lib/store';
 import { isPaceSport, paceValue } from '../../lib/display';
 import type { Playback } from '../../lib/playback';
-import type { Store } from '../../lib/store';
 import {
   bucketMean,
   bucketMoving,

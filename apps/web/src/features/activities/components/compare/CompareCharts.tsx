@@ -8,9 +8,9 @@ import { axisTooltip, legend, lineSeries, tooltipHtml, valueAxis, type TooltipRo
 import { useChartTheme, type ChartTheme } from '@/components/charts/theme';
 import { clock, useFormat, type Formatter } from '@/lib/format';
 import { useI18n, type TFunction } from '@/lib/i18n';
+import type { Store } from '@/lib/store';
 import { gridValue, sideSeries, smoothGrid, type Alignment, type SideSeries } from '../../lib/compare';
 import { isPaceSport, paceValue, speedDiff } from '../../lib/display';
-import type { Store } from '../../lib/store';
 import { quantile, type Prepared } from '../../lib/streams';
 import { SIDE_VAR } from './CompareMap';
 

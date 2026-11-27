@@ -5,11 +5,11 @@ import { BaseMap } from '@/components/map/BaseMap';
 import { lineFeature, setGeoJSON } from '@/components/map/layers';
 import { overlayColors } from '@/components/map/styles';
 import { useI18n } from '@/lib/i18n';
+import type { Store } from '@/lib/store';
 import { useResolvedTheme } from '@/lib/theme';
 import { positionAt, replayAt, type Alignment } from '../../lib/compare';
 import type { Playback } from '../../lib/playback';
 import type { RouteGeometry } from '../../lib/route';
-import type { Store } from '../../lib/store';
 import { fracIndex, haversine, type Prepared } from '../../lib/streams';
 import { DOT, START_HTML, currentPref, markerEl } from '../detail/ActivityMap';
 

@@ -11,6 +11,7 @@ import { clock, useFormat } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
 import { useResolvedTheme, type ResolvedTheme } from '@/lib/theme';
 import { useStoredState } from '@/lib/storage';
+import type { Store } from '@/lib/store';
 import { isPaceSport } from '../../lib/display';
 import type { Playback } from '../../lib/playback';
 import {
@@ -25,7 +26,6 @@ import {
   type Legend,
   type RouteGeometry,
 } from '../../lib/route';
-import type { Store } from '../../lib/store';
 import { headingAt, indexAtDist, indexAtTime, lerpAngle, positionAt, valueAt, type Prepared } from '../../lib/streams';
 
 export type CameraMode = 'overview' | 'follow' | 'flyover';
