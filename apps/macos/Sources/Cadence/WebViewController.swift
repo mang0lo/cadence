@@ -295,11 +295,18 @@ final class WebViewController: NSViewController, WKNavigationDelegate, WKUIDeleg
             onConnectServer?(nil)
         } else if let url = URL(string: text), ["http", "https"].contains(url.scheme?.lowercased() ?? ""), url.host != nil {
             confirmServer(url) { [weak self] ok in
-                if ok { self?.onConnectServer?(url) } else { self?.webView.reload() } // the page waits for the switch
+                if ok { self?.onConnectServer?(url) } else { self?.tellCancelled(.connectServer) } // the page waits for the switch
             }
         } else {
             NSSound.beep()
+            tellCancelled(.connectServer)
         }
+    }
+
+    /// The user cancelled what message `kind` asked for: the page that waits for the answer stops waiting.
+    private func tellCancelled(_ kind: ShellContract.Message) {
+        webView.callAsyncJavaScript(ShellContract.cancelledScript, arguments: ["type": kind.rawValue, "event": ShellContract.cancelledEvent],
+                                    in: nil, in: .page)
     }
 
     /// Showing another server from now on is confirmed here, in a sheet no page can draw, so a page cannot switch the

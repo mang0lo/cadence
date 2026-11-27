@@ -16,7 +16,7 @@ import { app, BrowserWindow, dialog, ipcMain, Menu, session, shell, type MenuIte
 import { importDialogOptions, type ImportPick } from './import-picker';
 import { allowsPermission, isAppFrame, isAppUrl, isExternalUrl, navigationTarget, originOf } from './policy';
 import { DEFAULT_PORT, LocalServer, ServerStopped } from './server-process';
-import { importEventScript, parseBridgeMessage, shellInfo } from './shell-contract';
+import { cancelledEventScript, importEventScript, parseBridgeMessage, shellInfo, type NativeMessage } from './shell-contract';
 
 const APP_NAME = 'Cadence';
 app.setName(APP_NAME);
@@ -396,6 +396,11 @@ async function confirmServer(url: string | null): Promise<boolean> {
   return response === 0;
 }
 
+/** The user cancelled what message `type` asked for: the page that waits for the answer stops waiting. */
+function tellCancelled(type: NativeMessage['type']): void {
+  void win?.webContents.executeJavaScript(cancelledEventScript(type)).catch(() => undefined);
+}
+
 /** Save a file the web UI made (share image): blob downloads are unreliable in embedded views, like on macOS. */
 async function saveFile(filename: string, base64: string): Promise<void> {
   if (!win) return;
@@ -427,11 +432,11 @@ ipcMain.on('cadence', (event, raw: unknown) => {
     case 'connectServer': {
       const text = msg.url.trim();
       const url = text ? serverUrlOf(text) : null;
-      if (text && !url) return;
+      if (text && !url) return tellCancelled('connectServer');
       void confirmServer(url)
         .then((ok) => {
           if (ok) return connectServer(url);
-          win?.webContents.reload(); // the page waits for the switch: start it afresh
+          tellCancelled('connectServer'); // the page waits for the switch
         })
         .catch((e: Error) => {
           if (!(e instanceof ServerStopped)) dialog.showErrorBox(APP_NAME, e.message);

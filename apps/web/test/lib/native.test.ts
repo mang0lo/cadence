@@ -3,8 +3,8 @@
  * page asks the shell for the path it kept (importReady) instead of reading one from the URL.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { NATIVE_IMPORT_EVENT, type NativeImportDetail } from '@cadence/shared';
-import { isNativeShell, onNativeImport, postNative } from '@/lib/native';
+import { NATIVE_CANCELLED_EVENT, NATIVE_IMPORT_EVENT, type NativeImportDetail } from '@cadence/shared';
+import { isNativeShell, onNativeCancelled, onNativeImport, postNative } from '@/lib/native';
 
 /** A window of the Mac app, the desktop app or a browser: what the page posted to the shell. */
 function fakeWindow(shell: 'macos' | 'desktop' | null) {
@@ -88,5 +88,26 @@ describe('onNativeImport', () => {
     expect(handOver(win, { path: '/Users/me/export.zip' })).toBe(false);
     expect(take).not.toHaveBeenCalled();
     stop();
+  });
+});
+
+describe('onNativeCancelled', () => {
+  /** What the shells run when the user cancels their confirmation: true when the page took it (no reload). */
+  const cancel = (win: EventTarget, detail: unknown) =>
+    !win.dispatchEvent(new CustomEvent(NATIVE_CANCELLED_EVENT, { detail, cancelable: true }));
+
+  it('ends the wait for the message that was cancelled, and only that one', () => {
+    const { win } = fakeWindow('macos');
+    const then = vi.fn();
+    const stop = onNativeCancelled('connectServer', then);
+    expect(cancel(win, { type: 'pickImportFile' })).toBe(false);
+    expect(cancel(win, null)).toBe(false);
+    expect(then).not.toHaveBeenCalled();
+    expect(cancel(win, { type: 'connectServer' })).toBe(true);
+    expect(then).toHaveBeenCalledTimes(1);
+    stop();
+    // gone with the page: the shell reloads instead
+    expect(cancel(win, { type: 'connectServer' })).toBe(false);
+    expect(then).toHaveBeenCalledTimes(1);
   });
 });

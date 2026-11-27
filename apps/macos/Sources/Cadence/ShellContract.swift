@@ -61,6 +61,15 @@ enum ShellContract {
         window.dispatchEvent(new CustomEvent(event, { detail: { path, confirm: true }, cancelable: true }));
         """
 
+    /// The window event that tells the page the user cancelled what a message asked for (`detail: { type }`).
+    static let cancelledEvent = "cadence:native-cancelled"
+
+    /// Body for `callAsyncJavaScript` with `type` (a Message) and `event` (cancelledEvent): the page that waits for the
+    /// answer takes the event; any other page is reloaded, as the app did before the event existed.
+    static let cancelledScript = """
+        if (window.dispatchEvent(new CustomEvent(event, { detail: { type }, cancelable: true }))) location.reload();
+        """
+
     /// What the app tells the web UI about itself (`window.cadenceShell`, for Settings → Server).
     static func shellInfo(version: String, remote: URL?) -> [String: Any] {
         ["app": "macos", "version": version, "remote": remote?.absoluteString ?? NSNull()]

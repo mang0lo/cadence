@@ -7,7 +7,14 @@
  *                window.cadenceNative.postMessage({ type: 'pickImportFile' })                     (Electron)
  *  native → JS:  window.dispatchEvent(new CustomEvent('cadence:native-import', { detail: { path } }))
  */
-import { NATIVE_IMPORT_EVENT, type NativeImportDetail, type NativeMessage, type ShellInfo } from '@cadence/shared';
+import {
+  NATIVE_CANCELLED_EVENT,
+  NATIVE_IMPORT_EVENT,
+  type NativeCancelledDetail,
+  type NativeImportDetail,
+  type NativeMessage,
+  type ShellInfo,
+} from '@cadence/shared';
 
 interface NativeBridge {
   postMessage(msg: NativeMessage): void;
@@ -65,4 +72,18 @@ export function onNativeImport(take: (detail: NativeImportDetail) => void): () =
   window.addEventListener(NATIVE_IMPORT_EVENT, listener);
   postNative('importReady');
   return () => window.removeEventListener(NATIVE_IMPORT_EVENT, listener);
+}
+
+/**
+ * The user cancelled what message `type` asked the shell for (in the shell's own confirmation): `then` runs, and the
+ * shell leaves the page as it is (it reloads a page that does not take the event). Returns the unsubscribe function.
+ */
+export function onNativeCancelled(type: NativeMessage['type'], then: () => void): () => void {
+  const listener = (e: Event) => {
+    if ((e as CustomEvent<Partial<NativeCancelledDetail> | null>).detail?.type !== type) return;
+    e.preventDefault();
+    then();
+  };
+  window.addEventListener(NATIVE_CANCELLED_EVENT, listener);
+  return () => window.removeEventListener(NATIVE_CANCELLED_EVENT, listener);
 }

@@ -4,8 +4,10 @@ import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import {
+  cancelledEventScript,
   importEventScript,
   LISTENING_PREFIX,
+  NATIVE_CANCELLED_EVENT,
   NATIVE_IMPORT_EVENT,
   NATIVE_MESSAGES,
   parseBridgeMessage,
@@ -132,6 +134,32 @@ describe('importEventScript', () => {
   });
 });
 
+describe('cancelledEventScript', () => {
+  /** Runs the script in a page that waits for the answer (it takes the event) or not: what it got, did it reload. */
+  function run(script: string, waiting: boolean) {
+    const window = new EventTarget();
+    const received: unknown[] = [];
+    let reloaded = false;
+    window.addEventListener(NATIVE_CANCELLED_EVENT, (e) => {
+      received.push((e as CustomEvent).detail);
+      if (waiting) e.preventDefault();
+    });
+    vm.runInNewContext(script, { window, CustomEvent, location: { reload: () => (reloaded = true) } });
+    return { received, reloaded };
+  }
+
+  it('ends the wait of the page that asked', () => {
+    expect(run(cancelledEventScript('connectServer'), true)).toEqual({
+      received: [{ type: 'connectServer' }],
+      reloaded: false,
+    });
+  });
+
+  it('reloads a page that does not listen (an older web UI), as the shells did before', () => {
+    expect(run(cancelledEventScript('connectServer'), false).reloaded).toBe(true);
+  });
+});
+
 // The contract is packages/shared/src/shell.ts: the server, the web UI and this shell import it, the Mac app keeps a
 // copy (ShellContract.swift).
 describe('the shell contract', () => {
@@ -153,6 +181,7 @@ describe('the shell contract', () => {
     const cases = /enum Message: String, CaseIterable \{\s*case ([\w, ]+)\n/.exec(swift)?.[1];
     expect(cases?.split(',').map((c) => c.trim()).sort()).toEqual([...NATIVE_MESSAGES].sort());
     expect(/importEvent = "([^"]*)"/.exec(swift)?.[1]).toBe(NATIVE_IMPORT_EVENT);
+    expect(/cancelledEvent = "([^"]*)"/.exec(swift)?.[1]).toBe(NATIVE_CANCELLED_EVENT);
 
     const infoBody = swiftBody('shellInfo');
     expect([...infoBody.matchAll(/"(\w+)":/g)].map((m) => m[1]).sort()).toEqual(

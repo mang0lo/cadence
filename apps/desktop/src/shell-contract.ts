@@ -10,7 +10,9 @@
  */
 import {
   LISTENING_PREFIX,
+  NATIVE_CANCELLED_EVENT,
   NATIVE_IMPORT_EVENT,
+  type NativeCancelledDetail,
   type NativeImportDetail,
   type NativeMessage,
   type ShellInfo,
@@ -18,6 +20,7 @@ import {
 
 export {
   LISTENING_PREFIX,
+  NATIVE_CANCELLED_EVENT,
   NATIVE_IMPORT_EVENT,
   NATIVE_MESSAGES,
   RESTART_EXIT_CODE,
@@ -87,6 +90,16 @@ export function parseBridgeMessage(raw: unknown): NativeMessage | null {
 export function importEventScript(detail: NativeImportDetail): string {
   const event = `new CustomEvent(${JSON.stringify(NATIVE_IMPORT_EVENT)}, { detail: ${JSON.stringify(detail)}, cancelable: true })`;
   return `!window.dispatchEvent(${event})`;
+}
+
+/**
+ * Script for the page: the user cancelled what message `type` asked for (NATIVE_CANCELLED_EVENT). The page that waits
+ * for the answer takes the event; any other page is reloaded, as the shells did before the event existed.
+ */
+export function cancelledEventScript(type: NativeMessage['type']): string {
+  const detail: NativeCancelledDetail = { type };
+  const event = `new CustomEvent(${JSON.stringify(NATIVE_CANCELLED_EVENT)}, { detail: ${JSON.stringify(detail)}, cancelable: true })`;
+  return `if (window.dispatchEvent(${event})) location.reload();`;
 }
 
 /** What the web UI shows in Settings → Server (`window.cadenceNative.info` here). */

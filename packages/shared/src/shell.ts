@@ -55,6 +55,16 @@ export interface NativeImportDetail {
   confirm?: boolean;
 }
 
+/**
+ * The shell did not do what a message asked for: the user cancelled its confirmation (connectServer). `detail` is a
+ * NativeCancelledDetail. The page that waits for the answer cancels the event; the shell reloads any other page.
+ */
+export const NATIVE_CANCELLED_EVENT = 'cadence:native-cancelled';
+
+export interface NativeCancelledDetail {
+  type: NativeMessage['type'];
+}
+
 /** What the shell tells the web UI about itself, for Settings → Server. */
 export interface ShellInfo {
   app: 'macos' | 'desktop';

@@ -47,25 +47,33 @@ final class ShellContractTests: XCTestCase {
         XCTAssertNil(ShellContract.Message(rawValue: "openFile"))
     }
 
-    /// Runs a script body for callAsyncJavaScript (arguments `path`, `event`) in a minimal page whose import page
-    /// listens (it takes the path) or not: what the script returned, what the import page received, where it went.
-    private func runImportScript(_ body: String, path: String, listening: Bool) -> (result: JSValue, received: JSValue, assigned: JSValue) {
+    /// A minimal page for the scripts the app runs with callAsyncJavaScript: a page that listens for `event` takes
+    /// it (`received`); `location.assign` and `location.reload` are recorded.
+    private func page(listeningFor event: String?) -> JSContext {
         let js = JSContext()!
         js.exceptionHandler = { _, e in XCTFail("script failed: \(e?.toString() ?? "")") }
+        js.setObject(event ?? NSNull(), forKeyedSubscript: "listensFor" as NSString)
         js.evaluateScript("""
-            var received = null, assigned = null, listening = \(listening);
-            var location = { assign: function (url) { assigned = url; } };
+            var received = null, assigned = null, reloaded = false;
+            var location = { assign: function (url) { assigned = url; }, reload: function () { reloaded = true; } };
             function CustomEvent(type, init) {
               this.type = type; this.detail = init.detail; this.cancelable = !!init.cancelable; this.defaultPrevented = false;
             }
             CustomEvent.prototype.preventDefault = function () { if (this.cancelable) this.defaultPrevented = true; };
             var window = {
               dispatchEvent: function (e) {
-                if (e.type === '\(ShellContract.importEvent)' && listening) { received = e.detail; e.preventDefault(); }
+                if (e.type === listensFor) { received = e.detail; e.preventDefault(); }
                 return !e.defaultPrevented;
               }
             };
             """)
+        return js
+    }
+
+    /// Runs a script body (arguments `path`, `event`) in a page whose import page listens or not: what the script
+    /// returned, what the import page received, where the page went.
+    private func runImportScript(_ body: String, path: String, listening: Bool) -> (result: JSValue, received: JSValue, assigned: JSValue) {
+        let js = page(listeningFor: listening ? ShellContract.importEvent : nil)
         let script = js.evaluateScript("(function (path, event) {\n\(body)\n})")!
         let result = script.call(withArguments: [path, ShellContract.importEvent])!
         return (result, js.objectForKeyedSubscript("received"), js.objectForKeyedSubscript("assigned"))
@@ -88,5 +96,18 @@ final class ShellContractTests: XCTestCase {
         XCTAssertEqual(answer.received.forProperty("path").toString(), "/Users/me/export.zip")
         XCTAssertTrue(answer.received.forProperty("confirm").toBool()) // the page asks before it imports
         XCTAssertTrue(answer.assigned.isNull)
+    }
+
+    func testCancelEndsTheWaitOfThePageOrReloadsIt() {
+        for listening in [true, false] {
+            let js = page(listeningFor: listening ? ShellContract.cancelledEvent : nil)
+            let script = js.evaluateScript("(function (type, event) {\n\(ShellContract.cancelledScript)\n})")!
+            script.call(withArguments: [ShellContract.Message.connectServer.rawValue, ShellContract.cancelledEvent])
+            if listening {
+                XCTAssertEqual(js.objectForKeyedSubscript("received").forProperty("type").toString(), "connectServer")
+            }
+            // a page that does not listen (an older web UI of a remote server) starts afresh, as it did before
+            XCTAssertEqual(js.objectForKeyedSubscript("reloaded").toBool(), !listening)
+        }
     }
 }
