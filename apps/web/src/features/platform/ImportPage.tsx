@@ -358,7 +358,7 @@ export default function ImportPage() {
                         <JobStatus job={j} />
                         {j.error && (
                           <div className="mt-1 max-w-64 truncate text-xs text-critical-fg" title={j.error}>
-                            {jobErrorText(t, j.error)}
+                            {jobErrorText(t, j.error, j.errorCode)}
                           </div>
                         )}
                       </TD>
