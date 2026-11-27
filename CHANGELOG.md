@@ -57,10 +57,11 @@ and texts, numbers and errors in your language.
 
 ### Fixed
 
-- **Duplicates**: a session one app split in two (e.g. the Watch stopped at a café) and another app recorded whole now
-  counts both halves and marks only the whole copy as the duplicate. A long workout is no longer hidden as a copy of a
-  much shorter one, hiding one copy lets the other count, hidden workouts are never marked as duplicates, and an import
-  decides exactly like "Rebuild analysis".
+- **Duplicates**: a session one app split in two (e.g. the Watch stopped at a café) and another app recorded whole no
+  longer loses a half: both halves count and the whole copy is the duplicate (or the other way round when the whole
+  copy is the preferred one). A long workout is no longer hidden as a copy of a much shorter one, hiding one copy lets
+  the other count, hidden workouts are never marked as duplicates, and an import decides exactly like "Rebuild
+  analysis".
 - **Analysis of activities**:
   - Relative effort, and fitness and fatigue built on it, is no longer too low when the heart-rate strap lost contact
     for a while; hidden workouts with heart-rate spikes no longer set the observed max heart rate.
@@ -69,7 +70,8 @@ and texts, numbers and errors in your language.
   - A stale GPS position from before the start (also repeated a few times) no longer becomes the start point, place
     name or map bounds.
   - Country tags: border towns keep their own country, and every country a route passes through is tagged.
-  - Interval sessions with standing recoveries or auto-pause are recognised as intervals again.
+  - Interval sessions with standing recoveries or auto-pause are recognised as intervals (before, only their first
+    repetition counted).
   - A ride or hike paused for a cable car, train or car ride shows no climb across the transfer; climb time, VAM and
     lap elevation gain leave it out. Lap and segment elevation gain is smoothed like the activity's, so laps add up.
   - Power above 3000 W is ignored as a sensor glitch; the power peaks of an activity equal the bests of Progress →
@@ -87,8 +89,8 @@ and texts, numbers and errors in your language.
     pages when they finish.
   - Dropping several FIT files imports all of them, files dropped during an upload are uploaded too, and a refused
     file is named with the reason.
-  - Water intake exported in imperial (UK) fluid ounces, cups or pints, US pints or decilitres is converted to litres
-    instead of showing about 35 times too high.
+  - Water intake exported in imperial (UK) fluid ounces, cups or pints, US pints or decilitres is converted to litres;
+    before, the exported numbers showed as litres (imperial fluid ounces about 35 times too high).
   - ECG recordings from iPhones in any language are imported, and their classification is shown also in French,
     Spanish and Japanese.
   - `export_cda.xml` or any other XML that is not the Health app's `export.xml` fails right away with a clear message;
