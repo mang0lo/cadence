@@ -191,9 +191,9 @@ full rebuild: Import → *Rebuild analysis* (`POST /api/import/rederive`). Notab
   (`import/ecg.ts`). English and German keys are known (Aufnahmedatum, Klassifizierung, Abtastrate "512 Hertz", …);
   in any other language the recording date is recognised by its format (`YYYY-MM-DD HH:MM:SS ±HHMM`) and the lines
   after it by their fixed order (classification, symptoms, software version, device, sample rate, lead, unit); a
-  sample rate read that way outside 100–2000 Hz is taken as 512 Hz. The health module maps classifications in English, German, French,
-  Spanish and Japanese onto its own keys (sinus rhythm, AFib, high / low heart rate …, `classifyEcg` in
-  `features/health/ecg.ts`); other wordings count as "other". HRV beat times are locale formatted.
+  sample rate read that way outside 100–2000 Hz is taken as 512 Hz. The health module maps classifications in
+  English, German, French, Spanish and Japanese onto its own keys (sinus rhythm, AFib, high / low heart rate …,
+  `classifyEcg` in `features/health/ecg.ts`); other wordings count as "other". HRV beat times are locale formatted.
 - **Units follow the user's preferences** at export time (km vs mi, kg vs lb, kcal vs kJ) – normalised on import.
   Weather humidity is written ×100 ("8000 %"), weather temperature in degF.
 - **iOS 16+** moved workout totals into `WorkoutStatistics` and added `WorkoutActivity`; older exports have
