@@ -85,6 +85,12 @@ export interface WhatsNewInput {
   athleteId: number;
   /** New visible workouts of this import (not hidden, no duplicates), oldest first. */
   workoutIds: number[];
+  /**
+   * Every workout this import added, hidden ones and duplicates included: a duplicate of a new workout that is not
+   * among them existed before the import (the new one only replaces it). Set by the import summary; hand-built
+   * inputs may leave it out.
+   */
+  importedIds?: number[];
   /** Unix seconds before the derive started: rows a derive step created for this import are newer. */
   since: number;
   /** First import: everything is new, so "new" records, tiles … would only repeat the totals. */
