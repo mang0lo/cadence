@@ -1,4 +1,5 @@
 import type { Migration } from '../../db/migrate';
+import { reclassifyEcgs } from './ecg';
 
 /** Migrations of the health feature (ids are prefixed `health_`). */
 export const healthMigrations: Migration[] = [
@@ -95,5 +96,12 @@ export const healthMigrations: Migration[] = [
         PRIMARY KEY (athlete_id, type_id)
       ) WITHOUT ROWID;
     `,
+  },
+  {
+    // ECG classifications in French, Spanish and Japanese were stored as 'other'
+    id: 'health_005_ecg_classes',
+    up: (db) => {
+      reclassifyEcgs(db);
+    },
   },
 ];
