@@ -39,6 +39,8 @@ export function jobErrorCode(error: string | null | undefined): ImportErrorCode 
 
 /** Options of two derive requests run as one job: 'all' absorbs the other, otherwise their scopes are united. */
 export function mergeDeriveOptions(a: JobOptions, b: JobOptions): JobOptions {
+  // "Rebuild analysis" ('api') joined by a real change is no longer only a request (run-job.ts hands that one on)
+  if (a.origin === 'api' && b.origin !== 'api') return mergeDeriveOptions({ ...a, origin: b.origin }, b);
   const ids = (o: JobOptions) => o.workoutIds ?? 'all';
   const ia = ids(a);
   const ib = ids(b);

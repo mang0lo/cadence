@@ -174,7 +174,9 @@ export async function executeJob(
     stats.summary = importSummary(db, spec.athleteId, res.newWorkoutIds, deriveStart, hooks.log);
   } else {
     enterPhase('derive');
-    const d = await deriveClaimed(db, spec.athleteId, scopeFromOptions(spec.options), hooks, deriveProgress(0, 1));
+    // "Rebuild analysis" (POST /rederive) is a request, no change of the data: not handed on when it does not finish
+    const request = spec.options.origin === 'api';
+    const d = await deriveClaimed(db, spec.athleteId, scopeFromOptions(spec.options), hooks, deriveProgress(0, 1), request);
     stats.workoutsDerived = derivedCount(db, spec.athleteId, d);
     stats.warnings.push(...d.warnings);
   }
@@ -186,7 +188,8 @@ export async function executeJob(
 
 /**
  * Derive everything the athlete has pending (scope.ts) plus `extra`. The changes stay claimed until the derive
- * succeeded, so a cancelled, failed or interrupted derive hands them on to the next job.
+ * succeeded, so a cancelled, failed or interrupted derive hands them on to the next job. `extraIsRequest`: `extra`
+ * only asks for work (no data changed): it is derived now but not claimed, so it is not handed on.
  */
 async function deriveClaimed(
   db: Db,
@@ -194,8 +197,10 @@ async function deriveClaimed(
   extra: ChangeScope | null,
   hooks: JobHooks,
   onProgress: (fraction: number, step: DeriveStepRef, message?: string) => void,
+  extraIsRequest = false,
 ): Promise<DeriveResult> {
-  const scope = claimScope(db, athleteId, extra ?? undefined);
+  const scope = claimScope(db, athleteId, extraIsRequest ? undefined : (extra ?? undefined));
+  if (extraIsRequest && extra) scope.merge(extra);
   const d = await runDerive({
     db,
     athleteId,

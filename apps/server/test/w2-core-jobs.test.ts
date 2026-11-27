@@ -5,10 +5,12 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { ImportJob } from '@cadence/shared';
 import { migrateAll } from '../src/app';
 import { openDb, run, type Db } from '../src/db/db';
+import { CancelledError } from '../src/derive/context';
 import { coreDeriveSteps } from '../src/derive/pipeline';
 import { features } from '../src/features';
-import { JobManager, jobErrorCode } from '../src/import/jobs';
-import { executeJob, type JobProgress } from '../src/import/run-job';
+import { JobManager, jobErrorCode, mergeDeriveOptions } from '../src/import/jobs';
+import { executeJob, type JobOptions, type JobProgress } from '../src/import/run-job';
+import { ChangeScope, clearScopes, notePending, pendingScope } from '../src/import/scope';
 
 let dir: string;
 let db: Db;
@@ -123,5 +125,46 @@ describe('error codes of failed jobs', () => {
     expect(jobErrorCode(null)).toBeNull();
     expect(jobErrorCode('Not resumed: local imports are disabled on this server')).toBe('not_resumed');
     expect(jobErrorCode('Source file is gone')).toBe('source_gone');
+  });
+});
+
+describe('a cancelled derive', () => {
+  /** Runs a rederive job and cancels it at the first check inside the derive. */
+  const cancelledRun = async (origin: JobOptions['origin']) => {
+    let checks = 0;
+    await expect(
+      executeJob(db, { id: 'r', kind: 'rederive', athleteId: 1, sourcePath: null, options: { origin } }, {
+        progress: () => {},
+        checkCancelled: () => {
+          if (++checks > 1) throw new CancelledError();
+        },
+        log: () => {},
+      }),
+    ).rejects.toBeInstanceOf(CancelledError);
+  };
+
+  it('of "Rebuild analysis" hands only the changes that were pending to the next job, not the rebuild', async () => {
+    const pending = new ChangeScope();
+    pending.noteWorkout(5);
+    notePending(db, 1, pending);
+    await cancelledRun('api');
+    const next = pendingScope(db, 1);
+    expect(next.all).toBe(false);
+    expect([...next.workouts]).toEqual([5]);
+  });
+
+  it('caused by a change (settings, update, reset) keeps the full rebuild for the next job', async () => {
+    for (const origin of ['settings', 'upgrade', 'reset'] as const) {
+      clearScopes(db, 1);
+      await cancelledRun(origin);
+      expect(pendingScope(db, 1).all, origin).toBe(true);
+    }
+  });
+
+  it('request merged with a change in the queue is no longer only a request', () => {
+    expect(mergeDeriveOptions({ origin: 'api' }, { origin: 'settings' }).origin).toBe('settings');
+    expect(mergeDeriveOptions({ origin: 'workout', workoutIds: [1], sinceDay: null, records: false }, { origin: 'api' }).origin).toBe('workout');
+    expect(mergeDeriveOptions({ origin: 'api' }, { origin: 'api' }).origin).toBe('api');
+    expect(mergeDeriveOptions({ origin: 'api' }, {}).origin).toBeUndefined();
   });
 });
