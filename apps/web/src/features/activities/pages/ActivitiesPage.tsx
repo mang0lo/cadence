@@ -8,7 +8,7 @@ import { useI18n } from '@/lib/i18n';
 import { useSettings } from '@/lib/settings';
 import { SportIcon, sportColorVar, sportLabel } from '@/lib/sports';
 import { todayKey } from '@/lib/time';
-import { useActivityList, usePatchWorkout, useSportCounts } from '../api';
+import { listPageQuery, useActivityList, usePatchWorkout, useSportCounts } from '../api';
 import { DebouncedSearch } from '../components/DebouncedSearch';
 import { ListCards } from '../components/list/ListCards';
 import { ListTable } from '../components/list/ListTable';
@@ -22,10 +22,8 @@ import {
   SORT_OPTIONS,
   parseListParams,
   patchListParams,
-  rangeDays,
   sortOption,
   sortPatch,
-  toListQuery,
 } from '../lib/listParams';
 import { useMediaQuery } from '../lib/useMediaQuery';
 
@@ -89,11 +87,10 @@ export default function ActivitiesPage() {
   };
 
   // the period as local days: the server puts every activity on the day of its own time zone, not the browser's
-  const query = useMemo<ActivityListQuery>(() => {
-    const today = todayKey();
-    const { from: _from, to: _to, ...rest } = toListQuery(s, settings.weekStart, today);
-    return { ...rest, ...rangeDays(s.range, s.fromDay, s.toDay, settings.weekStart, today) };
-  }, [s, settings.weekStart]);
+  const query = useMemo<ActivityListQuery>(
+    () => listPageQuery(s, settings.weekStart, todayKey()),
+    [s, settings.weekStart],
+  );
   const list = useActivityList(query);
   const data = list.data;
   // the same selection as a spreadsheet (all pages)
