@@ -185,8 +185,10 @@ Version constants make stored results stale when their computation changes; bump
    `core.daily-metrics` (`daily_metrics`, `record_type_stats`), `core.effort` (HR zones, relative effort),
    `core.daily-activity` — then every feature's `deriveSteps` in registration order. A failing core step fails the job;
    a failing feature step only adds a warning.
-4. The UI polls `GET /api/import/jobs` every 1.5 s while a job is queued or running (every 15 s otherwise);
-   `GET /api/import/jobs/:id` returns one job.
+4. The UI (`features/platform/useImportJobs.ts`, `loadJobs` in `importJobs.ts`) polls every 1.5 s while a job is
+   queued or running: the running job alone (`GET /api/import/jobs/:id`), the whole list (`GET /api/import/jobs`)
+   while jobs only wait and at least every 15 s. Otherwise it asks every 15 s (and on window focus) for the newest job
+   (`?limit=1`) and loads the list only when that one changed.
 
 **FIT files** (other watches): the same job imports a `.fit` file, a folder of them or a zip without `export.xml`
 (`src/import/fit`, Garmin's `@garmin/fitsdk` decoder). Each file becomes a workout (`ext_key` `fit:<serial>:<start>`)
