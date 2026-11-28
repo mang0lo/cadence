@@ -126,21 +126,24 @@ export class LocalServer extends EventEmitter<LocalServerEvents> {
     }
     fs.mkdirSync(this.opts.logDir, { recursive: true });
     const port = this.opts.preferredPort();
+    // Empty the log once, then only ever append (O_APPEND): a stream opened with 'w' writes at its own offset, so a
+    // line appended while its output was still buffered would be overwritten (seen on Linux).
+    fs.writeFileSync(this.logFile, '');
     try {
-      return await this.launch(port, 'w');
+      return await this.launch(port);
     } catch (e) {
       if (!(e instanceof PortUnavailable) || generation !== this.generation) throw e;
       // the port of the last launch is taken: any free port will do (and is kept from now on)
       fs.appendFileSync(this.logFile, `Cadence: port ${port} is not available, starting on a free port instead\n`);
-      return this.launch(0, 'a');
+      return this.launch(0);
     }
   }
 
-  private launch(port: number, logFlags: 'w' | 'a'): Promise<string> {
+  private launch(port: number): Promise<string> {
     const { opts } = this;
     const timeoutMs = opts.startTimeoutMs ?? 60_000;
     return new Promise<string>((resolve, reject) => {
-      const log = fs.createWriteStream(this.logFile, { flags: logFlags });
+      const log = fs.createWriteStream(this.logFile, { flags: 'a' });
       log.on('error', () => undefined); // the log is a help, not a reason to stop the app
       const child = (opts.spawn ?? nodeSpawn)(opts.execPath, ['--disable-warning=ExperimentalWarning', opts.entry], {
         cwd: opts.dataDir,

@@ -65,6 +65,16 @@ export function addDays(day: string, n: number): string {
   return dayString(d + n);
 }
 
+/**
+ * The server process's UTC offset in minutes on a local day (that day's, not today's: DST-aware). Taken at noon UTC
+ * so a DST switch at local midnight does not matter. Never -0 (JSON and Object.is tell it apart from 0).
+ */
+export function serverTzMinOn(day: string): number {
+  const d = parseDay(day);
+  const at = d === null ? new Date() : new Date((d * 86400 + 12 * 3600) * 1000);
+  return -at.getTimezoneOffset() || 0;
+}
+
 /** Today's local day for a given offset (default: the server's current offset). */
 export function today(tzMin = -new Date().getTimezoneOffset()): string {
   return localDay(Math.floor(Date.now() / 1000), tzMin);
