@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { HeartEvent, HeartEventType, IntradayResponse } from '@cadence/shared';
 import { all } from '../../db/db';
 import { badRequest } from '../../lib/http';
+import { serverTzMinOn } from '../../lib/time';
 import { INTRADAY_BUCKETS, buildIntraday } from './intraday';
 import { checkDayOrder, dayParam, localDayRange, localDaySql, resolveType } from './util';
 
@@ -82,6 +83,6 @@ export function registerHeartRoutes(app: FastifyInstance): void {
     if (!(INTRADAY_BUCKETS as readonly number[]).includes(bucket)) {
       throw badRequest(`bucket must be one of ${INTRADAY_BUCKETS.join(', ')} (minutes)`);
     }
-    return buildIntraday(app.db, req.athleteId, type, q.day, bucket, -new Date().getTimezoneOffset());
+    return buildIntraday(app.db, req.athleteId, type, q.day, bucket, serverTzMinOn(q.day));
   });
 }

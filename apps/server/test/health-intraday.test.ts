@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { IntradayResponse } from '@cadence/shared';
-import { localDay } from '../src/lib/time';
+import { localDay, serverTzMinOn } from '../src/lib/time';
 import { bucketize } from '../src/features/health/intraday';
 import { createHealthFixture, ts, type HealthFixture } from './health-fixture';
 
@@ -63,8 +63,8 @@ describe('intraday view: offsets', () => {
     const steps = await intraday('2026-06-03', 'StepCount', 60);
     expect(steps).toMatchObject({ tzMin: 600, buckets: [] });
     expect(steps.dayStartTs).toBe(ts('2026-06-03T00:00:00+10:00'));
-    // a type without any sample keeps the server's offset
-    expect((await intraday('2026-06-03', 'OxygenSaturation')).tzMin).toBe(-new Date().getTimezoneOffset());
+    // a type without any sample keeps the server's offset on that day (summer time in June), never -0
+    expect((await intraday('2026-06-03', 'OxygenSaturation')).tzMin).toBe(-new Date(Date.UTC(2026, 5, 3, 12)).getTimezoneOffset() || 0);
   });
 
   it('marks only the buckets whose first sample has another offset (pure)', () => {
@@ -79,5 +79,23 @@ describe('intraday view: offsets', () => {
       ['2026-03-29', 120],
     ]);
     expect(bucketize(rows, start, end, 3600, 'sum').every((b) => b.tzMin === undefined)).toBe(true);
+  });
+});
+
+describe('serverTzMinOn', () => {
+  const saved = process.env.TZ;
+  afterAll(() => {
+    if (saved === undefined) delete process.env.TZ;
+    else process.env.TZ = saved;
+  });
+
+  it("is the server's offset on that day, never -0", () => {
+    process.env.TZ = 'Europe/Vienna';
+    expect(serverTzMinOn('2026-06-03')).toBe(120); // summer time, even when today is in winter
+    expect(serverTzMinOn('2026-01-15')).toBe(60);
+    process.env.TZ = 'UTC';
+    expect(Object.is(serverTzMinOn('2026-06-03'), 0)).toBe(true);
+    process.env.TZ = 'America/Los_Angeles';
+    expect(serverTzMinOn('2026-06-03')).toBe(-420);
   });
 });
